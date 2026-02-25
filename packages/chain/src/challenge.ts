@@ -1,6 +1,6 @@
 import type { Abi } from "viem";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { createHermesWalletClient } from "./client";
+import { getWalletClient } from "./client";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -8,7 +8,7 @@ export async function submitChallengeResult(
   challengeAddress: `0x${string}`,
   resultHash: `0x${string}`,
 ) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -23,7 +23,7 @@ export async function postScore(
   score: bigint,
   proofBundleHash: `0x${string}`,
 ) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -33,7 +33,7 @@ export async function postScore(
 }
 
 export async function finalizeChallenge(challengeAddress: `0x${string}`) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -43,7 +43,7 @@ export async function finalizeChallenge(challengeAddress: `0x${string}`) {
 }
 
 export async function disputeChallenge(challengeAddress: `0x${string}`, reason: string) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -56,7 +56,7 @@ export async function resolveDispute(
   challengeAddress: `0x${string}`,
   winnerSubId: bigint,
 ) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -66,7 +66,7 @@ export async function resolveDispute(
 }
 
 export async function claimPayout(challengeAddress: `0x${string}`) {
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,

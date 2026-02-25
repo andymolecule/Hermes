@@ -1,0 +1,48 @@
+# Hermes challenge template: reproducibility
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+
+id: ch-001
+# Short, human-readable title
+title: "Reproduce a published longevity score"
+
+domain: longevity
+# reproducibility | prediction | docking
+type: reproducibility
+
+description: |
+  Reproduce the published score for the provided dataset.
+  Include your methodology, preprocessing steps, and any assumptions.
+
+dataset:
+  # ipfs:// or https:// URL to training dataset
+  train: "https://example.com/train.csv"
+  # ipfs:// or https:// URL to test dataset
+  test: "https://example.com/test.csv"
+
+scoring:
+  # OCI image reference for the scorer container
+  container: "ghcr.io/hermes-science/repro-scorer:latest"
+  # rmse | mae | r2 | pearson | spearman | custom
+  metric: rmse
+
+reward:
+  # Total USDC reward for the challenge
+  total: 500
+  # winner_take_all | top_3 | proportional
+  distribution: winner_take_all
+
+# Deadline in ISO-8601 with timezone offset
+deadline: "2026-03-15T00:00:00Z"
+
+tags:
+  - reproducibility
+  - longevity
+
+# Optional settings
+minimum_score: 0.0
+# Dispute window in hours (max 168)
+dispute_window_hours: 48
+# Max submissions per wallet (max 3)
+max_submissions_per_wallet: 3
+# Optional lab TBA address
+lab_tba: "0x0000000000000000000000000000000000000000"

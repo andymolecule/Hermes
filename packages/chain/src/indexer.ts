@@ -2,10 +2,12 @@ import { type Abi, parseEventLogs } from "viem";
 import { loadConfig, challengeSpecSchema } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { createHermesPublicClient } from "./client";
+import { getPublicClient } from "./client";
 import {
   createSupabaseClient,
   listChallenges,
+  updateChallengeStatus,
+  setChallengeFinalized,
   markEventIndexed,
   isEventIndexed,
   upsertChallenge,
@@ -35,7 +37,7 @@ async function fetchChallengeSpec(specCid: string) {
 async function readSubmission(
   challengeAddress: `0x${string}`,
   submissionId: bigint,
-  publicClient: ReturnType<typeof createHermesPublicClient>,
+  publicClient: ReturnType<typeof getPublicClient>,
 ) {
   const submission = (await publicClient.readContract({
     address: challengeAddress,
@@ -53,6 +55,27 @@ async function readSubmission(
   return submission;
 }
 
+async function readWinningSubmissionId(
+  challengeAddress: `0x${string}`,
+  publicClient: ReturnType<typeof getPublicClient>,
+) {
+  const winner = (await publicClient.readContract({
+    address: challengeAddress,
+    abi: HermesChallengeAbi,
+    functionName: "winningSubmissionId",
+  })) as bigint;
+  return winner;
+}
+
+async function blockTimestampIso(
+  publicClient: ReturnType<typeof getPublicClient>,
+  blockNumber: bigint | null,
+) {
+  if (!blockNumber) return new Date().toISOString();
+  const block = await publicClient.getBlock({ blockNumber });
+  return new Date(Number(block.timestamp) * 1000).toISOString();
+}
+
 interface ParsedLog {
   eventName: string;
   args: readonly unknown[];
@@ -63,7 +86,7 @@ interface ParsedLog {
 
 export async function runIndexer() {
   const config = loadConfig();
-  const publicClient = createHermesPublicClient();
+  const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
 
   const factoryAddress = config.HERMES_FACTORY_ADDRESS as `0x${string}`;
@@ -175,12 +198,12 @@ export async function runIndexer() {
             });
           }
 
-          if (log.eventName === "Scored") {
-            const [submissionId, score, proofBundleHash] = log.args as unknown as [
-              bigint,
-              bigint,
-              `0x${string}`,
-            ];
+        if (log.eventName === "Scored") {
+          const [submissionId, score, proofBundleHash] = log.args as unknown as [
+            bigint,
+            bigint,
+            `0x${string}`,
+          ];
 
             const submission = await readSubmission(challengeAddress, submissionId, publicClient);
             const existing = await getSubmissionByChainId(db, challenge.id, Number(submissionId));
@@ -198,17 +221,60 @@ export async function runIndexer() {
               tx_hash: existing?.tx_hash ?? txHash,
             });
 
-            await updateScore(db, {
-              submission_id: row.id,
-              score: score.toString(),
-              proof_bundle_cid: existing?.proof_bundle_cid ?? "",
-              proof_bundle_hash: proofBundleHash,
-              scored_at: new Date().toISOString(),
-            });
-          }
-
-          await markEventIndexed(db, txHash, logIndex, log.eventName, Number(log.blockNumber ?? 0));
+          await updateScore(db, {
+            submission_id: row.id,
+            score: score.toString(),
+            proof_bundle_cid: existing?.proof_bundle_cid ?? "",
+            proof_bundle_hash: proofBundleHash,
+            scored_at: new Date().toISOString(),
+          });
         }
+
+        if (log.eventName === "Finalized") {
+          const winnerOnChain = await readWinningSubmissionId(
+            challengeAddress,
+            publicClient,
+          );
+          const winnerRow = await getSubmissionByChainId(
+            db,
+            challenge.id,
+            Number(winnerOnChain),
+          );
+          const finalizedAt = await blockTimestampIso(publicClient, log.blockNumber ?? null);
+          await setChallengeFinalized(
+            db,
+            challenge.id,
+            finalizedAt,
+            Number(winnerOnChain),
+            winnerRow?.id ?? null,
+          );
+        }
+
+        if (log.eventName === "Disputed") {
+          await updateChallengeStatus(db, challenge.id, "disputed");
+        }
+
+        if (log.eventName === "Cancelled") {
+          await updateChallengeStatus(db, challenge.id, "cancelled");
+        }
+
+        if (log.eventName === "DisputeResolved") {
+          const winnerOnChain = (log.args as unknown as [bigint])[0] ?? null;
+          const winnerRow = winnerOnChain
+            ? await getSubmissionByChainId(db, challenge.id, Number(winnerOnChain))
+            : null;
+          const finalizedAt = await blockTimestampIso(publicClient, log.blockNumber ?? null);
+          await setChallengeFinalized(
+            db,
+            challenge.id,
+            finalizedAt,
+            winnerOnChain ? Number(winnerOnChain) : null,
+            winnerRow?.id ?? null,
+          );
+        }
+
+        await markEventIndexed(db, txHash, logIndex, log.eventName, Number(log.blockNumber ?? 0));
+      }
       }
 
       fromBlock = toBlock + BigInt(1);

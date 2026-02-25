@@ -29,3 +29,5 @@ const count = await publicClient.readContract({
 });
 
 console.log(`PASS: Chain read ok (challengeCount=${count})`);
+
+export {};

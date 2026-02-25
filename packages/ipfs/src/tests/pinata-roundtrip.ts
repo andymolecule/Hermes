@@ -27,3 +27,5 @@ if (fetched.hello !== payload.hello) {
 }
 
 console.log("PASS: IPFS round-trip test");
+
+export {};

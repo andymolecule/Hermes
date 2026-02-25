@@ -1,7 +1,7 @@
 import { parseUnits, type Abi } from "viem";
 import { loadConfig } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
-import { createHermesWalletClient } from "./client";
+import { getWalletClient } from "./client";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 
@@ -17,7 +17,7 @@ export interface CreateChallengeParams {
 
 export async function createChallenge(params: CreateChallengeParams) {
   const config = loadConfig();
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   const factoryAddress = config.HERMES_FACTORY_ADDRESS as `0x${string}`;
   const reward = parseUnits(params.rewardAmount.toString(), 6);
 

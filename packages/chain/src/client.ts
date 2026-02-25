@@ -32,3 +32,20 @@ export function createHermesWalletClient() {
   const account = privateKeyToAccount(config.HERMES_PRIVATE_KEY as `0x${string}`);
   return createWalletClient({ chain, transport, account });
 }
+
+let cachedPublicClient: ReturnType<typeof createHermesPublicClient> | null = null;
+let cachedWalletClient: ReturnType<typeof createHermesWalletClient> | null = null;
+
+export function getPublicClient() {
+  if (!cachedPublicClient) {
+    cachedPublicClient = createHermesPublicClient();
+  }
+  return cachedPublicClient;
+}
+
+export function getWalletClient() {
+  if (!cachedWalletClient) {
+    cachedWalletClient = createHermesWalletClient();
+  }
+  return cachedWalletClient;
+}

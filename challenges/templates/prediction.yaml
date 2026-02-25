@@ -1,0 +1,48 @@
+# Hermes challenge template: prediction
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+
+id: ch-002
+# Short, human-readable title
+title: "Predict gene expression from promoter sequences"
+
+domain: omics
+# reproducibility | prediction | docking
+type: prediction
+
+description: |
+  Predict expression levels from promoter sequence inputs.
+  Provide your model details and any preprocessing steps.
+
+dataset:
+  # ipfs:// or https:// URL to training dataset
+  train: "https://example.com/train.csv"
+  # ipfs:// or https:// URL to test dataset
+  test: "https://example.com/test.csv"
+
+scoring:
+  # OCI image reference for the scorer container
+  container: "ghcr.io/hermes-science/prediction-scorer:latest"
+  # rmse | mae | r2 | pearson | spearman | custom
+  metric: r2
+
+reward:
+  # Total USDC reward for the challenge
+  total: 500
+  # winner_take_all | top_3 | proportional
+  distribution: top_3
+
+# Deadline in ISO-8601 with timezone offset
+deadline: "2026-03-20T00:00:00Z"
+
+tags:
+  - prediction
+  - omics
+
+# Optional settings
+minimum_score: 0.1
+# Dispute window in hours (max 168)
+dispute_window_hours: 48
+# Max submissions per wallet (max 3)
+max_submissions_per_wallet: 3
+# Optional lab TBA address
+lab_tba: "0x0000000000000000000000000000000000000000"

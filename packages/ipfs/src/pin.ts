@@ -11,11 +11,20 @@ function createClient() {
   return new pinataSDK({ pinataJWTKey: config.HERMES_PINATA_JWT });
 }
 
+let cachedClient: ReturnType<typeof createClient> | null = null;
+
+function getClient() {
+  if (!cachedClient) {
+    cachedClient = createClient();
+  }
+  return cachedClient;
+}
+
 export async function pinJSON<T extends Record<string, unknown>>(
   name: string,
   payload: T,
 ): Promise<string> {
-  const client = createClient();
+  const client = getClient();
   const result = await client.pinJSONToIPFS(payload, {
     pinataMetadata: { name },
   });
@@ -23,7 +32,7 @@ export async function pinJSON<T extends Record<string, unknown>>(
 }
 
 export async function pinFile(filePath: string, name?: string): Promise<string> {
-  const client = createClient();
+  const client = getClient();
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
   }
@@ -35,7 +44,7 @@ export async function pinFile(filePath: string, name?: string): Promise<string> 
 }
 
 export async function pinDirectory(dirPath: string, name?: string): Promise<string> {
-  const client = createClient();
+  const client = getClient();
   if (!fs.existsSync(dirPath)) {
     throw new Error(`Directory not found: ${dirPath}`);
   }

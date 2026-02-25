@@ -58,3 +58,22 @@ export async function listSubmissionsForChallenge(db: HermesDbClient, challengeI
   }
   return data ?? [];
 }
+
+export async function setSubmissionResultCid(
+  db: HermesDbClient,
+  challengeId: string,
+  onChainSubId: number,
+  resultCid: string,
+) {
+  const { data, error } = await db
+    .from("submissions")
+    .update({ result_cid: resultCid })
+    .eq("challenge_id", challengeId)
+    .eq("on_chain_sub_id", onChainSubId)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`Failed to update result CID: ${error.message}`);
+  }
+  return data;
+}

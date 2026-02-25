@@ -1,6 +1,6 @@
 import { parseUnits } from "viem";
 import { loadConfig } from "@hermes/common";
-import { createHermesPublicClient, createHermesWalletClient } from "./client";
+import { getPublicClient, getWalletClient } from "./client";
 
 const erc20Abi = [
   {
@@ -34,7 +34,7 @@ const erc20Abi = [
 
 export async function approve(spender: `0x${string}`, amount: number) {
   const config = loadConfig();
-  const walletClient = createHermesWalletClient();
+  const walletClient = getWalletClient();
   const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
   const value = parseUnits(amount.toString(), 6);
 
@@ -48,7 +48,7 @@ export async function approve(spender: `0x${string}`, amount: number) {
 
 export async function balanceOf(owner: `0x${string}`) {
   const config = loadConfig();
-  const publicClient = createHermesPublicClient();
+  const publicClient = getPublicClient();
   const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
 
   return publicClient.readContract({
@@ -61,7 +61,7 @@ export async function balanceOf(owner: `0x${string}`) {
 
 export async function allowance(owner: `0x${string}`, spender: `0x${string}`) {
   const config = loadConfig();
-  const publicClient = createHermesPublicClient();
+  const publicClient = getPublicClient();
   const usdc = config.HERMES_USDC_ADDRESS as `0x${string}`;
 
   return publicClient.readContract({

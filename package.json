@@ -2,7 +2,10 @@
   "name": "hermes",
   "private": true,
   "packageManager": "pnpm@9.0.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
@@ -12,6 +15,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.3",
+    "tsx": "^4.19.2",
     "turbo": "^2.0.6",
     "typescript": "^5.5.4"
   }

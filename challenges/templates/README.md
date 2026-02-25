@@ -1,1 +1,1 @@
-Placeholder templates will be added in T-021.
+Challenge templates for `hm init` live here.

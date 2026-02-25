@@ -20,3 +20,5 @@ if (error) {
 }
 
 console.log(`PASS: DB query ok (${data?.length ?? 0} rows)`);
+
+export {};

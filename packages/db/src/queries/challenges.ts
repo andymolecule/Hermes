@@ -53,3 +53,77 @@ export async function listChallenges(db: HermesDbClient) {
   }
   return data ?? [];
 }
+
+export interface ChallengeListFilters {
+  status?: string;
+  domain?: string;
+  posterAddress?: string;
+  limit?: number;
+}
+
+export async function listChallengesWithDetails(
+  db: HermesDbClient,
+  filters: ChallengeListFilters = {},
+) {
+  let query = db.from("challenges").select("*");
+
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters.domain) {
+    query = query.eq("domain", filters.domain);
+  }
+  if (filters.posterAddress) {
+    query = query.eq("poster_address", filters.posterAddress);
+  }
+  if (filters.limit) {
+    query = query.limit(filters.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Failed to list challenges: ${error.message}`);
+  }
+  return data ?? [];
+}
+
+export async function updateChallengeStatus(
+  db: HermesDbClient,
+  challengeId: string,
+  status: string,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .update({ status })
+    .eq("id", challengeId)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`Failed to update challenge status: ${error.message}`);
+  }
+  return data;
+}
+
+export async function setChallengeFinalized(
+  db: HermesDbClient,
+  challengeId: string,
+  finalizedAt: string,
+  winnerOnChainSubId: number | null,
+  winnerSubmissionId: string | null,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .update({
+      status: "finalized",
+      finalized_at: finalizedAt,
+      winner_on_chain_sub_id: winnerOnChainSubId,
+      winner_submission_id: winnerSubmissionId,
+    })
+    .eq("id", challengeId)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`Failed to finalize challenge: ${error.message}`);
+  }
+  return data;
+}

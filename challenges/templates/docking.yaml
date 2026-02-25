@@ -1,0 +1,48 @@
+# Hermes challenge template: docking
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+
+id: ch-003
+# Short, human-readable title
+title: "Dock small molecules to a target protein"
+
+domain: drug_discovery
+# reproducibility | prediction | docking
+type: docking
+
+description: |
+  Predict docking scores for the supplied ligand set.
+  Include your docking protocol and scoring rationale.
+
+dataset:
+  # ipfs:// or https:// URL to training dataset
+  train: "https://example.com/train.sdf"
+  # ipfs:// or https:// URL to test dataset
+  test: "https://example.com/test.sdf"
+
+scoring:
+  # OCI image reference for the scorer container
+  container: "ghcr.io/hermes-science/docking-scorer:latest"
+  # rmse | mae | r2 | pearson | spearman | custom
+  metric: spearman
+
+reward:
+  # Total USDC reward for the challenge
+  total: 500
+  # winner_take_all | top_3 | proportional
+  distribution: proportional
+
+# Deadline in ISO-8601 with timezone offset
+deadline: "2026-03-25T00:00:00Z"
+
+tags:
+  - docking
+  - drug_discovery
+
+# Optional settings
+minimum_score: 0.0
+# Dispute window in hours (max 168)
+dispute_window_hours: 72
+# Max submissions per wallet (max 3)
+max_submissions_per_wallet: 3
+# Optional lab TBA address
+lab_tba: "0x0000000000000000000000000000000000000000"
