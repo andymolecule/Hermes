@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.turbo/
+.env.local
+.env
+.DS_Store
+coverage/
+
+# Foundry
+out/
+cache/
+
+# Supabase
+supabase/.temp/

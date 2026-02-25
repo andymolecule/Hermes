@@ -77,6 +77,18 @@ reward:
 deadline: "2026-03-04T23:59:59Z"
 ```
 
+**Challenge YAML schema (authoritative)**
+- Required top-level fields: `id`, `title`, `domain`, `type`, `description`, `dataset`, `scoring`, `reward`, `deadline`
+- Optional top-level fields: `tags`, `minimum_score`, `dispute_window_hours`, `max_submissions_per_wallet`, `lab_tba`
+- `domain` enum: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`
+- `type` enum: `reproducibility`, `prediction`, `docking`
+- `dataset.train` and `dataset.test` accept `ipfs://` or `https://` URLs
+- `scoring.container` must be a pinned image reference (tag or digest)
+- `scoring.metric` enum: `rmse`, `mae`, `r2`, `pearson`, `spearman`, `custom`
+- `reward.total` is a decimal in USDC units, up to 6 decimals
+- `reward.distribution` enum: `winner_take_all`, `top_3`, `proportional`
+- `deadline` must be RFC3339 UTC (example shown above)
+
 ## 6. Workflows
 
 **Poster (Human or Agent)**

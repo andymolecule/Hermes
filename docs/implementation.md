@@ -13,6 +13,9 @@ Hermes is an agent-native, on-chain science bounty platform — "DREAM Challenge
 
 ## 0.1 Critical Gaps & Refinements
 
+### Source Of Truth
+- Architecture and acceptance criteria live here. `CLAUDE.md` is build rules and conventions. `docs/spec.md` is product scope and UX.
+
 ### MVP Scoring Oracle
 - Single EOA (deployer wallet) serves as the scoring oracle in MVP
 - This wallet runs Docker scorers and calls `postScore()` and `resolveDispute()`
@@ -27,6 +30,29 @@ Hermes is an agent-native, on-chain science bounty platform — "DREAM Challenge
 - Oracle reviews, calls `resolveDispute(winnerSubId)` or `cancelChallenge()`
 - If dispute unresolved after 30 days → escrow returned to poster (timeout safety)
 - **Future**: staked reviewer panels → DAO governance resolution
+
+### Deterministic Scoring And Rounding
+- Scorers output a numeric score as JSON with a `score` field
+- Convert to on-chain `uint256 scoreScaled = floor(score * 1e18)`
+- All verification compares within an absolute tolerance of `1e-3` in float space
+
+### Distribution Math (Finalize)
+- `winner_take_all`: 100% of `rewardAmount` to rank 1
+- `top_3`: 70% / 20% / 10% of `rewardAmount` to ranks 1, 2, 3
+- `proportional`: `payout_i = floor(rewardAmount * score_i / sum(scores))`
+- Any dust from flooring is added to rank 1 payout
+
+### Status Transitions
+- `Active` at creation
+- `Scoring` when `block.timestamp > deadline`
+- `Disputed` only when `dispute()` is called during dispute window
+- `Finalized` only via `finalize()` after `deadline + disputeWindowHours` and not disputed
+- `Cancelled` only via `cancel()` before deadline with zero submissions
+
+### API Rate Limit Identity
+- Wallet identity is the checksum address recovered from a signed payload
+- Write endpoints require `address`, `timestamp`, `signature` headers
+
 
 ### Cold-Start Seeding Strategy (Day 7-8)
 5 pre-built challenge YAMLs ready to post on launch:
@@ -47,7 +73,12 @@ Templates stored in `challenges/templates/` directory.
 ### Environment Management
 - `.env.example` in repo root with all 15+ vars documented
 - `packages/common/src/config.ts` — centralized config loader with validation
-- Env vars: `HERMES_RPC_URL`, `HERMES_PRIVATE_KEY`, `HERMES_ORACLE_KEY`, `HERMES_PINATA_JWT`, `HERMES_SUPABASE_URL`, `HERMES_SUPABASE_ANON_KEY`, `HERMES_SUPABASE_SERVICE_KEY`, `HERMES_API_URL`, `HERMES_FACTORY_ADDRESS`, `HERMES_USDC_ADDRESS`
+- Env vars (required for each component):
+- Global required: `HERMES_RPC_URL`, `HERMES_FACTORY_ADDRESS`, `HERMES_USDC_ADDRESS`
+- CLI required: `HERMES_PRIVATE_KEY`, `HERMES_PINATA_JWT`, `HERMES_API_URL`
+- Oracle required: `HERMES_ORACLE_KEY`
+- API required: `HERMES_SUPABASE_URL`, `HERMES_SUPABASE_ANON_KEY`
+- Indexer required: `HERMES_SUPABASE_URL`, `HERMES_SUPABASE_SERVICE_KEY`
 - CLI reads from `~/.hermes/config.json` with env var overrides
 - **Agent key handling**: CLI supports `--key env:HERMES_PRIVATE_KEY` syntax — never pass raw keys as args
 
@@ -481,6 +512,7 @@ GET  /api/stats               aggregate counts
 ```
 
 Rate limit: 5 writes per hour per wallet. No auth for reads. Writes validated against on-chain tx hash.
+Rate limit identity uses a signed payload and recovered wallet address.
 
 ---
 

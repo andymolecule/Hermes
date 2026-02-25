@@ -25,7 +25,10 @@ Hermes is an agent-native, on-chain science bounty platform on Base. Labs, DAOs,
 - `SKILL.md` — Instructions for solver agents using Hermes post-launch (NOT for building it)
 - This file (`CLAUDE.md`) — Instructions for agents building Hermes
 
-**When in doubt, `docs/implementation.md` is the source of truth for architecture and acceptance criteria.**
+**Source of truth hierarchy**
+- Architecture + acceptance criteria: `docs/implementation.md`
+- Conventions + constraints + build rules: `CLAUDE.md`
+- Product scope + UX flows: `docs/spec.md`
 
 ---
 
@@ -406,6 +409,7 @@ GET  /api/stats                    aggregate counts
 ```
 
 Rate limit: 5 writes/hour/wallet. No auth for reads. Writes validated against on-chain tx hash.
+Rate limit identity uses a signed payload and recovered wallet address.
 
 ---
 

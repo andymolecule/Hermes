@@ -1,0 +1,13 @@
+{
+  "name": "@hermes/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "coverage": "forge coverage",
+    "deploy:local": "forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "deploy:test-usdc": "forge script script/DeployTestUSDC.s.sol --rpc-url http://localhost:8545 --broadcast",
+    "install:deps": "forge install foundry-rs/forge-std@v1.8.2 openzeppelin/openzeppelin-contracts@v5.0.2"
+  }
+}
