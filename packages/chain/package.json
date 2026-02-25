@@ -7,6 +7,17 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "echo 'no tests'"
+    "test": "node --import tsx src/tests/chain-integration.ts",
+    "indexer:local": "node dist/indexer.js"
+  },
+  "dependencies": {
+    "@hermes/common": "workspace:*",
+    "@hermes/db": "workspace:*",
+    "@hermes/ipfs": "workspace:*",
+    "viem": "^2.21.15",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }

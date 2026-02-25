@@ -1,0 +1,2 @@
+-- Hermes seed data (optional)
+-- Intentionally left minimal for MVP.

@@ -5,8 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./abi/*": "./dist/abi/*"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-abi.mjs",
     "test": "node --import tsx src/tests/validate-challenge.ts"
   },
   "dependencies": {

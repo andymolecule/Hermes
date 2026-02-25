@@ -7,6 +7,13 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "echo 'no tests'"
+    "test": "node --import tsx src/tests/db-queries.ts"
+  },
+  "dependencies": {
+    "@hermes/common": "workspace:*",
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
   }
 }

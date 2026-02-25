@@ -12,6 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   }
 }
