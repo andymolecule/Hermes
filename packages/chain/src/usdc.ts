@@ -1,5 +1,5 @@
-import { parseUnits } from "viem";
 import { loadConfig } from "@hermes/common";
+import { parseUnits } from "viem";
 import { getPublicClient, getWalletClient } from "./client";
 
 const erc20Abi = [

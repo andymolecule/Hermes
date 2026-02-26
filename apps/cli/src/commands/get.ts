@@ -1,10 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import {
+  createSupabaseClient,
+  getChallengeById,
+  listSubmissionsForChallenge,
+} from "@hermes/db";
+import { downloadToPath, getText } from "@hermes/ipfs";
 import { Command } from "commander";
-import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@hermes/db";
-import { getText, downloadToPath } from "@hermes/ipfs";
-import { applyConfigToEnv, loadCliConfig, requireConfigValues } from "../lib/config-store";
-import { printJson, printSuccess, printTable, printWarning } from "../lib/output";
+import {
+  applyConfigToEnv,
+  loadCliConfig,
+  requireConfigValues,
+} from "../lib/config-store";
+import {
+  printJson,
+  printSuccess,
+  printTable,
+  printWarning,
+} from "../lib/output";
 
 type ChallengeRecord = {
   id: string;
@@ -55,23 +68,36 @@ export function buildGetCommand() {
 
       const db = createSupabaseClient();
       const challenge = (await getChallengeById(db, id)) as ChallengeRecord;
-      const submissions = (await listSubmissionsForChallenge(db, id)) as SubmissionRecord[];
+      const submissions = (await listSubmissionsForChallenge(
+        db,
+        id,
+      )) as SubmissionRecord[];
 
       if (opts.download) {
         const targetDir = path.resolve(process.cwd(), opts.download, id);
         await fs.mkdir(targetDir, { recursive: true });
         const specText = await getText(challenge.spec_cid);
-        await fs.writeFile(path.join(targetDir, "challenge.yaml"), specText, "utf8");
+        await fs.writeFile(
+          path.join(targetDir, "challenge.yaml"),
+          specText,
+          "utf8",
+        );
 
         if (challenge.dataset_train_cid) {
-          const trainName = filenameFromUrl(challenge.dataset_train_cid, "train.data");
+          const trainName = filenameFromUrl(
+            challenge.dataset_train_cid,
+            "train.data",
+          );
           await downloadToPath(
             challenge.dataset_train_cid,
             path.join(targetDir, trainName),
           );
         }
         if (challenge.dataset_test_cid) {
-          const testName = filenameFromUrl(challenge.dataset_test_cid, "test.data");
+          const testName = filenameFromUrl(
+            challenge.dataset_test_cid,
+            "test.data",
+          );
           await downloadToPath(
             challenge.dataset_test_cid,
             path.join(targetDir, testName),
@@ -100,13 +126,15 @@ export function buildGetCommand() {
 
       if (submissions.length > 0) {
         printWarning("Leaderboard");
-        const leaderboard = submissions.map((submission: SubmissionRecord, index: number) => ({
-          rank: index + 1,
-          submission_id: submission.id,
-          on_chain_sub_id: submission.on_chain_sub_id,
-          score: submission.score ?? "",
-          solver: submission.solver_address,
-        }));
+        const leaderboard = submissions.map(
+          (submission: SubmissionRecord, index: number) => ({
+            rank: index + 1,
+            submission_id: submission.id,
+            on_chain_sub_id: submission.on_chain_sub_id,
+            score: submission.score ?? "",
+            solver: submission.solver_address,
+          }),
+        );
         printTable(leaderboard as Record<string, unknown>[]);
       } else {
         printWarning("No submissions yet.");

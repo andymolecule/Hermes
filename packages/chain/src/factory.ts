@@ -1,6 +1,6 @@
-import { parseUnits, type Abi } from "viem";
 import { loadConfig } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
+import { type Abi, parseUnits } from "viem";
 import { getWalletClient } from "./client";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;

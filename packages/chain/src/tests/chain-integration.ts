@@ -14,7 +14,9 @@ if (
 import type { Abi } from "viem";
 
 const { loadConfig } = await import("@hermes/common");
-const HermesFactoryAbiJson = (await import("@hermes/common/abi/HermesFactory.json")).default;
+const HermesFactoryAbiJson = (
+  await import("@hermes/common/abi/HermesFactory.json")
+).default;
 const { createHermesPublicClient } = await import("../client");
 
 const config = loadConfig();
@@ -29,5 +31,3 @@ const count = await publicClient.readContract({
 });
 
 console.log(`PASS: Chain read ok (challengeCount=${count})`);
-
-export {};

@@ -18,5 +18,6 @@ export default defineConfig({
     "@hermes/chain",
     "@hermes/db",
     "@hermes/ipfs",
+    "@hermes/scorer",
   ],
 });

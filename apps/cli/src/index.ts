@@ -3,13 +3,16 @@ import { Command } from "commander";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
 import { buildConfigCommand } from "./commands/config";
-import { buildInitCommand } from "./commands/init";
-import { buildPostCommand } from "./commands/post";
-import { buildListCommand } from "./commands/list";
+import { buildDoctorCommand } from "./commands/doctor";
 import { buildGetCommand } from "./commands/get";
+import { buildInitCommand } from "./commands/init";
+import { buildListCommand } from "./commands/list";
+import { buildPostCommand } from "./commands/post";
+import { buildScoreCommand } from "./commands/score";
+import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
 import { buildSubmitCommand } from "./commands/submit";
-import { buildDoctorCommand } from "./commands/doctor";
+import { buildVerifyCommand } from "./commands/verify";
 import { handleCommandError } from "./lib/errors";
 
 async function main() {
@@ -28,6 +31,9 @@ async function main() {
   program.addCommand(buildStatusCommand());
   program.addCommand(buildSubmitCommand());
   program.addCommand(buildDoctorCommand());
+  program.addCommand(buildScoreLocalCommand());
+  program.addCommand(buildScoreCommand());
+  program.addCommand(buildVerifyCommand());
 
   await program.parseAsync(process.argv);
 }

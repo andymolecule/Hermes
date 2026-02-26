@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import pinataSDK from "@pinata/sdk";
 import { loadConfig } from "@hermes/common";
+import pinataSDK from "@pinata/sdk";
 
 function createClient() {
   const config = loadConfig();
@@ -31,7 +31,10 @@ export async function pinJSON<T extends Record<string, unknown>>(
   return `ipfs://${result.IpfsHash}`;
 }
 
-export async function pinFile(filePath: string, name?: string): Promise<string> {
+export async function pinFile(
+  filePath: string,
+  name?: string,
+): Promise<string> {
   const client = getClient();
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -43,7 +46,10 @@ export async function pinFile(filePath: string, name?: string): Promise<string> 
   return `ipfs://${result.IpfsHash}`;
 }
 
-export async function pinDirectory(dirPath: string, name?: string): Promise<string> {
+export async function pinDirectory(
+  dirPath: string,
+  name?: string,
+): Promise<string> {
   const client = getClient();
   if (!fs.existsSync(dirPath)) {
     throw new Error(`Directory not found: ${dirPath}`);

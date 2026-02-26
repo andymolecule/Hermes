@@ -16,7 +16,10 @@ export interface SubmissionInsert {
   tx_hash: string;
 }
 
-export async function upsertSubmission(db: HermesDbClient, payload: SubmissionInsert) {
+export async function upsertSubmission(
+  db: HermesDbClient,
+  payload: SubmissionInsert,
+) {
   const { data, error } = await db
     .from("submissions")
     .upsert(payload, {
@@ -47,7 +50,22 @@ export async function getSubmissionByChainId(
   return data ?? null;
 }
 
-export async function listSubmissionsForChallenge(db: HermesDbClient, challengeId: string) {
+export async function getSubmissionById(db: HermesDbClient, id: string) {
+  const { data, error } = await db
+    .from("submissions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) {
+    throw new Error(`Failed to fetch submission by id: ${error.message}`);
+  }
+  return data;
+}
+
+export async function listSubmissionsForChallenge(
+  db: HermesDbClient,
+  challengeId: string,
+) {
   const { data, error } = await db
     .from("submissions")
     .select("*")

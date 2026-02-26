@@ -5,7 +5,8 @@ import { loadConfig } from "@hermes/common";
 function resolveGateway(cidOrUrl: string): string {
   if (cidOrUrl.startsWith("ipfs://")) {
     const config = loadConfig();
-    const gateway = config.HERMES_IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs/";
+    const gateway =
+      config.HERMES_IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs/";
     return `${gateway}${cidOrUrl.replace("ipfs://", "")}`;
   }
   return cidOrUrl;
@@ -38,7 +39,10 @@ export async function getFile(cidOrUrl: string): Promise<ArrayBuffer> {
   return await response.arrayBuffer();
 }
 
-export async function downloadToPath(cidOrUrl: string, outPath: string): Promise<string> {
+export async function downloadToPath(
+  cidOrUrl: string,
+  outPath: string,
+): Promise<string> {
   const data = await getFile(cidOrUrl);
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   await fs.writeFile(outPath, Buffer.from(data));

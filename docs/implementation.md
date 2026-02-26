@@ -21,7 +21,12 @@ Hermes is an agent-native, on-chain science bounty platform — "DREAM Challenge
 - This wallet runs Docker scorers and calls `postScore()` and `resolveDispute()`
 - Oracle key stored as `HERMES_ORACLE_KEY` env var, never committed
 - Rotation: `HermesFactory.setOracle(newAddress)` callable by owner only
-- **Future**: 2-of-3 multi-sig → TEE-based scoring → decentralized oracle network
+- **Production (pre-mainnet):**
+  - Migrate oracle to **Safe multisig** (2-of-3 signers minimum)
+  - Migrate treasury to **Safe multisig** (separate from oracle Safe)
+  - Set up **Tenderly alerts** on oracle operations (postScore, resolveDispute, finalize) for real-time monitoring
+  - All oracle transactions routed through Safe — no direct EOA signing in production
+- **Future (v0.3+):** TEE-based scoring → decentralized oracle network
 
 ### Dispute Resolution in MVP
 - Same oracle that posts scores resolves disputes — simplest possible model
@@ -49,9 +54,12 @@ Hermes is an agent-native, on-chain science bounty platform — "DREAM Challenge
 - `Finalized` only via `finalize()` after `deadline + disputeWindowHours` and not disputed
 - `Cancelled` only via `cancel()` before deadline with zero submissions
 
-### API Rate Limit Identity
-- Wallet identity is the checksum address recovered from a signed payload
-- Write endpoints require `address`, `timestamp`, `signature` headers
+### API Authentication (Write Endpoints)
+- **SIWE (Sign-In with Ethereum)** — industry-standard EIP-4361 wallet authentication
+- Write endpoints require a SIWE session: user signs a structured message, server verifies and issues session
+- Rate limit identity: wallet address extracted from verified SIWE session
+- Read endpoints remain unauthenticated (public data)
+- Library: `siwe` npm package for server-side verification
 
 
 ### Cold-Start Seeding Strategy (Day 7-8)
@@ -100,27 +108,42 @@ createChallenge(..., address labTBA) // address(0) = standalone, non-zero = Mole
 
 ## 0.2 Hosting & Deployment
 
+### MVP (Testnet Launch)
+
 | Component | Host | Rationale |
 |-----------|------|-----------|
 | Frontend (Next.js, Phase 2) | **Vercel** | Free tier, auto previews, Edge Functions for API routes |
-| Database | **Supabase** | Managed Postgres, realtime subscriptions, Edge Functions |
-| API (Hono) | **Supabase Edge Functions** or **Railway** | Serverless for API, always-on for indexer |
-| Indexer | **Railway** | Always-on process, $5/mo, auto-deploy from Git |
-| IPFS | **Pinata** | Free tier (1GB), sufficient for MVP |
+| Database | **Supabase** | Managed Postgres, realtime subscriptions, Row Level Security |
+| API (Hono) | **Fly.io** or **Railway** | Standard Node.js deployment, simple `fly deploy` or `railway up` |
+| Indexer | **Fly.io** or **Railway** | Custom event poller (`getLogs` every 30s → Supabase upsert), always-on process |
+| RPC Provider | **Alchemy** | Dedicated RPC with free tier, reliable event polling, not public RPC |
+| IPFS | **Pinata** | Free tier (1GB), reliable SDK, sufficient for MVP |
 | Contracts | **Base Sepolia** (testnet) → **Base mainnet** (production) | Foundry deploy scripts for both |
 | MCP Server | **npm package** | Runs locally on agent's machine (stdio) or hosted (SSE) |
 | CLI | **npm registry** | `npm install -g @hermes-science/cli` |
 
-### Deployment Commands
+### Production Upgrades (pre-mainnet)
+
+| Component | Upgrade To | Why |
+|-----------|-----------|-----|
+| Indexer | **Ponder** | Reorg handling, backfill, type-safe schema. Replaces custom poller. |
+| API | **Cloudflare Workers** | Edge-deployed, auto-scaling, near-zero cold start |
+| Rate Limiting | **Upstash Redis** | Required for multi-instance/multi-region API deployments |
+| Multisig | **Safe** | 2-of-3 multisig for oracle + treasury wallets |
+| Monitoring (on-chain) | **Tenderly** | Contract alerts, transaction tracing, oracle op monitoring |
+| Monitoring (off-chain) | **Sentry** | API error tracking, indexer crash reporting, performance |
+| Contract Audit | **Cantina or Code4rena** | Required before mainnet deployment with real USDC |
+
+### Deployment Commands (MVP)
 ```bash
 # Contracts → Base Sepolia
 forge script script/Deploy.s.sol --rpc-url $BASE_SEPOLIA_RPC --broadcast --verify
 
-# API → Railway (or Supabase Edge Functions)
-railway up --service hermes-api
+# API → Fly.io
+cd apps/api && fly deploy
 
-# Indexer → Railway
-railway up --service hermes-indexer
+# Indexer → Fly.io (always-on)
+cd packages/chain && fly deploy   # or: railway up --service hermes-indexer
 
 # Frontend → Vercel (Phase 2)
 vercel --prod
@@ -328,13 +351,13 @@ hermes/
 │   │       ├── pin.ts            # pinJSON, pinFile, pinDirectory
 │   │       └── fetch.ts          # getJSON, getFile
 │   │
-│   ├── chain/                    # viem contract interaction layer
+│   ├── chain/                    # viem contract interaction layer + event indexer
 │   │   └── src/
 │   │       ├── client.ts         # createHermesClient (public + wallet)
 │   │       ├── factory.ts        # createChallenge, getChallenges
 │   │       ├── challenge.ts      # submit, postScore, finalize, dispute, claim
 │   │       ├── usdc.ts           # approve, balanceOf
-│   │       └── indexer.ts        # Event indexer (poll getLogs → upsert Supabase)
+│   │       └── indexer.ts        # Event poller (getLogs every 30s → upsert Supabase)
 │   │
 │   └── scorer/                   # Docker scorer orchestration + proof bundles
 │       └── src/
@@ -498,7 +521,7 @@ Indexes on: status, domain, deadline, poster_address, (challenge_id, score DESC)
 
 ---
 
-## API (Hono, deployed as Supabase Edge Function or Railway)
+## API (Hono, deployed to Fly.io or Railway)
 
 ```
 GET  /api/challenges          ?status, domain, min_reward, sort, page, limit
@@ -511,12 +534,15 @@ POST /api/verify              { submissionId, computedScore, matchesOriginal }
 GET  /api/stats               aggregate counts
 ```
 
-Rate limit: 5 writes per hour per wallet. No auth for reads. Writes validated against on-chain tx hash.
-Rate limit identity uses a signed payload and recovered wallet address.
+Authentication: **SIWE (EIP-4361)** for write endpoints. Read endpoints remain public.
+Rate limit: 5 writes per hour per wallet address, enforced via **in-memory Map** (sufficient for single-instance MVP).
+Sessions: SIWE-verified wallet address stored in-memory (upgrade to Upstash Redis for multi-instance).
 
 ---
 
 ## CLI (`hm`)
+
+Source of truth: `hm --help` output. Keep this section aligned with command definitions in `apps/cli/src/index.ts`.
 
 ```
 hm init [--template reproducibility|prediction|docking]
@@ -533,8 +559,8 @@ hm score <submission-id>                          # oracle only
     ↳ Full scoring: run Docker → build proof → pin → postScore()
 hm verify <challenge-id> --sub <submission-id>
     ↳ Re-run scorer, compare with on-chain score
-hm finalize <challenge-id>
-    ↳ Trigger payout (permissionless after deadline + dispute window)
+# planned in T-018
+# hm finalize <challenge-id>
 hm status <challenge-id>
 hm config set|get|list
 ```
@@ -577,7 +603,7 @@ AI agents compete to solve them. Best score wins the bounty. All results are ver
 npm install -g @hermes-science/cli
 
 ## Configure
-hm config set rpc_url https://sepolia.base.org
+hm config set rpc_url $HERMES_RPC_URL  # Use Alchemy dedicated RPC (not public)
 hm config set private_key env:HERMES_PRIVATE_KEY
 hm config set pinata_jwt env:HERMES_PINATA_JWT
 hm config set api_url https://api.hermes.science
@@ -691,9 +717,18 @@ Proof bundle: `{ inputHash, outputHash, containerImageDigest, score, scorerLog }
 `packages/chain/src/indexer.ts` — polls `getLogs` every 30s, reads events, upserts Supabase.
 Events: `ChallengeCreated`, `Submitted`, `Scored`, `Finalized`, `Disputed`, `Cancelled`.
 Uses `indexed_events` table for idempotency (no duplicate processing).
+Uses Alchemy as the RPC provider for reliable event polling.
 
-Deploy: Railway (always-on, $5/mo, auto-deploy from Git).
+Deploy: Fly.io or Railway (always-on process).
 Local dev: `pnpm --filter chain indexer:local` (watches Anvil).
+
+### Production Upgrade: Ponder
+For mainnet, replace the custom poller with **Ponder** — a type-safe, reorg-aware blockchain indexer:
+- Automatic reorg detection and re-processing
+- Backfill from any starting block
+- Fully typed event handlers from contract ABIs
+- Hot reloading during development
+- Requires: `ponder.config.ts`, `ponder.schema.ts`, handler files in `src/indexer/`
 
 ---
 
@@ -880,12 +915,12 @@ cd apps/mcp-server && pnpm dev --stdio
 **Definition of Done**: Integration test against local Anvil: create challenge → submit → score → finalize → claim, all via these functions. USDC balance changes verified.
 
 #### T-009: Event Indexer
-**Description**: Script that polls on-chain events and upserts to Supabase.
+**Description**: Script that polls on-chain events and upserts to Supabase. Simple custom poller for MVP (upgrade to Ponder for production).
 **Files**:
 - `packages/chain/src/indexer.ts`
 **Acceptance Criteria**:
 - [ ] Polls `getLogs` every 30 seconds for: ChallengeCreated, Submitted, Scored, Finalized, Disputed, Cancelled
-- [ ] On ChallengeCreated: fetches spec from IPFS, parses YAML, inserts full challenge record to Supabase
+- [ ] On ChallengeCreated: fetches spec from IPFS, parses YAML with Zod, inserts full challenge record to Supabase
 - [ ] On Submitted: inserts submission record
 - [ ] On Scored: updates submission with score + proof bundle hash
 - [ ] On Finalized: updates challenge status + winner
@@ -893,7 +928,9 @@ cd apps/mcp-server && pnpm dev --stdio
 - [ ] Graceful error handling: if IPFS fetch fails, retries 3x then logs and skips
 - [ ] Logs each processed event with block number + event name
 - [ ] Runnable as: `pnpm --filter chain indexer` (with env vars)
+- [ ] Uses Alchemy RPC (not public RPC) for reliable polling
 **Definition of Done**: Create a challenge on local Anvil → indexer picks it up within 60s → challenge appears in Supabase with all fields populated. Same for submit + score + finalize events.
+**Production Upgrade**: Replace with Ponder for reorg handling, backfill, and type-safe schema.
 
 ---
 
@@ -1072,27 +1109,31 @@ cd apps/mcp-server && pnpm dev --stdio
 ### PHASE 6: API + MCP Server (Day 6)
 
 #### T-019: Hono API Server
-**Description**: REST API serving challenge/submission data from Supabase.
+**Description**: REST API serving challenge/submission data from Supabase, deployed to Fly.io or Railway.
 **Files**:
-- `apps/api/src/index.ts` — Hono app entry
+- `apps/api/src/index.ts` — Hono app entry (standard Node.js)
 - `apps/api/src/routes/challenges.ts`
 - `apps/api/src/routes/submissions.ts`
 - `apps/api/src/routes/stats.ts`
 - `apps/api/src/routes/verify.ts`
-- `apps/api/src/middleware/rate-limit.ts`
+- `apps/api/src/routes/auth.ts` — SIWE authentication endpoints (nonce, verify, session)
+- `apps/api/src/middleware/rate-limit.ts` — In-memory rate limiting
+- `apps/api/src/middleware/siwe.ts` — SIWE session verification middleware
 **Acceptance Criteria**:
 - [ ] `GET /api/challenges?status=active&domain=longevity&min_reward=100` returns filtered challenges
 - [ ] `GET /api/challenges/:id` returns challenge + submissions + leaderboard
-- [ ] `POST /api/challenges` accepts `{ specCid, txHash }` to accelerate indexing
+- [ ] `POST /api/challenges` accepts `{ specCid, txHash }` to accelerate indexing (requires SIWE session)
 - [ ] `GET /api/challenges/:id/leaderboard` returns ranked submissions
 - [ ] `GET /api/submissions/:id` returns submission + proof bundle
-- [ ] `POST /api/submissions` accepts `{ challengeId, resultCid, txHash }`
-- [ ] `POST /api/verify` accepts verification result
+- [ ] `POST /api/submissions` accepts `{ challengeId, resultCid, txHash }` (requires SIWE session)
+- [ ] `POST /api/verify` accepts verification result (requires SIWE session)
 - [ ] `GET /api/stats` returns aggregate stats
-- [ ] Rate limit: 5 writes per hour per wallet address
+- [ ] **SIWE auth flow**: `GET /api/auth/nonce` → client signs SIWE message → `POST /api/auth/verify` → session cookie
+- [ ] Rate limit: 5 writes per hour per wallet address, enforced via **in-memory Map**
 - [ ] All responses are typed JSON matching `@hermes/common` types
 - [ ] CORS enabled for frontend (Phase 2)
-**Definition of Done**: API running locally on port 3000. All endpoints return correct data from Supabase. Rate limiting works.
+**Definition of Done**: API running locally on port 3000 AND deployable to Fly.io/Railway. All endpoints return correct data. SIWE auth flow works. Rate limiting enforced.
+**Production Upgrade**: Migrate to Cloudflare Workers + Upstash Redis for multi-region edge deployment.
 
 #### T-020: MCP Server (6 Tools)
 **Description**: Model Context Protocol server for AI agent consumption.
@@ -1169,8 +1210,9 @@ cd apps/mcp-server && pnpm dev --stdio
 **Acceptance Criteria**:
 - [ ] SKILL.md contains: install, configure, solve workflow, post workflow, verify, tips, errors, env vars, MCP
 - [ ] README contains: what is Hermes, quickstart (5 commands), architecture diagram, env setup, local dev, deployment
-- [ ] API deployed and reachable (Railway or Supabase Edge Functions)
-- [ ] Indexer deployed and running (Railway, always-on)
+- [ ] API deployed to **Fly.io or Railway** and reachable at production URL
+- [ ] Indexer deployed and running on **Fly.io or Railway** (always-on)
+- [ ] RPC configured via **Alchemy** dedicated endpoint (not public RPC)
 - [ ] CLI published to npm as `@hermes-science/cli`
 - [ ] MCP server published to npm as `@hermes-science/mcp`
 - [ ] All 5 seed challenges accessible via deployed API
@@ -1271,19 +1313,34 @@ echo "✅ E2E test passed!"
 
 ---
 
-## Day 8 Launch Checklist
+## Launch Checklist
 
+### Testnet Launch (Day 8)
 - [ ] Contracts deployed to Base Sepolia with verified source on Basescan
 - [ ] 5 seed challenges posted and indexed (via `scripts/seed-challenges.sh`)
 - [ ] CLI published to npm (`@hermes-science/cli`)
 - [ ] MCP server published to npm (`@hermes-science/mcp`)
-- [ ] API running on Railway/Supabase
-- [ ] Indexer running on Railway (always-on)
+- [ ] API deployed to Fly.io or Railway
+- [ ] Indexer deployed and running (Fly.io or Railway, always-on)
+- [ ] Alchemy RPC configured (dedicated endpoint, not public RPC)
 - [ ] SKILL.md in repo root
 - [ ] README with quickstart, architecture diagram, env setup
 - [ ] Tweet thread announcing launch with demo video
 - [ ] Post in relevant Discords (DeSci, AI agents, Molecule)
 - [ ] Share first challenge link for agents to start solving
+
+### Production Hardening (pre-mainnet)
+- [ ] Smart contract audit completed via Cantina or Code4rena
+- [ ] Oracle wallet migrated to Safe multisig (2-of-3)
+- [ ] Treasury wallet migrated to Safe multisig (separate from oracle)
+- [ ] Replace custom event poller with Ponder indexer
+- [ ] Migrate API from Fly.io to Cloudflare Workers
+- [ ] Replace in-memory rate limiting with Upstash Redis
+- [ ] Set up Tenderly monitoring (on-chain alerts for oracle ops)
+- [ ] Set up Sentry monitoring (off-chain API + indexer errors)
+- [ ] Alchemy webhook notifications configured (ChallengeCreated, Submitted events)
+- [ ] All critical env vars stored in secure secrets manager (not plain env files)
+- [ ] Incident response plan documented (oracle downtime, indexer lag, RPC failure)
 
 ---
 
@@ -1299,6 +1356,7 @@ echo "✅ E2E test passed!"
 | chain | viem |
 | scorer | dockerode |
 | cli | commander, ora, chalk, js-yaml |
+| api | hono, siwe |
 | mcp-server | hono, @modelcontextprotocol/sdk, zod |
 | web (Phase 2) | next@14, tailwindcss, shadcn/ui, wagmi, @rainbow-me/rainbowkit, @tanstack/react-query |
 
@@ -1306,6 +1364,7 @@ echo "✅ E2E test passed!"
 
 ## Verification Plan
 
+### MVP Verification
 1. **Contracts**: Foundry unit + fuzz + invariant tests. Key invariant: `escrow == payouts + fee` after finalization
 2. **USDC flow**: Test approve → deposit → escrow → finalize → claim → balance check
 3. **CLI E2E**: `scripts/e2e-test.sh` — full cycle on Base Sepolia
@@ -1313,3 +1372,12 @@ echo "✅ E2E test passed!"
 5. **MCP**: Connect to Claude Desktop, run list + get + submit tools
 6. **Indexer**: Post challenge, verify it appears in Supabase within 60s
 7. **Full cycle**: Post → submit → score → finalize → USDC arrives in winner wallet
+8. **SIWE Auth**: Verify write endpoints reject unauthenticated requests. Verify SIWE sign-in flow creates valid session.
+9. **Rate Limiting**: Verify in-memory rate limits (5 writes/hour/wallet). Test boundary conditions.
+
+### Production Verification (pre-mainnet)
+10. **Ponder Indexer**: Verify reorg handling, backfill from arbitrary block, type-safe handlers.
+11. **Tenderly**: Verify alerts fire on oracle operations (postScore, resolveDispute).
+12. **Sentry**: Verify API errors captured in dashboard, performance monitoring shows latency.
+13. **Upstash Redis**: Verify rate limits across multi-region Workers deployment.
+14. **Safe Multisig**: Verify oracle + treasury transactions route through Safe. 2-of-3 signing works.
