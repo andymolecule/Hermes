@@ -1,13 +1,13 @@
+import { loadConfig } from "@hermes/common";
 import {
-  createPublicClient,
-  createWalletClient,
   http,
   type Chain,
   type HttpTransport,
+  createPublicClient,
+  createWalletClient,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base, baseSepolia } from "viem/chains";
-import { loadConfig } from "@hermes/common";
 
 function resolveChain(): Chain {
   const config = loadConfig();
@@ -29,12 +29,16 @@ export function createHermesWalletClient() {
   }
   const chain = resolveChain();
   const transport = http(config.HERMES_RPC_URL);
-  const account = privateKeyToAccount(config.HERMES_PRIVATE_KEY as `0x${string}`);
+  const account = privateKeyToAccount(
+    config.HERMES_PRIVATE_KEY as `0x${string}`,
+  );
   return createWalletClient({ chain, transport, account });
 }
 
-let cachedPublicClient: ReturnType<typeof createHermesPublicClient> | null = null;
-let cachedWalletClient: ReturnType<typeof createHermesWalletClient> | null = null;
+let cachedPublicClient: ReturnType<typeof createHermesPublicClient> | null =
+  null;
+let cachedWalletClient: ReturnType<typeof createHermesWalletClient> | null =
+  null;
 
 export function getPublicClient() {
   if (!cachedPublicClient) {

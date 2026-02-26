@@ -46,7 +46,9 @@ export function loadCliConfig(): CliConfig {
     private_key: process.env.HERMES_PRIVATE_KEY,
     factory_address: process.env.HERMES_FACTORY_ADDRESS,
     usdc_address: process.env.HERMES_USDC_ADDRESS,
-    chain_id: process.env.HERMES_CHAIN_ID ? Number(process.env.HERMES_CHAIN_ID) : undefined,
+    chain_id: process.env.HERMES_CHAIN_ID
+      ? Number(process.env.HERMES_CHAIN_ID)
+      : undefined,
     supabase_url: process.env.HERMES_SUPABASE_URL,
     supabase_anon_key: process.env.HERMES_SUPABASE_ANON_KEY,
     supabase_service_key: process.env.HERMES_SUPABASE_SERVICE_KEY,
@@ -54,7 +56,9 @@ export function loadCliConfig(): CliConfig {
 
   return {
     ...fileConfig,
-    ...Object.fromEntries(Object.entries(envConfig).filter(([, v]) => v !== undefined && v !== "")),
+    ...Object.fromEntries(
+      Object.entries(envConfig).filter(([, v]) => v !== undefined && v !== ""),
+    ),
   };
 }
 
@@ -78,7 +82,10 @@ export function applyConfigToEnv(config: CliConfig) {
   setIfMissing("HERMES_SUPABASE_SERVICE_KEY", config.supabase_service_key);
 }
 
-export function requireConfigValues(config: CliConfig, keys: (keyof CliConfig)[]) {
+export function requireConfigValues(
+  config: CliConfig,
+  keys: (keyof CliConfig)[],
+) {
   const missing = keys.filter((key) => {
     const value = config[key];
     return value === undefined || value === "";

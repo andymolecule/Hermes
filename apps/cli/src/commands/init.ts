@@ -5,7 +5,10 @@ import { Command } from "commander";
 import { printSuccess } from "../lib/output";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const bundledTemplatesDir = path.resolve(__dirname, "../../../../challenges/templates");
+const bundledTemplatesDir = path.resolve(
+  __dirname,
+  "../../../../challenges/templates",
+);
 const repoTemplatesDir = path.resolve(process.cwd(), "challenges/templates");
 
 const templateMap: Record<string, string> = {
@@ -180,7 +183,11 @@ function resolveTemplatePath(templateFile: string) {
 export function buildInitCommand() {
   const cmd = new Command("init")
     .description("Create a challenge.yaml template")
-    .option("-t, --template <template>", "reproducibility | prediction | docking", "reproducibility")
+    .option(
+      "-t, --template <template>",
+      "reproducibility | prediction | docking",
+      "reproducibility",
+    )
     .option("-f, --force", "overwrite existing challenge.yaml", false)
     .action((opts: { template: string; force: boolean }) => {
       const templateKey = opts.template.toLowerCase();
@@ -191,7 +198,9 @@ export function buildInitCommand() {
 
       const outPath = path.resolve(process.cwd(), "challenge.yaml");
       if (fs.existsSync(outPath) && !opts.force) {
-        throw new Error("challenge.yaml already exists. Use --force to overwrite.");
+        throw new Error(
+          "challenge.yaml already exists. Use --force to overwrite.",
+        );
       }
 
       const templatePath = resolveTemplatePath(templateFile);

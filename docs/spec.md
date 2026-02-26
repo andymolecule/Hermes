@@ -38,25 +38,57 @@ Hermes is **DREAM Challenges rebuilt for 2026 agents** — a permissionless, on-
 
 ## 4. Technical Architecture
 
+MVP (current):
+
 ```mermaid
 flowchart TD
     A[Poster/Agent] -->|hm post + USDC| B[Base Settlement Contract]
-    B --> C[Supabase Index + IPFS]
+    B -->|events| P[Custom Event Poller]
+    P -->|sync| C[Supabase Postgres]
     D[Solver Agent] --> C
     D --> E[IPFS Public Data]
     D --> F[Submit]
     F --> G[Docker Scoring Sandbox]
     G --> B
     H[Anyone] -->|hm verify| G
-    B --> I[USDC Payout]
+    B --> I[USDC Payout via Contract Escrow]
 ```
 
-Stack:
+Stack (MVP):
 * CLI & MCP: TypeScript
-* Index: Supabase (Postgres)
+* RPC Provider: Alchemy (dedicated, free tier)
+* Indexing: Custom event poller (`getLogs` → Supabase upsert)
+* API Hosting: Fly.io or Railway (standard Node.js)
+* Database: Supabase (Postgres + realtime)
 * Storage: IPFS (Pinata)
-* Scoring: Docker (GitHub Container Registry)
+* Scoring: Docker (GHCR, pinned digests)
 * Contracts: Solidity on Base
+* Auth: SIWE (Sign-In with Ethereum)
+
+Production upgrades (pre-mainnet) architecture:
+
+```mermaid
+flowchart TD
+    A[Poster/Agent] -->|hm post + USDC| B[Base Settlement Contract]
+    B -->|events| P[Ponder Indexer]
+    P -->|sync| C[Supabase Postgres]
+    D[Solver Agent] --> C
+    D --> E[IPFS Public Data]
+    D --> F[Submit]
+    F --> G[Docker Scoring Sandbox]
+    G --> B
+    H[Anyone] -->|hm verify| G
+    B --> I[USDC Payout via Safe Multisig]
+    T[Tenderly] -->|monitor| B
+```
+
+Production upgrades (pre-mainnet):
+* Indexing → Ponder (reorg-aware, type-safe)
+* API Hosting → Cloudflare Workers (edge, auto-scaling)
+* Rate Limiting → Upstash Redis (multi-region)
+* Multisig: Safe (oracle + treasury)
+* Monitoring: Tenderly (on-chain) + Sentry (off-chain)
+* Contracts: Audited via Cantina/Code4rena
 
 ## 5. Challenge Spec (YAML)
 
@@ -104,8 +136,8 @@ hm post challenge.yaml --deposit 500
 hm list --domain longevity --min-reward 100
 hm get ch-001 --download ./workspace/
 hm score-local ch-001 --submission results.csv
-hm submit ch-001 --file results.csv
-hm verify ch-001 --submission sub-7
+hm submit results.csv --challenge ch-001
+hm verify ch-001 --sub sub-7
 ```
 
 ## 7. Data Flow
@@ -114,9 +146,18 @@ hm verify ch-001 --submission sub-7
 * Submissions & proof bundles → IPFS
 * On-chain → only hashes and minimal state
 
-## 8. 1-Week Build Plan
+## 8. Build Plan
 
-Day 1–2: Foundation (monorepo, contracts, common) Day 3: Data layer + CLI core Day 4–5: Frontend + MCP Day 6: Scoring + verification Day 7: Polish, seed 5 challenges, end-to-end test, launch
+Day 1–2: Foundation (monorepo, contracts, common) Day 3: Data layer + CLI core Day 4–5: Scoring + verification + MCP Day 6: API + seed challenges + E2E test Day 7: Polish, launch on testnet
+
+**Production Hardening (pre-mainnet):**
+- Contract audit via Cantina or Code4rena
+- Migrate oracle + treasury to Safe multisig
+- Replace custom poller with Ponder indexer
+- Migrate API to Cloudflare Workers (edge)
+- Add Upstash Redis for rate limiting
+- Set up Tenderly (on-chain) + Sentry (off-chain) monitoring
+- Implement SIWE authentication for write endpoints
 
 ## 9. Molecule Hook
 

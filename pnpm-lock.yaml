@@ -37,6 +37,9 @@ importers:
       '@hermes/ipfs':
         specifier: workspace:*
         version: link:../../packages/ipfs
+      '@hermes/scorer':
+        specifier: workspace:*
+        version: link:../../packages/scorer
       '@pinata/sdk':
         specifier: ^2.1.0
         version: 2.1.0

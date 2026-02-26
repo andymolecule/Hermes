@@ -1,5 +1,9 @@
 import { Command } from "commander";
-import { getConfigValue, loadCliConfig, setConfigValue } from "../lib/config-store";
+import {
+  getConfigValue,
+  loadCliConfig,
+  setConfigValue,
+} from "../lib/config-store";
 import { printJson, printTable } from "../lib/output";
 
 const CONFIG_KEYS = [
@@ -51,7 +55,6 @@ export function buildConfigCommand() {
       assertKey(key);
       const value = getConfigValue(key);
       if (opts.format === "text") {
-        // biome-ignore lint/suspicious/noConsole: CLI output
         console.log(value ?? "");
         return;
       }

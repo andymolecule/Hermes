@@ -1,6 +1,14 @@
+import {
+  createSupabaseClient,
+  getChallengeById,
+  listSubmissionsForChallenge,
+} from "@hermes/db";
 import { Command } from "commander";
-import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@hermes/db";
-import { applyConfigToEnv, loadCliConfig, requireConfigValues } from "../lib/config-store";
+import {
+  applyConfigToEnv,
+  loadCliConfig,
+  requireConfigValues,
+} from "../lib/config-store";
 import { printJson, printSuccess, printTable } from "../lib/output";
 
 type ChallengeRecord = {
@@ -47,7 +55,10 @@ export function buildStatusCommand() {
 
       const db = createSupabaseClient();
       const challenge = (await getChallengeById(db, id)) as ChallengeRecord;
-      const submissions = (await listSubmissionsForChallenge(db, id)) as SubmissionRecord[];
+      const submissions = (await listSubmissionsForChallenge(
+        db,
+        id,
+      )) as SubmissionRecord[];
 
       const topScore = submissions[0]?.score ?? null;
       const status = {

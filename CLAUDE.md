@@ -41,14 +41,20 @@ Hermes is an agent-native, on-chain science bounty platform on Base. Labs, DAOs,
 | Linting/Formatting | Biome (not ESLint/Prettier) |
 | Validation | Zod (all external inputs, all config, all YAML parsing) |
 | Chain interaction | viem (not ethers.js) |
+| RPC Provider | Alchemy (dedicated RPC, free tier — not public RPCs) |
 | Smart contracts | Foundry (forge, not Hardhat) |
 | Database | Supabase (Postgres + client SDK) |
 | IPFS | Pinata (official SDK) |
+| Blockchain Indexer | Custom event poller (`getLogs` → Supabase). **Production upgrade:** Ponder |
 | Scoring | Docker (dockerode for programmatic control) |
 | CLI framework | Commander.js + ora (spinners) + chalk (colors) |
-| API framework | Hono |
+| API framework | Hono (deployed to Fly.io or Railway) |
+| API Auth | SIWE (Sign-In with Ethereum, EIP-4361) |
+| Rate Limiting | In-memory Map (MVP). **Production upgrade:** Upstash Redis |
 | MCP server | @modelcontextprotocol/sdk + Hono |
 | Frontend (Phase 2) | Next.js 14 (app router) + Tailwind + shadcn/ui + wagmi + RainbowKit |
+
+**Production upgrades (pre-mainnet):** Ponder indexer, Cloudflare Workers API, Upstash Redis, Safe multisig, Tenderly + Sentry monitoring, contract audit (Cantina/Code4rena)
 
 ---
 
@@ -103,7 +109,7 @@ hermes/
 │   │       ├── factory.ts              createChallenge, getChallengeAddress
 │   │       ├── challenge.ts            submit, postScore, finalize, dispute, claim
 │   │       ├── usdc.ts                 approve, balanceOf, allowance
-│   │       └── indexer.ts              Event poller → Supabase upsert
+│   │       └── indexer.ts              Event poller (getLogs every 30s → Supabase upsert)
 │   │
 │   └── scorer/                       ← Docker scorer orchestration + proof bundles
 │       └── src/
@@ -118,11 +124,11 @@ hermes/
 │   │       ├── commands/               init, post, list, get, submit, score, score-local, verify, finalize, status, config
 │   │       └── lib/                    wallet.ts, config-store.ts, output.ts, errors.ts, spinner.ts
 │   │
-│   ├── api/                          ← Hono REST API
+│   ├── api/                          ← Hono REST API (Fly.io or Railway)
 │   │   └── src/
-│   │       ├── index.ts                Hono app entry
-│   │       ├── routes/                 challenges.ts, submissions.ts, stats.ts, verify.ts
-│   │       └── middleware/             rate-limit.ts
+│   │       ├── index.ts                Hono app entry (standard Node.js)
+│   │       ├── routes/                 challenges.ts, submissions.ts, stats.ts, verify.ts, auth.ts
+│   │       └── middleware/             rate-limit.ts (in-memory), siwe.ts (SIWE session)
 │   │
 │   ├── mcp-server/                   ← MCP server (stdio + SSE)
 │   │   └── src/
@@ -408,8 +414,9 @@ POST /api/verify                   { submissionId, computedScore, matchesOrigina
 GET  /api/stats                    aggregate counts
 ```
 
-Rate limit: 5 writes/hour/wallet. No auth for reads. Writes validated against on-chain tx hash.
-Rate limit identity uses a signed payload and recovered wallet address.
+Authentication: **SIWE (EIP-4361)** for write endpoints. Read endpoints remain public.
+Rate limit: 5 writes/hour/wallet, enforced via **in-memory Map** (MVP). **Production upgrade:** Upstash Redis.
+SIWE session: `GET /api/auth/nonce` → client signs SIWE message → `POST /api/auth/verify` → session.
 
 ---
 
@@ -418,14 +425,15 @@ Rate limit identity uses a signed payload and recovered wallet address.
 ```
 hm init [--template reproducibility|prediction|docking]
 hm post <file.yaml> --deposit <usdc> [--dry-run] [--key env:VAR]
-hm list [--domain] [--status] [--min-reward] [--sort] [--format json|table]
+hm list [--domain] [--status] [--min-reward] [--format json|table]
 hm get <challenge-id> [--download ./dir/] [--format json|table]
 hm submit <file> --challenge <id> [--dry-run] [--format json]
 hm score-local <challenge-id> --submission <file>
 hm score <submission-id>                                    # oracle only
 hm verify <challenge-id> --sub <submission-id>
-hm finalize <challenge-id>
-hm status <challenge-id> [--leaderboard] [--format json]
+# planned in T-018
+# hm finalize <challenge-id>
+hm status <challenge-id> [--format json|table]
 hm config set|get|list
 ```
 
@@ -477,7 +485,7 @@ docker compose up -d              # Supabase Postgres + Anvil
 # Deploy contracts to local Anvil
 pnpm --filter contracts deploy:local
 
-# Run indexer
+# Run indexer (watches local Anvil for events)
 pnpm --filter chain indexer:local
 
 # Use CLI locally
@@ -489,15 +497,30 @@ hm config set api_url http://localhost:3000
 
 ## Deployment Targets
 
+### MVP Deployment
+
 | Component | Host | Notes |
 |-----------|------|-------|
 | Contracts | Base Sepolia → Base mainnet | Foundry deploy scripts |
-| API | Supabase Edge Functions or Railway | Serverless |
-| Indexer | Railway | Always-on, $5/mo |
+| API | Fly.io or Railway | Standard Node.js, `fly deploy` |
+| Indexer | Fly.io or Railway | Custom event poller, always-on |
+| RPC | Alchemy | Dedicated RPC, free tier |
 | IPFS | Pinata | Free tier (1GB) |
 | CLI | npm registry | `@hermes-science/cli` |
 | MCP Server | npm registry | `@hermes-science/mcp` |
 | Frontend (Phase 2) | Vercel | Auto-deploy from Git |
+
+### Production Upgrades (pre-mainnet)
+
+| Component | Upgrade To | Why |
+|-----------|-----------|-----|
+| Indexer | Ponder | Reorg handling, backfill, type-safe |
+| API | Cloudflare Workers | Edge-deployed, auto-scaling |
+| Rate Limiting | Upstash Redis | Multi-region rate limiting |
+| Multisig | Safe | 2-of-3 for oracle + treasury |
+| Monitoring (on-chain) | Tenderly | Contract alerts, tx tracing |
+| Monitoring (off-chain) | Sentry | API errors, performance |
+| Contract Audit | Cantina/Code4rena | Required before real USDC |
 
 ---
 

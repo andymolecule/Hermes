@@ -15,6 +15,14 @@
     "indentWidth": 2
   },
   "files": {
-    "ignore": ["**/node_modules/**", ".turbo/**", "**/dist/**"]
+    "ignore": [
+      "**/node_modules/**",
+      ".turbo/**",
+      "**/dist/**",
+      "packages/contracts/lib/**",
+      "packages/contracts/out/**",
+      "packages/contracts/cache/**",
+      "packages/contracts/broadcast/**"
+    ]
   }
 }

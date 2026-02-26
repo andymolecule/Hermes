@@ -1,8 +1,12 @@
 import fs from "node:fs";
-import { Command } from "commander";
-import { createPublicClient, http } from "viem";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { applyConfigToEnv, getConfigPath, loadCliConfig } from "../lib/config-store";
+import { Command } from "commander";
+import { http, createPublicClient } from "viem";
+import {
+  applyConfigToEnv,
+  getConfigPath,
+  loadCliConfig,
+} from "../lib/config-store";
 import { printJson, printTable } from "../lib/output";
 
 interface DoctorCheck {
@@ -79,7 +83,9 @@ export function buildDoctorCommand() {
 
       if (config.rpc_url) {
         try {
-          const publicClient = createPublicClient({ transport: http(config.rpc_url) });
+          const publicClient = createPublicClient({
+            transport: http(config.rpc_url),
+          });
           const [chainId, block] = await Promise.all([
             publicClient.getChainId(),
             publicClient.getBlockNumber(),
@@ -93,7 +99,8 @@ export function buildDoctorCommand() {
           checks.push({
             name: "RPC connectivity",
             status: "error",
-            detail: error instanceof Error ? error.message : "RPC request failed",
+            detail:
+              error instanceof Error ? error.message : "RPC request failed",
           });
         }
       } else {
@@ -106,7 +113,9 @@ export function buildDoctorCommand() {
 
       if (config.rpc_url && isHexAddress(config.factory_address)) {
         try {
-          const publicClient = createPublicClient({ transport: http(config.rpc_url) });
+          const publicClient = createPublicClient({
+            transport: http(config.rpc_url),
+          });
           const code = await publicClient.getBytecode({
             address: config.factory_address as `0x${string}`,
           });
@@ -120,7 +129,8 @@ export function buildDoctorCommand() {
           checks.push({
             name: "Factory contract",
             status: "error",
-            detail: error instanceof Error ? error.message : "Factory lookup failed",
+            detail:
+              error instanceof Error ? error.message : "Factory lookup failed",
           });
         }
       } else {
@@ -133,7 +143,9 @@ export function buildDoctorCommand() {
 
       if (config.rpc_url && isHexAddress(config.usdc_address)) {
         try {
-          const publicClient = createPublicClient({ transport: http(config.rpc_url) });
+          const publicClient = createPublicClient({
+            transport: http(config.rpc_url),
+          });
           const code = await publicClient.getBytecode({
             address: config.usdc_address as `0x${string}`,
           });
@@ -147,7 +159,8 @@ export function buildDoctorCommand() {
           checks.push({
             name: "USDC contract",
             status: "error",
-            detail: error instanceof Error ? error.message : "USDC lookup failed",
+            detail:
+              error instanceof Error ? error.message : "USDC lookup failed",
           });
         }
       } else {
@@ -160,9 +173,13 @@ export function buildDoctorCommand() {
 
       if (config.supabase_url && config.supabase_anon_key) {
         try {
-          const db = createSupabaseClient(config.supabase_url, config.supabase_anon_key, {
-            auth: { persistSession: false },
-          });
+          const db = createSupabaseClient(
+            config.supabase_url,
+            config.supabase_anon_key,
+            {
+              auth: { persistSession: false },
+            },
+          );
           const { error } = await db
             .from("challenges")
             .select("id", { count: "exact", head: true })
@@ -179,7 +196,8 @@ export function buildDoctorCommand() {
           checks.push({
             name: "Supabase connectivity",
             status: "error",
-            detail: error instanceof Error ? error.message : "Supabase query failed",
+            detail:
+              error instanceof Error ? error.message : "Supabase query failed",
           });
         }
       } else {

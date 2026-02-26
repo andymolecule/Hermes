@@ -9,6 +9,10 @@ coverage/
 # Foundry
 out/
 cache/
+broadcast/
+
+# Local test data
+test-data/
 
 # Supabase
 supabase/.temp/

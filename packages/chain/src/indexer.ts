@@ -1,22 +1,22 @@
-import { type Abi, parseEventLogs } from "viem";
-import { loadConfig, challengeSpecSchema } from "@hermes/common";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
+import { challengeSpecSchema, loadConfig } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { getPublicClient } from "./client";
+import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
   createSupabaseClient,
-  listChallenges,
-  updateChallengeStatus,
-  setChallengeFinalized,
-  markEventIndexed,
+  getSubmissionByChainId,
   isEventIndexed,
+  listChallenges,
+  markEventIndexed,
+  setChallengeFinalized,
+  updateChallengeStatus,
+  updateScore,
   upsertChallenge,
   upsertSubmission,
-  updateScore,
-  getSubmissionByChainId,
 } from "@hermes/db";
 import { getText } from "@hermes/ipfs";
+import { type Abi, parseEventLogs } from "viem";
 import yaml from "yaml";
+import { getPublicClient } from "./client";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
@@ -156,7 +156,13 @@ export async function runIndexer() {
           });
         }
 
-        await markEventIndexed(db, txHash, logIndex, log.eventName, Number(log.blockNumber ?? 0));
+        await markEventIndexed(
+          db,
+          txHash,
+          logIndex,
+          log.eventName,
+          Number(log.blockNumber ?? 0),
+        );
       }
 
       const challenges = await listChallenges(db);
@@ -183,7 +189,11 @@ export async function runIndexer() {
 
           if (log.eventName === "Submitted") {
             const [submissionId] = log.args as unknown as [bigint];
-            const submission = await readSubmission(challengeAddress, submissionId, publicClient);
+            const submission = await readSubmission(
+              challengeAddress,
+              submissionId,
+              publicClient,
+            );
 
             await upsertSubmission(db, {
               challenge_id: challenge.id,
@@ -193,20 +203,27 @@ export async function runIndexer() {
               proof_bundle_hash: submission.proofBundleHash,
               score: submission.score.toString(),
               scored: submission.scored,
-              submitted_at: new Date(Number(submission.submittedAt) * 1000).toISOString(),
+              submitted_at: new Date(
+                Number(submission.submittedAt) * 1000,
+              ).toISOString(),
               tx_hash: txHash,
             });
           }
 
-        if (log.eventName === "Scored") {
-          const [submissionId, score, proofBundleHash] = log.args as unknown as [
-            bigint,
-            bigint,
-            `0x${string}`,
-          ];
+          if (log.eventName === "Scored") {
+            const [submissionId, score, proofBundleHash] =
+              log.args as unknown as [bigint, bigint, `0x${string}`];
 
-            const submission = await readSubmission(challengeAddress, submissionId, publicClient);
-            const existing = await getSubmissionByChainId(db, challenge.id, Number(submissionId));
+            const submission = await readSubmission(
+              challengeAddress,
+              submissionId,
+              publicClient,
+            );
+            const existing = await getSubmissionByChainId(
+              db,
+              challenge.id,
+              Number(submissionId),
+            );
 
             const row = await upsertSubmission(db, {
               challenge_id: challenge.id,
@@ -216,65 +233,83 @@ export async function runIndexer() {
               proof_bundle_hash: proofBundleHash,
               score: score.toString(),
               scored: true,
-              submitted_at: new Date(Number(submission.submittedAt) * 1000).toISOString(),
+              submitted_at: new Date(
+                Number(submission.submittedAt) * 1000,
+              ).toISOString(),
               scored_at: new Date().toISOString(),
               tx_hash: existing?.tx_hash ?? txHash,
             });
 
-          await updateScore(db, {
-            submission_id: row.id,
-            score: score.toString(),
-            proof_bundle_cid: existing?.proof_bundle_cid ?? "",
-            proof_bundle_hash: proofBundleHash,
-            scored_at: new Date().toISOString(),
-          });
-        }
+            await updateScore(db, {
+              submission_id: row.id,
+              score: score.toString(),
+              proof_bundle_cid: existing?.proof_bundle_cid ?? "",
+              proof_bundle_hash: proofBundleHash,
+              scored_at: new Date().toISOString(),
+            });
+          }
 
-        if (log.eventName === "Finalized") {
-          const winnerOnChain = await readWinningSubmissionId(
-            challengeAddress,
-            publicClient,
-          );
-          const winnerRow = await getSubmissionByChainId(
+          if (log.eventName === "Finalized") {
+            const winnerOnChain = await readWinningSubmissionId(
+              challengeAddress,
+              publicClient,
+            );
+            const winnerRow = await getSubmissionByChainId(
+              db,
+              challenge.id,
+              Number(winnerOnChain),
+            );
+            const finalizedAt = await blockTimestampIso(
+              publicClient,
+              log.blockNumber ?? null,
+            );
+            await setChallengeFinalized(
+              db,
+              challenge.id,
+              finalizedAt,
+              Number(winnerOnChain),
+              winnerRow?.id ?? null,
+            );
+          }
+
+          if (log.eventName === "Disputed") {
+            await updateChallengeStatus(db, challenge.id, "disputed");
+          }
+
+          if (log.eventName === "Cancelled") {
+            await updateChallengeStatus(db, challenge.id, "cancelled");
+          }
+
+          if (log.eventName === "DisputeResolved") {
+            const winnerOnChain = (log.args as unknown as [bigint])[0] ?? null;
+            const winnerRow = winnerOnChain
+              ? await getSubmissionByChainId(
+                  db,
+                  challenge.id,
+                  Number(winnerOnChain),
+                )
+              : null;
+            const finalizedAt = await blockTimestampIso(
+              publicClient,
+              log.blockNumber ?? null,
+            );
+            await setChallengeFinalized(
+              db,
+              challenge.id,
+              finalizedAt,
+              winnerOnChain ? Number(winnerOnChain) : null,
+              winnerRow?.id ?? null,
+            );
+          }
+
+          await markEventIndexed(
             db,
-            challenge.id,
-            Number(winnerOnChain),
-          );
-          const finalizedAt = await blockTimestampIso(publicClient, log.blockNumber ?? null);
-          await setChallengeFinalized(
-            db,
-            challenge.id,
-            finalizedAt,
-            Number(winnerOnChain),
-            winnerRow?.id ?? null,
+            txHash,
+            logIndex,
+            log.eventName,
+            Number(log.blockNumber ?? 0),
           );
         }
-
-        if (log.eventName === "Disputed") {
-          await updateChallengeStatus(db, challenge.id, "disputed");
-        }
-
-        if (log.eventName === "Cancelled") {
-          await updateChallengeStatus(db, challenge.id, "cancelled");
-        }
-
-        if (log.eventName === "DisputeResolved") {
-          const winnerOnChain = (log.args as unknown as [bigint])[0] ?? null;
-          const winnerRow = winnerOnChain
-            ? await getSubmissionByChainId(db, challenge.id, Number(winnerOnChain))
-            : null;
-          const finalizedAt = await blockTimestampIso(publicClient, log.blockNumber ?? null);
-          await setChallengeFinalized(
-            db,
-            challenge.id,
-            finalizedAt,
-            winnerOnChain ? Number(winnerOnChain) : null,
-            winnerRow?.id ?? null,
-          );
-        }
-
-        await markEventIndexed(db, txHash, logIndex, log.eventName, Number(log.blockNumber ?? 0));
-      }
       }
 
       fromBlock = toBlock + BigInt(1);

@@ -24,7 +24,10 @@ export interface ChallengeInsert {
   tx_hash: string;
 }
 
-export async function upsertChallenge(db: HermesDbClient, payload: ChallengeInsert) {
+export async function upsertChallenge(
+  db: HermesDbClient,
+  payload: ChallengeInsert,
+) {
   const { data, error } = await db
     .from("challenges")
     .upsert(payload, {
@@ -39,7 +42,11 @@ export async function upsertChallenge(db: HermesDbClient, payload: ChallengeInse
 }
 
 export async function getChallengeById(db: HermesDbClient, id: string) {
-  const { data, error } = await db.from("challenges").select("*").eq("id", id).single();
+  const { data, error } = await db
+    .from("challenges")
+    .select("*")
+    .eq("id", id)
+    .single();
   if (error) {
     throw new Error(`Failed to fetch challenge: ${error.message}`);
   }
@@ -47,7 +54,9 @@ export async function getChallengeById(db: HermesDbClient, id: string) {
 }
 
 export async function listChallenges(db: HermesDbClient) {
-  const { data, error } = await db.from("challenges").select("id, contract_address");
+  const { data, error } = await db
+    .from("challenges")
+    .select("id, contract_address");
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);
   }

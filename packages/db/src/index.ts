@@ -1,5 +1,5 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { loadConfig } from "@hermes/common";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 
 export type HermesDbClient = SupabaseClient;
 
@@ -28,3 +28,4 @@ export * from "./queries/challenges";
 export * from "./queries/submissions";
 export * from "./queries/scores";
 export * from "./queries/indexed-events";
+export * from "./queries/proofs";
