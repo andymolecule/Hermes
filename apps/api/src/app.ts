@@ -8,6 +8,10 @@ import verifyRoutes from "./routes/verify.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
+const corsOrigins = (process.env.HERMES_CORS_ORIGINS ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 export function createApp() {
   const app = new Hono<ApiEnv>();
@@ -15,9 +19,16 @@ export function createApp() {
   app.use(
     "*",
     cors({
-      origin: "*",
+      origin: (origin) => {
+        if (!origin) return undefined;
+        if (corsOrigins.length === 0) {
+          return process.env.NODE_ENV === "production" ? undefined : origin;
+        }
+        return corsOrigins.includes(origin) ? origin : undefined;
+      },
       allowMethods: ["GET", "POST", "OPTIONS"],
       allowHeaders: ["Content-Type"],
+      credentials: true,
     }),
   );
 

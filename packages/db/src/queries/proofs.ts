@@ -22,15 +22,31 @@ export async function upsertProofBundle(
   db: HermesDbClient,
   payload: ProofBundleInsert,
 ) {
-  const { data, error } = await db
+  const isDuplicateKeyError = (error: { code?: string; message: string }) =>
+    error.code === "23505" || /duplicate key/i.test(error.message);
+
+  // Try insert first; if row for this submission already exists, update it
+  const { data: inserted, error: insertError } = await db
     .from("proof_bundles")
-    .upsert(payload, { onConflict: "submission_id" })
+    .insert(payload)
     .select("*")
     .single();
-  if (error) {
-    throw new Error(`Failed to upsert proof bundle: ${error.message}`);
+  if (!insertError) return inserted;
+
+  // Only fallback on duplicate-key conflicts.
+  if (payload.submission_id && isDuplicateKeyError(insertError)) {
+    const { data: updated, error: updateError } = await db
+      .from("proof_bundles")
+      .update(payload)
+      .eq("submission_id", payload.submission_id)
+      .select("*")
+      .single();
+    if (updateError) {
+      throw new Error(`Failed to upsert proof bundle: ${updateError.message}`);
+    }
+    return updated;
   }
-  return data;
+  throw new Error(`Failed to upsert proof bundle: ${insertError.message}`);
 }
 
 export async function createVerification(

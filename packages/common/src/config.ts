@@ -25,6 +25,7 @@ const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
+  HERMES_CORS_ORIGINS: z.string().optional(),
   HERMES_MCP_PORT: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),

@@ -143,12 +143,15 @@ export function buildSubmitCommand() {
         const cidValue = resultCid.replace("ipfs://", "");
         const resultHash = keccak256(toBytes(cidValue));
 
-        const submitSpinner = createSpinner("Submitting on-chain...");
+        const submitSpinner =
+          opts.format === "json"
+            ? null
+            : createSpinner("Submitting on-chain...");
         const txHash = await submitChallengeResult(
           challenge.contract_address as `0x${string}`,
           resultHash,
         );
-        submitSpinner.succeed(`Submission tx sent: ${txHash}`);
+        submitSpinner?.succeed(`Submission tx sent: ${txHash}`);
 
         const publicClient = getPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
@@ -165,14 +168,36 @@ export function buildSubmitCommand() {
         const submissionId =
           getLogArg(submitted?.args, 0, "subId") ??
           getLogArg(submitted?.args, 0, "submissionId");
+        let cidUpdateWarning: string | null = null;
 
         if (typeof submissionId === "bigint") {
-          await setSubmissionResultCid(
-            db,
-            challenge.id,
-            Number(submissionId),
-            resultCid,
-          );
+          // Retry: the indexer may not have created the submission row yet
+          let cidUpdated = false;
+          for (let attempt = 0; attempt < 3 && !cidUpdated; attempt++) {
+            try {
+              if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+              }
+              await setSubmissionResultCid(
+                db,
+                challenge.id,
+                Number(submissionId),
+                resultCid,
+              );
+              cidUpdated = true;
+            } catch {
+              // submission row may not exist yet
+            }
+          }
+          if (!cidUpdated) {
+            cidUpdateWarning =
+              "Failed to update result CID (indexer may not have processed the submission yet).";
+            if (opts.format !== "json") {
+              printWarning(
+                `${cidUpdateWarning} Retry 'hm submit' in a few seconds if scoring cannot find the CID.`,
+              );
+            }
+          }
         }
 
         const { count } = await db
@@ -191,6 +216,7 @@ export function buildSubmitCommand() {
           txHash,
           submissionsUsed: submissionCount,
           maxSubmissions: challenge.max_submissions_per_wallet,
+          warning: cidUpdateWarning,
         };
 
         if (opts.format === "json") {

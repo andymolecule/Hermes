@@ -97,9 +97,9 @@ CSV
 cp "$TMP_DIR/ground_truth.csv" "$TMP_DIR/submission.csv"
 
 E2E_TITLE="Hermes E2E $(date +%s)"
-E2E_DEADLINE="$(date -u -v+2M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || python3 - <<'PY'
+E2E_DEADLINE="$(date -u -v+10M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || python3 - <<'PY'
 from datetime import datetime, timedelta, timezone
-print((datetime.now(timezone.utc) + timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+print((datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ"))
 PY
 )"
 
@@ -121,7 +121,7 @@ reward:
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]
 minimum_score: 0.0
-dispute_window_hours: 24
+dispute_window_hours: 48
 max_submissions_per_wallet: 3
 lab_tba: "0x0000000000000000000000000000000000000000"
 YAML
@@ -154,9 +154,24 @@ echo "Step 5/11: Running local scorer..."
 "${HM_CMD[@]}" score-local "$challenge_id" --submission "$TMP_DIR/submission.csv" --format json >"$TMP_DIR/score-local.json" || fail "hm score-local"
 
 echo "Step 6/11: Submitting on-chain..."
-"${HM_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json >"$TMP_DIR/submit.json" || fail "hm submit"
+submit_json="$("${HM_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json)" || fail "hm submit"
+echo "$submit_json" >"$TMP_DIR/submit.json"
+submit_onchain_id="$(printf "%s" "$submit_json" | node --input-type=module -e '
+let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
+  const payload = JSON.parse(raw);
+  if (payload.submissionId !== undefined && payload.submissionId !== null) {
+    process.stdout.write(String(payload.submissionId));
+  }
+});')"
+result_cid="$(printf "%s" "$submit_json" | node --input-type=module -e '
+let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
+  const payload = JSON.parse(raw);
+  if (payload.resultCid) process.stdout.write(String(payload.resultCid));
+});')"
+[[ -n "$submit_onchain_id" ]] || fail "submit did not return on-chain submission id"
+echo "✔ On-chain submission succeeded (subId=${submit_onchain_id})"
 
-echo "Step 7/11: Waiting for submission row with result CID..."
+echo "Step 7/11: Waiting for submission row..."
 submission_uuid=""
 poll_find_submission() {
   local get_json
@@ -165,12 +180,14 @@ poll_find_submission() {
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
   const rows = payload.submissions ?? [];
-  const found = rows.find((s) => !!s.result_cid);
+  const subId = Number(process.argv[1]);
+  const cid = process.argv[2];
+  const found = rows.find((s) => Number(s.on_chain_sub_id) === subId && s.result_cid === cid);
   if (found?.id) process.stdout.write(String(found.id));
-});')"
+});' "$submit_onchain_id" "$result_cid")"
   [[ -n "$submission_uuid" ]]
 }
-poll_until 600 10 poll_find_submission || fail "submission did not index with result_cid"
+poll_until 600 10 poll_find_submission || fail "submission did not appear in index with result_cid"
 echo "Submission ID: $submission_uuid"
 
 echo "Step 8/11: Oracle scoring..."

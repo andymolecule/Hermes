@@ -77,6 +77,13 @@ node apps/mcp-server/dist/index.js
 node packages/chain/dist/indexer.js
 ```
 
+Recommended supervised runtime (PM2):
+
+```bash
+pm2 start scripts/ops/ecosystem.config.cjs
+pm2 save
+```
+
 ## Seeding Challenges (Phase 7)
 
 ```bash
@@ -111,15 +118,22 @@ Note: On Sepolia, finalization requires `deadline + dispute_window_hours` to ela
 
 This script deploys contracts to Base Sepolia and provides optional hooks for API/indexer deployment targets.
 
-## Web Mockup (Phase 8 prep)
+## Web App (Phase 8)
 
-- `/Users/changyuesin/Hermes/docs/ui-specs/hermes-ui-vibe.md`
-- `/Users/changyuesin/Hermes/hermes-mockup`
-
-Build mockup:
+Run web frontend:
 
 ```bash
-cd hermes-mockup
-npm install
-npm run build
+pnpm --filter @hermes/web dev
 ```
+
+## Testnet Launch Ops
+
+Preflight validation:
+
+```bash
+./scripts/preflight-testnet.sh
+```
+
+Runbook:
+
+- `/Users/changyuesin/Hermes/docs/testnet-ops-runbook.md`
