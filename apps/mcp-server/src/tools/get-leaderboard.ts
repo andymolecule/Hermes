@@ -1,4 +1,4 @@
-import { getChallenge } from "./shared";
+import { getChallenge } from "./shared.js";
 
 export interface GetLeaderboardInput {
   challengeId: string;

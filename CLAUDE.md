@@ -24,6 +24,7 @@ Hermes is an agent-native, on-chain science bounty platform on Base. Labs, DAOs,
 - `docs/implementation.md` — Full implementation plan with tickets T-001 through T-025 (the "how")
 - `SKILL.md` — Instructions for solver agents using Hermes post-launch (NOT for building it)
 - This file (`CLAUDE.md`) — Instructions for agents building Hermes
+- `.agent/skills/frontend-design/SKILL.md` — Frontend design guidelines for the Hermes web UI
 
 **Source of truth hierarchy**
 - Architecture + acceptance criteria: `docs/implementation.md`

@@ -1,4 +1,4 @@
-import { submitSolution } from "./shared";
+import { submitSolution } from "./shared.js";
 
 export interface SubmitSolutionInput {
   challengeId: string;

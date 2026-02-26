@@ -1,2 +1,2 @@
-export * from "./pin";
-export * from "./fetch";
+export * from "./pin.js";
+export * from "./fetch.js";

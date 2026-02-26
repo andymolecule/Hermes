@@ -1,4 +1,4 @@
-import { listChallenges } from "./shared";
+import { listChallenges } from "./shared.js";
 
 export interface ListChallengesInput {
   domain?: string;

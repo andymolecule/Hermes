@@ -1,4 +1,4 @@
-import { verifySubmission } from "./shared";
+import { verifySubmission } from "./shared.js";
 
 export interface VerifySubmissionInput {
   challengeId: string;

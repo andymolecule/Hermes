@@ -1,6 +1,6 @@
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
+import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import type { Abi } from "viem";
-import { getPublicClient, getWalletClient } from "./client";
+import { getPublicClient, getWalletClient } from "./client.js";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 

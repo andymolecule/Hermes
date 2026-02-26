@@ -6,7 +6,7 @@ import {
   getPublicClient,
   submitChallengeResult,
 } from "@hermes/chain";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
+import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
   createSupabaseClient,
   getChallengeById,
@@ -59,10 +59,11 @@ export async function getChallenge(challengeId: string) {
   const submissions = await listSubmissionsForChallenge(db, challengeId);
   const leaderboard = submissions
     .filter((row: { score: unknown }) => row.score !== null)
-    .sort(
-      (a: { score: unknown }, b: { score: unknown }) =>
-        Number(b.score ?? 0) - Number(a.score ?? 0),
-    );
+    .sort((a: { score: unknown }, b: { score: unknown }) => {
+      const aScore = BigInt(String(a.score ?? "0"));
+      const bScore = BigInt(String(b.score ?? "0"));
+      return bScore > aScore ? 1 : bScore < aScore ? -1 : 0;
+    });
   return { challenge, submissions, leaderboard };
 }
 
