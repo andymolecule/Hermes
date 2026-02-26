@@ -24,8 +24,8 @@ export function createSupabaseClient(useServiceKey = false): HermesDbClient {
   });
 }
 
-export * from "./queries/challenges";
-export * from "./queries/submissions";
-export * from "./queries/scores";
-export * from "./queries/indexed-events";
-export * from "./queries/proofs";
+export * from "./queries/challenges.js";
+export * from "./queries/submissions.js";
+export * from "./queries/scores.js";
+export * from "./queries/indexed-events.js";
+export * from "./queries/proofs.js";

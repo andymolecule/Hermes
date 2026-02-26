@@ -7,6 +7,20 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "@hermes/chain": "workspace:*",
+    "@hermes/common": "workspace:*",
+    "@hermes/db": "workspace:*",
+    "@hermes/ipfs": "workspace:*",
+    "@hono/node-server": "^1.19.9",
+    "@hono/zod-validator": "^0.7.6",
+    "hono": "^4.12.2",
+    "siwe": "^3.0.0",
+    "viem": "^2.21.0",
+    "yaml": "^2.3.4",
+    "zod": "^3.23.8"
   }
 }

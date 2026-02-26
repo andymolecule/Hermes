@@ -1,6 +1,6 @@
 import { challengeSpecSchema, loadConfig } from "@hermes/common";
-import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
+import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
+import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
 import {
   createSupabaseClient,
   getSubmissionByChainId,
@@ -16,7 +16,7 @@ import {
 import { getText } from "@hermes/ipfs";
 import { type Abi, parseEventLogs } from "viem";
 import yaml from "yaml";
-import { getPublicClient } from "./client";
+import { getPublicClient } from "./client.js";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
