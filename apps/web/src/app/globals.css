@@ -1,0 +1,257 @@
+:root {
+  --font-sans: "Avenir Next", "Manrope", "Segoe UI", sans-serif;
+  --bg: #091226;
+  --bg-secondary: #0f1d34;
+  --card: #10203a;
+  --text: #ebf2ff;
+  --muted: #95accf;
+  --accent: #35c2ff;
+  --border: #274066;
+  --hero-glow: rgba(53, 194, 255, 0.2);
+}
+
+:root[data-theme="light"] {
+  --bg: #f3f7ff;
+  --bg-secondary: #e4eeff;
+  --card: #ffffff;
+  --text: #0d203b;
+  --muted: #4f658a;
+  --accent: #0564d8;
+  --border: #c8d8f3;
+  --hero-glow: rgba(5, 100, 216, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: radial-gradient(
+      circle at 10% 0%,
+      var(--hero-glow),
+      transparent 34%
+    ), radial-gradient(circle at 90% 100%, var(--hero-glow), transparent 30%),
+    linear-gradient(180deg, var(--bg-secondary), var(--bg));
+  color: var(--text);
+  min-height: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.wordmark {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.card {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card), #ffffff 2%),
+    var(--card)
+  );
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.challenge-card {
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.challenge-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  right: -40px;
+  top: -40px;
+  width: 180px;
+  height: 180px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--hero-glow), transparent 70%);
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inline-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.inline-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--bg), var(--card) 65%);
+  color: var(--text);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 40%);
+  border-color: var(--accent);
+}
+
+.btn {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--bg), var(--card) 65%);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  border-color: color-mix(in srgb, var(--accent), #000000 20%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent), #ffffff 22%),
+    var(--accent)
+  );
+  color: #021327;
+  font-weight: 700;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table td.num,
+.table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 8px;
+}
+
+.timeline-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  margin-top: 5px;
+}
+
+.timeline-dot.done {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.separator {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+@media (max-width: 980px) {
+  .grid-3,
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
