@@ -1,0 +1,26 @@
+# Hermes Phase 7 seed challenge
+id: covid-mpro-dock-001
+title: "SARS-CoV-2 Mpro Docking Challenge (PDB 6LU7)"
+domain: drug_discovery
+type: docking
+description: |
+  Rank antiviral candidates against SARS-CoV-2 main protease (Mpro, PDB 6LU7).
+  Use the supplied benchmark ligands and submit ranked docking outputs.
+dataset:
+  train: "https://files.rcsb.org/download/6LU7.pdb"
+  test: "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/44458614,509634,160355/property/CanonicalSMILES/CSV"
+scoring:
+  container: "ghcr.io/hermes-science/docking-scorer:latest"
+  metric: spearman
+reward:
+  total: 150
+  distribution: top_3
+deadline: "2026-03-25T18:00:00Z"
+tags:
+  - drug_discovery
+  - docking
+  - covid19
+minimum_score: 0.0
+dispute_window_hours: 24
+max_submissions_per_wallet: 3
+lab_tba: "0x0000000000000000000000000000000000000000"

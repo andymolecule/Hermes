@@ -1,0 +1,27 @@
+# Hermes Phase 7 seed challenge
+id: yamanaka-repro-001
+title: "Reproduce iPSC Reprogramming Marker Baseline (Yamanaka Factors)"
+domain: longevity
+type: reproducibility
+description: |
+  Reproduce the baseline marker-expression regression for induced pluripotency
+  using a public reprogramming expression matrix (GEO). Output predictions for
+  the held-out split and match baseline results.
+dataset:
+  train: "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE9832"
+  test: "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE9nnn/GSE9832/matrix/"
+scoring:
+  container: "ghcr.io/hermes-science/repro-scorer:latest"
+  metric: rmse
+reward:
+  total: 80
+  distribution: winner_take_all
+deadline: "2026-03-22T18:00:00Z"
+tags:
+  - longevity
+  - reproducibility
+  - yamanaka
+minimum_score: 0.0
+dispute_window_hours: 24
+max_submissions_per_wallet: 3
+lab_tba: "0x0000000000000000000000000000000000000000"

@@ -162,7 +162,9 @@ export function buildSubmitCommand() {
         const submitted = parsedLogs.find(
           (log: { eventName?: string }) => log.eventName === "Submitted",
         );
-        const submissionId = getLogArg(submitted?.args, 0, "submissionId");
+        const submissionId =
+          getLogArg(submitted?.args, 0, "subId") ??
+          getLogArg(submitted?.args, 0, "submissionId");
 
         if (typeof submissionId === "bigint") {
           await setSubmissionResultCid(

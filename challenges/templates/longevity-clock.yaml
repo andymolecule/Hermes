@@ -1,0 +1,28 @@
+# Hermes Phase 7 seed challenge
+id: longevity-clock-001
+title: "Reproduce Horvath Multi-Tissue DNA Methylation Clock Baseline"
+domain: longevity
+type: reproducibility
+description: |
+  Reproduce the baseline methylation-age regression from the published Horvath
+  multi-tissue clock resources. Train on the provided GEO reference matrix and
+  generate predictions for the held-out matrix.
+dataset:
+  # GEO accessions and matrix files (public)
+  train: "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE40279"
+  test: "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE40nnn/GSE40279/matrix/"
+scoring:
+  container: "ghcr.io/hermes-science/repro-scorer:latest"
+  metric: pearson
+reward:
+  total: 50
+  distribution: winner_take_all
+deadline: "2026-03-15T18:00:00Z"
+tags:
+  - longevity
+  - methylation
+  - reproducibility
+minimum_score: 0.0
+dispute_window_hours: 24
+max_submissions_per_wallet: 3
+lab_tba: "0x0000000000000000000000000000000000000000"

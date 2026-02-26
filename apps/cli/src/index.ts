@@ -3,7 +3,9 @@ import { Command } from "commander";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
 import { buildConfigCommand } from "./commands/config";
+import { buildClaimCommand } from "./commands/claim";
 import { buildDoctorCommand } from "./commands/doctor";
+import { buildFinalizeCommand } from "./commands/finalize";
 import { buildGetCommand } from "./commands/get";
 import { buildInitCommand } from "./commands/init";
 import { buildListCommand } from "./commands/list";
@@ -29,6 +31,8 @@ async function main() {
   program.addCommand(buildListCommand());
   program.addCommand(buildGetCommand());
   program.addCommand(buildStatusCommand());
+  program.addCommand(buildFinalizeCommand());
+  program.addCommand(buildClaimCommand());
   program.addCommand(buildSubmitCommand());
   program.addCommand(buildDoctorCommand());
   program.addCommand(buildScoreLocalCommand());
