@@ -1,0 +1,27 @@
+# Hermes Phase 7 seed challenge
+id: gene-expression-001
+title: "Gene Expression Regression from TCGA BRCA Features"
+domain: omics
+type: prediction
+description: |
+  Predict continuous expression targets from the public TCGA BRCA subset.
+  Training and evaluation references are published in the UCSC Xena public
+  data hub.
+dataset:
+  train: "https://toil.xenahubs.net/download/tcga_RSEM_gene_tpm.gz"
+  test: "https://gdc-hub.s3.us-east-1.amazonaws.com/download/TCGA-BRCA.htseq_counts.tsv.gz"
+scoring:
+  container: "ghcr.io/hermes-science/regression-scorer:latest"
+  metric: r2
+reward:
+  total: 120
+  distribution: proportional
+deadline: "2026-03-20T18:00:00Z"
+tags:
+  - omics
+  - prediction
+  - tcga
+minimum_score: 0.0
+dispute_window_hours: 24
+max_submissions_per_wallet: 3
+lab_tba: "0x0000000000000000000000000000000000000000"

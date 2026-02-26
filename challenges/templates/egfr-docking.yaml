@@ -1,0 +1,28 @@
+# Hermes Phase 7 seed challenge
+id: egfr-docking-001
+title: "EGFR Kinase Domain Docking Rank Reproduction"
+domain: drug_discovery
+type: docking
+description: |
+  Rank candidate ligands against EGFR kinase domain (PDB: 1M17) using the
+  provided benchmark subset. Submit a score-ranked CSV compatible with the
+  docking scorer.
+dataset:
+  # PDB target and PubChem source list (public)
+  train: "https://files.rcsb.org/download/1M17.pdb"
+  test: "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/2244,123631,176870/property/CanonicalSMILES/CSV"
+scoring:
+  container: "ghcr.io/hermes-science/docking-scorer:latest"
+  metric: spearman
+reward:
+  total: 200
+  distribution: top_3
+deadline: "2026-03-18T18:00:00Z"
+tags:
+  - drug_discovery
+  - docking
+  - egfr
+minimum_score: 0.0
+dispute_window_hours: 24
+max_submissions_per_wallet: 3
+lab_tba: "0x0000000000000000000000000000000000000000"
