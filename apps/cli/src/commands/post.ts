@@ -86,6 +86,18 @@ function parseDeadline(value: string) {
   return Math.floor(date.getTime() / 1000);
 }
 
+function decimalToWad(value: number): bigint {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid minimum_score value: ${value}`);
+  }
+  const raw = value.toString();
+  const normalized = /e/i.test(raw)
+    ? value.toFixed(18).replace(/\.?0+$/, "")
+    : raw;
+  const decimal = normalized === "" ? "0" : normalized;
+  return parseUnits(decimal, 18);
+}
+
 export function buildPostCommand() {
   const cmd = new Command("post")
     .description("Post a new challenge on-chain")
@@ -231,12 +243,17 @@ export function buildPostCommand() {
         }
 
         const createSpinnerInstance = createSpinner("Creating challenge...");
+        const minimumScoreWad =
+          spec.minimum_score !== undefined
+            ? decimalToWad(spec.minimum_score)
+            : 0n;
         const txHash = await createChallenge({
           specCid,
           rewardAmount,
           deadline: parseDeadline(spec.deadline),
           disputeWindowHours: spec.dispute_window_hours ?? 48,
           maxSubmissionsPerWallet: spec.max_submissions_per_wallet ?? 3,
+          minimumScore: minimumScoreWad,
           distributionType: distributionMap[spec.reward.distribution] ?? 0,
           labTba: (spec.lab_tba ??
             "0x0000000000000000000000000000000000000000") as `0x${string}`,

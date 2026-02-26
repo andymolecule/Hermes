@@ -31,6 +31,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
 
@@ -72,6 +73,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             4,
+            0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
     }
@@ -88,6 +90,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
     }
@@ -145,6 +148,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
@@ -188,6 +192,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.Proportional
         );
         vm.prank(poster);
@@ -246,6 +251,7 @@ contract HermesChallengeTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.Proportional
         );
         vm.prank(poster);
@@ -437,27 +443,27 @@ contract HermesChallengeTest is Test {
 
     function testConstructorRevertsZeroPoster() public {
         vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesChallenge(usdc, address(0), oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 3, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, address(0), oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     function testConstructorRevertsZeroReward() public {
         vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 0, uint64(block.timestamp + 1 days), 48, 3, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 0, uint64(block.timestamp + 1 days), 48, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     function testConstructorRevertsZeroMaxSubmissions() public {
         vm.expectRevert(HermesErrors.InvalidMaxSubmissions.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 0, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     function testConstructorRevertsDisputeWindowTooShort() public {
         vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 24, 3, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 24, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {
         vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 200, 3, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 200, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     // ===== cancel() edge cases =====
@@ -572,7 +578,7 @@ contract HermesChallengeTest is Test {
     function testTopThreeWithOnlyOneSolver() public {
         HermesChallenge top3 = new HermesChallenge(
             usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3,
+            uint64(block.timestamp + 1 days), 48, 3, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
@@ -595,7 +601,7 @@ contract HermesChallengeTest is Test {
     function testTopThreeWithTwoSolvers() public {
         HermesChallenge top3 = new HermesChallenge(
             usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3,
+            uint64(block.timestamp + 1 days), 48, 3, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
@@ -626,9 +632,9 @@ contract HermesChallengeTest is Test {
     function testFinalizeRevertsNoScoredSubmissions() public {
         vm.prank(solver);
         challenge.submit(keccak256("result"));
-        // Submit but don't score
+        // Submit but don't score — scoring completeness check prevents finalize
         vm.warp(block.timestamp + 4 days);
-        vm.expectRevert(HermesErrors.NoSubmissions.selector);
+        vm.expectRevert(HermesErrors.ScoringIncomplete.selector);
         challenge.finalize();
     }
 
@@ -655,7 +661,7 @@ contract HermesChallengeTest is Test {
     function testResolveDisputeTopThree() public {
         HermesChallenge top3 = new HermesChallenge(
             usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3,
+            uint64(block.timestamp + 1 days), 48, 3, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
@@ -748,5 +754,67 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         vm.expectRevert(HermesErrors.InvalidSubmission.selector);
         challenge.resolveDispute(999);
+    }
+
+    function testFinalizeRefundsPosterWhenNoSubmissionMeetsMinimumScore() public {
+        HermesChallenge gated = new HermesChallenge(
+            usdc,
+            poster,
+            oracle,
+            treasury,
+            "cid",
+            100e6,
+            uint64(block.timestamp + 1 days),
+            48,
+            3,
+            90e18,
+            IHermesChallenge.DistributionType.WinnerTakeAll
+        );
+        vm.prank(poster);
+        usdc.transfer(address(gated), 100e6);
+
+        vm.prank(solver);
+        uint256 subId = gated.submit(keccak256("result"));
+        vm.prank(oracle);
+        gated.postScore(subId, 10e18, keccak256("proof"));
+
+        // Past dispute window and scoring grace period.
+        vm.warp(block.timestamp + 9 days);
+        uint256 posterBefore = usdc.balanceOf(poster);
+        gated.finalize();
+
+        assertEq(uint8(gated.status()), uint8(IHermesChallenge.Status.Cancelled));
+        assertEq(usdc.balanceOf(poster), posterBefore + 100e6);
+    }
+
+    function testResolveDisputeRevertsWhenWinnerBelowMinimumScore() public {
+        HermesChallenge gated = new HermesChallenge(
+            usdc,
+            poster,
+            oracle,
+            treasury,
+            "cid",
+            100e6,
+            uint64(block.timestamp + 1 days),
+            48,
+            3,
+            90e18,
+            IHermesChallenge.DistributionType.WinnerTakeAll
+        );
+        vm.prank(poster);
+        usdc.transfer(address(gated), 100e6);
+
+        vm.prank(solver);
+        uint256 subId = gated.submit(keccak256("result"));
+        vm.prank(oracle);
+        gated.postScore(subId, 10e18, keccak256("proof"));
+
+        vm.warp(block.timestamp + 1 days + 1 hours);
+        vm.prank(address(0x999));
+        gated.dispute("below minimum");
+
+        vm.prank(oracle);
+        vm.expectRevert(HermesErrors.MinimumScoreNotMet.selector);
+        gated.resolveDispute(subId);
     }
 }

@@ -44,7 +44,10 @@ function formatZodError(error: z.ZodError): string {
   return `Invalid Hermes configuration. Fix the following:\n- ${lines.join("\n- ")}`;
 }
 
+let cachedConfig: HermesConfig | null = null;
+
 export function loadConfig(): HermesConfig {
+  if (cachedConfig) return cachedConfig;
   const result = configSchema.safeParse(process.env);
   if (!result.success) {
     throw new Error(formatZodError(result.error));
@@ -62,5 +65,10 @@ export function loadConfig(): HermesConfig {
     );
   }
 
-  return config;
+  cachedConfig = config;
+  return cachedConfig;
+}
+
+export function resetConfigCache() {
+  cachedConfig = null;
 }

@@ -90,7 +90,22 @@ export async function runIndexer() {
   const db = createSupabaseClient(true);
 
   const factoryAddress = config.HERMES_FACTORY_ADDRESS as `0x${string}`;
-  let fromBlock = BigInt(0);
+
+  // Resume from last indexed block instead of scanning from 0
+  const { data: lastBlock, error: lastBlockError } = await db
+    .from("indexed_events")
+    .select("block_number")
+    .order("block_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastBlockError) {
+    throw new Error(
+      `Failed to read indexer resume block: ${lastBlockError.message}`,
+    );
+  }
+  // Re-read the last indexed block (instead of +1) to survive partial block processing;
+  // indexed_events dedup keeps this replay idempotent.
+  let fromBlock = lastBlock ? BigInt(lastBlock.block_number) : BigInt(0);
 
   // Use a serialized loop to avoid overlapping intervals.
   while (true) {
@@ -284,10 +299,10 @@ export async function runIndexer() {
             const winnerOnChain = (log.args as unknown as [bigint])[0] ?? null;
             const winnerRow = winnerOnChain
               ? await getSubmissionByChainId(
-                  db,
-                  challenge.id,
-                  Number(winnerOnChain),
-                )
+                db,
+                challenge.id,
+                Number(winnerOnChain),
+              )
               : null;
             const finalizedAt = await blockTimestampIso(
               publicClient,

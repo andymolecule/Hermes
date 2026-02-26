@@ -2,12 +2,15 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {HermesErrors} from "./libraries/HermesErrors.sol";
 import {HermesEvents} from "./libraries/HermesEvents.sol";
 import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
 
-contract HermesChallenge is IHermesChallenge {
+contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
+    uint64 public constant SCORING_GRACE_PERIOD = 7 days;
+    uint64 public constant ORACLE_ROTATION_DELAY = 2 days;
 
     IERC20 public immutable usdc;
     address public immutable poster;
@@ -21,10 +24,15 @@ contract HermesChallenge is IHermesChallenge {
     uint8 public override maxSubmissionsPerWallet;
     DistributionType public override distributionType;
     Status public override status;
+    uint256 public override minimumScore;
 
     uint64 public disputeStartedAt;
     uint256 public winningSubmissionId;
     bool public winnerSet;
+
+    // Oracle rotation
+    address public pendingOracle;
+    uint64 public oracleRotationTimestamp;
 
     Submission[] private submissions;
     mapping(address => uint256) public submissionsByWallet;
@@ -40,6 +48,7 @@ contract HermesChallenge is IHermesChallenge {
         uint64 deadline_,
         uint64 disputeWindowHours_,
         uint8 maxSubmissionsPerWallet_,
+        uint256 minimumScore_,
         DistributionType distributionType_
     ) {
         if (poster_ == address(0) || oracle_ == address(0) || treasury_ == address(0)) {
@@ -69,6 +78,7 @@ contract HermesChallenge is IHermesChallenge {
         deadline = deadline_;
         disputeWindowHours = disputeWindowHours_;
         maxSubmissionsPerWallet = maxSubmissionsPerWallet_;
+        minimumScore = minimumScore_;
         distributionType = distributionType_;
         status = Status.Active;
     }
@@ -122,7 +132,7 @@ contract HermesChallenge is IHermesChallenge {
         emit HermesEvents.Scored(subId, score, proofBundleHash);
     }
 
-    function finalize() external override {
+    function finalize() external override nonReentrant {
         _updateStatusAfterDeadline();
         if (status == Status.Disputed) revert HermesErrors.DisputeActive();
         if (status == Status.Cancelled) revert HermesErrors.ChallengeCancelled();
@@ -131,8 +141,22 @@ contract HermesChallenge is IHermesChallenge {
             revert HermesErrors.DeadlineNotPassed();
         }
 
+        // Scoring completeness check: all scored OR grace period elapsed
+        bool allScored = true;
+        for (uint256 i = 0; i < submissions.length; i++) {
+            if (!submissions[i].scored) { allScored = false; break; }
+        }
+        if (!allScored && block.timestamp <= deadline + SCORING_GRACE_PERIOD) {
+            revert HermesErrors.ScoringIncomplete();
+        }
+
         (uint256[] memory winners, uint256[] memory scores) = _computeWinners();
-        if (winners.length == 0) revert HermesErrors.NoSubmissions();
+        if (winners.length == 0) {
+            status = Status.Cancelled;
+            require(usdc.transfer(poster, rewardAmount), "REFUND_FAILED");
+            emit HermesEvents.Cancelled();
+            return;
+        }
 
         uint256 protocolFee = (rewardAmount * PROTOCOL_FEE_BPS) / 10_000;
         uint256 remaining = rewardAmount - protocolFee;
@@ -172,10 +196,11 @@ contract HermesChallenge is IHermesChallenge {
         emit HermesEvents.Disputed(msg.sender, reason);
     }
 
-    function resolveDispute(uint256 winnerSubId) external override onlyOracle {
+    function resolveDispute(uint256 winnerSubId) external override onlyOracle nonReentrant {
         if (status != Status.Disputed) revert HermesErrors.InvalidStatus();
         if (winnerSubId >= submissions.length) revert HermesErrors.InvalidSubmission();
         if (!submissions[winnerSubId].scored) revert HermesErrors.InvalidSubmission();
+        if (submissions[winnerSubId].score < minimumScore) revert HermesErrors.MinimumScoreNotMet();
 
         uint256 protocolFee = (rewardAmount * PROTOCOL_FEE_BPS) / 10_000;
         uint256 remaining = rewardAmount - protocolFee;
@@ -209,7 +234,7 @@ contract HermesChallenge is IHermesChallenge {
         emit HermesEvents.DisputeResolved(winnerSubId);
     }
 
-    function cancel() external override onlyPoster {
+    function cancel() external override onlyPoster nonReentrant {
         _updateStatusAfterDeadline();
         if (status != Status.Active) revert HermesErrors.InvalidStatus();
         if (block.timestamp >= deadline) revert HermesErrors.DeadlinePassed();
@@ -220,7 +245,7 @@ contract HermesChallenge is IHermesChallenge {
         emit HermesEvents.Cancelled();
     }
 
-    function timeoutRefund() external override {
+    function timeoutRefund() external override nonReentrant {
         if (status != Status.Disputed) revert HermesErrors.InvalidStatus();
         if (block.timestamp <= disputeStartedAt + 30 days) revert HermesErrors.DeadlineNotPassed();
 
@@ -229,7 +254,7 @@ contract HermesChallenge is IHermesChallenge {
         emit HermesEvents.Cancelled();
     }
 
-    function claim() external override {
+    function claim() external override nonReentrant {
         if (status != Status.Finalized) revert HermesErrors.InvalidStatus();
         uint256 payout = payoutByAddress[msg.sender];
         if (payout == 0) revert HermesErrors.NothingToClaim();
@@ -250,6 +275,25 @@ contract HermesChallenge is IHermesChallenge {
         returns (uint256[] memory subIds, uint256[] memory scores)
     {
         (subIds, scores) = _rankedSubmissions();
+    }
+
+    // --- Oracle rotation with timelock ---
+
+    function proposeOracleRotation(address newOracle) external override onlyPoster {
+        if (newOracle == address(0)) revert HermesErrors.InvalidAddress();
+        pendingOracle = newOracle;
+        oracleRotationTimestamp = uint64(block.timestamp) + ORACLE_ROTATION_DELAY;
+        emit HermesEvents.OracleRotationProposed(newOracle, oracleRotationTimestamp);
+    }
+
+    function executeOracleRotation() external override {
+        if (pendingOracle == address(0)) revert HermesErrors.NoPendingRotation();
+        if (block.timestamp < oracleRotationTimestamp) revert HermesErrors.OracleRotationNotReady();
+        address oldOracle = oracle;
+        oracle = pendingOracle;
+        pendingOracle = address(0);
+        oracleRotationTimestamp = 0;
+        emit HermesEvents.OracleRotated(oldOracle, oracle);
     }
 
     function _updateStatusAfterDeadline() internal {
@@ -341,7 +385,7 @@ contract HermesChallenge is IHermesChallenge {
 
         uint256 scoredCount = 0;
         for (uint256 i = 0; i < submissionCount; i++) {
-            if (submissions[i].scored) {
+            if (submissions[i].scored && submissions[i].score >= minimumScore) {
                 rankedIds[scoredCount] = i;
                 rankedScores[scoredCount] = submissions[i].score;
                 scoredCount++;

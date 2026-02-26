@@ -31,6 +31,7 @@ interface IHermesChallenge {
     function disputeWindowHours() external view returns (uint64);
     function maxSubmissionsPerWallet() external view returns (uint8);
     function distributionType() external view returns (DistributionType);
+    function minimumScore() external view returns (uint256);
 
     function submit(bytes32 resultHash) external returns (uint256 subId);
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external;
@@ -40,6 +41,8 @@ interface IHermesChallenge {
     function cancel() external;
     function timeoutRefund() external;
     function claim() external;
+    function proposeOracleRotation(address newOracle) external;
+    function executeOracleRotation() external;
 
     function getSubmission(uint256 subId) external view returns (Submission memory);
     function getLeaderboard() external view returns (uint256[] memory subIds, uint256[] memory scores);

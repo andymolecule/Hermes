@@ -34,6 +34,7 @@ contract HermesFactoryTest is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
             address(0)
         );
@@ -46,7 +47,7 @@ contract HermesFactoryTest is Test {
         address labTBA = address(0xBEEF);
         vm.prank(poster);
         (uint256 id,) = factory.createChallenge(
-            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3,
+            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTBA
         );
         assertEq(id, 0);
@@ -54,8 +55,8 @@ contract HermesFactoryTest is Test {
 
     function testCreateMultipleChallengesIncrementsId() public {
         vm.startPrank(poster);
-        (uint256 id1,) = factory.createChallenge("cid1", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, address(0));
-        (uint256 id2,) = factory.createChallenge("cid2", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, address(0));
+        (uint256 id1,) = factory.createChallenge("cid1", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0));
+        (uint256 id2,) = factory.createChallenge("cid2", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0));
         vm.stopPrank();
         assertEq(id1, 0);
         assertEq(id2, 1);
@@ -114,7 +115,7 @@ contract HermesFactoryTest is Test {
     function testChallengesMappingStoresAddress() public {
         vm.prank(poster);
         (uint256 id, address challengeAddr) = factory.createChallenge(
-            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, address(0)
+            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0)
         );
         assertEq(factory.challenges(id), challengeAddr);
     }

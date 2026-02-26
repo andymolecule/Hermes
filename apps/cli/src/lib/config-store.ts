@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resetConfigCache } from "@hermes/common";
 import { z } from "zod";
 const cliConfigSchema = z.object({
   rpc_url: z.string().url().optional(),
@@ -80,6 +81,9 @@ export function applyConfigToEnv(config: CliConfig) {
   setIfMissing("HERMES_SUPABASE_URL", config.supabase_url);
   setIfMissing("HERMES_SUPABASE_ANON_KEY", config.supabase_anon_key);
   setIfMissing("HERMES_SUPABASE_SERVICE_KEY", config.supabase_service_key);
+
+  // Ensure loadConfig() re-parses after env mutation in this process.
+  resetConfigCache();
 }
 
 export function requireConfigValues(

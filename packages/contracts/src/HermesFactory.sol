@@ -40,6 +40,7 @@ contract HermesFactory is Ownable {
         uint64 deadline,
         uint64 disputeWindowHours,
         uint8 maxSubmissionsPerWallet,
+        uint256 minimumScore,
         uint8 distributionType,
         address labTBA
     ) external returns (uint256 challengeId, address challengeAddr) {
@@ -55,6 +56,7 @@ contract HermesFactory is Ownable {
             deadline,
             disputeWindowHours,
             maxSubmissionsPerWallet,
+            minimumScore,
             dist
         );
 
