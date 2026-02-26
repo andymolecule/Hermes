@@ -7,6 +7,15 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
     "test": "echo 'no tests'"
+  },
+  "dependencies": {
+    "@hermes/chain": "workspace:*",
+    "@hermes/common": "workspace:*",
+    "@hermes/db": "workspace:*",
+    "@hermes/ipfs": "workspace:*",
+    "viem": "^2.21.0",
+    "yaml": "^2.3.4"
   }
 }
