@@ -82,6 +82,11 @@
         "internalType": "uint8"
       },
       {
+        "name": "minimumScore",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "distributionType",
         "type": "uint8",
         "internalType": "uint8"

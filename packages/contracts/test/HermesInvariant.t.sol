@@ -38,6 +38,7 @@ contract HermesInvariantHandler is Test {
             uint64(block.timestamp + 1 days),
             48,
             3,
+            0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
 

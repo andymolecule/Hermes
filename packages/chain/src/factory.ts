@@ -11,6 +11,7 @@ export interface CreateChallengeParams {
   deadline: number;
   disputeWindowHours: number;
   maxSubmissionsPerWallet: number;
+  minimumScore: bigint;
   distributionType: number;
   labTba: `0x${string}`;
 }
@@ -31,6 +32,7 @@ export async function createChallenge(params: CreateChallengeParams) {
       BigInt(params.deadline),
       BigInt(params.disputeWindowHours),
       params.maxSubmissionsPerWallet,
+      params.minimumScore,
       params.distributionType,
       params.labTba,
     ],

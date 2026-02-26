@@ -12,4 +12,6 @@ library HermesEvents {
     event DisputeResolved(uint256 indexed winningSubmissionId);
     event Cancelled();
     event Claimed(address indexed claimant, uint256 amount);
+    event OracleRotationProposed(address indexed newOracle, uint64 effectiveAt);
+    event OracleRotated(address indexed oldOracle, address indexed newOracle);
 }

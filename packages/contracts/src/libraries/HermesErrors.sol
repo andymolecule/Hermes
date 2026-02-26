@@ -25,4 +25,8 @@ library HermesErrors {
     error InvalidRewardAmount();
     error InvalidMaxSubmissions();
     error DeadlineInPast();
+    error ScoringIncomplete();
+    error MinimumScoreNotMet();
+    error OracleRotationNotReady();
+    error NoPendingRotation();
 }
