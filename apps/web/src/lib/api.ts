@@ -51,16 +51,8 @@ export async function accelerateChallengeIndex(input: {
   specCid: string;
   txHash: `0x${string}`;
 }) {
-  const response = await fetch(`${BASE}/api/challenges`, {
+  return request<{ ok: boolean; challengeAddress: string }>("/api/challenges", {
     method: "POST",
-    headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`API request failed (${response.status}): ${text}`);
-  }
-
-  return (await response.json()) as { ok: boolean; challengeAddress: string };
 }

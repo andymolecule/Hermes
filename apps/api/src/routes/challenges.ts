@@ -125,7 +125,7 @@ router.post(
       }),
     );
 
-    return c.json({ ok: true, challengeAddress });
+    return c.json({ data: { ok: true, challengeAddress } });
   },
 );
 
