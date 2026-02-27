@@ -102,8 +102,9 @@ export function PostClient() {
   const { writeContractAsync } = useWriteContract();
 
   const rewardValue = Number(state.reward || 0);
-  const feeValue = rewardValue * 0.05;
-  const totalValue = rewardValue + feeValue;
+  const protocolFeeRate = 0.05;
+  const protocolFeeValue = rewardValue * protocolFeeRate;
+  const winnerPayoutValue = Math.max(rewardValue - protocolFeeValue, 0);
 
   const specPreview = useMemo(
     () => (mode === "yaml" ? yamlText : yaml.stringify(buildSpec(state))),
@@ -427,17 +428,17 @@ export function PostClient() {
       <div className="card" style={{ padding: 14 }}>
         <h3 style={{ marginTop: 0 }}>Cost Breakdown</h3>
         <div className="grid" style={{ gap: 4 }}>
-          <div className="card-row muted">
-            <span>Reward pool</span>
-            <span>{formatUsdc(rewardValue)} USDC</span>
-          </div>
-          <div className="card-row muted">
-            <span>Protocol fee (5%)</span>
-            <span>{formatUsdc(feeValue)} USDC</span>
-          </div>
           <div className="card-row">
-            <strong>Total spend</strong>
-            <strong>{formatUsdc(totalValue)} USDC</strong>
+            <strong>You deposit now</strong>
+            <strong>{formatUsdc(rewardValue)} USDC</strong>
+          </div>
+          <div className="card-row muted">
+            <span>Protocol fee at finalization (from pool)</span>
+            <span>{formatUsdc(protocolFeeValue)} USDC</span>
+          </div>
+          <div className="card-row muted">
+            <span>Net winner payout</span>
+            <span>{formatUsdc(winnerPayoutValue)} USDC</span>
           </div>
         </div>
       </div>
