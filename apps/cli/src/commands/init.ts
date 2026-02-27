@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHALLENGE_LIMITS } from "@hermes/common";
 import { Command } from "commander";
 import { printSuccess } from "../lib/output";
 
@@ -19,7 +20,7 @@ const templateMap: Record<string, string> = {
 
 const embeddedTemplates: Record<string, string> = {
   reproducibility: `# Hermes challenge template: reproducibility
-# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
 
 id: ch-001
 # Short, human-readable title
@@ -47,7 +48,7 @@ scoring:
 
 reward:
   # Total USDC reward for the challenge
-  total: 500
+  total: 10
   # winner_take_all | top_3 | proportional
   distribution: winner_take_all
 
@@ -60,15 +61,14 @@ tags:
 
 # Optional settings
 minimum_score: 0.0
-# Dispute window in hours (max 168)
-dispute_window_hours: 48
-# Max submissions per wallet (max 3)
-max_submissions_per_wallet: 3
+# Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
+dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
+
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"
 `,
   prediction: `# Hermes challenge template: prediction
-# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
 
 id: ch-002
 # Short, human-readable title
@@ -96,7 +96,7 @@ scoring:
 
 reward:
   # Total USDC reward for the challenge
-  total: 500
+  total: 10
   # winner_take_all | top_3 | proportional
   distribution: top_3
 
@@ -109,15 +109,14 @@ tags:
 
 # Optional settings
 minimum_score: 0.1
-# Dispute window in hours (max 168)
-dispute_window_hours: 48
-# Max submissions per wallet (max 3)
-max_submissions_per_wallet: 3
+# Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
+dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
+
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"
 `,
   docking: `# Hermes challenge template: docking
-# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
 
 id: ch-003
 # Short, human-readable title
@@ -145,7 +144,7 @@ scoring:
 
 reward:
   # Total USDC reward for the challenge
-  total: 500
+  total: 10
   # winner_take_all | top_3 | proportional
   distribution: proportional
 
@@ -158,10 +157,8 @@ tags:
 
 # Optional settings
 minimum_score: 0.0
-# Dispute window in hours (max 168)
-dispute_window_hours: 72
-# Max submissions per wallet (max 3)
-max_submissions_per_wallet: 3
+# Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
+dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"
 `,

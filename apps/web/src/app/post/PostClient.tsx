@@ -4,9 +4,11 @@ import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useMemo, useState } from "react";
 import { type Abi, parseUnits } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import yaml from "yaml";
 import { YamlEditor } from "../../components/YamlEditor";
+import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
+import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc } from "../../lib/format";
 
@@ -46,7 +48,6 @@ type FormState = {
   deadline: string;
   minimumScore: string;
   disputeWindow: string;
-  maxSubs: string;
 };
 
 const initialState: FormState = {
@@ -59,12 +60,11 @@ const initialState: FormState = {
   test: "",
   metric: "rmse",
   container: "ghcr.io/hermes-science/repro-scorer:latest",
-  reward: "50",
+  reward: "10",
   distribution: "winner_take_all",
   deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   minimumScore: "0",
-  disputeWindow: "48",
-  maxSubs: "3",
+  disputeWindow: "168",
 };
 
 function buildSpec(state: FormState) {
@@ -83,7 +83,6 @@ function buildSpec(state: FormState) {
     deadline: state.deadline,
     minimum_score: Number(state.minimumScore),
     dispute_window_hours: Number(state.disputeWindow),
-    max_submissions_per_wallet: Number(state.maxSubs),
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
 }
@@ -99,13 +98,15 @@ export function PostClient() {
   const [status, setStatus] = useState<string>("");
   const [isPosting, setIsPosting] = useState(false);
 
-  const { isConnected, chainId } = useAccount();
+  const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const rewardValue = Number(state.reward || 0);
-  const feeValue = rewardValue * 0.05;
-  const totalValue = rewardValue + feeValue;
+  const protocolFeeRate = 0.05;
+  const protocolFeeValue = rewardValue * protocolFeeRate;
+  const winnerPayoutValue = Math.max(rewardValue - protocolFeeValue, 0);
 
   const specPreview = useMemo(
     () => (mode === "yaml" ? yamlText : yaml.stringify(buildSpec(state))),
@@ -125,8 +126,16 @@ export function PostClient() {
     if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
       return "Reward must be a positive number.";
     }
-    if (Number(state.maxSubs) < 1 || Number(state.maxSubs) > 3) {
-      return "Max submissions per wallet must be 1-3.";
+    if (rewardValue < 1 || rewardValue > 30) {
+      return "Reward must be between 1 and 30 USDC.";
+    }
+    const disputeWindow = Number(state.disputeWindow);
+    if (
+      !Number.isFinite(disputeWindow) ||
+      disputeWindow < 168 ||
+      disputeWindow > 2160
+    ) {
+      return "Dispute window must be between 168 and 2160 hours.";
     }
     if (new Date(state.deadline).getTime() <= Date.now()) {
       return "Deadline must be in the future.";
@@ -185,11 +194,31 @@ export function PostClient() {
       if (!Number.isFinite(deadlineTs) || deadlineTs <= Date.now()) {
         throw new Error("Spec deadline must be a valid future timestamp.");
       }
+      if (!address) {
+        throw new Error("Wallet address is required to authorize spec pinning.");
+      }
+
+      const timestamp = Date.now();
+      const specHash = computeSpecHash(spec);
+      const message = buildPinSpecMessage({
+        address,
+        timestamp,
+        specHash,
+      });
+      const signature = await signMessageAsync({ message });
 
       const pinRes = await fetch("/api/pin-spec", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ spec }),
+        body: JSON.stringify({
+          spec,
+          auth: {
+            address,
+            timestamp,
+            specHash,
+            signature,
+          },
+        }),
       });
       if (!pinRes.ok) {
         throw new Error(await pinRes.text());
@@ -217,8 +246,7 @@ export function PostClient() {
           specCid,
           rewardUnits,
           BigInt(Math.floor(deadlineTs / 1000)),
-          BigInt(spec.dispute_window_hours ?? 48),
-          spec.max_submissions_per_wallet ?? 3,
+          BigInt(spec.dispute_window_hours ?? 168),
           minimumScoreWad,
           DISTRIBUTION_TO_ENUM[
             spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
@@ -228,8 +256,18 @@ export function PostClient() {
       });
 
       await publicClient.waitForTransactionReceipt({ hash: createTx });
-      setStatus(`Challenge posted on-chain: ${createTx}`);
-      setStatus(`Challenge posted successfully. tx=${createTx}.`);
+      setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
+      try {
+        await accelerateChallengeIndex({ specCid, txHash: createTx });
+        setStatus(
+          `Challenge posted successfully. tx=${createTx}. Indexed immediately.`,
+        );
+      } catch (accelerateError) {
+        console.warn("Challenge acceleration failed", accelerateError);
+        setStatus(
+          `Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`,
+        );
+      }
     } catch (submitError) {
       setStatus(
         submitError instanceof Error
@@ -396,21 +434,11 @@ export function PostClient() {
             <input
               className="input"
               type="number"
-              min={24}
-              max={168}
+              min={168}
+              max={2160}
               value={state.disputeWindow}
               onChange={(e) =>
                 setState((s) => ({ ...s, disputeWindow: e.target.value }))
-              }
-            />
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={3}
-              value={state.maxSubs}
-              onChange={(e) =>
-                setState((s) => ({ ...s, maxSubs: e.target.value }))
               }
             />
           </div>
@@ -422,17 +450,17 @@ export function PostClient() {
       <div className="card" style={{ padding: 14 }}>
         <h3 style={{ marginTop: 0 }}>Cost Breakdown</h3>
         <div className="grid" style={{ gap: 4 }}>
-          <div className="card-row muted">
-            <span>Reward pool</span>
-            <span>{formatUsdc(rewardValue)} USDC</span>
-          </div>
-          <div className="card-row muted">
-            <span>Protocol fee (5%)</span>
-            <span>{formatUsdc(feeValue)} USDC</span>
-          </div>
           <div className="card-row">
-            <strong>Total spend</strong>
-            <strong>{formatUsdc(totalValue)} USDC</strong>
+            <strong>You deposit now</strong>
+            <strong>{formatUsdc(rewardValue)} USDC</strong>
+          </div>
+          <div className="card-row muted">
+            <span>Protocol fee at finalization (from pool)</span>
+            <span>{formatUsdc(protocolFeeValue)} USDC</span>
+          </div>
+          <div className="card-row muted">
+            <span>Net winner payout</span>
+            <span>{formatUsdc(winnerPayoutValue)} USDC</span>
           </div>
         </div>
       </div>

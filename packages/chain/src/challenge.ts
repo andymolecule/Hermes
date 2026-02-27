@@ -1,6 +1,10 @@
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import type { Abi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient } from "./client.js";
+import { loadConfig } from "@hermes/common";
+import { createWalletClient, http } from "viem";
+import { base, baseSepolia } from "viem/chains";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -9,6 +13,27 @@ export async function submitChallengeResult(
   resultHash: `0x${string}`,
 ) {
   const walletClient = getWalletClient();
+  return walletClient.writeContract({
+    address: challengeAddress,
+    abi: HermesChallengeAbi,
+    functionName: "submit",
+    args: [resultHash],
+  });
+}
+
+export async function submitChallengeResultWithPrivateKey(
+  challengeAddress: `0x${string}`,
+  resultHash: `0x${string}`,
+  privateKey: `0x${string}`,
+) {
+  const config = loadConfig();
+  const chainId = config.HERMES_CHAIN_ID ?? baseSepolia.id;
+  const chain = chainId === base.id ? base : baseSepolia;
+  const walletClient = createWalletClient({
+    chain,
+    transport: http(config.HERMES_RPC_URL),
+    account: privateKeyToAccount(privateKey),
+  });
   return walletClient.writeContract({
     address: challengeAddress,
     abi: HermesChallengeAbi,
@@ -119,4 +144,3 @@ export async function getOnChainSubmission(
     scored: result.scored as boolean,
   };
 }
-

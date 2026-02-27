@@ -9,6 +9,9 @@
     "build": "tsc -p tsconfig.json",
     "test": "echo 'no tests'"
   },
+  "devDependencies": {
+    "@types/node": "^25.3.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

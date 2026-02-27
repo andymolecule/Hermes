@@ -5,6 +5,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {HermesErrors} from "./libraries/HermesErrors.sol";
 import {HermesEvents} from "./libraries/HermesEvents.sol";
+import {HermesConstants} from "./libraries/HermesConstants.sol";
 import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
 
 contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
@@ -21,7 +22,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint256 public override rewardAmount;
     uint64 public override deadline;
     uint64 public override disputeWindowHours;
-    uint8 public override maxSubmissionsPerWallet;
+
     DistributionType public override distributionType;
     Status public override status;
     uint256 public override minimumScore;
@@ -35,7 +36,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     uint64 public oracleRotationTimestamp;
 
     Submission[] private submissions;
-    mapping(address => uint256) public submissionsByWallet;
+
     mapping(address => uint256) public payoutByAddress;
 
     constructor(
@@ -47,23 +48,22 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         uint256 rewardAmount_,
         uint64 deadline_,
         uint64 disputeWindowHours_,
-        uint8 maxSubmissionsPerWallet_,
         uint256 minimumScore_,
         DistributionType distributionType_
     ) {
         if (poster_ == address(0) || oracle_ == address(0) || treasury_ == address(0)) {
             revert HermesErrors.InvalidAddress();
         }
-        if (rewardAmount_ == 0) {
+        if (rewardAmount_ < HermesConstants.MIN_REWARD_USDC || rewardAmount_ > HermesConstants.MAX_REWARD_USDC) {
             revert HermesErrors.InvalidRewardAmount();
-        }
-        if (maxSubmissionsPerWallet_ == 0 || maxSubmissionsPerWallet_ > 3) {
-            revert HermesErrors.InvalidMaxSubmissions();
         }
         if (deadline_ <= block.timestamp) {
             revert HermesErrors.DeadlineInPast();
         }
-        if (disputeWindowHours_ < 48 || disputeWindowHours_ > 168) {
+        if (
+            disputeWindowHours_ < HermesConstants.MIN_DISPUTE_WINDOW_HOURS
+                || disputeWindowHours_ > HermesConstants.MAX_DISPUTE_WINDOW_HOURS
+        ) {
             revert HermesErrors.InvalidDisputeWindow();
         }
         if (uint8(distributionType_) > uint8(DistributionType.Proportional)) {
@@ -77,7 +77,6 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         rewardAmount = rewardAmount_;
         deadline = deadline_;
         disputeWindowHours = disputeWindowHours_;
-        maxSubmissionsPerWallet = maxSubmissionsPerWallet_;
         minimumScore = minimumScore_;
         distributionType = distributionType_;
         status = Status.Active;
@@ -97,11 +96,6 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         _updateStatusAfterDeadline();
         if (status != Status.Active) revert HermesErrors.InvalidStatus();
         if (block.timestamp >= deadline) revert HermesErrors.DeadlinePassed();
-        if (submissionsByWallet[msg.sender] >= maxSubmissionsPerWallet) {
-            revert HermesErrors.MaxSubmissionsReached();
-        }
-
-        submissionsByWallet[msg.sender] += 1;
         submissions.push(
             Submission({
                 solver: msg.sender,

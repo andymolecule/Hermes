@@ -30,7 +30,6 @@ const MAX_FILE_BYTES = 100 * 1024 * 1024;
 type ChallengeRecord = {
   id: string;
   contract_address: string;
-  max_submissions_per_wallet: number;
   deadline: string;
   status: string;
 };
@@ -125,30 +124,18 @@ export function buildSubmitCommand() {
           throw new Error("Deadline passed.");
         }
 
-        const { count: existingCount } = await db
-          .from("submissions")
-          .select("id", { count: "exact", head: true })
-          .eq("challenge_id", challenge.id)
-          .eq("solver_address", walletAddress);
-        if (
-          existingCount !== null &&
-          existingCount !== undefined &&
-          existingCount >= challenge.max_submissions_per_wallet
-        ) {
-          throw new Error(
-            `Max submissions reached (${existingCount}/${challenge.max_submissions_per_wallet}).`,
-          );
-        }
-
         const cidValue = resultCid.replace("ipfs://", "");
         const resultHash = keccak256(toBytes(cidValue));
 
-        const submitSpinner = createSpinner("Submitting on-chain...");
+        const submitSpinner =
+          opts.format === "json"
+            ? null
+            : createSpinner("Submitting on-chain...");
         const txHash = await submitChallengeResult(
           challenge.contract_address as `0x${string}`,
           resultHash,
         );
-        submitSpinner.succeed(`Submission tx sent: ${txHash}`);
+        submitSpinner?.succeed(`Submission tx sent: ${txHash}`);
 
         const publicClient = getPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
@@ -165,22 +152,37 @@ export function buildSubmitCommand() {
         const submissionId =
           getLogArg(submitted?.args, 0, "subId") ??
           getLogArg(submitted?.args, 0, "submissionId");
+        let cidUpdateWarning: string | null = null;
 
         if (typeof submissionId === "bigint") {
-          await setSubmissionResultCid(
-            db,
-            challenge.id,
-            Number(submissionId),
-            resultCid,
-          );
+          // Retry: the indexer may not have created the submission row yet
+          let cidUpdated = false;
+          for (let attempt = 0; attempt < 3 && !cidUpdated; attempt++) {
+            try {
+              if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+              }
+              await setSubmissionResultCid(
+                db,
+                challenge.id,
+                Number(submissionId),
+                resultCid,
+              );
+              cidUpdated = true;
+            } catch {
+              // submission row may not exist yet
+            }
+          }
+          if (!cidUpdated) {
+            cidUpdateWarning =
+              "Failed to update result CID (indexer may not have processed the submission yet).";
+            if (opts.format !== "json") {
+              printWarning(
+                `${cidUpdateWarning} Retry 'hm submit' in a few seconds if scoring cannot find the CID.`,
+              );
+            }
+          }
         }
-
-        const { count } = await db
-          .from("submissions")
-          .select("id", { count: "exact", head: true })
-          .eq("challenge_id", challenge.id)
-          .eq("solver_address", walletAddress);
-        const submissionCount = count ?? null;
 
         const output = {
           submissionId:
@@ -189,19 +191,13 @@ export function buildSubmitCommand() {
               : submissionId,
           resultCid,
           txHash,
-          submissionsUsed: submissionCount,
-          maxSubmissions: challenge.max_submissions_per_wallet,
+          warning: cidUpdateWarning,
         };
 
         if (opts.format === "json") {
           printJson(output);
         } else {
           printSuccess("Submission recorded.");
-          if (submissionCount !== null) {
-            printWarning(
-              `Submission ${submissionCount}/${challenge.max_submissions_per_wallet} used`,
-            );
-          }
         }
       },
     );

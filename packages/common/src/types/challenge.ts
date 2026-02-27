@@ -38,6 +38,5 @@ export interface ChallengeSpec {
   tags?: string[];
   minimum_score?: number;
   dispute_window_hours?: number;
-  max_submissions_per_wallet?: number;
   lab_tba?: string;
 }

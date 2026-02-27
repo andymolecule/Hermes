@@ -23,5 +23,4 @@ tags:
   - tcga
 minimum_score: 0.0
 dispute_window_hours: 24
-max_submissions_per_wallet: 3
 lab_tba: "0x0000000000000000000000000000000000000000"

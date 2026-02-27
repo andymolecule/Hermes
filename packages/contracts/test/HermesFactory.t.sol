@@ -30,24 +30,23 @@ contract HermesFactoryTest is Test {
         vm.prank(poster);
         (uint256 id, address challengeAddr) = factory.createChallenge(
             "cid",
-            500e6,
+            10e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
             address(0)
         );
         assertEq(id, 0);
-        assertEq(usdc.balanceOf(challengeAddr), 500e6);
-        assertEq(usdc.balanceOf(poster), 1_000_000e6 - 500e6);
+        assertEq(usdc.balanceOf(challengeAddr), 10e6);
+        assertEq(usdc.balanceOf(poster), 1_000_000e6 - 10e6);
     }
 
     function testCreateChallengeWithLabTBA() public {
         address labTBA = address(0xBEEF);
         vm.prank(poster);
         (uint256 id,) = factory.createChallenge(
-            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0,
+            "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0,
             uint8(IHermesChallenge.DistributionType.WinnerTakeAll), labTBA
         );
         assertEq(id, 0);
@@ -55,8 +54,8 @@ contract HermesFactoryTest is Test {
 
     function testCreateMultipleChallengesIncrementsId() public {
         vm.startPrank(poster);
-        (uint256 id1,) = factory.createChallenge("cid1", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0));
-        (uint256 id2,) = factory.createChallenge("cid2", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0));
+        (uint256 id1,) = factory.createChallenge("cid1", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0));
+        (uint256 id2,) = factory.createChallenge("cid2", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0));
         vm.stopPrank();
         assertEq(id1, 0);
         assertEq(id2, 1);
@@ -115,7 +114,7 @@ contract HermesFactoryTest is Test {
     function testChallengesMappingStoresAddress() public {
         vm.prank(poster);
         (uint256 id, address challengeAddr) = factory.createChallenge(
-            "cid", 100e6, uint64(block.timestamp + 1 days), 48, 3, 0, 0, address(0)
+            "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0)
         );
         assertEq(factory.challenges(id), challengeAddr);
     }

@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+function parseBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+  }
+  return value;
+}
+
 const configSchema = z.object({
   HERMES_RPC_URL: z.string().url(),
   HERMES_CHAIN_ID: z
@@ -25,6 +35,7 @@ const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
+  HERMES_CORS_ORIGINS: z.string().optional(),
   HERMES_MCP_PORT: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
@@ -32,6 +43,15 @@ const configSchema = z.object({
     )
     .optional(),
   HERMES_LOG_LEVEL: z.string().min(1).optional(),
+  HERMES_X402_ENABLED: z.preprocess(parseBoolean, z.boolean()).default(false),
+  HERMES_X402_REPORT_ONLY: z
+    .preprocess(parseBoolean, z.boolean())
+    .default(false),
+  HERMES_X402_FACILITATOR_URL: z
+    .string()
+    .url()
+    .default("https://x402.org/facilitator"),
+  HERMES_X402_NETWORK: z.string().min(1).default("eip155:84532"),
 });
 
 export type HermesConfig = z.infer<typeof configSchema>;

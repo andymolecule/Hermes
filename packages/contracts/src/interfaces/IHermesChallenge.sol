@@ -29,7 +29,6 @@ interface IHermesChallenge {
     function rewardAmount() external view returns (uint256);
     function deadline() external view returns (uint64);
     function disputeWindowHours() external view returns (uint64);
-    function maxSubmissionsPerWallet() external view returns (uint8);
     function distributionType() external view returns (DistributionType);
     function minimumScore() external view returns (uint256);
 

@@ -1,5 +1,5 @@
 # Hermes challenge template: docking
-# Fill in the placeholders, then run: hm post challenge.yaml --deposit 500
+# Fill in the placeholders, then run: hm post challenge.yaml --deposit 10
 
 id: ch-003
 # Short, human-readable title
@@ -27,7 +27,7 @@ scoring:
 
 reward:
   # Total USDC reward for the challenge
-  total: 500
+  total: 10
   # winner_take_all | top_3 | proportional
   distribution: proportional
 
@@ -40,9 +40,7 @@ tags:
 
 # Optional settings
 minimum_score: 0.0
-# Dispute window in hours (max 168)
-dispute_window_hours: 72
-# Max submissions per wallet (max 3)
-max_submissions_per_wallet: 3
+# Dispute window in hours (168-2160, i.e. 7-90 days)
+dispute_window_hours: 168
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"

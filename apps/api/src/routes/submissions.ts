@@ -113,7 +113,7 @@ router.post(
       result_hash: onChain.resultHash,
       result_cid: resultCid,
       proof_bundle_hash: onChain.proofBundleHash,
-      score: onChain.score.toString(),
+      score: onChain.scored ? onChain.score.toString() : null,
       scored: onChain.scored,
       submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
       tx_hash: txHash,

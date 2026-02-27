@@ -77,11 +77,6 @@
         "internalType": "uint64"
       },
       {
-        "name": "maxSubmissionsPerWallet",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
         "name": "minimumScore",
         "type": "uint256",
         "internalType": "uint256"
