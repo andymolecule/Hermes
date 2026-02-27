@@ -39,7 +39,7 @@ export function TimelineStatus({ challenge }: { challenge: Challenge }) {
         Deadline: {new Date(challenge.deadline).toLocaleString()}
       </div>
       <div className="muted">
-        Dispute window: {challenge.dispute_window_hours ?? 24}h
+        Dispute window: {challenge.dispute_window_hours ?? 168}h
       </div>
       <div className="muted">
         Minimum score: {String(challenge.minimum_score ?? 0)}
