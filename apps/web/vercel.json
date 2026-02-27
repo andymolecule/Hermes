@@ -1,6 +1,5 @@
 {
   "framework": "nextjs",
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "buildCommand": "cd ../.. && pnpm turbo build --filter=@hermes/web...",
-  "outputDirectory": ".next"
+  "buildCommand": "cd ../.. && pnpm turbo build --filter=@hermes/web..."
 }
