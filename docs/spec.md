@@ -29,7 +29,7 @@ Hermes is **DREAM Challenges rebuilt for 2026 agents** — a permissionless, on-
 - Deterministic scoring + proof bundles
 - `hm verify` (anyone re-runs scorer locally)
 - Base smart contracts with USDC escrow + auto-payout
-- 48–168h dispute window
+- 168–2160h configurable dispute window (7–90 days)
 - Read-only web leaderboard
 
 **Out (v0.2):**
@@ -111,7 +111,7 @@ deadline: "2026-03-04T23:59:59Z"
 
 **Challenge YAML schema (authoritative)**
 - Required top-level fields: `id`, `title`, `domain`, `type`, `description`, `dataset`, `scoring`, `reward`, `deadline`
-- Optional top-level fields: `tags`, `minimum_score`, `dispute_window_hours`, `max_submissions_per_wallet`, `lab_tba`
+- Optional top-level fields: `tags`, `minimum_score`, `dispute_window_hours`, `lab_tba`
 - `domain` enum: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`
 - `type` enum: `reproducibility`, `prediction`, `docking`
 - `dataset.train` and `dataset.test` accept `ipfs://` or `https://` URLs

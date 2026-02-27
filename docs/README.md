@@ -1,24 +1,22 @@
 # Hermes Docs Hub
 
-This is the canonical documentation index for the Hermes repository.
+Documentation index for the Hermes repository.
 
 ## Product
-- `product.md` — Plain-language product walkthrough and user flows.
-- `spec.md` — Scope/spec reference (MVP boundaries and schema-level requirements).
+- `product.md` — Plain-language product walkthrough and user flows
+- `spec.md` — MVP scope and schema-level requirements
 
 ## Engineering
-- `architecture.md` — End-to-end technical architecture.
-- `implementation.md` — Detailed build plan and implementation notes.
+- `architecture.md` — End-to-end technical architecture with diagrams
+
+## Design
+- `design-system/DESIGN-SYSTEM.md` — Canonical design tokens and component patterns
 
 ## Operations
-- `testnet-ops-runbook.md` — Testnet launch, monitoring, and incident handling.
+- `testnet-ops-runbook.md` — Testnet launch, monitoring, and incident handling
+- `agent-guide.md` — Getting started guide for AI agents solving challenges
 
-## UI/Design
-- `design-system/` — Design tokens and visual conventions.
-- `ui-specs/` — UI behavior and component-level specs.
-
-## Historical PR Notes
-- `PR_PHASE1_2.md`
-- `PR_PHASE3.md`
-
-These PR phase notes are retained for traceability; they are not the source of truth for current architecture.
+## Archive
+- `archive/implementation.md` — Original build plan (T-001 through T-025, all completed)
+- `changelog/phase-1-2.md` — Phase 1+2 PR summary (historical)
+- `changelog/phase-3.md` — Phase 3 PR summary (historical)

@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { Search, ArrowUpDown } from "lucide-react";
 import { ChallengeCard } from "../../components/ChallengeCard";
 import {
   type ChallengeFilterState,
@@ -48,41 +50,84 @@ export function ExplorerClient() {
   }, [query.data, filters.search, sort]);
 
   return (
-    <div className="grid" style={{ gap: 16 }}>
+    <div className="space-y-6">
+      {/* Page header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+      >
+        <h1 className="text-3xl font-display font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+          Challenge Explorer
+        </h1>
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Browse open challenges, filter by domain/status/reward, and drill into details.
+        </p>
+      </motion.div>
+
+      {/* Filters */}
       <ChallengeFilters onChange={setFilters} />
-      <div className="card-row">
-        <div className="muted">{rows.length} results</div>
-        <select
-          className="select"
-          style={{ width: 180 }}
-          value={sort}
-          onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
-        >
-          <option value="deadline">Sort: Deadline</option>
-          <option value="reward">Sort: Reward</option>
-        </select>
+
+      {/* Results header */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>
+          {rows.length} results
+        </span>
+        <div className="flex items-center gap-2">
+          <ArrowUpDown className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+          <select
+            className="text-sm font-medium rounded-lg px-3 py-1.5 border outline-none cursor-pointer appearance-none"
+            style={{
+              backgroundColor: "var(--surface-default)",
+              borderColor: "var(--border-default)",
+              color: "var(--text-secondary)",
+            }}
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
+          >
+            <option value="deadline">Sort: Deadline</option>
+            <option value="reward">Sort: Reward</option>
+          </select>
+        </div>
       </div>
 
+      {/* Loading skeleton */}
       {query.isLoading ? (
-        <div className="card" style={{ padding: 14 }}>
-          Loading challenges...
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="skeleton h-56 rounded-2xl" />
+          ))}
         </div>
       ) : null}
+
+      {/* Error */}
       {query.error ? (
-        <div className="card" style={{ padding: 14 }}>
+        <div className="rounded-2xl border p-8 text-center"
+          style={{ borderColor: "var(--border-default)", color: "var(--text-muted)" }}
+        >
           Failed to load challenges.
         </div>
       ) : null}
 
+      {/* Empty state */}
       {!query.isLoading && !query.error && rows.length === 0 ? (
-        <div className="card" style={{ padding: 14 }}>
-          No challenges match these filters.
+        <div className="rounded-2xl border p-12 text-center"
+          style={{ borderColor: "var(--border-default)" }}
+        >
+          <Search className="w-8 h-8 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
+          <p className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
+            No challenges found
+          </p>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Try adjusting your filters or search terms.
+          </p>
         </div>
       ) : null}
 
-      <div className="grid grid-3">
-        {rows.map((row) => (
-          <ChallengeCard key={row.id} challenge={row} />
+      {/* Results grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {rows.map((row, idx) => (
+          <ChallengeCard key={row.id} challenge={row} index={idx} />
         ))}
       </div>
     </div>
