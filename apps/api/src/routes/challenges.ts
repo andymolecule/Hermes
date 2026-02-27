@@ -4,9 +4,6 @@ import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { 
 import {
   buildChallengeInsert,
   createSupabaseClient,
-  getChallengeById,
-  listChallengesWithDetails,
-  listSubmissionsForChallenge,
   upsertChallenge,
 } from "@hermes/db";
 import { getText } from "@hermes/ipfs";
@@ -15,44 +12,22 @@ import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
 import yaml from "yaml";
 import { z } from "zod";
+import {
+  getChallengeWithLeaderboard,
+  listChallengesFromQuery,
+  listChallengesQuerySchema,
+  sortByScoreDesc,
+} from "./challenges-shared.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 
-const listChallengesQuerySchema = z.object({
-  status: z.string().optional(),
-  domain: z.string().optional(),
-  poster_address: z.string().optional(),
-  limit: z
-    .string()
-    .regex(/^\d+$/)
-    .transform((value) => Number(value))
-    .optional(),
-  min_reward: z
-    .string()
-    .transform((value) => Number(value))
-    .refine((value) => !Number.isNaN(value), {
-      message: "min_reward must be a valid number.",
-    })
-    .optional(),
-});
-
 const createChallengeBodySchema = z.object({
   specCid: z.string().min(1),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
-
-function sortByScoreDesc<T extends { score: unknown }>(rows: T[]) {
-  return [...rows]
-    .filter((row) => row.score !== null)
-    .sort((a, b) => {
-      const aScore = BigInt(String(a.score ?? "0"));
-      const bScore = BigInt(String(b.score ?? "0"));
-      return bScore > aScore ? 1 : bScore < aScore ? -1 : 0;
-    });
-}
 
 function getLogArg(
   args: readonly unknown[] | Record<string, unknown> | undefined,
@@ -71,25 +46,8 @@ const router = new Hono<ApiEnv>();
 
 router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
   const query = c.req.valid("query");
-
-  const db = createSupabaseClient(false);
-  const rows = await listChallengesWithDetails(db, {
-    status: query.status,
-    domain: query.domain,
-    posterAddress: query.poster_address,
-    limit: query.limit,
-  });
-
-  const minReward = query.min_reward;
-  const filtered =
-    minReward === undefined
-      ? rows
-      : rows.filter(
-        (row: { reward_amount: unknown }) =>
-          Number(row.reward_amount) >= minReward,
-      );
-
-  return c.json({ data: filtered });
+  const rows = await listChallengesFromQuery(query);
+  return c.json({ data: rows });
 });
 
 router.post(
@@ -175,20 +133,15 @@ router.post(
 
 router.get("/:id", async (c) => {
   const challengeId = c.req.param("id");
-  const db = createSupabaseClient(false);
-  const challenge = await getChallengeById(db, challengeId);
-  const submissions = await listSubmissionsForChallenge(db, challengeId);
-  const leaderboard = sortByScoreDesc(submissions);
-
-  return c.json({ data: { challenge, submissions, leaderboard } });
+  const data = await getChallengeWithLeaderboard(challengeId);
+  return c.json({ data });
 });
 
 router.get("/:id/leaderboard", async (c) => {
   const challengeId = c.req.param("id");
-  const db = createSupabaseClient(false);
-  const submissions = await listSubmissionsForChallenge(db, challengeId);
+  const data = await getChallengeWithLeaderboard(challengeId);
 
-  return c.json({ data: sortByScoreDesc(submissions) });
+  return c.json({ data: sortByScoreDesc(data.submissions) });
 });
 
 export default router;

@@ -10,6 +10,7 @@ import { hermesGetSubmissionStatus } from "./tools/get-submission-status.js";
 import { hermesListChallenges } from "./tools/list-challenges.js";
 import { hermesSubmitSolution } from "./tools/submit-solution.js";
 import { hermesVerifySubmission } from "./tools/verify-submission.js";
+import { enforceMcpSessionPayment, getMcpX402Metadata } from "./x402.js";
 
 function asToolResult(payload: unknown) {
   return {
@@ -128,7 +129,7 @@ function startHttpMode() {
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Content-Type, mcp-session-id, mcp-protocol-version, Last-Event-ID",
+        "Content-Type, mcp-session-id, mcp-protocol-version, Last-Event-ID, X-PAYMENT, X-PAYMENT-RESPONSE, X-402-PAYMENT",
       );
       res.end();
       return;
@@ -141,6 +142,13 @@ function startHttpMode() {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/.well-known/x402") {
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(JSON.stringify(getMcpX402Metadata()));
+      return;
+    }
+
     if (url.pathname !== "/mcp") {
       res.statusCode = 404;
       res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -150,6 +158,10 @@ function startHttpMode() {
 
     void (async () => {
       try {
+        if (!(await enforceMcpSessionPayment(req, res))) {
+          return;
+        }
+
         const mcpServer = createServer();
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
