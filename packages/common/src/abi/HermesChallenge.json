@@ -43,11 +43,6 @@
         "internalType": "uint64"
       },
       {
-        "name": "maxSubmissionsPerWallet_",
-        "type": "uint8",
-        "internalType": "uint8"
-      },
-      {
         "name": "minimumScore_",
         "type": "uint256",
         "internalType": "uint256"
@@ -263,19 +258,6 @@
   },
   {
     "type": "function",
-    "name": "maxSubmissionsPerWallet",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint8",
-        "internalType": "uint8"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "minimumScore",
     "inputs": [],
     "outputs": [
@@ -442,25 +424,6 @@
         "name": "",
         "type": "uint8",
         "internalType": "enum IHermesChallenge.Status"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "submissionsByWallet",
-    "inputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -769,11 +732,6 @@
   },
   {
     "type": "error",
-    "name": "InvalidMaxSubmissions",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidRewardAmount",
     "inputs": []
   },
@@ -789,17 +747,12 @@
   },
   {
     "type": "error",
-    "name": "MaxSubmissionsReached",
+    "name": "MinimumScoreNotMet",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NoPendingRotation",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NoSubmissions",
     "inputs": []
   },
   {

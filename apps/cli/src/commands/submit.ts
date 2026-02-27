@@ -30,7 +30,6 @@ const MAX_FILE_BYTES = 100 * 1024 * 1024;
 type ChallengeRecord = {
   id: string;
   contract_address: string;
-  max_submissions_per_wallet: number;
   deadline: string;
   status: string;
 };
@@ -125,21 +124,6 @@ export function buildSubmitCommand() {
           throw new Error("Deadline passed.");
         }
 
-        const { count: existingCount } = await db
-          .from("submissions")
-          .select("id", { count: "exact", head: true })
-          .eq("challenge_id", challenge.id)
-          .eq("solver_address", walletAddress);
-        if (
-          existingCount !== null &&
-          existingCount !== undefined &&
-          existingCount >= challenge.max_submissions_per_wallet
-        ) {
-          throw new Error(
-            `Max submissions reached (${existingCount}/${challenge.max_submissions_per_wallet}).`,
-          );
-        }
-
         const cidValue = resultCid.replace("ipfs://", "");
         const resultHash = keccak256(toBytes(cidValue));
 
@@ -200,13 +184,6 @@ export function buildSubmitCommand() {
           }
         }
 
-        const { count } = await db
-          .from("submissions")
-          .select("id", { count: "exact", head: true })
-          .eq("challenge_id", challenge.id)
-          .eq("solver_address", walletAddress);
-        const submissionCount = count ?? null;
-
         const output = {
           submissionId:
             typeof submissionId === "bigint"
@@ -214,8 +191,6 @@ export function buildSubmitCommand() {
               : submissionId,
           resultCid,
           txHash,
-          submissionsUsed: submissionCount,
-          maxSubmissions: challenge.max_submissions_per_wallet,
           warning: cidUpdateWarning,
         };
 
@@ -223,11 +198,6 @@ export function buildSubmitCommand() {
           printJson(output);
         } else {
           printSuccess("Submission recorded.");
-          if (submissionCount !== null) {
-            printWarning(
-              `Submission ${submissionCount}/${challenge.max_submissions_per_wallet} used`,
-            );
-          }
         }
       },
     );

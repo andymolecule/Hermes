@@ -15,12 +15,11 @@ const sample = {
     metric: "custom",
   },
   reward: {
-    total: 500,
+    total: 10,
     distribution: "winner_take_all",
   },
   deadline: "2026-03-04T23:59:59Z",
-  dispute_window_hours: 96,
-  max_submissions_per_wallet: 3,
+  dispute_window_hours: 168,
 };
 
 const result = challengeSpecSchema.safeParse(sample);

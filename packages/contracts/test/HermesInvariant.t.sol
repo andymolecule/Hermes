@@ -17,7 +17,7 @@ contract HermesInvariantHandler is Test {
     address public solverA = address(0x444);
     address public solverB = address(0x555);
 
-    uint256 public rewardAmount = 100e6;
+    uint256 public rewardAmount = 20e6;
     uint256 public fee;
 
     uint256 public subA = type(uint256).max;
@@ -36,8 +36,7 @@ contract HermesInvariantHandler is Test {
             "cid",
             rewardAmount,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
@@ -79,7 +78,7 @@ contract HermesInvariantHandler is Test {
     }
 
     function advanceTime() public {
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
     }
 
     function finalizeIfReady() public {

@@ -39,7 +39,6 @@ contract HermesFactory is Ownable {
         uint256 rewardAmount,
         uint64 deadline,
         uint64 disputeWindowHours,
-        uint8 maxSubmissionsPerWallet,
         uint256 minimumScore,
         uint8 distributionType,
         address labTBA
@@ -55,7 +54,6 @@ contract HermesFactory is Ownable {
             rewardAmount,
             deadline,
             disputeWindowHours,
-            maxSubmissionsPerWallet,
             minimumScore,
             dist
         );

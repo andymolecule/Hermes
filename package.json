@@ -6,6 +6,9 @@
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
+    "abi:sync": "pnpm --filter @hermes/contracts build && node scripts/sync-abi.mjs",
+    "abi:check": "pnpm --filter @hermes/contracts build && node scripts/check-abi-sync.mjs",
+    "verify": "pnpm abi:check && pnpm build && pnpm test",
     "lint": "biome check .",
     "lint:fix": "biome check --apply .",
     "format": "biome format --write ."

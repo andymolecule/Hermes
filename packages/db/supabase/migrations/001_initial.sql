@@ -21,7 +21,6 @@ create table if not exists challenges (
   distribution_type text not null,
   deadline timestamptz not null,
   dispute_window_hours integer not null,
-  max_submissions_per_wallet integer not null,
   status text not null,
   created_at timestamptz not null default now(),
   finalized_at timestamptz,

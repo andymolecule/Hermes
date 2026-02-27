@@ -27,16 +27,15 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            500e6,
+            10e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
 
         vm.prank(poster);
-        usdc.transfer(address(challenge), 500e6);
+        usdc.transfer(address(challenge), 10e6);
     }
 
     function testSubmitAndScore() public {
@@ -51,32 +50,16 @@ contract HermesChallengeTest is Test {
         assertEq(submission.score, 100e18);
     }
 
-    function testSubmitMaxSubmissions() public {
+    function testSubmitMultipleFromSameWallet() public {
         vm.startPrank(solver);
         challenge.submit(keccak256("r1"));
         challenge.submit(keccak256("r2"));
         challenge.submit(keccak256("r3"));
-        vm.expectRevert(HermesErrors.MaxSubmissionsReached.selector);
-        challenge.submit(keccak256("r4"));
+        challenge.submit(keccak256("r4")); // No limit
         vm.stopPrank();
     }
 
-    function testConstructorRejectsMaxSubmissionsOverThree() public {
-        vm.expectRevert(HermesErrors.InvalidMaxSubmissions.selector);
-        new HermesChallenge(
-            usdc,
-            poster,
-            oracle,
-            treasury,
-            "cid",
-            500e6,
-            uint64(block.timestamp + 1 days),
-            48,
-            4,
-            0,
-            IHermesChallenge.DistributionType.WinnerTakeAll
-        );
-    }
+
 
     function testConstructorRejectsPastDeadline() public {
         vm.expectRevert(HermesErrors.DeadlineInPast.selector);
@@ -86,10 +69,9 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            500e6,
+            10e6,
             uint64(block.timestamp),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
@@ -117,12 +99,12 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
 
         uint256 treasuryBefore = usdc.balanceOf(treasury);
         challenge.finalize();
 
-        uint256 fee = (500e6 * 500) / 10_000;
+        uint256 fee = (10e6 * 500) / 10_000;
         assertEq(usdc.balanceOf(treasury), treasuryBefore + fee);
     }
 
@@ -132,7 +114,7 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours);
+        vm.warp(block.timestamp + 1 days + 1 hours); // Before dispute window
         vm.expectRevert(HermesErrors.DeadlineNotPassed.selector);
         challenge.finalize();
     }
@@ -144,15 +126,14 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            100e6,
+            30e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
-        usdc.transfer(address(top3), 100e6);
+        usdc.transfer(address(top3), 30e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -168,11 +149,11 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         top3.postScore(subC, 10, keccak256("p3"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (100e6 * 500) / 10_000;
-        uint256 remaining = 100e6 - fee;
+        uint256 fee = (30e6 * 500) / 10_000;
+        uint256 remaining = 30e6 - fee;
         assertEq(top3.payoutByAddress(address(0x1)), (remaining * 70) / 100);
         assertEq(top3.payoutByAddress(address(0x2)), (remaining * 20) / 100);
         assertEq(
@@ -188,15 +169,14 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            90e6,
+            20e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.Proportional
         );
         vm.prank(poster);
-        usdc.transfer(address(proportional), 90e6);
+        usdc.transfer(address(proportional), 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = proportional.submit(keccak256("a"));
@@ -208,11 +188,11 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         proportional.postScore(subB, 1, keccak256("p2"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         proportional.finalize();
 
-        uint256 fee = (90e6 * 500) / 10_000;
-        uint256 remaining = 90e6 - fee;
+        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 remaining = 20e6 - fee;
         uint256 payoutA = proportional.payoutByAddress(address(0x1));
         uint256 payoutB = proportional.payoutByAddress(address(0x2));
         assertEq(payoutA + payoutB, remaining);
@@ -235,8 +215,8 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         challenge.resolveDispute(subId);
 
-        uint256 fee = (500e6 * 500) / 10_000;
-        uint256 remaining = 500e6 - fee;
+        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 remaining = 10e6 - fee;
         assertEq(challenge.payoutByAddress(solver), remaining);
     }
 
@@ -247,15 +227,14 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            90e6,
+            20e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             0,
             IHermesChallenge.DistributionType.Proportional
         );
         vm.prank(poster);
-        usdc.transfer(address(proportional), 90e6);
+        usdc.transfer(address(proportional), 20e6);
 
         address solverA = address(0x1);
         address solverB = address(0x2);
@@ -269,7 +248,7 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         proportional.postScore(subB, 30, keccak256("p2"));
 
-        // Warp to within the dispute window (after deadline at day 1, before deadline + 48h at day 3)
+        // Warp to within the dispute window (after deadline at day 1, before deadline + 168h)
         vm.warp(block.timestamp + 1 days + 12 hours);
         vm.prank(address(0x999));
         proportional.dispute("wrong winner");
@@ -278,8 +257,8 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         proportional.resolveDispute(subA);
 
-        uint256 fee = (90e6 * 500) / 10_000;
-        uint256 remaining = 90e6 - fee;
+        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 remaining = 20e6 - fee;
         uint256 baseA = (remaining * 10) / 40;
         uint256 baseB = (remaining * 30) / 40;
         uint256 dust = remaining - baseA - baseB;
@@ -288,14 +267,13 @@ contract HermesChallengeTest is Test {
         assertEq(proportional.payoutByAddress(solverB), baseB);
     }
 
-    function testFuzzSubmitMax(address fuzzSolver) public {
+    function testFuzzUnlimitedSubmissions(address fuzzSolver) public {
         vm.assume(fuzzSolver != address(0));
         vm.startPrank(fuzzSolver);
         challenge.submit(keccak256("r1"));
         challenge.submit(keccak256("r2"));
         challenge.submit(keccak256("r3"));
-        vm.expectRevert(HermesErrors.MaxSubmissionsReached.selector);
-        challenge.submit(keccak256("r4"));
+        challenge.submit(keccak256("r4")); // No limit
         vm.stopPrank();
     }
 
@@ -322,11 +300,11 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
-        uint256 fee = (500e6 * 500) / 10_000;
-        uint256 payout = 500e6 - fee;
+        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 payout = 10e6 - fee;
         uint256 solverBefore = usdc.balanceOf(solver);
         vm.prank(solver);
         challenge.claim();
@@ -346,7 +324,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
         vm.prank(address(0xDEAD)); // not the winner
@@ -359,7 +337,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
         vm.prank(solver);
@@ -384,7 +362,7 @@ contract HermesChallengeTest is Test {
         vm.warp(block.timestamp + 31 days);
         uint256 posterBefore = usdc.balanceOf(poster);
         challenge.timeoutRefund();
-        assertEq(usdc.balanceOf(poster), posterBefore + 500e6);
+        assertEq(usdc.balanceOf(poster), posterBefore + 10e6);
     }
 
     function testTimeoutRefundRevertsIfNotDisputed() public {
@@ -443,27 +421,29 @@ contract HermesChallengeTest is Test {
 
     function testConstructorRevertsZeroPoster() public {
         vm.expectRevert(HermesErrors.InvalidAddress.selector);
-        new HermesChallenge(usdc, address(0), oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, address(0), oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
-    function testConstructorRevertsZeroReward() public {
+    function testConstructorRevertsRewardTooLow() public {
         vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 0, uint64(block.timestamp + 1 days), 48, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 0, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
-    function testConstructorRevertsZeroMaxSubmissions() public {
-        vm.expectRevert(HermesErrors.InvalidMaxSubmissions.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 48, 0, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+    function testConstructorRevertsRewardTooHigh() public {
+        vm.expectRevert(HermesErrors.InvalidRewardAmount.selector);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 31_000_000, uint64(block.timestamp + 1 days), 168, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
+
+
 
     function testConstructorRevertsDisputeWindowTooShort() public {
         vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 24, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 100, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {
         vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 500e6, uint64(block.timestamp + 1 days), 200, 3, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 2200, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
     }
 
     // ===== cancel() edge cases =====
@@ -498,7 +478,7 @@ contract HermesChallengeTest is Test {
     }
 
     function testDisputeRevertsAfterWindow() public {
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         vm.prank(address(0x999));
         vm.expectRevert(HermesErrors.DisputeWindowClosed.selector);
         challenge.dispute("too late");
@@ -522,7 +502,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
         vm.expectRevert(HermesErrors.ChallengeFinalized.selector);
         challenge.finalize();
@@ -568,44 +548,43 @@ contract HermesChallengeTest is Test {
     // ===== View functions =====
 
     function testPublicStateVariables() public view {
-        assertEq(challenge.rewardAmount(), 500e6);
-        assertEq(challenge.disputeWindowHours(), 48);
-        assertEq(challenge.maxSubmissionsPerWallet(), 3);
+        assertEq(challenge.rewardAmount(), 10e6);
+        assertEq(challenge.disputeWindowHours(), 168);
     }
 
     // ===== Additional edge case coverage =====
 
     function testTopThreeWithOnlyOneSolver() public {
         HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3, 0,
+            usdc, poster, oracle, treasury, "cid", 20e6,
+            uint64(block.timestamp + 1 days), 168, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
-        usdc.transfer(address(top3), 100e6);
+        usdc.transfer(address(top3), 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
         vm.prank(oracle);
         top3.postScore(subA, 100, keccak256("p1"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (100e6 * 500) / 10_000;
-        uint256 remaining = 100e6 - fee;
+        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 remaining = 20e6 - fee;
         // All payouts go to the single solver
         assertEq(top3.payoutByAddress(address(0x1)), remaining);
     }
 
     function testTopThreeWithTwoSolvers() public {
         HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3, 0,
+            usdc, poster, oracle, treasury, "cid", 20e6,
+            uint64(block.timestamp + 1 days), 168, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
-        usdc.transfer(address(top3), 100e6);
+        usdc.transfer(address(top3), 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -616,11 +595,11 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         top3.postScore(subB, 50, keccak256("p2"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (100e6 * 500) / 10_000;
-        uint256 remaining = 100e6 - fee;
+        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 remaining = 20e6 - fee;
         uint256 first = (remaining * 70) / 100;
         uint256 second = (remaining * 20) / 100;
         uint256 third = remaining - first - second;
@@ -629,13 +608,15 @@ contract HermesChallengeTest is Test {
         assertEq(top3.payoutByAddress(address(0x2)), second);
     }
 
-    function testFinalizeRevertsNoScoredSubmissions() public {
+    function testFinalizeRefundsPosterWhenNoSubmissionsScored() public {
         vm.prank(solver);
         challenge.submit(keccak256("result"));
-        // Submit but don't score — scoring completeness check prevents finalize
-        vm.warp(block.timestamp + 4 days);
-        vm.expectRevert(HermesErrors.ScoringIncomplete.selector);
+        // Submit but don't score — past grace period, finalize cancels and refunds poster
+        vm.warp(block.timestamp + 9 days);
+        uint256 posterBefore = usdc.balanceOf(poster);
         challenge.finalize();
+        assertEq(uint8(challenge.status()), uint8(IHermesChallenge.Status.Cancelled));
+        assertEq(usdc.balanceOf(poster), posterBefore + 10e6);
     }
 
     function testWinnerTakeAllWithMultipleSolvers() public {
@@ -649,23 +630,23 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         challenge.postScore(subB, 100e18, keccak256("p2"));
 
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
-        uint256 fee = (500e6 * 500) / 10_000;
-        uint256 remaining = 500e6 - fee;
+        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 remaining = 10e6 - fee;
         assertEq(challenge.payoutByAddress(address(0x2)), remaining); // Higher scorer wins all
         assertEq(challenge.payoutByAddress(address(0x1)), 0);
     }
 
     function testResolveDisputeTopThree() public {
         HermesChallenge top3 = new HermesChallenge(
-            usdc, poster, oracle, treasury, "cid", 100e6,
-            uint64(block.timestamp + 1 days), 48, 3, 0,
+            usdc, poster, oracle, treasury, "cid", 20e6,
+            uint64(block.timestamp + 1 days), 168, 0,
             IHermesChallenge.DistributionType.TopThree
         );
         vm.prank(poster);
-        usdc.transfer(address(top3), 100e6);
+        usdc.transfer(address(top3), 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -684,8 +665,8 @@ contract HermesChallengeTest is Test {
         vm.prank(oracle);
         top3.resolveDispute(subB);
 
-        uint256 fee = (100e6 * 500) / 10_000;
-        uint256 remaining = 100e6 - fee;
+        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 remaining = 20e6 - fee;
         // subB is forced first by _ensureWinnerFirst, so gets 1st + 3rd share
         uint256 first = (remaining * 70) / 100;
         uint256 second = (remaining * 20) / 100;
@@ -699,7 +680,7 @@ contract HermesChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         vm.prank(oracle);
         challenge.postScore(subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 4 days);
+        vm.warp(block.timestamp + 9 days);
         challenge.finalize();
         vm.prank(poster);
         vm.expectRevert(HermesErrors.InvalidStatus.selector);
@@ -763,15 +744,14 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            100e6,
+            20e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             90e18,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
         vm.prank(poster);
-        usdc.transfer(address(gated), 100e6);
+        usdc.transfer(address(gated), 20e6);
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));
@@ -784,7 +764,7 @@ contract HermesChallengeTest is Test {
         gated.finalize();
 
         assertEq(uint8(gated.status()), uint8(IHermesChallenge.Status.Cancelled));
-        assertEq(usdc.balanceOf(poster), posterBefore + 100e6);
+        assertEq(usdc.balanceOf(poster), posterBefore + 20e6);
     }
 
     function testResolveDisputeRevertsWhenWinnerBelowMinimumScore() public {
@@ -794,15 +774,14 @@ contract HermesChallengeTest is Test {
             oracle,
             treasury,
             "cid",
-            100e6,
+            20e6,
             uint64(block.timestamp + 1 days),
-            48,
-            3,
+            168,
             90e18,
             IHermesChallenge.DistributionType.WinnerTakeAll
         );
         vm.prank(poster);
-        usdc.transfer(address(gated), 100e6);
+        usdc.transfer(address(gated), 20e6);
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));

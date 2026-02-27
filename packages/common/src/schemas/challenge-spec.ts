@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHALLENGE_LIMITS } from "../constants.js";
 
 const domainEnum = z.enum([
   "longevity",
@@ -41,10 +42,11 @@ const rewardTotal = z
       return Number.isNaN(parsed) ? value : parsed;
     }
     return value;
-  }, z.number().positive())
+  }, z.number().min(CHALLENGE_LIMITS.rewardMinUsdc).max(CHALLENGE_LIMITS.rewardMaxUsdc))
   .refine(
-    (value) => Number.isInteger(value * 1_000_000),
-    "reward.total must have at most 6 decimal places",
+    (value) =>
+      Number.isInteger(value * 10 ** CHALLENGE_LIMITS.rewardDecimals),
+    `reward.total must have at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places`,
   );
 
 export const challengeSpecSchema = z.object({
@@ -68,8 +70,12 @@ export const challengeSpecSchema = z.object({
   deadline: z.string().datetime({ offset: true }),
   tags: z.array(z.string().min(1)).optional(),
   minimum_score: z.number().optional(),
-  dispute_window_hours: z.number().int().positive().max(168).optional(),
-  max_submissions_per_wallet: z.number().int().positive().max(3).optional(),
+  dispute_window_hours: z
+    .number()
+    .int()
+    .min(CHALLENGE_LIMITS.disputeWindowMinHours)
+    .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
+    .optional(),
   lab_tba: z.string().optional(),
 });
 

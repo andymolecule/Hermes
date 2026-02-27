@@ -9,7 +9,11 @@ import {
   getPublicClient,
   getWalletClient,
 } from "@hermes/chain";
-import { type ChallengeSpecOutput, challengeSpecSchema } from "@hermes/common";
+import {
+  CHALLENGE_LIMITS,
+  type ChallengeSpecOutput,
+  challengeSpecSchema,
+} from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import { pinFile } from "@hermes/ipfs";
 import { Command } from "commander";
@@ -251,8 +255,9 @@ export function buildPostCommand() {
           specCid,
           rewardAmount,
           deadline: parseDeadline(spec.deadline),
-          disputeWindowHours: spec.dispute_window_hours ?? 48,
-          maxSubmissionsPerWallet: spec.max_submissions_per_wallet ?? 3,
+          disputeWindowHours:
+            spec.dispute_window_hours ??
+            CHALLENGE_LIMITS.defaultDisputeWindowHours,
           minimumScore: minimumScoreWad,
           distributionType: distributionMap[spec.reward.distribution] ?? 0,
           labTba: (spec.lab_tba ??

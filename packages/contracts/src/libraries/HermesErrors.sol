@@ -13,7 +13,7 @@ library HermesErrors {
     error DisputeActive();
     error NoSubmissions();
     error SubmissionsExist();
-    error MaxSubmissionsReached();
+
     error AlreadyScored();
     error InvalidSubmission();
     error NothingToClaim();
@@ -23,7 +23,7 @@ library HermesErrors {
     error InvalidDisputeWindow();
     error InvalidAddress();
     error InvalidRewardAmount();
-    error InvalidMaxSubmissions();
+
     error DeadlineInPast();
     error ScoringIncomplete();
     error MinimumScoreNotMet();

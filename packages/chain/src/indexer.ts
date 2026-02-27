@@ -1,4 +1,4 @@
-import { challengeSpecSchema, loadConfig } from "@hermes/common";
+import { CHALLENGE_LIMITS, challengeSpecSchema, loadConfig } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
   type: "json",
 };
@@ -6,6 +6,7 @@ import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with {
   type: "json",
 };
 import {
+  buildChallengeInsert,
   createSupabaseClient,
   getSubmissionByChainId,
   isEventIndexed,
@@ -188,21 +189,21 @@ export async function runIndexer() {
             );
             const challengeAddr = parseRequiredAddress(
               eventArg(log.args, 1) ??
-                eventArg(log.args, "challenge") ??
-                eventArg(log.args, "challengeAddr") ??
-                eventArg(log.args, "challengeAddress"),
+              eventArg(log.args, "challenge") ??
+              eventArg(log.args, "challengeAddr") ??
+              eventArg(log.args, "challengeAddress"),
               "challenge",
             );
             const poster = parseRequiredAddress(
               eventArg(log.args, 2) ??
-                eventArg(log.args, "poster") ??
-                eventArg(log.args, "creator"),
+              eventArg(log.args, "poster") ??
+              eventArg(log.args, "creator"),
               "poster",
             );
             const reward = parseRequiredBigInt(
               eventArg(log.args, 3) ??
-                eventArg(log.args, "rewardAmount") ??
-                eventArg(log.args, "reward"),
+              eventArg(log.args, "rewardAmount") ??
+              eventArg(log.args, "reward"),
               "rewardAmount",
             );
 
@@ -214,29 +215,22 @@ export async function runIndexer() {
 
             const spec = await fetchChallengeSpec(specCid);
 
-            await upsertChallenge(db, {
-              chain_id: config.HERMES_CHAIN_ID ?? 84532,
-              contract_address: challengeAddr,
-              factory_challenge_id: Number(id),
-              poster_address: poster,
-              title: spec.title,
-              description: spec.description,
-              domain: spec.domain,
-              challenge_type: spec.type,
-              spec_cid: specCid,
-              dataset_train_cid: spec.dataset.train,
-              dataset_test_cid: spec.dataset.test,
-              scoring_container: spec.scoring.container,
-              scoring_metric: spec.scoring.metric,
-              minimum_score: spec.minimum_score ?? null,
-              reward_amount: Number(reward) / 1_000_000,
-              distribution_type: spec.reward.distribution,
-              deadline: spec.deadline,
-              dispute_window_hours: spec.dispute_window_hours ?? 48,
-              max_submissions_per_wallet: spec.max_submissions_per_wallet ?? 3,
-              status: "active",
-              tx_hash: txHash,
-            });
+            await upsertChallenge(
+              db,
+              buildChallengeInsert({
+                chainId: config.HERMES_CHAIN_ID ?? 84532,
+                contractAddress: challengeAddr,
+                factoryChallengeId: Number(id),
+                posterAddress: poster,
+                specCid,
+                spec,
+                rewardAmountUsdc: Number(reward) / 1_000_000,
+                disputeWindowHours:
+                  spec.dispute_window_hours ??
+                  CHALLENGE_LIMITS.defaultDisputeWindowHours,
+                txHash,
+              }),
+            );
           }
 
           await markEventIndexed(
@@ -290,8 +284,8 @@ export async function runIndexer() {
             if (log.eventName === "Submitted") {
               const submissionId = parseRequiredBigInt(
                 eventArg(log.args, 0) ??
-                  eventArg(log.args, "subId") ??
-                  eventArg(log.args, "submissionId"),
+                eventArg(log.args, "subId") ??
+                eventArg(log.args, "submissionId"),
                 "submissionId",
               );
               const submission = await readSubmission(
@@ -318,8 +312,8 @@ export async function runIndexer() {
             if (log.eventName === "Scored") {
               const submissionId = parseRequiredBigInt(
                 eventArg(log.args, 0) ??
-                  eventArg(log.args, "subId") ??
-                  eventArg(log.args, "submissionId"),
+                eventArg(log.args, "subId") ??
+                eventArg(log.args, "submissionId"),
                 "submissionId",
               );
               const score = parseRequiredBigInt(
@@ -405,10 +399,10 @@ export async function runIndexer() {
                 : null;
               const winnerRow = winnerOnChain
                 ? await getSubmissionByChainId(
-                    db,
-                    challenge.id,
-                    Number(winnerOnChain),
-                  )
+                  db,
+                  challenge.id,
+                  Number(winnerOnChain),
+                )
                 : null;
               const finalizedAt = await blockTimestampIso(
                 publicClient,

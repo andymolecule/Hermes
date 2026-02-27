@@ -1,4 +1,5 @@
 import type { HermesDbClient } from "../index";
+import type { ChallengeSpecOutput } from "@hermes/common";
 
 export interface ChallengeInsert {
   chain_id: number;
@@ -19,9 +20,47 @@ export interface ChallengeInsert {
   distribution_type: string;
   deadline: string;
   dispute_window_hours: number;
-  max_submissions_per_wallet: number;
   status: string;
   tx_hash: string;
+}
+
+export interface BuildChallengeInsertInput {
+  chainId: number;
+  contractAddress: string;
+  factoryChallengeId: number;
+  posterAddress: string;
+  specCid: string;
+  spec: ChallengeSpecOutput;
+  rewardAmountUsdc: number;
+  disputeWindowHours: number;
+  txHash: string;
+}
+
+export function buildChallengeInsert(
+  input: BuildChallengeInsertInput,
+): ChallengeInsert {
+  return {
+    chain_id: input.chainId,
+    contract_address: input.contractAddress,
+    factory_challenge_id: input.factoryChallengeId,
+    poster_address: input.posterAddress,
+    title: input.spec.title,
+    description: input.spec.description,
+    domain: input.spec.domain,
+    challenge_type: input.spec.type,
+    spec_cid: input.specCid,
+    dataset_train_cid: input.spec.dataset.train,
+    dataset_test_cid: input.spec.dataset.test,
+    scoring_container: input.spec.scoring.container,
+    scoring_metric: input.spec.scoring.metric,
+    minimum_score: input.spec.minimum_score ?? null,
+    reward_amount: input.rewardAmountUsdc,
+    distribution_type: input.spec.reward.distribution,
+    deadline: input.spec.deadline,
+    dispute_window_hours: input.disputeWindowHours,
+    status: "active",
+    tx_hash: input.txHash,
+  };
 }
 
 export async function upsertChallenge(

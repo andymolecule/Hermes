@@ -116,13 +116,12 @@ scoring:
   container: "${E2E_SCORER_IMAGE}"
   metric: rmse
 reward:
-  total: 50
+  total: 5
   distribution: winner_take_all
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]
 minimum_score: 0.0
-dispute_window_hours: 48
-max_submissions_per_wallet: 3
+dispute_window_hours: 168
 lab_tba: "0x0000000000000000000000000000000000000000"
 YAML
 
