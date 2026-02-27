@@ -1,3 +1,13 @@
+> ⚠️ **HISTORICAL DOCUMENT — NOT SOURCE OF TRUTH**
+>
+> This is the original build plan (T-001 through T-025). All tickets have been completed.
+> Some constraints described here are **outdated** (e.g., `maxSubmissionsPerWallet` was removed,
+> dispute window range changed from 48–168h to 168–2160h, frontend uses vanilla CSS not Tailwind/shadcn).
+>
+> **For current state, see:** `CLAUDE.md`, `docs/architecture.md`, `docs/spec.md`
+
+---
+
 # Hermes: Implementation Plan v3
 
 ## Context

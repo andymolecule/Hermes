@@ -1,47 +1,24 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import "./globals.css";
 
-const WebProviders = dynamic(
-  () => import("../lib/wagmi").then((m) => m.WebProviders),
+const ClientLayout = dynamic(
+  () => import("../components/ClientLayout").then((m) => m.ClientLayout),
   { ssr: false },
-);
-const ThemeToggle = dynamic(
-  () => import("../components/ThemeToggle").then((m) => m.ThemeToggle),
-  { ssr: false },
-);
+) as React.ComponentType<{ children: React.ReactNode }>;
 
 export const metadata: Metadata = {
   title: "Hermes",
-  description: "On-chain science bounties",
+  description: "On-chain science bounties on Base",
 };
 
 export default function RootLayout({
   children,
 }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark">
-      <body>
-        <WebProviders>
-          <div className="container">
-            <header className="header">
-              <Link href="/" className="wordmark">
-                Hermes
-              </Link>
-              <nav style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <Link href="/challenges" className="badge">
-                  Challenges
-                </Link>
-                <Link href="/post" className="badge">
-                  Post
-                </Link>
-                <ThemeToggle />
-              </nav>
-            </header>
-            {children}
-          </div>
-        </WebProviders>
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-grid font-sans">
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );

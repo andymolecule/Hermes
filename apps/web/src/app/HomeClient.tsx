@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { motion } from "motion/react";
+import { Activity, FileText, Award, ArrowRight, FlaskConical } from "lucide-react";
 import { ChallengeCard } from "../components/ChallengeCard";
 import { getStats, listChallenges } from "../lib/api";
 
@@ -22,62 +24,126 @@ export function HomeClient() {
     scoredSubmissions: 0,
   };
 
+  const statItems = [
+    { label: "Active Challenges", value: stats.challengesTotal, icon: FlaskConical, color: "text-cobalt-200" },
+    { label: "Submissions", value: stats.submissionsTotal, icon: FileText, color: "text-purple-500" },
+    { label: "Scored", value: stats.scoredSubmissions, icon: Award, color: "text-turquoise" },
+  ];
+
   return (
-    <main className="grid" style={{ gap: 18 }}>
-      <section className="card hero" style={{ padding: 20 }}>
-        <h1 style={{ marginTop: 0 }}>On-chain Science Bounties</h1>
-        <p className="muted">
-          Hermes lets labs post reproducible challenges and solvers compete for
-          USDC rewards with verifiable scoring.
+    <div className="space-y-10">
+      {/* Hero */}
+      <motion.section
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+        className="text-center py-16"
+      >
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-mono mb-6"
+          style={{ borderColor: "var(--border-default)", color: "var(--text-muted)" }}
+        >
+          <Activity className="w-3 h-3 text-turquoise animate-pulse" />
+          Live on Base Sepolia
+        </div>
+
+        <h1
+          className="text-5xl md:text-6xl font-display font-bold tracking-tight mb-6"
+          style={{ color: "var(--text-primary)" }}
+        >
+          On-chain Science
+          <br />
+          <span className="text-cobalt-200">Bounties</span>
+        </h1>
+
+        <p className="text-lg max-w-2xl mx-auto mb-8" style={{ color: "var(--text-secondary)" }}>
+          Labs post computational challenges with USDC rewards. AI agents solve them.
+          Scoring is deterministic. Settlement is on-chain.
         </p>
-        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <Link className="btn primary" href="/challenges">
+
+        <div className="flex items-center justify-center gap-3">
+          <Link
+            href="/challenges"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium transition-all no-underline bg-cobalt-200 text-white hover:bg-cobalt-300 shadow-sm hover:shadow-md"
+          >
             Explore Challenges
+            <ArrowRight className="w-4 h-4" />
           </Link>
-          <Link className="btn" href="/post">
+          <Link
+            href="/post"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium transition-colors no-underline border"
+            style={{
+              borderColor: "var(--border-default)",
+              color: "var(--text-secondary)",
+            }}
+          >
             Post Challenge
           </Link>
         </div>
+      </motion.section>
+
+      {/* Stats */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {statItems.map((item, idx) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: idx * 0.1, ease: [0.23, 1, 0.32, 1] }}
+            className="rounded-2xl border p-5 transition-all hover:shadow-sm"
+            style={{
+              backgroundColor: "var(--surface-default)",
+              borderColor: "var(--border-default)",
+            }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-mono uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                {item.label}
+              </span>
+              <item.icon className={`w-5 h-5 ${item.color}`} />
+            </div>
+            <span className="text-3xl font-mono font-semibold" style={{ color: "var(--text-primary)" }}>
+              {item.value}
+            </span>
+          </motion.div>
+        ))}
       </section>
 
-      <section className="grid grid-3">
-        <div className="card" style={{ padding: 16 }}>
-          <div className="muted">Challenges</div>
-          <strong>{stats.challengesTotal}</strong>
-        </div>
-        <div className="card" style={{ padding: 16 }}>
-          <div className="muted">Submissions</div>
-          <strong>{stats.submissionsTotal}</strong>
-        </div>
-        <div className="card" style={{ padding: 16 }}>
-          <div className="muted">Scored</div>
-          <strong>{stats.scoredSubmissions}</strong>
-        </div>
-      </section>
-
+      {/* Featured Challenges */}
       <section>
-        <div className="card-row" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>Featured</h2>
-          <Link className="badge" href="/challenges">
-            View All
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-display font-semibold" style={{ color: "var(--text-primary)" }}>
+            Featured Challenges
+          </h2>
+          <Link
+            href="/challenges"
+            className="flex items-center gap-1 text-sm font-medium no-underline text-cobalt-200 hover:text-cobalt-300"
+          >
+            View All <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
         {featuredQuery.isLoading ? (
-          <div className="muted">Loading challenges...</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="skeleton h-48 rounded-2xl" />
+            ))}
+          </div>
         ) : null}
+
         {featuredQuery.error ? (
-          <div className="card" style={{ padding: 12 }}>
+          <div className="rounded-2xl border p-6 text-center"
+            style={{ borderColor: "var(--border-default)", color: "var(--text-muted)" }}
+          >
             Failed to load featured challenges.
           </div>
         ) : null}
 
-        <div className="grid grid-3">
-          {(featuredQuery.data ?? []).map((c) => (
-            <ChallengeCard key={c.id} challenge={c} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {(featuredQuery.data ?? []).map((c, idx) => (
+            <ChallengeCard key={c.id} challenge={c} index={idx} />
           ))}
         </div>
       </section>
-    </main>
+    </div>
   );
 }
