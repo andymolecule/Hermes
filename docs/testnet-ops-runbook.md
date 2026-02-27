@@ -36,18 +36,19 @@ pm2 status
 
 ## 3. Smoke Test (Live)
 
-Run one full loop on Base Sepolia:
+Run one partial loop on Base Sepolia:
 
 ```bash
 ./scripts/e2e-test.sh
 ```
 
-Expected flow:
+Expected flow (same-session):
 - `hm post` succeeds
 - challenge appears via indexer/API
 - `hm submit` succeeds
 - `hm score` + `hm verify` succeed
-- `hm finalize` and `hm claim` succeed
+
+> **Note:** `hm finalize` and `hm claim` require the dispute window (168–2160 hours) to elapse after deadline. These cannot be tested in the same session on live Base Sepolia. To test the full lifecycle including finalization, use a local Anvil RPC with `evm_increaseTime` for time travel.
 
 ## 4. Monitoring
 

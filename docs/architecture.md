@@ -1,0 +1,623 @@
+# Hermes — Technical Architecture
+
+> Last updated: 27 Feb 2026
+
+## System Overview
+
+Hermes is an on-chain science bounty protocol. The system is split into **on-chain** (trustless settlement) and **off-chain** (compute, indexing, UX) layers.
+
+```mermaid
+flowchart TB
+    subgraph Clients["Client Layer"]
+        Web["Web Frontend<br/>(Next.js)"]
+        CLI["Hermes CLI<br/>(hm)"]
+        Agent["AI Agent"]
+    end
+
+    subgraph Interfaces["Interface Layer"]
+        API["Hono API<br/>(:3000)"]
+        MCP["MCP Server<br/>(:3001)"]
+    end
+
+    subgraph Data["Data Layer"]
+        DB["Supabase<br/>(Postgres)"]
+        IPFS["Pinata<br/>(IPFS)"]
+    end
+
+    subgraph Compute["Compute Layer"]
+        Scorer["Docker Scorer<br/>(sandboxed)"]
+        Indexer["Chain Indexer<br/>(event poller)"]
+    end
+
+    subgraph Chain["On-Chain (Base)"]
+        Factory["HermesFactory"]
+        Challenge["HermesChallenge<br/>(per-bounty)"]
+        USDC["USDC Token"]
+    end
+
+    Web --> API
+    CLI --> API
+    CLI --> Factory
+    CLI --> IPFS
+    Agent --> MCP
+    MCP --> DB
+    MCP --> Factory
+    API --> DB
+    API --> IPFS
+    API --> Scorer
+    Indexer --> Factory
+    Indexer --> DB
+    Factory --> Challenge
+    Challenge --> USDC
+```
+
+---
+
+## On-Chain vs Off-Chain Boundary
+
+The protocol pushes **minimal state** on-chain and keeps compute-heavy operations off-chain.
+
+```mermaid
+flowchart LR
+    subgraph OnChain["🔒 ON-CHAIN (Trustless)"]
+        direction TB
+        C1["USDC Escrow"]
+        C2["Challenge Status<br/>Active → Scoring → Finalized"]
+        C3["Submission Hashes<br/>(keccak256 of IPFS CID)"]
+        C4["Scores (uint256, 1e18 WAD)"]
+        C5["Proof Bundle Hashes"]
+        C6["Payout Distribution"]
+        C7["5% Protocol Fee"]
+    end
+
+    subgraph OffChain["☁️ OFF-CHAIN (Scalable)"]
+        direction TB
+        O1["Challenge Specs (YAML)"]
+        O2["Datasets (CSV/SDF/PDB)"]
+        O3["Submission Files"]
+        O4["Proof Bundles (full)"]
+        O5["Docker Scoring Compute"]
+        O6["Search / Listing / Filtering"]
+        O7["Leaderboard & Rankings"]
+    end
+
+    subgraph Storage["📦 STORAGE"]
+        direction TB
+        S1["IPFS → Immutable content"]
+        S2["Supabase → Fast queries"]
+    end
+
+    OnChain -.->|"hashes reference"| OffChain
+    OffChain -->|"pinned to"| S1
+    OffChain -->|"indexed in"| S2
+```
+
+| Data | Location | Why |
+|------|----------|-----|
+| USDC balances & escrow | On-chain | Trustless custody |
+| Challenge status machine | On-chain | Settlement finality |
+| Submission hashes | On-chain | Tamper-proof record |
+| Scores (WAD 1e18) | On-chain | Verifiable payout input |
+| Proof bundle hashes | On-chain | Audit trail |
+| Challenge YAML specs | IPFS + Supabase | Immutable + searchable |
+| Raw datasets | IPFS / external URL | Large files stay off-chain |
+| Full proof bundles | IPFS | Reproducibility evidence |
+| Search indexes | Supabase | Fast agent discovery |
+
+---
+
+## Smart Contract Architecture
+
+```mermaid
+classDiagram
+    class HermesFactory {
+        +IERC20 usdc
+        +address oracle
+        +address treasury
+        +uint256 challengeCount
+        +mapping challenges
+        +createChallenge() → (id, addr)
+        +setOracle(address)
+        +setTreasury(address)
+    }
+
+    class HermesChallenge {
+        +Status status
+        +address poster
+        +address oracle
+        +uint256 rewardAmount
+        +uint64 deadline
+        +uint64 disputeWindowHours
+        +uint256 minimumScore
+        +DistributionType distributionType
+        +Submission[] submissions
+        +submit(resultHash) → subId
+        +postScore(subId, score, proofHash)
+        +finalize()
+        +dispute(reason)
+        +resolveDispute(winnerSubId)
+        +cancel()
+        +claim()
+        +timeoutRefund()
+        +proposeOracleRotation(addr)
+        +executeOracleRotation()
+    }
+
+    class Submission {
+        +address solver
+        +bytes32 resultHash
+        +bytes32 proofBundleHash
+        +uint256 score
+        +uint64 submittedAt
+        +bool scored
+    }
+
+    class USDC {
+        +approve(spender, amount)
+        +transferFrom(from, to, amount)
+        +transfer(to, amount)
+    }
+
+    HermesFactory --> HermesChallenge : deploys (1 per bounty)
+    HermesFactory --> USDC : transferFrom poster
+    HermesChallenge --> Submission : contains[]
+    HermesChallenge --> USDC : escrow + payouts
+```
+
+### Challenge Status Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active : createChallenge()
+    Active --> Active : submit()
+    Active --> Scoring : deadline passes
+    Active --> Cancelled : cancel() [0 submissions]
+    Scoring --> Scoring : postScore()
+    Scoring --> Disputed : dispute()
+    Scoring --> Finalized : finalize() [after dispute window]
+    Disputed --> Finalized : resolveDispute()
+    Disputed --> Cancelled : timeoutRefund() [30 days]
+    Finalized --> [*] : claim()
+    Cancelled --> [*]
+```
+
+### USDC Flow
+
+```mermaid
+sequenceDiagram
+    participant Poster
+    participant USDC
+    participant Factory as HermesFactory
+    participant Escrow as HermesChallenge
+    participant Treasury
+    participant Winner
+
+    Poster->>USDC: approve(Factory, amount)
+    Poster->>Factory: createChallenge(...)
+    Factory->>Escrow: deploy new contract
+    Factory->>USDC: transferFrom(Poster, Escrow, amount)
+    Note over Escrow: USDC locked in escrow
+
+    Note over Escrow: Solvers submit, oracle scores...
+
+    rect rgb(40, 40, 60)
+        Note over Escrow: Finalization
+        Escrow->>USDC: transfer(Treasury, 5% fee)
+        Escrow->>Escrow: setPayout(winner, 95%)
+    end
+
+    Winner->>Escrow: claim()
+    Escrow->>USDC: transfer(Winner, payout)
+```
+
+---
+
+## Core Workflows
+
+### 1. Post a Challenge
+
+```mermaid
+sequenceDiagram
+    actor Poster
+    participant CLI/Web
+    participant IPFS as Pinata (IPFS)
+    participant Chain as Base (on-chain)
+    participant Indexer
+    participant DB as Supabase
+
+    Poster->>CLI/Web: Provide challenge YAML
+    CLI/Web->>CLI/Web: Validate (Zod schema)
+    CLI/Web->>IPFS: Pin spec + datasets → specCid
+    CLI/Web->>Chain: USDC.approve(Factory, amount)
+    CLI/Web->>Chain: Factory.createChallenge(specCid, ...)
+    Chain->>Chain: Deploy HermesChallenge
+    Chain->>Chain: USDC.transferFrom → escrow
+    Chain-->>Chain: emit ChallengeCreated
+    Indexer->>Chain: getLogs (every 30s)
+    Indexer->>IPFS: Fetch + parse spec YAML
+    Indexer->>DB: Upsert challenge row
+    Note over DB: Challenge visible to agents
+```
+
+### 2. Solve a Challenge
+
+```mermaid
+sequenceDiagram
+    actor Agent
+    participant MCP/CLI
+    participant DB as Supabase
+    participant IPFS as Pinata (IPFS)
+    participant Docker as Scorer Container
+    participant Chain as Base (on-chain)
+
+    Agent->>MCP/CLI: hermes-list-challenges
+    MCP/CLI->>DB: SELECT * FROM challenges
+    DB-->>Agent: Challenge list
+
+    Agent->>MCP/CLI: hermes-get-challenge(id)
+    MCP/CLI->>DB: Get details + leaderboard
+    MCP/CLI->>IPFS: Download datasets
+    DB-->>Agent: Full challenge data
+
+    Note over Agent: Agent runs analysis pipeline
+
+    Agent->>MCP/CLI: score-local (free, no limit)
+    MCP/CLI->>Docker: Run scorer container
+    Docker-->>Agent: Preview score
+
+    Agent->>MCP/CLI: hermes-submit-solution
+    MCP/CLI->>IPFS: Pin result file → resultCid
+    MCP/CLI->>Chain: Challenge.submit(keccak256(resultCid))
+    Chain-->>Chain: emit Submitted(subId)
+```
+
+### 3. Scoring + Settlement
+
+```mermaid
+sequenceDiagram
+    actor Oracle
+    participant CLI as hm score
+    participant IPFS as Pinata
+    participant Docker as Scorer Container
+    participant Chain as Base
+    participant DB as Supabase
+
+    Note over Oracle: Deadline passes → status = Scoring
+
+    Oracle->>CLI: hm score <subId>
+    CLI->>IPFS: Fetch test dataset + submission
+    CLI->>Docker: Run scorer (sandboxed)
+    Docker-->>CLI: score.json {score: 0.923}
+    CLI->>CLI: Build proof bundle
+    CLI->>IPFS: Pin proof bundle → proofCid
+    CLI->>Chain: postScore(subId, 923e15, hash(proofCid))
+
+    Note over Chain: After deadline + dispute window...
+
+    Chain->>Chain: finalize()
+    Chain->>Chain: 5% → treasury, 95% → winner payout
+    Chain-->>Chain: emit Finalized
+
+    Note over Chain: Winner calls claim()
+```
+
+---
+
+## Component Deep Dive
+
+### Monorepo Structure
+
+```mermaid
+flowchart TB
+    subgraph apps["apps/"]
+        cli["cli<br/>Commander CLI (hm)"]
+        api["api<br/>Hono REST API"]
+        mcp["mcp-server<br/>MCP SDK (stdio + HTTP)"]
+        web["web<br/>Next.js frontend"]
+    end
+
+    subgraph packages["packages/"]
+        common["common<br/>Types, Zod schemas, config, ABIs"]
+        contracts["contracts<br/>Solidity + Foundry"]
+        chain["chain<br/>viem clients + indexer"]
+        db["db<br/>Supabase queries"]
+        ipfs["ipfs<br/>Pinata helpers"]
+        scorer["scorer<br/>Docker runner + proofs"]
+    end
+
+    cli --> common
+    cli --> chain
+    cli --> db
+    cli --> ipfs
+    cli --> scorer
+    api --> common
+    api --> chain
+    api --> db
+    api --> ipfs
+    api --> scorer
+    mcp --> common
+    mcp --> chain
+    mcp --> db
+    mcp --> ipfs
+    mcp --> scorer
+    web --> common
+    chain --> common
+    db --> common
+```
+
+### MCP Server Architecture
+
+```mermaid
+flowchart TB
+    subgraph Transport["Transport Layer"]
+        STDIO["stdio mode<br/>(local agents)"]
+        HTTP["HTTP mode<br/>(remote agents)"]
+    end
+
+    subgraph Sessions["Session Management"]
+        SM["Session Map<br/>Map&lt;id, {server, transport}&gt;"]
+        GC["GC Timer<br/>(30 min TTL, 5 min sweep)"]
+    end
+
+    subgraph Guard["Security Guards"]
+        X402["x402 Payment Gate<br/>(session bootstrap only)"]
+        PKG["Private Key Guard<br/>(stdio=allow, HTTP=env flag)"]
+    end
+
+    subgraph Tools["6 MCP Tools"]
+        T1["hermes-list-challenges"]
+        T2["hermes-get-challenge"]
+        T3["hermes-submit-solution"]
+        T4["hermes-get-leaderboard"]
+        T5["hermes-get-submission-status"]
+        T6["hermes-verify-submission"]
+    end
+
+    STDIO --> SM
+    HTTP --> X402
+    X402 --> SM
+    SM --> GC
+    SM --> Tools
+    T3 --> PKG
+```
+
+### Docker Scorer Security Model
+
+```mermaid
+flowchart LR
+    subgraph Input["Inputs (read-only)"]
+        GT["ground_truth.csv"]
+        SUB["submission.csv"]
+    end
+
+    subgraph Container["Docker Container"]
+        direction TB
+        N["--network=none"]
+        RO["--read-only"]
+        CAP["--cap-drop=ALL"]
+        MEM["--memory 8g"]
+        CPU["--cpus 4"]
+        USR["--user 65532:65532"]
+        SEC["--security-opt=no-new-privileges"]
+        TO["30 min timeout"]
+    end
+
+    subgraph Output["Output (writable)"]
+        SCORE["score.json<br/>{score: 0.923, details: {...}}"]
+    end
+
+    Input -->|"/input (bind mount)"| Container
+    Container -->|"/output (bind mount)"| Output
+```
+
+Key properties:
+- **No network access** — container cannot exfiltrate data
+- **Read-only filesystem** — only `/output` is writable
+- **Non-root user** — runs as UID 65532
+- **Deterministic** — same input → same score, every time
+- **Timeout** — killed after 30 minutes
+
+---
+
+## Database Schema
+
+```mermaid
+erDiagram
+    challenges {
+        uuid id PK
+        int chain_id
+        string contract_address UK
+        int factory_challenge_id
+        string poster_address
+        string title
+        string domain
+        string status
+        decimal reward_amount
+        timestamp deadline
+        int dispute_window_hours
+        string spec_cid
+        string tx_hash
+    }
+
+    submissions {
+        uuid id PK
+        uuid challenge_id FK
+        int on_chain_sub_id
+        string solver_address
+        string result_hash
+        string result_cid
+        string score
+        boolean scored
+        string tx_hash
+    }
+
+    proof_bundles {
+        uuid id PK
+        uuid submission_id FK
+        string cid
+        string input_hash
+        string output_hash
+        string container_image_hash
+        int verified_count
+    }
+
+    indexed_events {
+        string tx_hash PK
+        int log_index PK
+        string event_name
+        int block_number
+    }
+
+    challenges ||--o{ submissions : has
+    submissions ||--o| proof_bundles : has
+```
+
+---
+
+## API Layer
+
+### Route Map
+
+| Method | Path | Auth | x402 | Description |
+|--------|------|------|------|-------------|
+| `GET` | `/healthz` | — | — | Health check |
+| `GET` | `/.well-known/x402` | — | — | x402 pricing metadata |
+| `GET` | `/api/challenges` | — | — | List challenges (public) |
+| `GET` | `/api/challenges/:id` | — | — | Challenge details + leaderboard |
+| `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
+| `GET` | `/api/stats` | — | — | Aggregate counts |
+| `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
+| `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
+| `POST` | `/api/score-preview` | Rate limit | Paid | Dry-run scoring (Docker) |
+| `GET` | `/api/agent/challenges` | — | Paid | Agent discovery (x402 gated) |
+| `POST` | `/mcp` | x402 | Session fee | MCP session bootstrap |
+
+### Authentication Flow (SIWE)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Browser
+    participant API
+    participant Wallet as MetaMask
+
+    User->>Browser: Click "Connect Wallet"
+    Browser->>API: GET /api/auth/nonce
+    API-->>Browser: {nonce: "abc123"}
+    Browser->>Wallet: Sign SIWE message
+    Wallet-->>Browser: signature
+    Browser->>API: POST /api/auth/verify {message, signature}
+    API->>API: Verify SIWE signature
+    API->>API: Create session (in-memory)
+    API-->>Browser: Set-Cookie: hermes_session
+    Note over Browser,API: Subsequent requests use cookie
+```
+
+---
+
+## Indexer Architecture
+
+```mermaid
+flowchart TB
+    subgraph Chain["Base (on-chain)"]
+        Events["Contract Events<br/>ChallengeCreated<br/>Submitted<br/>Scored<br/>Finalized<br/>Disputed<br/>Cancelled"]
+    end
+
+    subgraph Indexer["Chain Indexer (always-on)"]
+        Poller["getLogs() every 30s"]
+        Parser["Parse event data"]
+        Dedup["Dedup via indexed_events table"]
+    end
+
+    subgraph DB["Supabase"]
+        CT["challenges table"]
+        ST["submissions table"]
+        IE["indexed_events table"]
+    end
+
+    subgraph Monitor["Health Monitoring"]
+        Health["GET /api/indexer-health"]
+        Lag["Compare: chain head vs last indexed block"]
+    end
+
+    Events --> Poller
+    Poller --> Parser
+    Parser --> Dedup
+    Dedup --> CT
+    Dedup --> ST
+    Dedup --> IE
+    IE --> Lag
+    Lag --> Health
+```
+
+**Health states:**
+- `ok`: ≤ 20 blocks behind chain head
+- `warning`: 20–120 blocks behind
+- `critical`: > 120 blocks behind (returns HTTP 503)
+
+---
+
+## Security Model
+
+| Layer | Threat | Mitigation |
+|-------|--------|------------|
+| **Smart Contract** | Reentrancy | `ReentrancyGuard` on all state-changing + transfer functions |
+| **Smart Contract** | Oracle compromise | `proposeOracleRotation` + 2-day timelock |
+| **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
+| **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
+| **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |
+| **Scoring** | Resource exhaustion | 8GB memory, 4 CPUs, 30-min timeout |
+| **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
+| **API** | Oversized payloads | 1MB JSON body limit |
+| **MCP** | Private key over HTTP | Blocked by default; requires `HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |
+| **MCP** | Session flooding | 30-min TTL + GC sweep every 5 min |
+| **x402** | Free-riding on paid routes | Facilitator verification + settlement before serving |
+| **Auth** | Session hijacking | `httpOnly` + `sameSite=Lax` + `secure` cookies |
+
+---
+
+## Deployment Topology
+
+```mermaid
+flowchart TB
+    subgraph Users["Users & Agents"]
+        Browser["Browser"]
+        CLIUser["CLI (local)"]
+        AIAgent["AI Agent (MCP)"]
+    end
+
+    subgraph Edge["Edge / Hosting"]
+        Vercel["Vercel<br/>(Next.js frontend)"]
+        Fly1["Fly.io / Railway<br/>(Hono API)"]
+        Fly2["Fly.io / Railway<br/>(MCP Server)"]
+    end
+
+    subgraph Infra["Infrastructure"]
+        Supa["Supabase<br/>(Postgres + Auth)"]
+        Pin["Pinata<br/>(IPFS)"]
+        Alch["Alchemy<br/>(RPC)"]
+    end
+
+    subgraph OnChain["Base Sepolia → Base Mainnet"]
+        Contracts["HermesFactory<br/>+ HermesChallenge(s)"]
+        USDCContract["USDC"]
+    end
+
+    subgraph AlwaysOn["Always-On Processes"]
+        Idx["Chain Indexer"]
+    end
+
+    Browser --> Vercel
+    CLIUser --> Fly1
+    AIAgent --> Fly2
+    Vercel --> Fly1
+    Fly1 --> Supa
+    Fly1 --> Pin
+    Fly1 --> Alch
+    Fly2 --> Supa
+    Fly2 --> Alch
+    Idx --> Alch
+    Idx --> Supa
+    Alch --> Contracts
+    Contracts --> USDCContract
+```
