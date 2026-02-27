@@ -1,171 +1,93 @@
 ---
 name: hermes-frontend-design
-description: Build the Hermes web UI with production-grade aesthetics rooted in the Molecule Blue / Institutional Cybernetics identity. Use this skill when implementing any frontend component, page, or layout for the Hermes platform.
+description: Build the Hermes web UI following the canonical Molecule Blue design system. Use this skill when implementing any frontend component, page, or layout for the Hermes platform.
 ---
 
 # Hermes Frontend Design Skill
 
 This skill guides creation of the Hermes web interface — an agent-native, on-chain science bounty platform. Every screen must feel like institutional-grade biotech infrastructure, not a generic SaaS dashboard.
 
-**Read `docs/ui-specs/hermes-ui-vibe.md` first** — it is the canonical visual identity spec.
+## Canonical Reference
+
+**The single source of truth for all design decisions is:**
+
+📄 `docs/design-system/DESIGN-SYSTEM.md`
+
+This document governs: color palette, typography, spacing, shadows, motion, component patterns, iconography, accessibility standards, and anti-patterns.
+
+**Always read `docs/design-system/DESIGN-SYSTEM.md` before implementing any visual component.**
 
 ---
 
-## Design Identity: Institutional Cybernetics
+## Quick Reference
 
-**Vibe:** Clean Bio-Tech terminal meets cryptographic settlement layer.
-**Feel:** Bloomberg Terminal × DeepMind research dashboard × on-chain escrow system.
+### Design Identity
 
-### Colour System (Molecule Blue)
+**Theme:** Light (primary), Dark (secondary via `[data-theme="dark"]` or `.dark`)
+**Vibe:** Scientific credibility meets crypto infrastructure — Bloomberg Terminal × DeepMind research dashboard × on-chain escrow system.
 
-Use CSS custom properties. Never hardcode hex values outside `:root`.
+### Color System (Molecule Blue)
 
-```css
-:root {
-  /* Backgrounds */
-  --bg-deep:       #0A192F;   /* Near-black blue — primary canvas */
-  --bg-surface:    #112240;   /* Card/panel surfaces */
-  --bg-elevated:   #1E3A8A;   /* Hover states, active panels */
+Three ranges derived from a single spectral hue:
 
-  /* Accents */
-  --accent-cyan:   #00FFFF;   /* Primary action — Active bounties, CTAs, "hm post" */
-  --accent-purple: #9D7CFF;   /* Verification, cryptographic hashes, completed states */
-  --accent-green:  #00FF88;   /* Success states, score matches */
-  --accent-red:    #FF3366;   /* Errors, disputes, mismatches */
+| Range | Role | Example Tokens |
+|-------|------|----------------|
+| **A-range (Greys)** | Neutral infrastructure | `--grey-100` to `--grey-1100` |
+| **B-range (Blues)** | Platform structure | `--blue-100` to `--blue-1100` |
+| **C-range (Cobalts)** | Brand emphasis & CTAs | `--cobalt-100` to `--cobalt-1100` |
 
-  /* Text */
-  --text-primary:  #FFFFFF;   /* Headers, primary reading */
-  --text-secondary:#94A3B8;   /* Muted labels, timestamps */
-  --text-mono:     #00FFFF;   /* Wallet addresses, hashes, USDC amounts */
-}
-```
+Accents: `--purple-100`, `--purple-250`, `--turquoise` (status only — never in gradients).
+
+Use CSS custom properties exclusively. Never hardcode hex values outside `:root`.
 
 ### Typography
 
-Two font tracks — never mix them:
+| Role | Font | Usage |
+|------|------|-------|
+| **Display** | Space Grotesk | Headings (`text-xl` and above), hero text, wordmark |
+| **Body** | Inter | All UI text, labels, descriptions, body copy |
+| **Mono** | JetBrains Mono | Wallet addresses, hashes, USDC values, scores, code |
 
-| Track | Font | Usage |
-|-------|------|-------|
-| **Structural** | Roobert, Inter, or equivalent grotesque sans-serif | Nav, headers, descriptions, labels |
-| **Cryptographic** | JetBrains Mono or Space Mono | Wallet addresses (`0x4B...`), IPFS hashes (`ipfs://Qm...`), USDC amounts, container digests, scores |
+### Key Rules
 
-- Leaderboard scores and agent wallets must use **strict tabular alignment** (monospace + `font-variant-numeric: tabular-nums`)
-- USDC amounts always rendered in monospace with 2 decimal places: `500.00 USDC`
+1. **4px base unit** — all spacing must be multiples of 4px
+2. **Max 8px radius** on cards, 12px on page containers, no exceptions
+3. **Skeleton loading** — never spinners for page content
+4. **Lucide React** for all icons, no mixing with other libraries
+5. **WCAG AA minimum** on all text contrast
+6. **`prefers-reduced-motion`** respected in all animations
+7. **Tabular nums** on all financial/score data: `font-variant-numeric: tabular-nums`
 
-> **Anti-pattern:** Do NOT use decorative or display fonts. This is infrastructure, not a landing page. Readability > personality.
+### CSS Custom Properties
 
----
-
-## Motion & Animation
-
-Borrow from the Anthropic frontend-design playbook but constrain to the Hermes identity:
-
-### Page Load
-- **Staggered reveals**: Cards and data rows fade-slide up with `animation-delay` increments (30–50ms per item)
-- Background gradient should shift subtly on load (deep blue → slightly lighter) to suggest the system "powering on"
-
-### Terminal Feed (Activity Log)
-- New entries **slide in from bottom**, pushing older entries up
-- Use `translateY` + `opacity` transition, 200ms ease-out
-- Optional: monospace characters "type in" letter by letter for dramatic entries (finalization, disputes)
-
-### Hover & Interaction
-- Challenge cards: subtle gradient shift + glowing `1px` border (cyan or purple depending on status)
-- Buttons: `box-shadow` glow pulse on hover (use `--accent-cyan` with varying opacity)
-- Hash/address links: gentle underline slide-in on hover
-
-### Scroll
-- Parallax-lite: background grid or noise texture scrolls at 0.3× speed for depth
-- Leaderboard rows highlight as they enter viewport
-
-### Constraints
-- **No bounce/spring animations** — too playful for this aesthetic
-- **No 3D transforms** — keep it flat, terminal-like
-- **Prefer CSS-only** animations. Use `framer-motion` or `Motion` only for orchestrated sequences
+All design tokens are defined in `apps/web/src/app/globals.css`. Use semantic tokens (e.g., `--surface-base`, `--text-primary`, `--interactive-default`) rather than raw palette tokens when possible.
 
 ---
 
-## Spatial Composition & Layout
+## Anti-Patterns
 
-### Grid Philosophy: "The Matrix"
-- Use visible `1px` borders (`rgba(0, 255, 255, 0.08)`) for structural grid lines
-- Users should feel the underlying data grid
-- Hard edges: `border-radius: 0px` to `4px` max — brutalist infrastructure, not rounded consumer UI
-
-### Density
-- **High information density** — this platform is for agents and technical researchers
-- Compact spacing in leaderboards and terminal feeds
-- Generous whitespace only in hero/header areas for breathing room
-
-### Glassmorphism (Selective)
-- Card surfaces: `backdrop-filter: blur(12px)` + `background: rgba(17, 34, 64, 0.7)`
-- Use sparingly — 1–2 elevated panels per view, not everywhere
-
----
-
-## Background & Depth
-
-Create atmosphere, never use flat solid backgrounds:
-
-- **Base layer**: Deep blue (`--bg-deep`) with a subtle radial gradient (slightly lighter at center)
-- **Grid overlay**: Faint geometric grid lines (`rgba(0, 255, 255, 0.03)`) — simulates a data matrix
-- **Noise texture**: Subtle grain overlay at 2–5% opacity for analog warmth
-- **Accent glow**: Soft radial gradient from `--accent-cyan` or `--accent-purple` behind key focal elements (hero stats, active challenge count)
-
----
-
-## Key Component Patterns
-
-### Challenge Card (Feed View)
-- Sharp corners, `1px` border (`rgba(0, 255, 255, 0.15)`)
-- Title: bold sans-serif, white
-- Reward: prominent, monospace, cyan — `500.00 USDC`
-- Domain tags: small pills with subtle background (`longevity`, `drug_discovery`)
-- Status indicator: coloured dot (cyan = active, purple = scoring, green = finalized)
-- Hover: gradient shift + border glow
-
-### Leaderboard Table
-- Strict tabular alignment (monospace for all numeric/address columns)
-- Alternating row backgrounds with near-invisible contrast
-- Rank column: `#1` highlighted with accent glow
-- Score column: right-aligned, fixed 4 decimal places
-- Wallet column: truncated with tooltip (`0x4B2f...8a3C`)
-
-### Terminal Feed / Activity Log
-- Styled as a polished real-time console
-- Timestamp in muted text: `[04:22:11]`
-- Action in white: `Agent 0x4B... submitted proof`
-- Hash links in cyan monospace: `→ QmXy...`
-- New entries animate in from bottom
-
-### Action Buttons (CTAs)
-- Primary: solid `--accent-cyan` background, dark text, subtle glow
-- Secondary: transparent with `1px` cyan border
-- Danger: `--accent-red` treatment for disputes/cancellations
-- All buttons: no border-radius or max `2px`
-
----
-
-## Anti-Slop Guardrails
-
-**NEVER produce these generic patterns:**
+**NEVER produce these patterns:**
 
 | ❌ Avoid | ✅ Instead |
-|----------|-----------|
-| Purple gradient on white background | Deep blue canvas with cyan/purple accents |
-| Rounded `16px` cards everywhere | Sharp `0–4px` corners, visible borders |
-| Generic hero with stock photo | Data-driven hero: live stats, active challenge count |
-| Evenly distributed pastel palette | Dominant dark blue + sharp cyan/purple accents |
-| Empty placeholder states | Zero-data states with terminal aesthetic (`No active bounties. Run hm post to create one.`) |
-| Generic loading spinners | Terminal-style progress (`Indexing block 14,522,301...`) |
-| Cookie-cutter grid of identical cards | Varied card densities — featured challenges get more space |
+|----------|-----------| 
+| Rounded 16px+ cards | Max `radius-lg` (8px) on cards |
+| Pastel gradients (pink, lavender, mint) | Molecule Blue range only |
+| Purple-to-turquoise gradients | Same-hue two-step gradients |
+| Turquoise in gradients | Turquoise for status indicators only |
+| Decorative or display-only fonts | Space Grotesk / Inter / JetBrains Mono only |
+| Proportional numbers for financial data | Monospace + tabular-nums |
+| Bounce/spring animations | ease-out enters, ease-in exits |
+| Generic loading spinners | Skeleton shimmer screens |
+| Cookie-cutter equal-width card grids | Bento grid with size hierarchy |
+| Arbitrary spacing values | Multiples of 4px only |
+| Colorful/tinted shadows | Monochromatic shadows using grey-800 at low opacity |
 
 ---
 
 ## Technical Notes
 
-- **Framework**: React (Vite for mockup, Next.js 14 for production)
-- **Styling**: CSS Modules or vanilla CSS with CSS custom properties (no Tailwind unless project migrates)
-- **Fonts**: Load via Google Fonts or self-host (Roobert may need self-hosting)
-- **Icons**: Minimal — use text symbols and unicode where possible (terminal aesthetic)
-- **Responsive**: Desktop-first (agent users are on desktop), but ensure tablet readability
+- **Framework**: Next.js 14 (production), React + Vite (mockup prototype)
+- **Styling**: CSS custom properties in `globals.css` (no Tailwind)
+- **Fonts**: Google Fonts import in globals.css
+- **Icons**: Lucide React, outline style only
+- **Responsive**: Desktop-first (agent users are on desktop), tablet/mobile supported
