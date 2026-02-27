@@ -19,7 +19,6 @@ import {
   sortByScoreDesc,
 } from "./challenges-shared.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
-import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
@@ -52,7 +51,6 @@ router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
 
 router.post(
   "/",
-  requireSiweSession,
   requireWriteQuota("/api/challenges"),
   zValidator("json", createChallengeBodySchema),
   async (c) => {

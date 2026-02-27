@@ -300,7 +300,7 @@ export async function runIndexer() {
                 solver_address: submission.solver,
                 result_hash: submission.resultHash,
                 proof_bundle_hash: submission.proofBundleHash,
-                score: submission.score.toString(),
+                score: submission.scored ? submission.score.toString() : null,
                 scored: submission.scored,
                 submitted_at: new Date(
                   Number(submission.submittedAt) * 1000,

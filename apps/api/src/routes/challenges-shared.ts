@@ -24,9 +24,11 @@ export const listChallengesQuerySchema = z.object({
     .optional(),
 });
 
-export function sortByScoreDesc<T extends { score: unknown }>(rows: T[]) {
+export function sortByScoreDesc<T extends { score: unknown; scored?: unknown }>(
+  rows: T[],
+) {
   return [...rows]
-    .filter((row) => row.score !== null)
+    .filter((row) => row.scored === true && row.score !== null)
     .sort((a, b) => {
       const aScore = BigInt(String(a.score ?? "0"));
       const bScore = BigInt(String(b.score ?? "0"));

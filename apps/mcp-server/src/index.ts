@@ -1,5 +1,6 @@
 import http from "node:http";
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -23,7 +24,15 @@ function asToolResult(payload: unknown) {
   };
 }
 
-function createServer() {
+function parseBoolean(value: string | undefined, fallback: boolean) {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   const server = new McpServer({
     name: "hermes-mcp",
     version: "0.1.0",
@@ -61,9 +70,15 @@ function createServer() {
       inputSchema: z.object({
         challengeId: z.string().uuid(),
         filePath: z.string().min(1),
+        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
       }),
     },
-    async (input) => asToolResult(await hermesSubmitSolution(input)),
+    async (input) =>
+      asToolResult(
+        await hermesSubmitSolution(input, {
+          allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+        }),
+      ),
   );
 
   server.registerTool(
@@ -105,14 +120,81 @@ function createServer() {
   return server;
 }
 
+const MCP_SESSION_TTL_MS = 30 * 60 * 1000;
+const MCP_SESSION_GC_INTERVAL_MS = 5 * 60 * 1000;
+
+type HttpMcpSession = {
+  id: string;
+  server: McpServer;
+  transport: StreamableHTTPServerTransport;
+  createdAt: number;
+  lastSeenAt: number;
+};
+
+function headerValue(value: string | string[] | undefined) {
+  if (!value) return null;
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value;
+}
+
+async function createHttpMcpSession(
+  sessions: Map<string, HttpMcpSession>,
+  options: { allowRemotePrivateKey: boolean },
+): Promise<HttpMcpSession> {
+  const id = randomUUID();
+  const server = createServer({
+    allowRemotePrivateKey: options.allowRemotePrivateKey,
+  });
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => id,
+  });
+  await server.connect(transport);
+
+  const session: HttpMcpSession = {
+    id,
+    server,
+    transport,
+    createdAt: Date.now(),
+    lastSeenAt: Date.now(),
+  };
+  sessions.set(id, session);
+
+  const anyTransport = transport as unknown as { onclose?: () => void };
+  anyTransport.onclose = () => {
+    sessions.delete(id);
+  };
+
+  return session;
+}
+
 async function startStdioMode() {
-  const server = createServer();
+  const server = createServer({ allowRemotePrivateKey: true });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
 function startHttpMode() {
   const port = Number(process.env.HERMES_MCP_PORT ?? 3001);
+  const allowRemotePrivateKey = parseBoolean(
+    process.env.HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS,
+    false,
+  );
+  const sessions = new Map<string, HttpMcpSession>();
+
+  const gcTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of sessions) {
+      if (now - session.lastSeenAt <= MCP_SESSION_TTL_MS) continue;
+      const anyTransport = session.transport as unknown as { close?: () => void };
+      try {
+        anyTransport.close?.();
+      } catch {
+        // best-effort close
+      }
+      sessions.delete(sessionId);
+    }
+  }, MCP_SESSION_GC_INTERVAL_MS);
+  gcTimer.unref();
 
   const server = http.createServer((req, res) => {
     if (!req.url) {
@@ -138,7 +220,7 @@ function startHttpMode() {
     if (req.method === "GET" && url.pathname === "/healthz") {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok: true, activeSessions: sessions.size }));
       return;
     }
 
@@ -158,17 +240,25 @@ function startHttpMode() {
 
     void (async () => {
       try {
-        if (!(await enforceMcpSessionPayment(req, res))) {
+        const sessionId = headerValue(req.headers["mcp-session-id"]);
+        const existingSession = sessionId ? sessions.get(sessionId) : null;
+
+        if (sessionId && !existingSession) {
+          res.statusCode = 404;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ error: "Unknown MCP session id." }));
           return;
         }
 
-        const mcpServer = createServer();
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: undefined,
-        });
+        if (!existingSession && !(await enforceMcpSessionPayment(req, res))) {
+          return;
+        }
 
-        await mcpServer.connect(transport);
-        await transport.handleRequest(req, res);
+        const session =
+          existingSession ??
+          (await createHttpMcpSession(sessions, { allowRemotePrivateKey }));
+        session.lastSeenAt = Date.now();
+        await session.transport.handleRequest(req, res);
       } catch (error) {
         res.statusCode = 500;
         res.setHeader("Content-Type", "application/json; charset=utf-8");

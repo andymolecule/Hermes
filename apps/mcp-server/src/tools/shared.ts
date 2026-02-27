@@ -5,6 +5,7 @@ import {
   getOnChainSubmission,
   getPublicClient,
   submitChallengeResult,
+  submitChallengeResultWithPrivateKey,
 } from "@hermes/chain";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
@@ -77,6 +78,8 @@ export async function getSubmissionStatus(submissionId: string) {
 export async function submitSolution(input: {
   challengeId: string;
   filePath: string;
+  privateKey?: string;
+  allowRemotePrivateKey?: boolean;
 }) {
   const db = createSupabaseClient(true);
   const challenge = await getChallengeById(db, input.challengeId);
@@ -84,7 +87,24 @@ export async function submitSolution(input: {
 
   const resultCid = await pinFile(input.filePath);
   const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
-  const txHash = await submitChallengeResult(challengeAddress, resultHash);
+  const normalizedPrivateKey = input.privateKey?.trim();
+  if (normalizedPrivateKey && !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
+    throw new Error("Invalid privateKey: expected 0x-prefixed 32-byte hex.");
+  }
+
+  if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
+    throw new Error(
+      "privateKey over MCP HTTP is disabled. Use MCP stdio mode or set HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
+    );
+  }
+
+  const txHash = normalizedPrivateKey
+    ? await submitChallengeResultWithPrivateKey(
+      challengeAddress,
+      resultHash,
+      normalizedPrivateKey as `0x${string}`,
+    )
+    : await submitChallengeResult(challengeAddress, resultHash);
 
   const publicClient = getPublicClient();
   const receipt = await publicClient.waitForTransactionReceipt({
@@ -111,7 +131,7 @@ export async function submitSolution(input: {
     result_hash: onChain.resultHash,
     result_cid: resultCid,
     proof_bundle_hash: onChain.proofBundleHash,
-    score: onChain.score.toString(),
+    score: onChain.scored ? onChain.score.toString() : null,
     scored: onChain.scored,
     submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
     tx_hash: txHash,
@@ -143,34 +163,38 @@ export async function verifySubmission(input: {
     throw new Error("Submission missing on_chain_sub_id.");
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-mcp-verify-"));
-  const inputDir = path.join(root, "input");
-  await fs.mkdir(inputDir, { recursive: true });
-  await downloadToPath(
-    challenge.dataset_test_cid,
-    path.join(inputDir, "ground_truth.csv"),
-  );
-  await downloadToPath(
-    submission.result_cid,
-    path.join(inputDir, "submission.csv"),
-  );
+  try {
+    const inputDir = path.join(root, "input");
+    await fs.mkdir(inputDir, { recursive: true });
+    await downloadToPath(
+      challenge.dataset_test_cid,
+      path.join(inputDir, "ground_truth.csv"),
+    );
+    await downloadToPath(
+      submission.result_cid,
+      path.join(inputDir, "submission.csv"),
+    );
 
-  const run = await runScorer({
-    image: proof.container_image_hash,
-    inputDir,
-  });
-  const onChain = await getOnChainSubmission(
-    challenge.contract_address as `0x${string}`,
-    BigInt(submission.on_chain_sub_id),
-  );
-  const onChainScore = wadToScore(onChain.score);
-  const tolerance = input.tolerance ?? 0.001;
-  const delta = Math.abs(run.score - onChainScore);
+    const run = await runScorer({
+      image: proof.container_image_hash,
+      inputDir,
+    });
+    const onChain = await getOnChainSubmission(
+      challenge.contract_address as `0x${string}`,
+      BigInt(submission.on_chain_sub_id),
+    );
+    const onChainScore = wadToScore(onChain.score);
+    const tolerance = input.tolerance ?? 0.001;
+    const delta = Math.abs(run.score - onChainScore);
 
-  return {
-    match: delta <= tolerance,
-    localScore: run.score,
-    onChainScore,
-    delta,
-    tolerance,
-  };
+    return {
+      match: delta <= tolerance,
+      localScore: run.score,
+      onChainScore,
+      delta,
+      tolerance,
+    };
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 }

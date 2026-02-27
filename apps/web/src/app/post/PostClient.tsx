@@ -7,6 +7,7 @@ import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import yaml from "yaml";
 import { YamlEditor } from "../../components/YamlEditor";
+import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc } from "../../lib/format";
 
@@ -46,7 +47,6 @@ type FormState = {
   deadline: string;
   minimumScore: string;
   disputeWindow: string;
-  maxSubs: string;
 };
 
 const initialState: FormState = {
@@ -59,12 +59,11 @@ const initialState: FormState = {
   test: "",
   metric: "rmse",
   container: "ghcr.io/hermes-science/repro-scorer:latest",
-  reward: "50",
+  reward: "10",
   distribution: "winner_take_all",
   deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   minimumScore: "0",
-  disputeWindow: "48",
-  maxSubs: "3",
+  disputeWindow: "168",
 };
 
 function buildSpec(state: FormState) {
@@ -83,7 +82,6 @@ function buildSpec(state: FormState) {
     deadline: state.deadline,
     minimum_score: Number(state.minimumScore),
     dispute_window_hours: Number(state.disputeWindow),
-    max_submissions_per_wallet: Number(state.maxSubs),
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
 }
@@ -125,8 +123,16 @@ export function PostClient() {
     if (!Number.isFinite(rewardValue) || rewardValue <= 0) {
       return "Reward must be a positive number.";
     }
-    if (Number(state.maxSubs) < 1 || Number(state.maxSubs) > 3) {
-      return "Max submissions per wallet must be 1-3.";
+    if (rewardValue < 1 || rewardValue > 30) {
+      return "Reward must be between 1 and 30 USDC.";
+    }
+    const disputeWindow = Number(state.disputeWindow);
+    if (
+      !Number.isFinite(disputeWindow) ||
+      disputeWindow < 168 ||
+      disputeWindow > 2160
+    ) {
+      return "Dispute window must be between 168 and 2160 hours.";
     }
     if (new Date(state.deadline).getTime() <= Date.now()) {
       return "Deadline must be in the future.";
@@ -217,8 +223,7 @@ export function PostClient() {
           specCid,
           rewardUnits,
           BigInt(Math.floor(deadlineTs / 1000)),
-          BigInt(spec.dispute_window_hours ?? 48),
-          spec.max_submissions_per_wallet ?? 3,
+          BigInt(spec.dispute_window_hours ?? 168),
           minimumScoreWad,
           DISTRIBUTION_TO_ENUM[
             spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
@@ -228,8 +233,18 @@ export function PostClient() {
       });
 
       await publicClient.waitForTransactionReceipt({ hash: createTx });
-      setStatus(`Challenge posted on-chain: ${createTx}`);
-      setStatus(`Challenge posted successfully. tx=${createTx}.`);
+      setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
+      try {
+        await accelerateChallengeIndex({ specCid, txHash: createTx });
+        setStatus(
+          `Challenge posted successfully. tx=${createTx}. Indexed immediately.`,
+        );
+      } catch (accelerateError) {
+        console.warn("Challenge acceleration failed", accelerateError);
+        setStatus(
+          `Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`,
+        );
+      }
     } catch (submitError) {
       setStatus(
         submitError instanceof Error
@@ -396,21 +411,11 @@ export function PostClient() {
             <input
               className="input"
               type="number"
-              min={24}
-              max={168}
+              min={168}
+              max={2160}
               value={state.disputeWindow}
               onChange={(e) =>
                 setState((s) => ({ ...s, disputeWindow: e.target.value }))
-              }
-            />
-            <input
-              className="input"
-              type="number"
-              min={1}
-              max={3}
-              value={state.maxSubs}
-              onChange={(e) =>
-                setState((s) => ({ ...s, maxSubs: e.target.value }))
               }
             />
           </div>

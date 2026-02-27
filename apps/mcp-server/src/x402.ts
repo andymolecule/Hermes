@@ -1,9 +1,7 @@
-import * as x402Core from "@x402/core/server";
-import * as x402Evm from "@x402/evm/exact/server";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 const MCP_SESSION_PRICE_USD = 0.01;
-let x402ResolutionLogged = false;
+let x402ConfigLogged = false;
 
 function hasPaymentHeader(req: IncomingMessage) {
   return Boolean(
@@ -23,19 +21,6 @@ function paymentHeader(req: IncomingMessage) {
   }
   return value ?? null;
 }
-
-type Verifier = {
-  verifyAndSettle: (input: {
-    paymentHeader: string;
-    method: string;
-    path: string;
-    network: string;
-    payTo: string;
-    priceUsd: number;
-  }) => Promise<boolean>;
-};
-
-let cachedVerifier: Verifier | null | undefined;
 
 type X402RuntimeConfig = {
   enabled: boolean;
@@ -65,18 +50,6 @@ function readX402Config(): X402RuntimeConfig {
       process.env.HERMES_USDC_ADDRESS ??
       "0x0000000000000000000000000000000000000000",
   };
-}
-
-function resolveNamedExport(
-  moduleRef: Record<string, unknown>,
-  names: string[],
-) {
-  for (const name of names) {
-    if (name in moduleRef && moduleRef[name] !== undefined) {
-      return { value: moduleRef[name], name };
-    }
-  }
-  return { value: undefined, name: null };
 }
 
 async function verifyViaFacilitator(input: {
@@ -153,62 +126,6 @@ async function verifyViaFacilitator(input: {
   );
 }
 
-function loadVerifier(): Verifier | null {
-  if (cachedVerifier !== undefined) {
-    return cachedVerifier;
-  }
-
-  const serverResolved = resolveNamedExport(
-    x402Core as Record<string, unknown>,
-    ["x402ResourceServer", "X402ResourceServer"],
-  );
-  const facilitatorResolved = resolveNamedExport(
-    x402Core as Record<string, unknown>,
-    ["HTTPFacilitatorClient", "FacilitatorClient"],
-  );
-  const schemeResolved = resolveNamedExport(
-    x402Evm as Record<string, unknown>,
-    ["ExactEvmScheme", "ExactEvmServerScheme"],
-  );
-
-  const x402ResourceServer = serverResolved.value as
-    | (new (...args: unknown[]) => unknown)
-    | undefined;
-  const facilitatorClient = facilitatorResolved.value as
-    | (new (...args: unknown[]) => unknown)
-    | undefined;
-  const exactEvmScheme = schemeResolved.value as
-    | (new (...args: unknown[]) => unknown)
-    | undefined;
-
-  if (!x402ResourceServer || !facilitatorClient || !exactEvmScheme) {
-    cachedVerifier = null;
-    return null;
-  }
-
-  if (!x402ResolutionLogged) {
-    console.info(
-      `[x402][mcp] exports server=${serverResolved.name} facilitator=${facilitatorResolved.name} scheme=${schemeResolved.name}`,
-    );
-    x402ResolutionLogged = true;
-  }
-
-  cachedVerifier = {
-    verifyAndSettle: async (input) => {
-      const config = readX402Config();
-      const server = new x402ResourceServer(
-        new facilitatorClient({ url: config.facilitatorUrl }),
-      ) as { register?: (...args: unknown[]) => unknown };
-      if (typeof server.register === "function") {
-        server.register(config.network, new exactEvmScheme());
-      }
-
-      return verifyViaFacilitator(input);
-    },
-  };
-  return cachedVerifier;
-}
-
 export function getMcpX402Metadata() {
   const config = readX402Config();
   return {
@@ -223,7 +140,7 @@ export function getMcpX402Metadata() {
         method: "POST",
         path: "/mcp",
         priceUsd: MCP_SESSION_PRICE_USD,
-        description: "Fee per MCP HTTP request.",
+        description: "Fee per MCP session bootstrap.",
       },
     ],
   };
@@ -234,6 +151,14 @@ export async function enforceMcpSessionPayment(
   res: ServerResponse,
 ) {
   const config = readX402Config();
+
+  if (!x402ConfigLogged) {
+    console.info(
+      `[x402][mcp] enabled=${config.enabled} reportOnly=${config.reportOnly} facilitator=${config.facilitatorUrl} network=${config.network} payTo=${config.payTo}`,
+    );
+    x402ConfigLogged = true;
+  }
+
   if (!config.enabled) return true;
 
   if (config.reportOnly) {
@@ -263,20 +188,7 @@ export async function enforceMcpSessionPayment(
     return false;
   }
 
-  const verifier = loadVerifier();
-  if (!verifier) {
-    res.statusCode = 503;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(
-      JSON.stringify({
-        error:
-          "x402 verification is enabled for MCP but verifier dependencies are unavailable.",
-      }),
-    );
-    return false;
-  }
-
-  const ok = await verifier.verifyAndSettle({
+  const ok = await verifyViaFacilitator({
     paymentHeader: paymentHeader(req) ?? "",
     method: req.method ?? "POST",
     path: "/mcp",
