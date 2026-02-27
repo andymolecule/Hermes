@@ -6,6 +6,14 @@
 
 Hermes is an on-chain science bounty protocol. The system is split into **on-chain** (trustless settlement) and **off-chain** (compute, indexing, UX) layers.
 
+### Navigation By Layer
+
+- Frontend: Web UI (`apps/web`), wallet interactions, challenge posting UX
+- Backend: API (`apps/api`), MCP server (`apps/mcp-server`), indexer (`packages/chain/src/indexer.ts`)
+- Chain: Factory/challenge contracts (`packages/contracts`)
+- Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
+- Ops: Testnet deployment and runbook (`scripts/*`, `docs/testnet-ops-runbook.md`)
+
 ```mermaid
 flowchart TB
     subgraph Clients["Client Layer"]
@@ -305,6 +313,32 @@ sequenceDiagram
 
 ## Component Deep Dive
 
+### Frontend Layer (Next.js)
+
+- Entry points:
+  - `apps/web/src/app/page.tsx` (home)
+  - `apps/web/src/app/challenges/*` (explorer/detail)
+  - `apps/web/src/app/post/*` (challenge posting)
+- Wallet + chain:
+  - `apps/web/src/lib/wagmi.tsx`
+  - RainbowKit + wagmi on Base/Base Sepolia
+- API client:
+  - `apps/web/src/lib/api.ts` (typed fetch wrappers)
+- Security-sensitive web API route:
+  - `apps/web/src/app/api/pin-spec/route.ts` uses signed authorization for pinning specs
+
+### Backend Layer (API + MCP + Indexer)
+
+- API server:
+  - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
+  - `apps/api/src/routes/*` (challenge/submission/auth/verification endpoints)
+- MCP server:
+  - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
+  - `apps/mcp-server/src/tools/*` (agent tools)
+- Indexer:
+  - `packages/chain/src/indexer.ts` (polling, event parsing, idempotent DB writes)
+  - exposed health via `/api/indexer-health`
+
 ### Monorepo Structure
 
 ```mermaid
@@ -474,7 +508,7 @@ erDiagram
 
 ---
 
-## API Layer
+## Backend API Layer
 
 ### Route Map
 

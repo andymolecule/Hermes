@@ -48,12 +48,14 @@ flowchart TB
 
 ## Docs
 
-| Document | For | Description |
-|----------|-----|-------------|
-| [Product Guide](docs/product.md) | Everyone | How Hermes works, explained simply with visual flows |
-| [Technical Architecture](docs/architecture.md) | Engineers | System design, diagrams, on-chain/off-chain split, security model |
-| [Specification](docs/spec.md) | Product | MVP scope, challenge schema, workflows |
-| [Testnet Runbook](docs/testnet-ops-runbook.md) | Ops | Launch checklist and operational procedures |
+Start with [`docs/README.md`](docs/README.md) for the complete documentation map.
+
+### Core
+- [Product Guide](docs/product.md) — plain-language product walkthrough.
+- [Technical Architecture](docs/architecture.md) — frontend/backend/chain architecture.
+- [Specification](docs/spec.md) — MVP scope and schema requirements.
+- [Implementation Plan](docs/implementation.md) — detailed implementation reference.
+- [Testnet Ops Runbook](docs/testnet-ops-runbook.md) — launch and incident handling.
 
 ## Quickstart
 
