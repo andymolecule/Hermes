@@ -4,9 +4,10 @@ import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useMemo, useState } from "react";
 import { type Abi, parseUnits } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import yaml from "yaml";
 import { YamlEditor } from "../../components/YamlEditor";
+import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { formatUsdc } from "../../lib/format";
@@ -97,9 +98,10 @@ export function PostClient() {
   const [status, setStatus] = useState<string>("");
   const [isPosting, setIsPosting] = useState(false);
 
-  const { isConnected, chainId } = useAccount();
+  const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const rewardValue = Number(state.reward || 0);
   const protocolFeeRate = 0.05;
@@ -192,11 +194,31 @@ export function PostClient() {
       if (!Number.isFinite(deadlineTs) || deadlineTs <= Date.now()) {
         throw new Error("Spec deadline must be a valid future timestamp.");
       }
+      if (!address) {
+        throw new Error("Wallet address is required to authorize spec pinning.");
+      }
+
+      const timestamp = Date.now();
+      const specHash = computeSpecHash(spec);
+      const message = buildPinSpecMessage({
+        address,
+        timestamp,
+        specHash,
+      });
+      const signature = await signMessageAsync({ message });
 
       const pinRes = await fetch("/api/pin-spec", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ spec }),
+        body: JSON.stringify({
+          spec,
+          auth: {
+            address,
+            timestamp,
+            specHash,
+            signature,
+          },
+        }),
       });
       if (!pinRes.ok) {
         throw new Error(await pinRes.text());
