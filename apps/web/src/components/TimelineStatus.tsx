@@ -1,33 +1,35 @@
 import type { Challenge } from "../lib/types";
 
-const FLOW = ["active", "scoring", "disputed", "finalized"];
-
 export function TimelineStatus({ challenge }: { challenge: Challenge }) {
-  const current = FLOW.indexOf(challenge.status);
+  const flow: Array<{ key: string; detail: string }> = [
+    { key: "active", detail: "Open for solver submissions" },
+    { key: "scoring", detail: "Oracle scoring window" },
+  ];
+
+  if (challenge.status === "disputed") {
+    flow.push({ key: "disputed", detail: "Dispute and resolution period" });
+  }
+
+  if (challenge.status === "cancelled") {
+    flow.push({ key: "cancelled", detail: "Challenge cancelled/refunded" });
+  } else {
+    flow.push({ key: "finalized", detail: "Payouts claimable" });
+  }
+
+  const current = flow.findIndex((step) => step.key === challenge.status);
 
   return (
     <div className="card" style={{ padding: 16 }}>
       <h3 style={{ marginTop: 0 }}>Timeline</h3>
       <div className="grid" style={{ gap: 8 }}>
-        {FLOW.map((step, index) => {
+        {flow.map((step, index) => {
           const done = current >= index;
           return (
-            <div key={step} className="timeline-item">
+            <div key={step.key} className="timeline-item">
               <span className={`timeline-dot ${done ? "done" : ""}`} />
               <div>
-                <strong>{step}</strong>
-                {step === "active" ? (
-                  <div className="muted">Open for solver submissions</div>
-                ) : null}
-                {step === "scoring" ? (
-                  <div className="muted">Oracle scoring window</div>
-                ) : null}
-                {step === "disputed" ? (
-                  <div className="muted">Dispute and resolution period</div>
-                ) : null}
-                {step === "finalized" ? (
-                  <div className="muted">Payouts claimable</div>
-                ) : null}
+                <strong>{step.key}</strong>
+                <div className="muted">{step.detail}</div>
               </div>
             </div>
           );
