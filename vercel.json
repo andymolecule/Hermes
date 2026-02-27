@@ -1,5 +1,2 @@
-{
-  "framework": "nextjs",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm turbo build --filter=@hermes/web..."
-}
+# This file intentionally left minimal. Vercel config lives in apps/web/vercel.json
+# since the Vercel project Root Directory should be set to apps/web.
