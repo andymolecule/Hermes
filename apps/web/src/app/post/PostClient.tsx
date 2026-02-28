@@ -7,7 +7,7 @@ import { motion } from "motion/react";
 import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import yaml from "yaml";
-import { FileCode, Wallet, ArrowRight, Coins, Eye, AlertCircle, Loader2 } from "lucide-react";
+import { FileCode, Wallet, ArrowRight, Coins, Eye, AlertCircle, Loader2, CheckCircle } from "lucide-react";
 import { YamlEditor } from "../../components/YamlEditor";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
@@ -94,7 +94,7 @@ type ChallengeSpec = ReturnType<typeof buildSpec>;
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+      <label className="block text-xs font-medium uppercase tracking-wider text-muted">
         {label}
       </label>
       {children}
@@ -102,16 +102,8 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-const inputClasses = "w-full rounded-lg px-3 py-2.5 text-sm font-sans border outline-none transition-all focus:ring-2 focus:ring-cobalt-200/20 focus:border-cobalt-200";
-const selectClasses = "w-full rounded-lg px-3 py-2.5 text-sm font-sans border outline-none transition-all focus:ring-2 focus:ring-cobalt-200/20 focus:border-cobalt-200 cursor-pointer appearance-none";
-
-function inputStyle() {
-  return {
-    backgroundColor: "var(--surface-default)",
-    borderColor: "var(--border-default)",
-    color: "var(--text-primary)",
-  };
-}
+const inputClasses = "w-full px-3 py-2.5 text-sm font-sans border border-border-default rounded bg-surface-default text-primary outline-none input-focus";
+const selectClasses = "w-full px-3 py-2.5 text-sm font-sans border border-border-default rounded bg-surface-default text-primary outline-none cursor-pointer appearance-none input-focus";
 
 export function PostClient() {
   const [state, setState] = useState<FormState>(initialState);
@@ -228,9 +220,9 @@ export function PostClient() {
       setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
       try {
         await accelerateChallengeIndex({ specCid, txHash: createTx });
-        setStatus(`Challenge posted successfully. tx=${createTx}. Indexed immediately.`);
+        setStatus(`success: Challenge posted. tx=${createTx}. Indexed immediately.`);
       } catch {
-        setStatus(`Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
+        setStatus(`success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
       }
     } catch (submitError) {
       setStatus(submitError instanceof Error ? submitError.message : "Failed to post challenge.");
@@ -239,85 +231,64 @@ export function PostClient() {
     }
   }
 
+  const isSuccess = status.startsWith("success:");
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-        className="flex items-center justify-between"
-      >
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-display font-bold mb-1" style={{ color: "var(--text-primary)" }}>
+          <h1 className="text-3xl font-display font-bold mb-1 text-primary">
             Post Challenge
           </h1>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          <p className="text-sm text-tertiary">
             Define a computational challenge and fund it with USDC.
           </p>
         </div>
         <ConnectButton />
-      </motion.div>
+      </div>
 
       {/* Mode toggle */}
-      <div className="flex gap-2 p-1.5 rounded-xl w-fit" style={{ backgroundColor: "var(--surface-inset)" }}>
-        <button
-          type="button"
-          onClick={() => setMode("form")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${mode === "form"
-              ? "bg-white shadow-sm"
-              : "hover:bg-white/50"
-            }`}
-          style={{ color: mode === "form" ? "var(--text-primary)" : "var(--text-muted)" }}
-        >
-          <Wallet className="w-4 h-4" />
-          Form
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("yaml")}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${mode === "yaml"
-              ? "bg-white shadow-sm"
-              : "hover:bg-white/50"
-            }`}
-          style={{ color: mode === "yaml" ? "var(--text-primary)" : "var(--text-muted)" }}
-        >
-          <FileCode className="w-4 h-4" />
-          YAML
-        </button>
+      <div className="flex gap-1 p-1 w-fit rounded-md bg-surface-inset">
+        {(["form", "yaml"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium cursor-pointer rounded border-none transition-all duration-150 ${mode === m ? "bg-surface-default text-primary shadow-[0_1px_2px_rgba(14,26,33,0.06)]" : "bg-transparent text-muted"}`}
+          >
+            {m === "form" ? <Wallet className="w-4 h-4" /> : <FileCode className="w-4 h-4" />}
+            {m === "form" ? "Form" : "YAML"}
+          </button>
+        ))}
       </div>
 
       {/* Form */}
       {mode === "form" ? (
-        <motion.div
-          initial={{ opacity: 0, x: -10 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="rounded-2xl border p-6 space-y-6"
-          style={{ backgroundColor: "var(--surface-default)", borderColor: "var(--border-default)" }}
-        >
+        <div className="rounded-lg border border-border-default p-6 space-y-6 bg-surface-default">
           {/* Basic Info */}
           <div>
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+            <h3 className="text-sm font-semibold mb-4 text-primary">
               Basic Info
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label="Title">
-                <input className={inputClasses} style={inputStyle()} placeholder="e.g. Predict COVID mutations"
+                <input className={inputClasses} placeholder="e.g. Predict COVID mutations"
                   value={state.title} onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))} />
               </FormField>
               <FormField label="ID (optional)">
-                <input className={inputClasses} style={inputStyle()} placeholder="auto-generated if empty"
+                <input className={inputClasses} placeholder="auto-generated if empty"
                   value={state.id} onChange={(e) => setState((s) => ({ ...s, id: e.target.value }))} />
               </FormField>
               <div className="sm:col-span-2">
                 <FormField label="Description">
-                  <textarea className={`${inputClasses} min-h-24 resize-y`} style={inputStyle()}
+                  <textarea className={`${inputClasses} min-h-24 resize-y`}
                     placeholder="What are solvers trying to achieve?"
                     value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
                 </FormField>
               </div>
               <FormField label="Domain">
-                <select className={selectClasses} style={inputStyle()} value={state.domain}
+                <select className={selectClasses} value={state.domain}
                   onChange={(e) => setState((s) => ({ ...s, domain: e.target.value }))}>
                   <option value="longevity">longevity</option>
                   <option value="drug_discovery">drug_discovery</option>
@@ -328,7 +299,7 @@ export function PostClient() {
                 </select>
               </FormField>
               <FormField label="Type">
-                <select className={selectClasses} style={inputStyle()} value={state.type}
+                <select className={selectClasses} value={state.type}
                   onChange={(e) => setState((s) => ({ ...s, type: e.target.value }))}>
                   <option value="reproducibility">reproducibility</option>
                   <option value="prediction">prediction</option>
@@ -338,47 +309,47 @@ export function PostClient() {
             </div>
           </div>
 
-          <hr style={{ borderColor: "var(--border-subtle)" }} />
+          <hr className="border-border-subtle" />
 
           {/* Datasets */}
           <div>
-            <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+            <h3 className="text-sm font-semibold mb-4 text-primary">
               Datasets & Scoring
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label="Train dataset URL">
-                <input className={`${inputClasses} font-mono text-xs`} style={inputStyle()} placeholder="ipfs://... or https://..."
+                <input className={`${inputClasses} font-mono text-xs`} placeholder="ipfs://... or https://..."
                   value={state.train} onChange={(e) => setState((s) => ({ ...s, train: e.target.value }))} />
               </FormField>
               <FormField label="Test dataset URL">
-                <input className={`${inputClasses} font-mono text-xs`} style={inputStyle()} placeholder="ipfs://... or https://..."
+                <input className={`${inputClasses} font-mono text-xs`} placeholder="ipfs://... or https://..."
                   value={state.test} onChange={(e) => setState((s) => ({ ...s, test: e.target.value }))} />
               </FormField>
               <FormField label="Scoring container">
-                <input className={`${inputClasses} font-mono text-xs`} style={inputStyle()}
+                <input className={`${inputClasses} font-mono text-xs`}
                   value={state.container} onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))} />
               </FormField>
               <FormField label="Metric">
-                <input className={inputClasses} style={inputStyle()}
+                <input className={inputClasses}
                   value={state.metric} onChange={(e) => setState((s) => ({ ...s, metric: e.target.value }))} />
               </FormField>
             </div>
           </div>
 
-          <hr style={{ borderColor: "var(--border-subtle)" }} />
+          <hr className="border-border-subtle" />
 
           {/* Reward & Rules */}
           <div>
-            <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>
+            <h3 className="text-sm font-semibold mb-4 text-primary">
               Reward & Rules
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField label="Reward (USDC)">
-                <input className={`${inputClasses} font-mono`} style={inputStyle()} type="number" min={1}
+                <input className={`${inputClasses} font-mono`} type="number" min={1}
                   value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
               </FormField>
               <FormField label="Distribution">
-                <select className={selectClasses} style={inputStyle()} value={state.distribution}
+                <select className={selectClasses} value={state.distribution}
                   onChange={(e) => setState((s) => ({ ...s, distribution: e.target.value as FormState["distribution"] }))}>
                   <option value="winner_take_all">winner_take_all</option>
                   <option value="top_3">top_3</option>
@@ -386,7 +357,7 @@ export function PostClient() {
                 </select>
               </FormField>
               <FormField label="Deadline">
-                <input className={inputClasses} style={inputStyle()} type="datetime-local"
+                <input className={inputClasses} type="datetime-local"
                   value={state.deadline.slice(0, 16)}
                   onChange={(e) => {
                     const ts = Date.parse(e.target.value);
@@ -394,51 +365,49 @@ export function PostClient() {
                   }} />
               </FormField>
               <FormField label="Minimum Score">
-                <input className={`${inputClasses} font-mono`} style={inputStyle()} type="number" min={0} max={1} step={0.01}
+                <input className={`${inputClasses} font-mono`} type="number" min={0} max={1} step={0.01}
                   value={state.minimumScore} onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))} />
               </FormField>
               <FormField label="Dispute Window (hours)">
-                <input className={`${inputClasses} font-mono`} style={inputStyle()} type="number" min={168} max={2160}
+                <input className={`${inputClasses} font-mono`} type="number" min={168} max={2160}
                   value={state.disputeWindow} onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))} />
               </FormField>
             </div>
           </div>
-        </motion.div>
+        </div>
       ) : (
         <YamlEditor value={yamlText} onChange={setYamlText} />
       )}
 
       {/* Cost Breakdown */}
-      <div className="rounded-2xl border p-5" style={{ backgroundColor: "var(--surface-default)", borderColor: "var(--border-default)" }}>
-        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+      <div className="rounded-lg border border-border-default p-5 bg-surface-default">
+        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-primary">
           <Coins className="w-4 h-4 text-cobalt-200" />
           Cost Breakdown
         </h3>
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>You deposit now</span>
-            <span className="text-sm font-mono font-semibold text-cobalt-200">{formatUsdc(rewardValue)} USDC</span>
+            <span className="text-sm font-medium text-secondary">You deposit now</span>
+            <span className="text-sm font-mono font-semibold text-cobalt-200 tabular-nums">{formatUsdc(rewardValue)} USDC</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>Protocol fee at finalization (from pool)</span>
-            <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>{formatUsdc(protocolFeeValue)} USDC</span>
+            <span className="text-sm text-muted">Protocol fee at finalization (from pool)</span>
+            <span className="text-sm font-mono text-muted tabular-nums">{formatUsdc(protocolFeeValue)} USDC</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-sm" style={{ color: "var(--text-muted)" }}>Net winner payout</span>
-            <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>{formatUsdc(winnerPayoutValue)} USDC</span>
+            <span className="text-sm text-muted">Net winner payout</span>
+            <span className="text-sm font-mono text-muted tabular-nums">{formatUsdc(winnerPayoutValue)} USDC</span>
           </div>
         </div>
       </div>
 
       {/* Preview */}
-      <div className="rounded-2xl border p-5" style={{ backgroundColor: "var(--surface-default)", borderColor: "var(--border-default)" }}>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+      <div className="rounded-lg border border-border-default p-5 bg-surface-default">
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-primary">
           <Eye className="w-4 h-4 text-cobalt-200" />
           YAML Preview
         </h3>
-        <pre className="text-xs font-mono p-4 rounded-lg overflow-x-auto leading-relaxed"
-          style={{ backgroundColor: "var(--surface-inset)", color: "var(--text-secondary)" }}
-        >
+        <pre className="text-xs font-mono p-4 overflow-x-auto leading-relaxed bg-surface-inset text-secondary">
           <code>{specPreview}</code>
         </pre>
       </div>
@@ -449,7 +418,7 @@ export function PostClient() {
           type="button"
           disabled={isPosting}
           onClick={handleSubmit}
-          className="flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium transition-all bg-cobalt-200 text-white hover:bg-cobalt-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm hover:shadow-md"
+          className="flex items-center gap-2 px-6 py-3 text-sm font-medium shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed rounded btn-primary"
         >
           {isPosting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
           {isPosting ? "Posting..." : "Post Challenge"}
@@ -459,16 +428,22 @@ export function PostClient() {
       {/* Status */}
       {status ? (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-start gap-3 rounded-xl border p-4"
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className={`flex items-start gap-3 border p-4 rounded-md ${isSuccess ? "border-success bg-success-bg" : "border-border-default bg-surface-default"}`}
           style={{
-            borderColor: status.includes("success") ? "var(--color-success)" : "var(--border-default)",
-            backgroundColor: status.includes("success") ? "var(--color-success-bg)" : "var(--surface-default)",
+            borderColor: isSuccess ? "var(--color-success)" : undefined,
+            backgroundColor: isSuccess ? "var(--color-success-bg)" : undefined,
           }}
         >
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--text-muted)" }} />
-          <p className="text-sm break-all" style={{ color: "var(--text-secondary)" }}>{status}</p>
+          {isSuccess
+            ? <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-success" />
+            : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-muted" />
+          }
+          <p className="text-sm break-all text-secondary">
+            {isSuccess ? status.replace("success: ", "") : status}
+          </p>
         </motion.div>
       ) : null}
     </div>

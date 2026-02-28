@@ -1,11 +1,6 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
+import { ClientLayout } from "../components/ClientLayout";
 import "./globals.css";
-
-const ClientLayout = dynamic(
-  () => import("../components/ClientLayout").then((m) => m.ClientLayout),
-  { ssr: false },
-) as React.ComponentType<{ children: React.ReactNode }>;
 
 export const metadata: Metadata = {
   title: "Hermes",
@@ -17,6 +12,13 @@ export default function RootLayout({
 }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("hermes-theme");if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.setAttribute("data-theme","dark")}}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="bg-grid font-sans">
         <ClientLayout>{children}</ClientLayout>
       </body>
