@@ -13,6 +13,34 @@ export type ChallengeFilterState = {
 const DOMAINS = ["longevity", "drug_discovery", "omics", "protein_design", "neuroscience", "other"];
 const STATUSES = ["active", "scoring", "disputed", "finalized", "cancelled"];
 
+function Pill({
+  label,
+  active,
+  activeStyle,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  activeStyle: "domain" | "status";
+  onClick: () => void;
+}) {
+  const activeBg = activeStyle === "domain" ? "var(--color-grey-900)" : "var(--color-cobalt-200)";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-3 py-1.5 text-xs font-medium cursor-pointer border rounded-full transition-all duration-150"
+      style={{
+        backgroundColor: active ? activeBg : "transparent",
+        color: active ? "#F1F1F1" : "var(--text-secondary)",
+        borderColor: active ? activeBg : "var(--border-default)",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function ChallengeFilters({
   onChange,
 }: {
@@ -34,62 +62,36 @@ export function ChallengeFilters({
   return (
     <div className="space-y-4">
       {/* Search bar */}
-      <div className="relative group">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors"
-          style={{ color: "var(--text-muted)" }}
-        />
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
         <input
           type="text"
           placeholder="Search challenges by title or description..."
           value={state.search}
           onChange={(e) => update({ search: e.target.value })}
-          className="w-full rounded-xl py-3 pl-11 pr-4 text-sm font-sans transition-all border outline-none focus:ring-2 focus:ring-cobalt-200/20 focus:border-cobalt-200"
-          style={{
-            backgroundColor: "var(--surface-default)",
-            borderColor: "var(--border-default)",
-            color: "var(--text-primary)",
-          }}
+          className="w-full py-2.5 pl-10 pr-4 text-sm font-sans border border-border-default rounded bg-surface-default text-primary outline-none input-focus"
         />
         <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex gap-1">
-          <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded border"
-            style={{ backgroundColor: "var(--surface-inset)", borderColor: "var(--border-default)", color: "var(--text-muted)" }}
-          >⌘</kbd>
-          <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded border"
-            style={{ backgroundColor: "var(--surface-inset)", borderColor: "var(--border-default)", color: "var(--text-muted)" }}
-          >K</kbd>
+          <kbd className="px-1.5 py-0.5 text-[10px] font-mono border border-border-default rounded-[2px] bg-surface-inset text-muted">⌘</kbd>
+          <kbd className="px-1.5 py-0.5 text-[10px] font-mono border border-border-default rounded-[2px] bg-surface-inset text-muted">K</kbd>
         </div>
       </div>
 
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
-        <SlidersHorizontal className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+        <SlidersHorizontal className="w-4 h-4 text-muted" />
 
         {/* Domain pills */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => update({ domain: "" })}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border ${state.domain === ""
-                ? "bg-grey-900 text-white border-grey-900 shadow-sm"
-                : "border-transparent hover:bg-white/50"
-              }`}
-            style={state.domain !== "" ? { color: "var(--text-secondary)", borderColor: "var(--border-default)" } : {}}
-          >
-            All
-          </button>
+          <Pill label="All" active={state.domain === ""} activeStyle="domain" onClick={() => update({ domain: "" })} />
           {DOMAINS.map((d) => (
-            <button
+            <Pill
               key={d}
-              type="button"
+              label={d.replace(/_/g, " ")}
+              active={state.domain === d}
+              activeStyle="domain"
               onClick={() => update({ domain: d })}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border ${state.domain === d
-                  ? "bg-grey-900 text-white border-grey-900 shadow-sm"
-                  : "border-transparent hover:bg-white/50"
-                }`}
-              style={state.domain !== d ? { color: "var(--text-secondary)", borderColor: "var(--border-default)" } : {}}
-            >
-              {d.replace(/_/g, " ")}
-            </button>
+            />
           ))}
         </div>
 
@@ -97,30 +99,15 @@ export function ChallengeFilters({
 
         {/* Status pills */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => update({ status: "" })}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border ${state.status === ""
-                ? "bg-cobalt-200 text-white border-cobalt-200 shadow-sm"
-                : "border-transparent hover:bg-white/50"
-              }`}
-            style={state.status !== "" ? { color: "var(--text-secondary)", borderColor: "var(--border-default)" } : {}}
-          >
-            All status
-          </button>
+          <Pill label="All status" active={state.status === ""} activeStyle="status" onClick={() => update({ status: "" })} />
           {STATUSES.map((s) => (
-            <button
+            <Pill
               key={s}
-              type="button"
+              label={s}
+              active={state.status === s}
+              activeStyle="status"
               onClick={() => update({ status: s })}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer border ${state.status === s
-                  ? "bg-cobalt-200 text-white border-cobalt-200 shadow-sm"
-                  : "border-transparent hover:bg-white/50"
-                }`}
-              style={state.status !== s ? { color: "var(--text-secondary)", borderColor: "var(--border-default)" } : {}}
-            >
-              {s}
-            </button>
+            />
           ))}
         </div>
 
@@ -133,12 +120,7 @@ export function ChallengeFilters({
           placeholder="Min USDC"
           value={state.minReward}
           onChange={(e) => update({ minReward: e.target.value })}
-          className="w-28 px-3 py-1.5 rounded-full text-xs font-mono border outline-none focus:ring-2 focus:ring-cobalt-200/20 focus:border-cobalt-200"
-          style={{
-            backgroundColor: "var(--surface-default)",
-            borderColor: "var(--border-default)",
-            color: "var(--text-primary)",
-          }}
+          className="w-28 px-3 py-1.5 text-xs font-mono border border-border-default rounded-full bg-surface-default text-primary outline-none input-focus"
         />
       </div>
     </div>

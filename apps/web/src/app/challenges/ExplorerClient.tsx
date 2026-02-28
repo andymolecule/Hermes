@@ -2,8 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { motion } from "motion/react";
-import { Search, ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, Terminal } from "lucide-react";
 import { ChallengeCard } from "../../components/ChallengeCard";
 import {
   type ChallengeFilterState,
@@ -52,36 +51,27 @@ export function ExplorerClient() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-      >
-        <h1 className="text-3xl font-display font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+      <div>
+        <h1 className="text-3xl font-display font-bold mb-2 text-primary">
           Challenge Explorer
         </h1>
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+        <p className="text-sm text-tertiary">
           Browse open challenges, filter by domain/status/reward, and drill into details.
         </p>
-      </motion.div>
+      </div>
 
       {/* Filters */}
       <ChallengeFilters onChange={setFilters} />
 
       {/* Results header */}
       <div className="flex items-center justify-between">
-        <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>
+        <span className="text-sm font-mono text-muted tabular-nums">
           {rows.length} results
         </span>
         <div className="flex items-center gap-2">
-          <ArrowUpDown className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+          <ArrowUpDown className="w-3.5 h-3.5 text-muted" />
           <select
-            className="text-sm font-medium rounded-lg px-3 py-1.5 border outline-none cursor-pointer appearance-none"
-            style={{
-              backgroundColor: "var(--surface-default)",
-              borderColor: "var(--border-default)",
-              color: "var(--text-secondary)",
-            }}
+            className="text-sm font-medium px-3 py-1.5 border border-border-default rounded bg-surface-default text-secondary outline-none cursor-pointer appearance-none"
             value={sort}
             onChange={(e) => setSort(e.target.value as "deadline" | "reward")}
           >
@@ -95,39 +85,47 @@ export function ExplorerClient() {
       {query.isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="skeleton h-56 rounded-2xl" />
+            <div key={i} className="skeleton-card">
+              <div className="flex items-start justify-between">
+                <div className="skeleton skeleton-icon" />
+                <div className="skeleton skeleton-badge" />
+              </div>
+              <div className="skeleton skeleton-title" />
+              <div className="skeleton skeleton-desc" />
+              <div className="skeleton skeleton-desc-short" />
+              <div className="skeleton skeleton-footer" />
+            </div>
           ))}
         </div>
       ) : null}
 
       {/* Error */}
       {query.error ? (
-        <div className="rounded-2xl border p-8 text-center"
-          style={{ borderColor: "var(--border-default)", color: "var(--text-muted)" }}
-        >
+        <div className="rounded-lg border border-border-default p-8 text-center text-muted">
           Failed to load challenges.
         </div>
       ) : null}
 
-      {/* Empty state */}
+      {/* Empty state — terminal style */}
       {!query.isLoading && !query.error && rows.length === 0 ? (
-        <div className="rounded-2xl border p-12 text-center"
-          style={{ borderColor: "var(--border-default)" }}
-        >
-          <Search className="w-8 h-8 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-          <p className="font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
-            No challenges found
-          </p>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Try adjusting your filters or search terms.
-          </p>
+        <div className="rounded-md p-8 max-w-lg mx-auto bg-surface-inset">
+          <div className="font-mono text-sm space-y-1 text-tertiary">
+            <div className="flex items-center gap-2 mb-3">
+              <Terminal className="w-4 h-4" />
+              <span className="text-xs uppercase tracking-wider font-medium">hermes</span>
+            </div>
+            <p>$ hermes query --open</p>
+            <p>&gt; No challenges found.</p>
+            <p>&gt; Try adjusting filters.</p>
+            <p className="inline-block animate-[blink_1s_step-end_infinite]">_</p>
+          </div>
         </div>
       ) : null}
 
       {/* Results grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {rows.map((row, idx) => (
-          <ChallengeCard key={row.id} challenge={row} index={idx} />
+        {rows.map((row) => (
+          <ChallengeCard key={row.id} challenge={row} />
         ))}
       </div>
     </div>

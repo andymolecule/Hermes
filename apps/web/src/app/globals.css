@@ -265,3 +265,79 @@ a:hover {
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
 }
+
+/* Terminal cursor blink for empty states */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ============================================================
+   SEMANTIC UTILITY CLASSES — bridge CSS custom properties to Tailwind
+   ============================================================ */
+
+/* Surfaces */
+.bg-surface-base { background-color: var(--surface-base); }
+.bg-surface-default { background-color: var(--surface-default); }
+.bg-surface-elevated { background-color: var(--surface-elevated); }
+.bg-surface-inset { background-color: var(--surface-inset); }
+.bg-success-bg { background-color: var(--color-success-bg); }
+
+/* Text */
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-muted { color: var(--text-muted); }
+.text-accent { color: var(--text-accent); }
+.text-success { color: var(--color-success); }
+
+/* Borders */
+.border-border-default { border-color: var(--border-default); }
+.border-border-subtle { border-color: var(--border-subtle); }
+.border-border-strong { border-color: var(--border-strong); }
+
+/* Card hover pattern */
+.card-hover {
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(14,26,33,0.10), 0 8px 16px rgba(14,26,33,0.06);
+  border-color: var(--color-cobalt-200);
+}
+
+/* Input focus pattern */
+.input-focus {
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.input-focus:focus {
+  border-color: var(--color-cobalt-200);
+  box-shadow: 0 0 0 3px rgba(19, 153, 244, 0.15);
+}
+
+/* Button primary hover */
+.btn-primary {
+  background-color: var(--color-cobalt-200);
+  color: #F1F1F1;
+  border: none;
+  transition: background-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.btn-primary:hover { background-color: var(--color-cobalt-300); }
+
+/* Table row hover */
+.row-hover { transition: background-color 120ms var(--ease-out); }
+.row-hover:hover { background-color: var(--surface-inset); }
+
+/* Card skeleton matching ChallengeCard layout */
+.skeleton-card {
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background-color: var(--surface-default);
+  padding: 20px;
+}
+.skeleton-card .skeleton-icon { width: 36px; height: 36px; border-radius: 6px; }
+.skeleton-card .skeleton-badge { width: 60px; height: 18px; border-radius: 2px; }
+.skeleton-card .skeleton-title { height: 22px; width: 75%; margin-top: 12px; }
+.skeleton-card .skeleton-desc { height: 14px; width: 100%; margin-top: 8px; }
+.skeleton-card .skeleton-desc-short { height: 14px; width: 60%; margin-top: 6px; }
+.skeleton-card .skeleton-footer { height: 14px; width: 40%; margin-top: 16px; }
