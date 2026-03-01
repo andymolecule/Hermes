@@ -19,7 +19,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="bg-grid font-sans">
+      <body className="font-sans">
         <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
