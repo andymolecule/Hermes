@@ -76,7 +76,10 @@ export const challengeSpecSchema = z.object({
     .min(CHALLENGE_LIMITS.disputeWindowMinHours)
     .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
     .optional(),
-  lab_tba: z.string().optional(),
+  lab_tba: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
+    .optional(),
 });
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;

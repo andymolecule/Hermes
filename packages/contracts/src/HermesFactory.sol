@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {IERC20Permit} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {HermesChallenge} from "./HermesChallenge.sol";
 import {IHermesChallenge} from "./interfaces/IHermesChallenge.sol";
@@ -43,6 +44,37 @@ contract HermesFactory is Ownable {
         uint8 distributionType,
         address labTBA
     ) external returns (uint256 challengeId, address challengeAddr) {
+        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA);
+    }
+
+    /// @notice Create a challenge using EIP-2612 permit (single transaction).
+    function createChallengeWithPermit(
+        string calldata specCid,
+        uint256 rewardAmount,
+        uint64 deadline,
+        uint64 disputeWindowHours,
+        uint256 minimumScore,
+        uint8 distributionType,
+        address labTBA,
+        uint256 permitDeadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external returns (uint256 challengeId, address challengeAddr) {
+        // permit may fail if already approved or if frontrun — that's OK
+        try IERC20Permit(address(usdc)).permit(msg.sender, address(this), rewardAmount, permitDeadline, v, r, s) {} catch {}
+        return _createChallenge(specCid, rewardAmount, deadline, disputeWindowHours, minimumScore, distributionType, labTBA);
+    }
+
+    function _createChallenge(
+        string calldata specCid,
+        uint256 rewardAmount,
+        uint64 deadline,
+        uint64 disputeWindowHours,
+        uint256 minimumScore,
+        uint8 distributionType,
+        address labTBA
+    ) internal returns (uint256 challengeId, address challengeAddr) {
         IHermesChallenge.DistributionType dist = IHermesChallenge.DistributionType(distributionType);
 
         HermesChallenge challenge = new HermesChallenge(

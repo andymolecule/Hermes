@@ -1,6 +1,7 @@
 import { getPublicClient } from "@hermes/chain";
 import { CHALLENGE_LIMITS, challengeSpecSchema, loadConfig } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
+import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
   buildChallengeInsert,
   createSupabaseClient,
@@ -22,9 +23,9 @@ import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
+const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
 const createChallengeBodySchema = z.object({
-  specCid: z.string().min(1),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
 
@@ -54,7 +55,7 @@ router.post(
   requireWriteQuota("/api/challenges"),
   zValidator("json", createChallengeBodySchema),
   async (c) => {
-    const { specCid, txHash } = c.req.valid("json");
+    const { txHash } = c.req.valid("json");
 
     const db = createSupabaseClient(true);
     const config = loadConfig();
@@ -100,6 +101,13 @@ router.post(
     ) {
       return c.json({ error: "Invalid ChallengeCreated event payload." }, 400);
     }
+
+    // Source of truth: read specCid from challenge contract, not client payload.
+    const specCid = await publicClient.readContract({
+      address: challengeAddress as `0x${string}`,
+      abi: HermesChallengeAbi,
+      functionName: "specCid",
+    }) as string;
 
     const rawSpec = await getText(specCid);
     const parsedSpec = yaml.parse(rawSpec) as Record<string, unknown>;

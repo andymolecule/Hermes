@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {HermesFactory} from "../src/HermesFactory.sol";
-import {HermesChallenge} from "../src/HermesChallenge.sol";
 import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
 import {HermesErrors} from "../src/libraries/HermesErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
@@ -117,5 +116,46 @@ contract HermesFactoryTest is Test {
             "cid", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0)
         );
         assertEq(factory.challenges(id), challengeAddr);
+    }
+
+    function testCreateChallengeWithPermitFallsBackToAllowance() public {
+        vm.prank(poster);
+        (uint256 id, address challengeAddr) = factory.createChallengeWithPermit(
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            168,
+            0,
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            address(0),
+            block.timestamp + 1 days,
+            0,
+            bytes32(0),
+            bytes32(0)
+        );
+
+        assertEq(id, 0);
+        assertEq(usdc.balanceOf(challengeAddr), 10e6);
+    }
+
+    function testCreateChallengeWithPermitRevertsWithoutAllowance() public {
+        vm.prank(poster);
+        usdc.approve(address(factory), 0);
+
+        vm.prank(poster);
+        vm.expectRevert();
+        factory.createChallengeWithPermit(
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            168,
+            0,
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            address(0),
+            block.timestamp + 1 days,
+            0,
+            bytes32(0),
+            bytes32(0)
+        );
     }
 }

@@ -48,7 +48,6 @@ export async function getChallenge(id: string) {
 }
 
 export async function accelerateChallengeIndex(input: {
-  specCid: string;
   txHash: `0x${string}`;
 }) {
   return request<{ ok: boolean; challengeAddress: string }>("/api/challenges", {

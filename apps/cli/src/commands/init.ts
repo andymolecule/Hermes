@@ -177,6 +177,18 @@ function resolveTemplatePath(templateFile: string) {
   return null;
 }
 
+function defaultTemplateDeadlineIso() {
+  return new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function refreshTemplateDeadline(content: string) {
+  const deadline = defaultTemplateDeadlineIso();
+  if (/^deadline:\s*".*"\s*$/m.test(content)) {
+    return content.replace(/^deadline:\s*".*"\s*$/m, `deadline: "${deadline}"`);
+  }
+  return `${content.trimEnd()}\n\ndeadline: "${deadline}"\n`;
+}
+
 export function buildInitCommand() {
   const cmd = new Command("init")
     .description("Create a challenge.yaml template")
@@ -201,15 +213,17 @@ export function buildInitCommand() {
       }
 
       const templatePath = resolveTemplatePath(templateFile);
+      let templateContent: string;
       if (templatePath) {
-        fs.copyFileSync(templatePath, outPath);
+        templateContent = fs.readFileSync(templatePath, "utf8");
       } else {
         const fallback = embeddedTemplates[templateKey];
         if (!fallback) {
           throw new Error(`Template not available: ${templateKey}`);
         }
-        fs.writeFileSync(outPath, fallback);
+        templateContent = fallback;
       }
+      fs.writeFileSync(outPath, refreshTemplateDeadline(templateContent));
       printSuccess(`Created ${outPath}`);
     });
 
