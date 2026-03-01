@@ -430,7 +430,7 @@ export function PostClient() {
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Train dataset" hint="Paste URL or drag a file">
+            <FormField label="Train dataset">
               <DataUploadField
                 value={state.train}
                 onChange={(v) => setState((s) => ({ ...s, train: v }))}
@@ -439,7 +439,7 @@ export function PostClient() {
                 placeholder="ipfs://Qm... or https://..."
               />
             </FormField>
-            <FormField label="Test dataset" hint="Paste URL or drag a file">
+            <FormField label="Test dataset">
               <DataUploadField
                 value={state.test}
                 onChange={(v) => setState((s) => ({ ...s, test: v }))}
