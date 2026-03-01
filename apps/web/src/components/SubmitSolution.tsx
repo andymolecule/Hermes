@@ -176,16 +176,19 @@ export function SubmitSolution({
             {!isConnected ? (
                 <div className="space-y-3">
                     <p className="text-sm text-secondary">
-                        Connect your wallet to submit a solution.
+                        Connect your wallet to submit a solution. Rewards are paid to the wallet you submit from.
                     </p>
                     <ConnectButton />
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {/* Wallet info */}
-                    <div className="flex items-center gap-2 text-xs text-muted">
-                        <Wallet className="w-3.5 h-3.5" />
-                        <span className="font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                    {/* Wallet info + payout notice */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                            <Wallet className="w-3.5 h-3.5" />
+                            <span className="font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+                        </div>
+                        <span className="text-[11px] text-cobalt-200">Rewards paid here ↑</span>
                     </div>
 
                     {/* Input mode toggle */}
