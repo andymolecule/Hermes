@@ -6,11 +6,15 @@ import { useMemo, useState } from "react";
 import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import yaml from "yaml";
-import { Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle } from "lucide-react";
+import {
+  Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
+  FlaskConical, BarChart3, Pill, ChevronRight, Check, Settings2,
+  Upload, Eye, X,
+} from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
-import { formatUsdc } from "../../lib/format";
+import { formatUsdc, computeProtocolFee } from "../../lib/format";
 
 const HermesFactoryAbi = HermesFactoryAbiJson as unknown as Abi;
 
@@ -31,13 +35,66 @@ const erc20Abi = [
     ],
     outputs: [{ name: "", type: "bool" }],
   },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
+// ─── Challenge Type Presets ─────────────────────────
+
+type ChallengeType = "reproducibility" | "prediction" | "docking";
+
+const TYPE_PRESETS: Record<
+  ChallengeType,
+  {
+    label: string;
+    desc: string;
+    icon: typeof FlaskConical;
+    container: string;
+    metric: string;
+    domain: string;
+  }
+> = {
+  reproducibility: {
+    label: "Reproducibility",
+    desc: "Reproduce a published result or score from a paper",
+    icon: FlaskConical,
+    container: "ghcr.io/hermes-science/repro-scorer:latest",
+    metric: "rmse",
+    domain: "longevity",
+  },
+  prediction: {
+    label: "Prediction",
+    desc: "Predict outcomes from sequence, expression, or other data",
+    icon: BarChart3,
+    container: "ghcr.io/hermes-science/prediction-scorer:latest",
+    metric: "r2",
+    domain: "omics",
+  },
+  docking: {
+    label: "Docking",
+    desc: "Dock small molecules to a protein target and score binding",
+    icon: Pill,
+    container: "ghcr.io/hermes-science/docking-scorer:latest",
+    metric: "spearman",
+    domain: "drug_discovery",
+  },
+};
+
+// ─── Form State ─────────────────────────────────────
+
 type FormState = {
-  id: string;
   title: string;
   description: string;
-  type: string;
+  domain: string;
+  type: ChallengeType;
   train: string;
   test: string;
   metric: string;
@@ -50,9 +107,9 @@ type FormState = {
 };
 
 const initialState: FormState = {
-  id: "",
   title: "",
   description: "",
+  domain: "longevity",
   type: "reproducibility",
   train: "",
   test: "",
@@ -67,8 +124,9 @@ const initialState: FormState = {
 
 function buildSpec(state: FormState) {
   return {
-    id: state.id || `web-${Date.now()}`,
+    id: `web-${Date.now()}`,
     title: state.title,
+    domain: state.domain,
     type: state.type,
     description: state.description,
     dataset: { train: state.train, test: state.test },
@@ -84,56 +142,74 @@ function buildSpec(state: FormState) {
   };
 }
 
-function FormField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+// ─── Helpers ────────────────────────────────────────
+
+function FormField({
+  label, hint, children, className,
+}: {
+  label: string; hint?: string; children: React.ReactNode; className?: string;
+}) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-      <label style={{
-        fontSize: "0.65rem",
-        fontWeight: 600,
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.08em",
-        color: "var(--text-tertiary)",
-        fontFamily: "var(--font-mono)",
-      }}>
-        {label}
-      </label>
+    <div className={`form-field ${className ?? ""}`}>
+      <label className="form-label">{label}</label>
       {children}
-      {hint ? (
-        <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)" }}>{hint}</span>
-      ) : null}
+      {hint ? <span className="form-hint">{hint}</span> : null}
     </div>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.5rem 0.75rem",
-  fontSize: "0.85rem",
-  fontFamily: "inherit",
-  border: "1px solid var(--border-default)",
-  borderRadius: "6px",
-  background: "var(--surface-default)",
-  color: "var(--text-primary)",
-  outline: "none",
-  transition: "border-color 150ms ease, box-shadow 150ms ease",
-};
+// ─── Data Upload Field ──────────────────────────────
 
-const monoInputStyle: React.CSSProperties = {
-  ...inputStyle,
-  fontFamily: "var(--font-mono)",
-  fontSize: "0.78rem",
-};
+function DataUploadField({
+  value, onChange, uploading, onUpload, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  uploading: boolean;
+  onUpload: (file: File) => void;
+  placeholder: string;
+}) {
+  const [dragging, setDragging] = useState(false);
 
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  cursor: "pointer",
-  appearance: "none" as const,
-};
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) onUpload(file);
+  }
+
+  return (
+    <div
+      className={`drop-zone ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+    >
+      <input
+        className="form-input form-input-mono"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={uploading}
+      />
+      {uploading ? (
+        <span className="drop-zone-hint"><Loader2 size={12} className="animate-spin" /> Uploading...</span>
+      ) : (
+        <span className="drop-zone-hint"><Upload size={12} /> or drag a file here</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Component ──────────────────────────────────────
 
 export function PostClient() {
   const [state, setState] = useState<FormState>(initialState);
   const [status, setStatus] = useState<string>("");
   const [isPosting, setIsPosting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [uploadingField, setUploadingField] = useState<"train" | "test" | null>(null);
 
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
@@ -141,9 +217,34 @@ export function PostClient() {
   const { signMessageAsync } = useSignMessage();
 
   const rewardValue = Number(state.reward || 0);
-  const protocolFeeRate = 0.05;
-  const protocolFeeValue = rewardValue * protocolFeeRate;
-  const winnerPayoutValue = Math.max(rewardValue - protocolFeeValue, 0);
+  const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
+
+  async function handleFileUpload(file: File, field: "train" | "test") {
+    setUploadingField(field);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/pin-data", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(await res.text());
+      const { cid } = (await res.json()) as { cid: string };
+      setState((s) => ({ ...s, [field]: cid }));
+    } catch (err) {
+      setStatus(`Upload failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    } finally {
+      setUploadingField(null);
+    }
+  }
+
+  function selectType(t: ChallengeType) {
+    const preset = TYPE_PRESETS[t];
+    setState((s) => ({
+      ...s,
+      type: t,
+      container: preset.container,
+      metric: preset.metric,
+      domain: preset.domain,
+    }));
+  }
 
   function validateInput() {
     if (!state.title.trim() || !state.description.trim())
@@ -154,9 +255,12 @@ export function PostClient() {
       return "Reward must be a positive number.";
     if (rewardValue < 1 || rewardValue > 30)
       return "Reward must be between 1 and 30 USDC.";
+    const minScore = Number(state.minimumScore);
+    if (!Number.isFinite(minScore) || minScore < 0 || minScore > 1)
+      return "Minimum score must be between 0 and 1.";
     const disputeWindow = Number(state.disputeWindow);
     if (!Number.isFinite(disputeWindow) || disputeWindow < 168 || disputeWindow > 2160)
-      return "Dispute window must be between 168 and 2160 hours.";
+      return "Review period must be between 168 and 2160 hours (7–90 days).";
     if (new Date(state.deadline).getTime() <= Date.now())
       return "Deadline must be in the future.";
     return null;
@@ -196,14 +300,26 @@ export function PostClient() {
       const minimumScoreWad = parseUnits(String(spec.minimum_score ?? 0), 18);
       const deadlineTs = new Date(spec.deadline).getTime();
 
-      setStatus("Approving USDC allowance...");
-      const approveTx = await writeContractAsync({
+      // Check existing allowance — skip approve if already sufficient
+      const currentAllowance = await publicClient.readContract({
         address: USDC_ADDRESS,
         abi: erc20Abi,
-        functionName: "approve",
-        args: [FACTORY_ADDRESS, rewardUnits],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        functionName: "allowance",
+        args: [address, FACTORY_ADDRESS],
+      }) as bigint;
+
+      if (currentAllowance < rewardUnits) {
+        setStatus("Approving USDC allowance...");
+        const approveTx = await writeContractAsync({
+          address: USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [FACTORY_ADDRESS, rewardUnits],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+      } else {
+        setStatus("USDC already approved, creating challenge...");
+      }
 
       setStatus("Creating challenge on-chain...");
       const createTx = await writeContractAsync({
@@ -221,7 +337,7 @@ export function PostClient() {
       await publicClient.waitForTransactionReceipt({ hash: createTx });
       setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
       try {
-        await accelerateChallengeIndex({ specCid, txHash: createTx });
+        await accelerateChallengeIndex({ txHash: createTx });
         setStatus(`success: Challenge posted. tx=${createTx}. Indexed immediately.`);
       } catch {
         setStatus(`success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
@@ -236,10 +352,10 @@ export function PostClient() {
   const isSuccess = status.startsWith("success:");
 
   return (
-    <div style={{ maxWidth: 720, display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div className="post-form">
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
+      <div className="post-header">
+        <div className="post-header-left">
           <h1 className="page-title">Post Bounty</h1>
           <p className="page-subtitle">
             Define a computational challenge and fund it with USDC.
@@ -248,85 +364,108 @@ export function PostClient() {
         <ConnectButton />
       </div>
 
-      {/* Form Card */}
-      <div style={{
-        border: "1px solid var(--border-default)",
-        borderRadius: "8px",
-        background: "var(--surface-default)",
-        padding: "1.5rem",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1.5rem",
-      }}>
-        {/* Basic Info */}
-        <div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-primary)" }}>
-            Basic Info
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      {/* ── Challenge Type Selector ── */}
+      <div className="type-selector">
+        {(Object.entries(TYPE_PRESETS) as [ChallengeType, typeof TYPE_PRESETS[ChallengeType]][]).map(
+          ([key, preset]) => {
+            const Icon = preset.icon;
+            const active = state.type === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`type-card ${active ? "active" : ""}`}
+                onClick={() => selectType(key)}
+              >
+                <div className="type-card-check">
+                  {active && <Check size={10} strokeWidth={3} />}
+                </div>
+                <div className="type-card-icon">
+                  <Icon size={18} />
+                </div>
+                <div className="type-card-title">{preset.label}</div>
+                <div className="type-card-desc">{preset.desc}</div>
+              </button>
+            );
+          },
+        )}
+      </div>
+
+      {/* ── Section 1: Challenge Info ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">1</span>
+          <span className="form-section-title">Challenge Info</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
             <FormField label="Title">
-              <input style={inputStyle} placeholder="e.g. Predict COVID mutations"
+              <input className="form-input" placeholder="e.g. Predict COVID mutations"
                 value={state.title} onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))} />
             </FormField>
-            <FormField label="Type">
-              <select style={selectStyle} value={state.type}
-                onChange={(e) => setState((s) => ({ ...s, type: e.target.value }))}>
-                <option value="reproducibility">Reproducibility</option>
-                <option value="prediction">Prediction</option>
-                <option value="docking">Docking</option>
+            <FormField label="Domain">
+              <select className="form-select" value={state.domain}
+                onChange={(e) => setState((s) => ({ ...s, domain: e.target.value }))}>
+                <option value="longevity">Longevity</option>
+                <option value="drug_discovery">Drug Discovery</option>
+                <option value="protein_design">Protein Design</option>
+                <option value="omics">Omics</option>
+                <option value="neuroscience">Neuroscience</option>
+                <option value="other">Other</option>
               </select>
             </FormField>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <FormField label="Description">
-                <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" as const }}
-                  placeholder="What are solvers trying to achieve?"
-                  value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
-              </FormField>
-            </div>
-          </div>
-        </div>
-
-        <hr style={{ border: "none", borderTop: "1px solid var(--border-subtle)" }} />
-
-        {/* Datasets & Scoring */}
-        <div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-primary)" }}>
-            Datasets & Scoring
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-            <FormField label="Train dataset" hint="IPFS or HTTPS URL">
-              <input style={monoInputStyle} placeholder="ipfs://... or https://..."
-                value={state.train} onChange={(e) => setState((s) => ({ ...s, train: e.target.value }))} />
-            </FormField>
-            <FormField label="Test dataset" hint="IPFS or HTTPS URL">
-              <input style={monoInputStyle} placeholder="ipfs://... or https://..."
-                value={state.test} onChange={(e) => setState((s) => ({ ...s, test: e.target.value }))} />
-            </FormField>
-            <FormField label="Scoring container">
-              <input style={monoInputStyle}
-                value={state.container} onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))} />
-            </FormField>
-            <FormField label="Metric">
-              <input style={inputStyle}
-                value={state.metric} onChange={(e) => setState((s) => ({ ...s, metric: e.target.value }))} />
+            <FormField label="Description" className="span-full">
+              <textarea className="form-textarea" placeholder="What are solvers trying to achieve?"
+                value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
             </FormField>
           </div>
         </div>
+      </div>
 
-        <hr style={{ border: "none", borderTop: "1px solid var(--border-subtle)" }} />
+      {/* ── Section 2: Data ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">2</span>
+          <span className="form-section-title">Data</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
+            <FormField label="Train dataset" hint="Paste URL or drag a file">
+              <DataUploadField
+                value={state.train}
+                onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                uploading={uploadingField === "train"}
+                onUpload={(file) => handleFileUpload(file, "train")}
+                placeholder="ipfs://Qm... or https://..."
+              />
+            </FormField>
+            <FormField label="Test dataset" hint="Paste URL or drag a file">
+              <DataUploadField
+                value={state.test}
+                onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                uploading={uploadingField === "test"}
+                onUpload={(file) => handleFileUpload(file, "test")}
+                placeholder="ipfs://Qm... or https://..."
+              />
+            </FormField>
+          </div>
+        </div>
+      </div>
 
-        {/* Reward & Rules */}
-        <div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-primary)" }}>
-            Reward & Rules
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      {/* ── Section 3: Reward & Rules ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">3</span>
+          <span className="form-section-title">Reward &amp; Rules</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
             <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
-              <input style={monoInputStyle} type="number" min={1} max={30}
+              <input className="form-input form-input-mono" type="number" min={1} max={30}
                 value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
             </FormField>
             <FormField label="Distribution">
-              <select style={selectStyle} value={state.distribution}
+              <select className="form-select" value={state.distribution}
                 onChange={(e) => setState((s) => ({ ...s, distribution: e.target.value as FormState["distribution"] }))}>
                 <option value="winner_take_all">Winner Take All</option>
                 <option value="top_3">Top 3</option>
@@ -334,97 +473,156 @@ export function PostClient() {
               </select>
             </FormField>
             <FormField label="Deadline">
-              <input style={inputStyle} type="datetime-local"
+              <input className="form-input" type="datetime-local"
                 value={state.deadline.slice(0, 16)}
                 onChange={(e) => {
                   const ts = Date.parse(e.target.value);
                   if (Number.isFinite(ts)) setState((s) => ({ ...s, deadline: new Date(ts).toISOString() }));
                 }} />
             </FormField>
-            <FormField label="Minimum Score" hint="0 to 1">
-              <input style={monoInputStyle} type="number" min={0} max={1} step={0.01}
-                value={state.minimumScore} onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))} />
-            </FormField>
-            <FormField label="Dispute Window (hours)" hint="168 to 2160">
-              <input style={monoInputStyle} type="number" min={168} max={2160}
-                value={state.disputeWindow} onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))} />
+            <FormField label="Review period" hint="How long before payout (168–2160 hours)">
+              <select className="form-select" value={state.disputeWindow}
+                onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
+                <option value="168">7 days (168h) — Standard</option>
+                <option value="336">14 days (336h)</option>
+                <option value="720">30 days (720h)</option>
+                <option value="1440">60 days (1440h)</option>
+                <option value="2160">90 days (2160h) — Maximum</option>
+              </select>
             </FormField>
           </div>
         </div>
       </div>
 
-      {/* Cost Breakdown */}
-      <div style={{
-        border: "1px solid var(--border-default)",
-        borderRadius: "8px",
-        background: "var(--surface-default)",
-        padding: "1.25rem",
-      }}>
-        <h3 style={{
-          fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.75rem",
-          color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "0.5rem",
-        }}>
+      {/* ── Advanced Settings ── */}
+      <button
+        type="button"
+        className={`advanced-toggle ${showAdvanced ? "open" : ""}`}
+        onClick={() => setShowAdvanced(!showAdvanced)}
+      >
+        <Settings2 size={14} />
+        <ChevronRight size={14} />
+        Advanced Settings
+        <span className="form-hint" style={{ marginLeft: "auto" }}>
+          Scoring container, metric, minimum score
+        </span>
+      </button>
+
+      {showAdvanced && (
+        <div className="advanced-body">
+          <FormField label="Scoring container" hint="Docker image for grading">
+            <input className="form-input form-input-mono"
+              value={state.container} onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))} />
+          </FormField>
+          <FormField label="Metric">
+            <select className="form-select" value={state.metric}
+              onChange={(e) => setState((s) => ({ ...s, metric: e.target.value }))}>
+              <option value="rmse">RMSE</option>
+              <option value="mae">MAE</option>
+              <option value="r2">R²</option>
+              <option value="pearson">Pearson</option>
+              <option value="spearman">Spearman</option>
+              <option value="custom">Custom</option>
+            </select>
+          </FormField>
+          <FormField label="Minimum score" hint="0 to 1">
+            <input className="form-input form-input-mono" type="number" min={0} max={1} step={0.01}
+              value={state.minimumScore} onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))} />
+          </FormField>
+        </div>
+      )}
+
+      {/* ── Cost Breakdown ── */}
+      <div className="cost-card">
+        <h3 className="cost-card-title">
           <Coins size={14} /> Cost Breakdown
         </h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>You deposit now</span>
-            <span style={{ fontSize: "0.82rem", fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--dash-blue, var(--text-primary))" }}>
-              {formatUsdc(rewardValue)} USDC
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.82rem", color: "var(--text-tertiary)" }}>Protocol fee (5%, from pool)</span>
-            <span style={{ fontSize: "0.82rem", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
-              {formatUsdc(protocolFeeValue)} USDC
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "0.82rem", color: "var(--text-tertiary)" }}>Net winner payout</span>
-            <span style={{ fontSize: "0.82rem", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
-              {formatUsdc(winnerPayoutValue)} USDC
-            </span>
-          </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>You deposit now</span>
+          <span className="cost-row-value accent">
+            {formatUsdc(rewardValue)} USDC
+          </span>
+        </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%, from pool)</span>
+          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>
+            {formatUsdc(protocolFeeValue)} USDC
+          </span>
+        </div>
+        <div className="cost-row">
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Net winner payout</span>
+          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>
+            {formatUsdc(winnerPayoutValue)} USDC
+          </span>
         </div>
       </div>
 
-      {/* Submit */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+      {/* ── Submit ── */}
+      <div className="post-submit-row">
         <button
           type="button"
           disabled={isPosting}
-          onClick={handleSubmit}
+          onClick={() => {
+            const error = validateInput();
+            if (error) { setStatus(error); return; }
+            setShowPreview(true);
+          }}
           className="dash-btn dash-btn-primary"
           style={{ padding: "0.65rem 1.5rem", fontSize: "0.85rem", opacity: isPosting ? 0.6 : 1 }}
         >
-          {isPosting ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-          {isPosting ? "Posting..." : "Post Challenge"}
+          {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+          {isPosting ? "Posting..." : "Review & Post"}
         </button>
         {!isConnected && (
-          <span style={{ fontSize: "0.78rem", color: "var(--text-tertiary)" }}>
+          <span className="form-hint">
             Connect wallet to submit →
           </span>
         )}
       </div>
 
-      {/* Status */}
+      {/* ── Status ── */}
       {status ? (
-        <div style={{
-          display: "flex", alignItems: "flex-start", gap: "0.75rem",
-          border: `1px solid ${isSuccess ? "var(--color-success)" : "var(--border-default)"}`,
-          background: isSuccess ? "var(--color-success-bg)" : "var(--surface-default)",
-          padding: "1rem",
-          borderRadius: "8px",
-        }}>
+        <div className={`post-status ${isSuccess ? "success" : ""}`}>
           {isSuccess
             ? <CheckCircle size={16} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 2 }} />
             : <AlertCircle size={16} style={{ color: "var(--text-tertiary)", flexShrink: 0, marginTop: 2 }} />
           }
-          <p style={{ fontSize: "0.82rem", wordBreak: "break-all", color: "var(--text-secondary)" }}>
+          <p>
             {isSuccess ? status.replace("success: ", "") : status}
           </p>
         </div>
       ) : null}
+
+      {/* ── Preview Overlay ── */}
+      {showPreview && (
+        <div className="preview-overlay" onClick={() => setShowPreview(false)}>
+          <div className="preview-card" onClick={(e) => e.stopPropagation()}>
+            <div className="preview-card-header">
+              <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
+                <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+                Review Challenge
+              </h3>
+              <button type="button" onClick={() => setShowPreview(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <pre className="preview-yaml">{yaml.stringify(buildSpec(state))}</pre>
+            <div className="preview-actions">
+              <button type="button" onClick={() => setShowPreview(false)}
+                className="dash-btn" style={{ fontSize: "0.8rem" }}>
+                ← Edit
+              </button>
+              <button type="button" disabled={isPosting}
+                onClick={() => { setShowPreview(false); handleSubmit(); }}
+                className="dash-btn dash-btn-primary" style={{ fontSize: "0.8rem" }}>
+                {isPosting ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
+                Confirm &amp; Post On-Chain
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

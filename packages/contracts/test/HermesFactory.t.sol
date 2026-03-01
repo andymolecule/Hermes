@@ -118,4 +118,45 @@ contract HermesFactoryTest is Test {
         );
         assertEq(factory.challenges(id), challengeAddr);
     }
+
+    function testCreateChallengeWithPermitFallsBackToAllowance() public {
+        vm.prank(poster);
+        (uint256 id, address challengeAddr) = factory.createChallengeWithPermit(
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            168,
+            0,
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            address(0),
+            block.timestamp + 1 days,
+            0,
+            bytes32(0),
+            bytes32(0)
+        );
+
+        assertEq(id, 0);
+        assertEq(usdc.balanceOf(challengeAddr), 10e6);
+    }
+
+    function testCreateChallengeWithPermitRevertsWithoutAllowance() public {
+        vm.prank(poster);
+        usdc.approve(address(factory), 0);
+
+        vm.prank(poster);
+        vm.expectRevert();
+        factory.createChallengeWithPermit(
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            168,
+            0,
+            uint8(IHermesChallenge.DistributionType.WinnerTakeAll),
+            address(0),
+            block.timestamp + 1 days,
+            0,
+            bytes32(0),
+            bytes32(0)
+        );
+    }
 }

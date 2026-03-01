@@ -38,7 +38,6 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
     Submission[] private submissions;
 
     mapping(address => uint256) public payoutByAddress;
-
     constructor(
         IERC20 usdc_,
         address poster_,
@@ -271,6 +270,10 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         (subIds, scores) = _rankedSubmissions();
     }
 
+    function submissionCount() external view override returns (uint256) {
+        return submissions.length;
+    }
+
     // --- Oracle rotation with timelock ---
 
     function proposeOracleRotation(address newOracle) external override onlyPoster {
@@ -369,16 +372,16 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         view
         returns (uint256[] memory rankedIds, uint256[] memory rankedScores)
     {
-        uint256 submissionCount = submissions.length;
-        if (submissionCount == 0) {
+        uint256 subCount = submissions.length;
+        if (subCount == 0) {
             return (new uint256[](0), new uint256[](0));
         }
 
-        rankedIds = new uint256[](submissionCount);
-        rankedScores = new uint256[](submissionCount);
+        rankedIds = new uint256[](subCount);
+        rankedScores = new uint256[](subCount);
 
         uint256 scoredCount = 0;
-        for (uint256 i = 0; i < submissionCount; i++) {
+        for (uint256 i = 0; i < subCount; i++) {
             if (submissions[i].scored && submissions[i].score >= minimumScore) {
                 rankedIds[scoredCount] = i;
                 rankedScores[scoredCount] = submissions[i].score;

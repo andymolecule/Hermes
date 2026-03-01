@@ -16,6 +16,15 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 const requestBuckets = new Map<string, { count: number; resetAt: number }>();
 const authBuckets = new Map<string, { count: number; resetAt: number }>();
+const usedAuth = new Map<string, number>();
+
+function cleanupExpiredAuth(now: number) {
+  for (const [key, expiry] of usedAuth.entries()) {
+    if (expiry <= now) {
+      usedAuth.delete(key);
+    }
+  }
+}
 
 function getRateLimitKey(req: Request) {
   const forwardedFor = req.headers
@@ -123,6 +132,7 @@ export async function POST(req: Request) {
     }
 
     const now = Date.now();
+    cleanupExpiredAuth(now);
     if (
       auth.timestamp > now + 30_000 ||
       now - auth.timestamp > PIN_SPEC_AUTH_MAX_AGE_MS
@@ -154,6 +164,20 @@ export async function POST(req: Request) {
     if (!isValidSignature) {
       return NextResponse.json({ error: "Invalid signature." }, { status: 401 });
     }
+
+    const authKey = [
+      auth.address.toLowerCase(),
+      String(auth.timestamp),
+      auth.specHash,
+      auth.signature,
+    ].join(":");
+    if (usedAuth.has(authKey)) {
+      return NextResponse.json(
+        { error: "Authorization already used. Please sign again." },
+        { status: 409 },
+      );
+    }
+
     if (isAuthRateLimited(auth.address)) {
       return NextResponse.json(
         { error: "Signer rate limit exceeded. Try again later." },
@@ -173,6 +197,7 @@ export async function POST(req: Request) {
     }
 
     const specCid = await pinJSON(`challenge-${Date.now()}`, parsed.data);
+    usedAuth.set(authKey, now + PIN_SPEC_AUTH_MAX_AGE_MS);
     return NextResponse.json({ specCid });
   } catch (error) {
     return NextResponse.json(

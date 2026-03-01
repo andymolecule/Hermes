@@ -55,7 +55,7 @@ contract HermesChallengeTest is Test {
         challenge.submit(keccak256("r1"));
         challenge.submit(keccak256("r2"));
         challenge.submit(keccak256("r3"));
-        challenge.submit(keccak256("r4")); // No limit
+        challenge.submit(keccak256("r4"));
         vm.stopPrank();
     }
 
@@ -273,7 +273,7 @@ contract HermesChallengeTest is Test {
         challenge.submit(keccak256("r1"));
         challenge.submit(keccak256("r2"));
         challenge.submit(keccak256("r3"));
-        challenge.submit(keccak256("r4")); // No limit
+        challenge.submit(keccak256("r4"));
         vm.stopPrank();
     }
 

@@ -77,9 +77,13 @@ async function maybePinDataset(value: string, label: string, baseDir: string) {
 async function pinSpecFile(spec: ChallengeSpecOutput) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-spec-"));
   const tempPath = path.join(tempDir, "challenge.yaml");
-  const content = yaml.stringify(spec);
-  await fs.writeFile(tempPath, content, "utf8");
-  return pinFile(tempPath, "challenge.yaml");
+  try {
+    const content = yaml.stringify(spec);
+    await fs.writeFile(tempPath, content, "utf8");
+    return await pinFile(tempPath, "challenge.yaml");
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 function parseDeadline(value: string) {
