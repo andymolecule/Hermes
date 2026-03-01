@@ -17,3 +17,4 @@ test-data/
 
 # Supabase
 supabase/.temp/
+.next.bak*

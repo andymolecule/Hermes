@@ -28,4 +28,5 @@ export * from "./queries/challenges.js";
 export * from "./queries/submissions.js";
 export * from "./queries/scores.js";
 export * from "./queries/indexed-events.js";
+export * from "./queries/indexer-cursors.js";
 export * from "./queries/proofs.js";

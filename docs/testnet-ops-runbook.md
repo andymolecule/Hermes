@@ -72,6 +72,15 @@ Check every 15-30 minutes during first launch window:
 1. Restart indexer process.
 2. Verify RPC reachability.
 3. Check last row in `indexed_events` and compare with chain head.
+4. Check `GET /api/indexer-health` and alert if status is `critical`.
+5. If you changed factory address, reset only the per-factory cursor (not all events):
+
+```sql
+delete from indexer_cursors
+where cursor_key = 'factory:84532:<factory_address_lowercase>';
+```
+
+6. Ensure `HERMES_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
 
 ### Bad deploy / regression
 
@@ -93,4 +102,3 @@ Rollback if any of these happen:
 - Indexer lag exceeds 200 blocks for more than 10 minutes.
 - Incorrect challenge/submission writes observed in Supabase.
 - Scoring or verification mismatches on-chain and local outputs.
-

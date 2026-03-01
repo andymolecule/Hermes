@@ -6,7 +6,11 @@ export type ChallengeDomain =
   | "neuroscience"
   | "other";
 
-export type ChallengeType = "reproducibility" | "prediction" | "docking";
+export type ChallengeType =
+  | "reproducibility"
+  | "prediction"
+  | "docking"
+  | "custom";
 
 export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";
 

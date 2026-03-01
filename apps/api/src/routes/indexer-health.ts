@@ -24,8 +24,19 @@ router.get("/", async (c) => {
     const db = createSupabaseClient(false);
     const publicClient = getPublicClient();
 
-    const [{ data: latestIndexed, error: indexedError }, chainHead] =
+    // Build the cursor key the indexer uses
+    const factoryAddress = (process.env.HERMES_FACTORY_ADDRESS ?? "").toLowerCase();
+    const chainId = Number(process.env.HERMES_CHAIN_ID ?? 84532);
+    const cursorKey = `factory:${chainId}:${factoryAddress}`;
+
+    // Preferred: read from indexer_cursors (matches indexer's actual state)
+    const [{ data: cursorRow }, { data: latestIndexed, error: indexedError }, chainHead] =
       await Promise.all([
+        db
+          .from("indexer_cursors")
+          .select("block_number")
+          .eq("cursor_key", cursorKey)
+          .maybeSingle(),
         db
           .from("indexed_events")
           .select("block_number")
@@ -41,7 +52,10 @@ router.get("/", async (c) => {
       );
     }
 
-    const indexedHead = latestIndexed?.block_number ?? null;
+    // Use cursor if available, otherwise fall back to indexed_events max block
+    const indexedHead = cursorRow?.block_number
+      ? Number(cursorRow.block_number)
+      : (latestIndexed?.block_number ?? null);
     const chainHeadNumber = Number(chainHead);
     const lagBlocks =
       indexedHead === null

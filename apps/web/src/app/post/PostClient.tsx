@@ -44,11 +44,18 @@ const erc20Abi = [
     ],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
-// ─── Challenge Type Presets ─────────────────────────
+// ─── Evaluation Template Presets ────────────────────
 
-type ChallengeType = "reproducibility" | "prediction" | "docking";
+type ChallengeType = "reproducibility" | "prediction" | "custom";
 
 const TYPE_PRESETS: Record<
   ChallengeType,
@@ -62,28 +69,28 @@ const TYPE_PRESETS: Record<
   }
 > = {
   reproducibility: {
-    label: "Reproducibility",
-    desc: "Reproduce a published result or score from a paper",
+    label: "Deterministic",
+    desc: "Same input → same score, fully reproducible",
     icon: FlaskConical,
-    container: "ghcr.io/hermes-science/repro-scorer:latest",
-    metric: "rmse",
-    domain: "longevity",
+    container: "hermes/toy-arithmetic-scorer:latest",
+    metric: "custom",
+    domain: "other",
   },
   prediction: {
-    label: "Prediction",
-    desc: "Predict outcomes from sequence, expression, or other data",
+    label: "Metric-Based",
+    desc: "Submissions scored by a numerical metric (RMSE, R², etc.)",
     icon: BarChart3,
     container: "ghcr.io/hermes-science/prediction-scorer:latest",
     metric: "r2",
     domain: "omics",
   },
-  docking: {
-    label: "Docking",
-    desc: "Dock small molecules to a protein target and score binding",
-    icon: Pill,
-    container: "ghcr.io/hermes-science/docking-scorer:latest",
-    metric: "spearman",
-    domain: "drug_discovery",
+  custom: {
+    label: "Custom",
+    desc: "Bring your own scorer and rules",
+    icon: Settings2,
+    container: "",
+    metric: "custom",
+    domain: "other",
   },
 };
 
@@ -133,9 +140,9 @@ function buildSpec(state: FormState) {
   const dataset =
     train || test
       ? {
-          ...(train ? { train } : {}),
-          ...(test ? { test } : {}),
-        }
+        ...(train ? { train } : {}),
+        ...(test ? { test } : {}),
+      }
       : undefined;
 
   return {
@@ -275,9 +282,11 @@ export function PostClient() {
       return "Reward must be a positive number.";
     if (rewardValue < 1 || rewardValue > 30)
       return "Reward must be between 1 and 30 USDC.";
+    if (!state.container.trim())
+      return "Scoring container is required.";
     const minScore = Number(state.minimumScore);
-    if (!Number.isFinite(minScore) || minScore < 0 || minScore > 1)
-      return "Minimum score must be between 0 and 1.";
+    if (!Number.isFinite(minScore) || minScore < 0)
+      return "Qualifying threshold must be 0 or above.";
     const disputeWindow = Number(state.disputeWindow);
     if (!Number.isFinite(disputeWindow) || disputeWindow < 168 || disputeWindow > 2160)
       return "Review period must be between 168 and 2160 hours (7–90 days).";
@@ -306,7 +315,7 @@ export function PostClient() {
       const timestamp = Date.now();
       const specHash = computeSpecHash(spec);
       const message = buildPinSpecMessage({ address, timestamp, specHash });
-      const signature = await signMessageAsync({ message });
+      const signature = await signMessageAsync({ account: address, message });
 
       const pinRes = await fetch("/api/pin-spec", {
         method: "POST",
@@ -316,9 +325,22 @@ export function PostClient() {
       if (!pinRes.ok) throw new Error(await pinRes.text());
       const { specCid } = (await pinRes.json()) as { specCid: string };
 
-      const rewardUnits = parseUnits(String(spec.reward.total), 6);
+      const rewardUnits = parseUnits(String(spec.reward.total), 6); // Contract constants use 6-decimal format
       const minimumScoreWad = parseUnits(String(spec.minimum_score ?? 0), 18);
       const deadlineTs = new Date(spec.deadline).getTime();
+
+      const currentBalance = await publicClient.readContract({
+        address: USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      }) as bigint;
+      if (currentBalance < rewardUnits) {
+        const missing = rewardUnits - currentBalance;
+        throw new Error(
+          `Insufficient USDC balance. Need ${formatUsdc(Number(rewardUnits) / 1e6)} USDC, missing ${formatUsdc(Number(missing) / 1e6)} USDC.`,
+        );
+      }
 
       // Check existing allowance — skip approve if already sufficient
       const currentAllowance = await publicClient.readContract({
@@ -331,6 +353,7 @@ export function PostClient() {
       if (currentAllowance < rewardUnits) {
         setStatus("Approving USDC allowance...");
         const approveTx = await writeContractAsync({
+          account: address,
           address: USDC_ADDRESS,
           abi: erc20Abi,
           functionName: "approve",
@@ -343,6 +366,7 @@ export function PostClient() {
 
       setStatus("Creating challenge on-chain...");
       const createTx = await writeContractAsync({
+        account: address,
         address: FACTORY_ADDRESS,
         abi: HermesFactoryAbi,
         functionName: "createChallenge",
@@ -363,7 +387,12 @@ export function PostClient() {
         setStatus(`success: Challenge posted on-chain (tx=${createTx}). Indexer will sync it shortly.`);
       }
     } catch (submitError) {
-      setStatus(submitError instanceof Error ? submitError.message : "Failed to post challenge.");
+      const message = submitError instanceof Error ? submitError.message : "Failed to post challenge.";
+      if (message.includes("USDC_TRANSFER_FAILED")) {
+        setStatus("createChallenge reverted: USDC transfer failed. Confirm wallet has enough USDC and allowance for the same connected address.");
+      } else {
+        setStatus(message);
+      }
     } finally {
       setIsPosting(false);
     }
@@ -442,30 +471,30 @@ export function PostClient() {
         </div>
       </div>
 
-      {/* ── Section 2: Data ── */}
+      {/* ── Section 2: Inputs ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">2</span>
-          <span className="form-section-title">Data</span>
+          <span className="form-section-title">Inputs (optional)</span>
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Train dataset">
+            <FormField label="Public input" hint="Files or constants provided to solvers">
               <DataUploadField
                 value={state.train}
                 onChange={(v) => setState((s) => ({ ...s, train: v }))}
                 uploading={uploadingField === "train"}
                 onUpload={(file) => handleFileUpload(file, "train")}
-                placeholder="ipfs://Qm... or https://..."
+                placeholder="ipfs://... or https://... (optional)"
               />
             </FormField>
-            <FormField label="Test dataset">
+            <FormField label="Private reference input" hint="Optional. If pinned in spec, this link is public on IPFS.">
               <DataUploadField
                 value={state.test}
                 onChange={(v) => setState((s) => ({ ...s, test: v }))}
                 uploading={uploadingField === "test"}
                 onUpload={(file) => handleFileUpload(file, "test")}
-                placeholder="ipfs://Qm... or https://..."
+                placeholder="ipfs://... or https://... (optional)"
               />
             </FormField>
           </div>
@@ -480,16 +509,16 @@ export function PostClient() {
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Submission format" hint="What file format should solvers submit?">
-              <input className="form-input" placeholder="e.g. CSV with columns: id, prediction"
+            <FormField label="Submission format" hint="The scorer enforces format and validation">
+              <input className="form-input" placeholder="e.g. JSON file with required fields defined by the scorer"
                 value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
             </FormField>
-            <FormField label="What does success look like?" hint="Define the winning outcome">
-              <input className="form-input" placeholder="e.g. Reproduce Figure 3 within 5% tolerance"
+            <FormField label="What does success look like?" hint="Plain English — for humans, not machines">
+              <input className="form-input" placeholder="e.g. Closest answer to target wins"
                 value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
             </FormField>
-            <FormField label="How submissions are evaluated" hint="Explain the scoring method" className="span-full">
-              <textarea className="form-textarea" placeholder="e.g. Submissions are scored by RMSE against the held-out test set. Lower error = higher score. Minimum qualifying score is 0.7."
+            <FormField label="How submissions are evaluated" hint="Describe the scoring logic" className="span-full">
+              <textarea className="form-textarea" placeholder="e.g. The scorer computes score = 100 - |answer - 42|. Highest score wins."
                 value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
             </FormField>
           </div>
@@ -548,29 +577,20 @@ export function PostClient() {
         <ChevronRight size={14} />
         Advanced Settings
         <span className="form-hint" style={{ marginLeft: "auto" }}>
-          Scoring container, metric, minimum score
+          Scoring container, threshold
         </span>
       </button>
 
       {showAdvanced && (
         <div className="advanced-body">
-          <FormField label="Scoring container" hint="Docker image for grading">
+          <FormField label="Scoring container" hint="Docker image that evaluates submissions. Use @sha256:... digest for reproducibility.">
             <input className="form-input form-input-mono"
+              placeholder="ghcr.io/org/image@sha256:..."
               value={state.container} onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))} />
           </FormField>
-          <FormField label="Metric">
-            <select className="form-select" value={state.metric}
-              onChange={(e) => setState((s) => ({ ...s, metric: e.target.value }))}>
-              <option value="rmse">RMSE</option>
-              <option value="mae">MAE</option>
-              <option value="r2">R²</option>
-              <option value="pearson">Pearson</option>
-              <option value="spearman">Spearman</option>
-              <option value="custom">Custom</option>
-            </select>
-          </FormField>
-          <FormField label="Minimum score" hint="0 to 1">
-            <input className="form-input form-input-mono" type="number" min={0} max={1} step={0.01}
+          <FormField label="Qualifying threshold (optional)" hint="Submissions scoring below this are rejected by the contract">
+            <input className="form-input form-input-mono" type="number" step="any"
+              placeholder="Leave empty or 0 to accept all scores"
               value={state.minimumScore} onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))} />
           </FormField>
         </div>
@@ -588,7 +608,7 @@ export function PostClient() {
           </span>
         </div>
         <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%, from pool)</span>
+          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%, deducted from pool)</span>
           <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>
             {formatUsdc(protocolFeeValue)} USDC
           </span>

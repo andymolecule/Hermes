@@ -1,4 +1,9 @@
-import { CHALLENGE_LIMITS, challengeSpecSchema, loadConfig } from "@hermes/common";
+import {
+  CHALLENGE_LIMITS,
+  challengeSpecSchema,
+  isValidPinnedSpecCid,
+  loadConfig,
+} from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
   type: "json",
 };
@@ -8,10 +13,12 @@ import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with {
 import {
   buildChallengeInsert,
   createSupabaseClient,
+  getIndexerCursor,
   getSubmissionByChainId,
   isEventIndexed,
   listChallenges,
   markEventIndexed,
+  setIndexerCursor,
   setChallengeFinalized,
   updateChallengeStatus,
   updateScore,
@@ -28,8 +35,29 @@ const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
 const POLL_INTERVAL_MS = 30_000;
 const MAX_BLOCK_RANGE = BigInt(9_999);
+const SPEC_FETCH_MAX_RETRIES = 4;
+const SPEC_FETCH_RETRY_BASE_MS = 500;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class RetryableIndexerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetryableIndexerError";
+  }
+}
+
+function isRetryableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /\b429\b/.test(message)
+    || /\b408\b/.test(message)
+    || /\b5\d\d\b/.test(message)
+    || /timeout/i.test(message)
+    || /network/i.test(message)
+    || /ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(message)
+  );
+}
 
 async function chunkedGetLogs(
   publicClient: ReturnType<typeof getPublicClient>,
@@ -53,12 +81,39 @@ async function chunkedGetLogs(
 }
 
 async function fetchChallengeSpec(specCid: string) {
-  const raw = await getText(specCid);
-  const parsed = yaml.parse(raw) as Record<string, unknown>;
-  if (parsed.deadline instanceof Date) {
-    parsed.deadline = parsed.deadline.toISOString();
+  if (!isValidPinnedSpecCid(specCid)) {
+    throw new Error(`Invalid or placeholder spec CID: ${specCid}`);
   }
-  return challengeSpecSchema.parse(parsed);
+
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= SPEC_FETCH_MAX_RETRIES; attempt++) {
+    try {
+      const raw = await getText(specCid);
+      const parsed = yaml.parse(raw) as Record<string, unknown>;
+      if (parsed.deadline instanceof Date) {
+        parsed.deadline = parsed.deadline.toISOString();
+      }
+      return challengeSpecSchema.parse(parsed);
+    } catch (error) {
+      lastError = error;
+
+      if (!isRetryableError(error)) {
+        throw error;
+      }
+
+      if (attempt < SPEC_FETCH_MAX_RETRIES) {
+        const delay = SPEC_FETCH_RETRY_BASE_MS * 2 ** (attempt - 1);
+        await sleep(delay);
+      }
+    }
+  }
+
+  throw new RetryableIndexerError(
+    `Failed to fetch challenge spec ${specCid} after ${SPEC_FETCH_MAX_RETRIES} retries: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
 }
 
 async function readSubmission(
@@ -137,8 +192,10 @@ export async function runIndexer() {
   const db = createSupabaseClient(true);
 
   const factoryAddress = config.HERMES_FACTORY_ADDRESS as `0x${string}`;
+  const chainId = config.HERMES_CHAIN_ID ?? 84532;
+  const cursorKey = `factory:${chainId}:${factoryAddress.toLowerCase()}`;
 
-  // Resume from last indexed block instead of scanning from 0
+  // Legacy fallback: previous versions resumed from max indexed_events block.
   const { data: lastBlock, error: lastBlockError } = await db
     .from("indexed_events")
     .select("block_number")
@@ -150,15 +207,25 @@ export async function runIndexer() {
       `Failed to read indexer resume block: ${lastBlockError.message}`,
     );
   }
-  // Re-read the last indexed block (instead of +1) to survive partial block processing;
-  // indexed_events dedup keeps this replay idempotent.
+
+  // Preferred resume source: per-factory cursor.
+  const persistedCursor = await getIndexerCursor(db, cursorKey);
   const envStartBlock = process.env.HERMES_INDEXER_START_BLOCK
     ? BigInt(process.env.HERMES_INDEXER_START_BLOCK)
     : BigInt(0);
-  let fromBlock = lastBlock ? BigInt(lastBlock.block_number) : envStartBlock;
+  // Precedence:
+  // 1) persisted per-factory cursor
+  // 2) explicit env start block
+  // 3) legacy indexed_events max block
+  let fromBlock =
+    persistedCursor ??
+    (process.env.HERMES_INDEXER_START_BLOCK
+      ? envStartBlock
+      : (lastBlock ? BigInt(lastBlock.block_number) : envStartBlock));
 
   // Use a serialized loop to avoid overlapping intervals.
   while (true) {
+    let hadRetryableErrors = false;
     try {
       const toBlock = await publicClient.getBlockNumber();
       const factoryLogs = await chunkedGetLogs(
@@ -241,6 +308,16 @@ export async function runIndexer() {
             Number(log.blockNumber ?? 0),
           );
         } catch (error) {
+          if (isRetryableError(error)) {
+            console.warn("Retryable factory event processing error; will retry", {
+              eventName: log.eventName,
+              txHash,
+              logIndex,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            hadRetryableErrors = true;
+            continue;
+          }
           console.error("Failed to process factory event", {
             eventName: log.eventName,
             txHash,
@@ -425,6 +502,18 @@ export async function runIndexer() {
               Number(log.blockNumber ?? 0),
             );
           } catch (error) {
+            if (isRetryableError(error)) {
+              console.warn("Retryable challenge event processing error; will retry", {
+                challengeId: challenge.id,
+                challengeAddress,
+                eventName: log.eventName,
+                txHash,
+                logIndex,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              hadRetryableErrors = true;
+              continue;
+            }
             console.error("Failed to process challenge event", {
               challengeId: challenge.id,
               challengeAddress,
@@ -444,7 +533,16 @@ export async function runIndexer() {
         }
       }
 
-      fromBlock = toBlock + BigInt(1);
+      if (hadRetryableErrors) {
+        console.warn(
+          "Retryable event errors occurred; keeping fromBlock unchanged for safe replay",
+          { fromBlock: fromBlock.toString(), toBlock: toBlock.toString() },
+        );
+      } else {
+        const nextBlock = toBlock + BigInt(1);
+        await setIndexerCursor(db, cursorKey, nextBlock);
+        fromBlock = nextBlock;
+      }
     } catch (error) {
       console.error("Indexer poll failed", error);
     }
