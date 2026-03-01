@@ -55,10 +55,12 @@ export const challengeSpecSchema = z.object({
   domain: domainEnum,
   type: typeEnum,
   description: z.string().min(1),
-  dataset: z.object({
-    train: datasetSource,
-    test: datasetSource,
-  }),
+  dataset: z
+    .object({
+      train: datasetSource.optional(),
+      test: datasetSource.optional(),
+    })
+    .optional(),
   scoring: z.object({
     container: z.string().min(1),
     metric: scoringMetricEnum,
@@ -75,6 +77,13 @@ export const challengeSpecSchema = z.object({
     .int()
     .min(CHALLENGE_LIMITS.disputeWindowMinHours)
     .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
+    .optional(),
+  evaluation: z
+    .object({
+      submission_format: z.string().min(1).optional(),
+      criteria: z.string().min(1).optional(),
+      success_definition: z.string().min(1).optional(),
+    })
     .optional(),
   lab_tba: z
     .string()

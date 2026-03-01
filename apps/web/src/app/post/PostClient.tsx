@@ -5,7 +5,6 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useMemo, useState } from "react";
 import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
-import yaml from "yaml";
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Pill, ChevronRight, Check, Settings2,
@@ -104,6 +103,9 @@ type FormState = {
   deadline: string;
   minimumScore: string;
   disputeWindow: string;
+  submissionFormat: string;
+  evaluationCriteria: string;
+  successDefinition: string;
 };
 
 const initialState: FormState = {
@@ -120,16 +122,29 @@ const initialState: FormState = {
   deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   minimumScore: "0",
   disputeWindow: "168",
+  submissionFormat: "",
+  evaluationCriteria: "",
+  successDefinition: "",
 };
 
 function buildSpec(state: FormState) {
+  const train = state.train.trim();
+  const test = state.test.trim();
+  const dataset =
+    train || test
+      ? {
+          ...(train ? { train } : {}),
+          ...(test ? { test } : {}),
+        }
+      : undefined;
+
   return {
     id: `web-${Date.now()}`,
     title: state.title,
     domain: state.domain,
     type: state.type,
     description: state.description,
-    dataset: { train: state.train, test: state.test },
+    dataset,
     scoring: { container: state.container, metric: state.metric },
     reward: {
       total: Number(state.reward),
@@ -138,6 +153,11 @@ function buildSpec(state: FormState) {
     deadline: state.deadline,
     minimum_score: Number(state.minimumScore),
     dispute_window_hours: Number(state.disputeWindow),
+    evaluation: {
+      submission_format: state.submissionFormat || undefined,
+      criteria: state.evaluationCriteria || undefined,
+      success_definition: state.successDefinition || undefined,
+    },
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
 }
@@ -249,8 +269,8 @@ export function PostClient() {
   function validateInput() {
     if (!state.title.trim() || !state.description.trim())
       return "Title and description are required.";
-    if (!state.train.trim() || !state.test.trim())
-      return "Train and test dataset links are required.";
+    // if (!state.train.trim() || !state.test.trim())
+    //   return "Train and test dataset links are required.";
     if (!Number.isFinite(rewardValue) || rewardValue <= 0)
       return "Reward must be a positive number.";
     if (rewardValue < 1 || rewardValue > 30)
@@ -452,10 +472,34 @@ export function PostClient() {
         </div>
       </div>
 
-      {/* ── Section 3: Reward & Rules ── */}
+      {/* ── Section 3: Evaluation & Success Criteria ── */}
       <div className="form-section">
         <div className="form-section-header">
           <span className="form-section-step">3</span>
+          <span className="form-section-title">Evaluation &amp; Success Criteria</span>
+        </div>
+        <div className="form-section-body">
+          <div className="form-grid">
+            <FormField label="Submission format" hint="What file format should solvers submit?">
+              <input className="form-input" placeholder="e.g. CSV with columns: id, prediction"
+                value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
+            </FormField>
+            <FormField label="What does success look like?" hint="Define the winning outcome">
+              <input className="form-input" placeholder="e.g. Reproduce Figure 3 within 5% tolerance"
+                value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
+            </FormField>
+            <FormField label="How submissions are evaluated" hint="Explain the scoring method" className="span-full">
+              <textarea className="form-textarea" placeholder="e.g. Submissions are scored by RMSE against the held-out test set. Lower error = higher score. Minimum qualifying score is 0.7."
+                value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+            </FormField>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 4: Reward & Rules ── */}
+      <div className="form-section">
+        <div className="form-section-header">
+          <span className="form-section-step">4</span>
           <span className="form-section-title">Reward &amp; Rules</span>
         </div>
         <div className="form-section-body">
@@ -607,7 +651,22 @@ export function PostClient() {
                 <X size={18} />
               </button>
             </div>
-            <pre className="preview-yaml">{yaml.stringify(buildSpec(state))}</pre>
+            <div className="preview-summary">
+              <div className="preview-row"><span className="preview-label">Title</span><span className="preview-value">{state.title || "—"}</span></div>
+              <div className="preview-row"><span className="preview-label">Domain</span><span className="preview-value">{state.domain}</span></div>
+              <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{state.type}</span></div>
+              {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
+              <div className="preview-divider" />
+              {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
+              {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
+              {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}
+              <div className="preview-divider" />
+              <div className="preview-row"><span className="preview-label">Reward</span><span className="preview-value">{state.reward} USDC</span></div>
+              <div className="preview-row"><span className="preview-label">Distribution</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
+              <div className="preview-row"><span className="preview-label">Deadline</span><span className="preview-value">{new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
+              <div className="preview-row"><span className="preview-label">Review period</span><span className="preview-value">{state.disputeWindow}h</span></div>
+              <div className="preview-row"><span className="preview-label">Min score</span><span className="preview-value">{state.minimumScore}</span></div>
+            </div>
             <div className="preview-actions">
               <button type="button" onClick={() => setShowPreview(false)}
                 className="dash-btn" style={{ fontSize: "0.8rem" }}>
