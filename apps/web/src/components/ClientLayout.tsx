@@ -115,44 +115,15 @@ function Sidebar() {
             </ul>
 
             <div className="sidebar-footer">
-                <div className="network-status">
-                    <div className="network-status-row">
-                        <span className="network-status-label">Network</span>
-                        <span className="network-status-value">
-                            <span className="status-dot" />
-                            Base Sepolia
-                        </span>
-                    </div>
-                    <div className="network-status-row">
-                        <span className="network-status-label">Chain ID</span>
-                        <span className="network-status-value">84532</span>
-                    </div>
-                    <div className="network-status-row">
-                        <span className="network-status-label">Theme</span>
-                        <button
-                            type="button"
-                            onClick={toggleTheme}
-                            className="network-status-value"
-                            style={{
-                                background: "none",
-                                border: 0,
-                                cursor: "pointer",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                padding: 0,
-                                color: "inherit",
-                                fontFamily: "inherit",
-                                fontSize: "inherit",
-                                fontWeight: "inherit",
-                            }}
-                            aria-label="Toggle theme"
-                        >
-                            {isDark ? <Sun size={12} /> : <Moon size={12} />}
-                            {isDark ? "Light" : "Dark"}
-                        </button>
-                    </div>
-                </div>
+                <button
+                    type="button"
+                    onClick={toggleTheme}
+                    className="theme-toggle-btn"
+                    aria-label="Toggle theme"
+                >
+                    {isDark ? <Sun size={14} /> : <Moon size={14} />}
+                    {isDark ? "Light mode" : "Dark mode"}
+                </button>
             </div>
         </nav>
     );
@@ -161,12 +132,15 @@ function Sidebar() {
 // ─── Client Layout (Dashboard Shell) ─────────────────
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
+    const pathname = usePathname();
+    const hidePanel = pathname === "/post";
+
     return (
         <WebProviders>
-            <div className="dashboard-layout">
+            <div className={`dashboard-layout ${hidePanel ? "no-panel" : ""}`}>
                 <Sidebar />
                 <main className="main-content">{children}</main>
-                <ActivityPanel />
+                {!hidePanel && <ActivityPanel />}
             </div>
         </WebProviders>
     );

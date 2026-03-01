@@ -471,6 +471,10 @@ a:hover {
   animation: shell-in 600ms var(--ease-out);
 }
 
+.dashboard-layout.no-panel {
+  grid-template-columns: 256px 1fr;
+}
+
 @keyframes shell-in {
   from {
     opacity: 0;
@@ -654,6 +658,27 @@ a:hover {
   margin-top: auto;
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--border-subtle);
+}
+
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-inset);
+  color: var(--text-secondary);
+  font-family: var(--font-body, Inter, sans-serif);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
 }
 
 .network-status {
