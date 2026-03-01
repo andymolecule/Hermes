@@ -11,8 +11,8 @@ export type ChallengeType = "reproducibility" | "prediction" | "docking";
 export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";
 
 export interface ChallengeDataset {
-  train: string;
-  test: string;
+  train?: string;
+  test?: string;
 }
 
 export interface ChallengeScoring {
@@ -31,7 +31,7 @@ export interface ChallengeSpec {
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
-  dataset: ChallengeDataset;
+  dataset?: ChallengeDataset;
   scoring: ChallengeScoring;
   reward: ChallengeReward;
   deadline: string;
