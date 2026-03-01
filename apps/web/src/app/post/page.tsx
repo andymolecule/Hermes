@@ -2,7 +2,7 @@ import { PostClient } from "./PostClient";
 
 export default function PostPage() {
   return (
-    <main>
+    <main style={{ padding: "2rem" }}>
       <PostClient />
     </main>
   );
