@@ -1,12 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "@hermes/common";
+import { DEFAULT_IPFS_GATEWAY } from "@hermes/common";
+
+let warnedSharedGateway = false;
 
 function resolveGateway(cidOrUrl: string): string {
   if (cidOrUrl.startsWith("ipfs://")) {
     const config = loadConfig();
     const gateway =
-      config.HERMES_IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs/";
+      config.HERMES_IPFS_GATEWAY ?? DEFAULT_IPFS_GATEWAY;
+    if (
+      !warnedSharedGateway
+      && process.env.NODE_ENV === "production"
+      && gateway === DEFAULT_IPFS_GATEWAY
+    ) {
+      warnedSharedGateway = true;
+      console.warn(
+        "Using shared IPFS gateway in production. Set HERMES_IPFS_GATEWAY to a dedicated gateway to reduce rate limiting.",
+      );
+    }
     return `${gateway}${cidOrUrl.replace("ipfs://", "")}`;
   }
   return cidOrUrl;

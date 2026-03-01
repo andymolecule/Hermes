@@ -49,10 +49,10 @@ export function ExplorerClient() {
   }, [query.data, filters.search, sort]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Page header */}
-      <div>
-        <h1 className="text-3xl font-display font-bold mb-2 text-primary">
+      <div className="mb-2">
+        <h1 className="text-3xl font-display font-bold mb-3 text-primary">
           Challenge Explorer
         </h1>
         <p className="text-sm text-tertiary">
@@ -123,7 +123,7 @@ export function ExplorerClient() {
       ) : null}
 
       {/* Results grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {rows.map((row) => (
           <ChallengeCard key={row.id} challenge={row} />
         ))}

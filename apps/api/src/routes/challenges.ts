@@ -1,5 +1,10 @@
 import { getPublicClient } from "@hermes/chain";
-import { CHALLENGE_LIMITS, challengeSpecSchema, loadConfig } from "@hermes/common";
+import {
+  CHALLENGE_LIMITS,
+  challengeSpecSchema,
+  isValidPinnedSpecCid,
+  loadConfig,
+} from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
@@ -108,6 +113,9 @@ router.post(
       abi: HermesChallengeAbi,
       functionName: "specCid",
     }) as string;
+    if (!isValidPinnedSpecCid(specCid)) {
+      return c.json({ error: "Challenge spec CID is invalid or placeholder." }, 400);
+    }
 
     const rawSpec = await getText(specCid);
     const parsedSpec = yaml.parse(rawSpec) as Record<string, unknown>;
