@@ -1,6 +1,18 @@
 const CID_V0_REGEX = /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/;
-const CID_V1_BASE32_REGEX = /^b[a-z2-7]{20,}$/;
-const CID_V1_BASE58BTC_REGEX = /^z[1-9A-HJ-NP-Za-km-z]{20,}$/;
+const CID_V1_REGEXES = [
+  /^b[a-z2-7]{20,}$/, // base32 lower
+  /^B[A-Z2-7]{20,}$/, // base32 upper
+  /^k[0-9a-z]{20,}$/, // base36 lower
+  /^K[0-9A-Z]{20,}$/, // base36 upper
+  /^z[1-9A-HJ-NP-Za-km-z]{20,}$/, // base58btc
+  /^Z[1-9A-HJ-NP-Za-km-z]{20,}$/, // base58flickr
+  /^f[0-9a-f]{20,}$/, // base16 lower
+  /^F[0-9A-F]{20,}$/, // base16 upper
+  /^m[A-Za-z0-9+/]{20,}={0,2}$/, // base64
+  /^M[A-Za-z0-9+/]{20,}={0,2}$/, // base64pad
+  /^u[A-Za-z0-9_-]{20,}$/, // base64url
+  /^U[A-Za-z0-9_-]{20,}={0,2}$/, // base64urlpad
+];
 
 const KNOWN_PLACEHOLDER_CIDS = new Set([
   "qmtestdeploy",
@@ -16,11 +28,7 @@ export function extractCid(value: string): string {
 
 export function isValidCid(value: string): boolean {
   const cid = extractCid(value);
-  return (
-    CID_V0_REGEX.test(cid)
-    || CID_V1_BASE32_REGEX.test(cid)
-    || CID_V1_BASE58BTC_REGEX.test(cid)
-  );
+  return CID_V0_REGEX.test(cid) || CID_V1_REGEXES.some((re) => re.test(cid));
 }
 
 export function isPlaceholderCid(value: string): boolean {

@@ -55,3 +55,26 @@ export async function accelerateChallengeIndex(input: {
     body: JSON.stringify(input),
   });
 }
+
+export async function createSubmissionRecord(input: {
+  challengeId: string;
+  resultCid: string;
+  txHash: `0x${string}`;
+}) {
+  const response = await fetch(`${BASE}/api/submissions`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API request failed (${response.status}): ${text}`);
+  }
+
+  return (await response.json()) as {
+    ok: boolean;
+    submission?: { id: string };
+  };
+}

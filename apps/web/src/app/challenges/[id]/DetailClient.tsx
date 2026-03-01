@@ -117,6 +117,7 @@ export function DetailClient({ id }: { id: string }) {
 
           {/* Submit Solution */}
           <SubmitSolution
+            challengeId={challenge.id}
             challengeAddress={challenge.contract_address}
             challengeStatus={challenge.status}
             deadline={challenge.deadline}

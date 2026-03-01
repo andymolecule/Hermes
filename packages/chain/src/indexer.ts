@@ -37,6 +37,15 @@ const POLL_INTERVAL_MS = 30_000;
 const MAX_BLOCK_RANGE = BigInt(9_999);
 const SPEC_FETCH_MAX_RETRIES = 4;
 const SPEC_FETCH_RETRY_BASE_MS = 500;
+const RETRYABLE_EVENT_MAX_ATTEMPTS = Number(
+  process.env.HERMES_INDEXER_RETRY_MAX_ATTEMPTS ?? 8,
+);
+const RETRYABLE_EVENT_BASE_DELAY_MS = Number(
+  process.env.HERMES_INDEXER_RETRY_BASE_DELAY_MS ?? 30_000,
+);
+const RETRY_REPLAY_WINDOW_BLOCKS = BigInt(
+  Number(process.env.HERMES_INDEXER_REPLAY_WINDOW_BLOCKS ?? 2000),
+);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -45,6 +54,59 @@ class RetryableIndexerError extends Error {
     super(message);
     this.name = "RetryableIndexerError";
   }
+}
+
+type RetryEventState = {
+  attempts: number;
+  nextAttemptAt: number;
+};
+
+const retryEventState = new Map<string, RetryEventState>();
+
+function retryKey(txHash: string, logIndex: number) {
+  return `${txHash}:${logIndex}`;
+}
+
+function onRetryableEvent(key: string) {
+  const now = Date.now();
+  const state = retryEventState.get(key) ?? {
+    attempts: 0,
+    nextAttemptAt: now,
+  };
+
+  if (state.nextAttemptAt > now) {
+    return {
+      shouldRetryNow: false,
+      exhausted: false,
+      attempts: state.attempts,
+      waitMs: state.nextAttemptAt - now,
+    };
+  }
+
+  state.attempts += 1;
+  if (state.attempts >= RETRYABLE_EVENT_MAX_ATTEMPTS) {
+    retryEventState.delete(key);
+    return {
+      shouldRetryNow: true,
+      exhausted: true,
+      attempts: state.attempts,
+      waitMs: 0,
+    };
+  }
+
+  const delay = RETRYABLE_EVENT_BASE_DELAY_MS * 2 ** (state.attempts - 1);
+  state.nextAttemptAt = now + delay;
+  retryEventState.set(key, state);
+  return {
+    shouldRetryNow: true,
+    exhausted: false,
+    attempts: state.attempts,
+    waitMs: delay,
+  };
+}
+
+function clearRetryableEvent(key: string) {
+  retryEventState.delete(key);
 }
 
 function isRetryableError(error: unknown): boolean {
@@ -225,7 +287,6 @@ export async function runIndexer() {
 
   // Use a serialized loop to avoid overlapping intervals.
   while (true) {
-    let hadRetryableErrors = false;
     try {
       const toBlock = await publicClient.getBlockNumber();
       const factoryLogs = await chunkedGetLogs(
@@ -307,15 +368,38 @@ export async function runIndexer() {
             log.eventName,
             Number(log.blockNumber ?? 0),
           );
+          clearRetryableEvent(retryKey(txHash, logIndex));
         } catch (error) {
           if (isRetryableError(error)) {
-            console.warn("Retryable factory event processing error; will retry", {
+            const key = retryKey(txHash, logIndex);
+            const retry = onRetryableEvent(key);
+            if (!retry.shouldRetryNow) {
+              continue;
+            }
+            if (retry.exhausted) {
+              console.error("Retryable factory event exhausted max attempts; marking invalid", {
+                eventName: log.eventName,
+                txHash,
+                logIndex,
+                attempts: retry.attempts,
+              });
+              await markEventIndexed(
+                db,
+                txHash,
+                logIndex,
+                `${log.eventName}:retry_exhausted`,
+                Number(log.blockNumber ?? 0),
+              );
+              continue;
+            }
+            console.warn("Retryable factory event processing error; scheduling retry", {
               eventName: log.eventName,
               txHash,
               logIndex,
+              attempts: retry.attempts,
+              retryInMs: retry.waitMs,
               error: error instanceof Error ? error.message : String(error),
             });
-            hadRetryableErrors = true;
             continue;
           }
           console.error("Failed to process factory event", {
@@ -331,6 +415,7 @@ export async function runIndexer() {
             `${log.eventName}:invalid`,
             Number(log.blockNumber ?? 0),
           );
+          clearRetryableEvent(retryKey(txHash, logIndex));
         }
       }
 
@@ -501,17 +586,42 @@ export async function runIndexer() {
               log.eventName,
               Number(log.blockNumber ?? 0),
             );
+            clearRetryableEvent(retryKey(txHash, logIndex));
           } catch (error) {
             if (isRetryableError(error)) {
-              console.warn("Retryable challenge event processing error; will retry", {
+              const key = retryKey(txHash, logIndex);
+              const retry = onRetryableEvent(key);
+              if (!retry.shouldRetryNow) {
+                continue;
+              }
+              if (retry.exhausted) {
+                console.error("Retryable challenge event exhausted max attempts; marking invalid", {
+                  challengeId: challenge.id,
+                  challengeAddress,
+                  eventName: log.eventName,
+                  txHash,
+                  logIndex,
+                  attempts: retry.attempts,
+                });
+                await markEventIndexed(
+                  db,
+                  txHash,
+                  logIndex,
+                  `${log.eventName}:retry_exhausted`,
+                  Number(log.blockNumber ?? 0),
+                );
+                continue;
+              }
+              console.warn("Retryable challenge event processing error; scheduling retry", {
                 challengeId: challenge.id,
                 challengeAddress,
                 eventName: log.eventName,
                 txHash,
                 logIndex,
+                attempts: retry.attempts,
+                retryInMs: retry.waitMs,
                 error: error instanceof Error ? error.message : String(error),
               });
-              hadRetryableErrors = true;
               continue;
             }
             console.error("Failed to process challenge event", {
@@ -529,20 +639,20 @@ export async function runIndexer() {
               `${log.eventName}:invalid`,
               Number(log.blockNumber ?? 0),
             );
+            clearRetryableEvent(retryKey(txHash, logIndex));
           }
         }
       }
 
-      if (hadRetryableErrors) {
-        console.warn(
-          "Retryable event errors occurred; keeping fromBlock unchanged for safe replay",
-          { fromBlock: fromBlock.toString(), toBlock: toBlock.toString() },
-        );
-      } else {
-        const nextBlock = toBlock + BigInt(1);
-        await setIndexerCursor(db, cursorKey, nextBlock);
-        fromBlock = nextBlock;
-      }
+      const nextBlock = toBlock + BigInt(1);
+      const shouldReplayWindow = retryEventState.size > 0;
+      fromBlock = shouldReplayWindow
+        ? (nextBlock > RETRY_REPLAY_WINDOW_BLOCKS
+          ? nextBlock - RETRY_REPLAY_WINDOW_BLOCKS
+          : BigInt(0))
+        : nextBlock;
+
+      await setIndexerCursor(db, cursorKey, fromBlock);
     } catch (error) {
       console.error("Indexer poll failed", error);
     }

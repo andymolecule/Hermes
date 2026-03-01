@@ -13,7 +13,6 @@ import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
-import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
@@ -50,7 +49,6 @@ router.get("/:id", async (c) => {
 
 router.post(
   "/",
-  requireSiweSession,
   requireWriteQuota("/api/submissions"),
   zValidator("json", createSubmissionBodySchema),
   async (c) => {
@@ -99,9 +97,20 @@ router.post(
       challenge.contract_address as `0x${string}`,
       subId,
     );
-    if (onChain.solver.toLowerCase() !== sessionAddress.toLowerCase()) {
+
+    // Authorization:
+    // 1) If SIWE session exists, solver must match session address.
+    // 2) Otherwise, fall back to transaction sender match.
+    if (sessionAddress) {
+      if (onChain.solver.toLowerCase() !== sessionAddress.toLowerCase()) {
+        return c.json(
+          { error: "Authenticated wallet does not match submission solver." },
+          403,
+        );
+      }
+    } else if (!receipt.from || onChain.solver.toLowerCase() !== receipt.from.toLowerCase()) {
       return c.json(
-        { error: "Authenticated wallet does not match submission solver." },
+        { error: "Transaction sender does not match submission solver." },
         403,
       );
     }

@@ -1,4 +1,5 @@
 import { getPublicClient } from "@hermes/chain";
+import { loadConfig } from "@hermes/common";
 import { createSupabaseClient } from "@hermes/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
@@ -21,41 +22,35 @@ const router = new Hono<ApiEnv>();
 
 router.get("/", async (c) => {
   try {
-    const db = createSupabaseClient(false);
+    const config = loadConfig();
+    const db = createSupabaseClient(true);
     const publicClient = getPublicClient();
 
     // Build the cursor key the indexer uses
-    const factoryAddress = (process.env.HERMES_FACTORY_ADDRESS ?? "").toLowerCase();
-    const chainId = Number(process.env.HERMES_CHAIN_ID ?? 84532);
+    const factoryAddress = config.HERMES_FACTORY_ADDRESS.toLowerCase();
+    const chainId = config.HERMES_CHAIN_ID ?? 84532;
     const cursorKey = `factory:${chainId}:${factoryAddress}`;
 
-    // Preferred: read from indexer_cursors (matches indexer's actual state)
-    const [{ data: cursorRow }, { data: latestIndexed, error: indexedError }, chainHead] =
+    // Source of truth: read from indexer_cursors only.
+    const [{ data: cursorRow, error: cursorError }, chainHead] =
       await Promise.all([
         db
           .from("indexer_cursors")
           .select("block_number")
           .eq("cursor_key", cursorKey)
           .maybeSingle(),
-        db
-          .from("indexed_events")
-          .select("block_number")
-          .order("block_number", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
         publicClient.getBlockNumber(),
       ]);
 
-    if (indexedError) {
+    if (cursorError) {
       throw new Error(
-        `Failed to read indexed head block: ${indexedError.message}`,
+        `Failed to read indexer cursor: ${cursorError.message}`,
       );
     }
 
-    // Use cursor if available, otherwise fall back to indexed_events max block
     const indexedHead = cursorRow?.block_number
       ? Number(cursorRow.block_number)
-      : (latestIndexed?.block_number ?? null);
+      : null;
     const chainHeadNumber = Number(chainHead);
     const lagBlocks =
       indexedHead === null
