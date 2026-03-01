@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {HermesFactory} from "../src/HermesFactory.sol";
-import {HermesChallenge} from "../src/HermesChallenge.sol";
 import {IHermesChallenge} from "../src/interfaces/IHermesChallenge.sol";
 import {HermesErrors} from "../src/libraries/HermesErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
