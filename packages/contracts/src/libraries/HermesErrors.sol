@@ -29,4 +29,6 @@ library HermesErrors {
     error MinimumScoreNotMet();
     error OracleRotationNotReady();
     error NoPendingRotation();
+    error TransferFailed();
+    error TransferFromFailed();
 }

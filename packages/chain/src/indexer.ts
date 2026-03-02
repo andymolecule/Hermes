@@ -24,6 +24,7 @@ import {
   updateScore,
   upsertChallenge,
   upsertSubmission,
+  createScoreJob,
 } from "@hermes/db";
 import { getText } from "@hermes/ipfs";
 import { type Abi, parseEventLogs } from "viem";
@@ -186,8 +187,7 @@ async function fetchChallengeSpec(specCid: string) {
   }
 
   throw new RetryableIndexerError(
-    `Failed to fetch challenge spec ${specCid} after ${SPEC_FETCH_MAX_RETRIES} retries: ${
-      lastError instanceof Error ? lastError.message : String(lastError)
+    `Failed to fetch challenge spec ${specCid} after ${SPEC_FETCH_MAX_RETRIES} retries: ${lastError instanceof Error ? lastError.message : String(lastError)
     }`,
   );
 }
@@ -260,6 +260,46 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
     return value as `0x${string}`;
   }
   throw new Error(`Invalid event arg '${field}': expected address string`);
+}
+
+function rewindStartBlock(targetBlock: bigint) {
+  return targetBlock > RETRY_REPLAY_WINDOW_BLOCKS
+    ? targetBlock - RETRY_REPLAY_WINDOW_BLOCKS
+    : BigInt(0);
+}
+
+async function resolveChallengeInitialFromBlock(
+  challengeTxHash: unknown,
+  publicClient: ReturnType<typeof getPublicClient>,
+  fallbackFromBlock: bigint,
+) {
+  if (
+    typeof challengeTxHash !== "string"
+    || !/^0x[a-fA-F0-9]{64}$/.test(challengeTxHash)
+  ) {
+    return fallbackFromBlock;
+  }
+
+  try {
+    const receipt = await publicClient.getTransactionReceipt({
+      hash: challengeTxHash as `0x${string}`,
+    });
+    const createdAtBlock = receipt.blockNumber;
+    return createdAtBlock < fallbackFromBlock
+      ? createdAtBlock
+      : fallbackFromBlock;
+  } catch (error) {
+    if (isRetryableError(error)) {
+      // P1: re-throw transient errors so caller can skip cursor persist
+      throw error;
+    }
+    // Non-transient failure (e.g. tx not found) — fall back safely
+    console.warn("Failed to resolve challenge creation block; falling back to global cursor", {
+      txHash: challengeTxHash,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallbackFromBlock;
+  }
 }
 
 export async function runIndexer() {
@@ -437,12 +477,47 @@ export async function runIndexer() {
       }
 
       const challenges = await listChallenges(db);
+      // P1 fix: track which challenges successfully resolved their start block.
+      // Only persist cursor for those — skip if bootstrap failed transiently.
+      const resolvedChallengeKeys = new Set<string>();
+      // Track per-challenge cursor persistence target for this cycle.
+      // Default is nextBlock; retryable errors can force an older cursor.
+      const challengePersistTargets = new Map<string, bigint>();
+
       for (const challenge of challenges) {
         const challengeAddress = challenge.contract_address as `0x${string}`;
+        const challengeCursorKey = `challenge:${chainId}:${challengeAddress.toLowerCase()}`;
+
+        const challengeCursor = await getIndexerCursor(db, challengeCursorKey);
+        let challengeFromBlock: bigint;
+
+        if (challengeCursor !== null) {
+          // Already have a persisted cursor — always safe
+          challengeFromBlock = challengeCursor;
+          resolvedChallengeKeys.add(challengeCursorKey);
+        } else {
+          // First time: try to resolve from creation tx
+          try {
+            challengeFromBlock = await resolveChallengeInitialFromBlock(
+              challenge.tx_hash,
+              publicClient,
+              fromBlock,
+            );
+            resolvedChallengeKeys.add(challengeCursorKey);
+          } catch {
+            // Bootstrap failed — use global fromBlock but do NOT persist cursor
+            challengeFromBlock = fromBlock;
+            console.warn("Skipping cursor persist for challenge with failed bootstrap", {
+              challengeId: challenge.id,
+              challengeAddress,
+            });
+          }
+        }
+
         const challengeLogs = await chunkedGetLogs(
           publicClient,
           challengeAddress,
-          fromBlock,
+          challengeFromBlock,
           toBlock,
         );
 
@@ -486,6 +561,17 @@ export async function runIndexer() {
                 ).toISOString(),
                 tx_hash: txHash,
               });
+
+              // Auto-enqueue scoring job (idempotent)
+              if (!submission.scored) {
+                const row = await getSubmissionByChainId(db, challenge.id, Number(submissionId));
+                if (row) {
+                  await createScoreJob(db, {
+                    submission_id: row.id,
+                    challenge_id: challenge.id,
+                  });
+                }
+              }
             }
 
             if (log.eventName === "Scored") {
@@ -611,6 +697,14 @@ export async function runIndexer() {
                 key,
                 log.blockNumber ?? fromBlock,
               );
+              // Keep this challenge cursor from advancing past the failed log.
+              // This guarantees the event is still in scan range when retry becomes due.
+              const currentTarget = challengePersistTargets.get(challengeCursorKey);
+              const fallbackTarget = challengeFromBlock;
+              const safeTarget = currentTarget === undefined
+                ? fallbackTarget
+                : (currentTarget < fallbackTarget ? currentTarget : fallbackTarget);
+              challengePersistTargets.set(challengeCursorKey, safeTarget);
               if (!retry.shouldRetryNow) {
                 continue;
               }
@@ -630,6 +724,7 @@ export async function runIndexer() {
                   `${log.eventName}:retry_exhausted`,
                   Number(log.blockNumber ?? 0),
                 );
+                challengePersistTargets.delete(challengeCursorKey);
                 continue;
               }
               console.warn("Retryable challenge event processing error; scheduling retry", {
@@ -666,16 +761,21 @@ export async function runIndexer() {
 
       const nextBlock = toBlock + BigInt(1);
       const dueReplayBlock = getDueReplayBlock(Date.now());
-      if (dueReplayBlock !== null) {
-        fromBlock =
-          dueReplayBlock > RETRY_REPLAY_WINDOW_BLOCKS
-            ? dueReplayBlock - RETRY_REPLAY_WINDOW_BLOCKS
-            : BigInt(0);
-      } else {
-        fromBlock = nextBlock;
-      }
+      const globalPersistedBlock = dueReplayBlock !== null
+        ? rewindStartBlock(dueReplayBlock)
+        : nextBlock;
+      fromBlock = globalPersistedBlock;
 
-      await setIndexerCursor(db, cursorKey, fromBlock);
+      // Persist factory cursor (may be rewound if there are factory-level retries)
+      await setIndexerCursor(db, cursorKey, globalPersistedBlock);
+
+      // P1 + P2 fix: per-challenge cursor handling
+      for (const challengeKey of resolvedChallengeKeys) {
+        const persistTarget = challengePersistTargets.get(challengeKey) ?? nextBlock;
+        await setIndexerCursor(db, challengeKey, persistTarget);
+      }
+      // P1: challenges NOT in resolvedChallengeKeys (failed bootstrap)
+      // are intentionally skipped — no cursor persisted, so they retry next cycle
     } catch (error) {
       console.error("Indexer poll failed", error);
     }

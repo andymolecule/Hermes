@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHALLENGE_LIMITS } from "@hermes/common";
+import { CHALLENGE_LIMITS, SCORER_PRESETS, OFFICIAL_IMAGES } from "@hermes/common";
 import { Command } from "commander";
 import { printSuccess } from "../lib/output";
 
@@ -42,7 +42,7 @@ dataset:
 
 scoring:
   # OCI image reference for the scorer container
-  container: "ghcr.io/hermes-science/repro-scorer:latest"
+  container: "${SCORER_PRESETS.reproducibility.container}"
   # rmse | mae | r2 | pearson | spearman | custom
   metric: rmse
 
@@ -90,7 +90,7 @@ dataset:
 
 scoring:
   # OCI image reference for the scorer container
-  container: "ghcr.io/hermes-science/prediction-scorer:latest"
+  container: "${SCORER_PRESETS.prediction.container}"
   # rmse | mae | r2 | pearson | spearman | custom
   metric: r2
 
@@ -138,7 +138,7 @@ dataset:
 
 scoring:
   # OCI image reference for the scorer container
-  container: "ghcr.io/hermes-science/docking-scorer:latest"
+  container: "${OFFICIAL_IMAGES.docking}"
   # rmse | mae | r2 | pearson | spearman | custom
   metric: spearman
 

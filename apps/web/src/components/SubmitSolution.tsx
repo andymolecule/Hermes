@@ -53,12 +53,12 @@ export function SubmitSolution({
 
     if (!canSubmit) {
         return (
-            <div className="rounded-lg border border-border-default p-5 bg-surface-default">
-                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2 text-primary">
-                    <Upload className="w-4 h-4 text-cobalt-200" />
-                    Submit Solution
+            <div className="rounded-[2px] border border-black p-6 bg-white flex flex-col items-center justify-center text-center">
+                <Upload className="w-6 h-6 text-black/40 mb-3" strokeWidth={1.5} />
+                <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-black/60">
+                    Submissions Closed
                 </h3>
-                <p className="text-sm text-muted">
+                <p className="text-sm text-black/50 font-medium">
                     {isPastDeadline
                         ? "Submission deadline has passed."
                         : `This challenge is ${challengeStatus} — submissions are not open.`}
@@ -163,39 +163,51 @@ export function SubmitSolution({
     }
 
     return (
-        <div className="rounded-lg border border-border-default p-5 bg-surface-default">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-primary">
-                <Upload className="w-4 h-4 text-cobalt-200" />
+        <div className="rounded-[2px] border border-black p-6 bg-white">
+            <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2 text-black uppercase tracking-tight">
+                <Upload className="w-5 h-5" strokeWidth={2.5} />
                 Submit Solution
             </h3>
 
             {/* Wallet connection */}
             {!isConnected ? (
-                <div className="space-y-3">
-                    <p className="text-sm text-secondary">
+                <div className="space-y-4">
+                    <p className="text-sm font-medium text-black/70">
                         Connect your wallet to submit a solution. Rewards are paid to the wallet you submit from.
                     </p>
-                    <ConnectButton />
+                    <ConnectButton.Custom>
+                        {({ openConnectModal, mounted }) => (
+                            <button
+                                onClick={openConnectModal}
+                                type="button"
+                                disabled={!mounted}
+                                className="btn-primary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider"
+                            >
+                                <Wallet className="w-4 h-4" />
+                                Connect Wallet
+                            </button>
+                        )}
+                    </ConnectButton.Custom>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <div className="space-y-5">
                     {/* Wallet info + payout notice */}
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs text-muted">
-                            <Wallet className="w-3.5 h-3.5" />
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-black/10 bg-surface-base">
+                        <div className="flex items-center gap-2 text-sm text-black/80 font-bold">
+                            <Wallet className="w-4 h-4" strokeWidth={2} />
                             <span className="font-mono">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
                         </div>
-                        <span className="text-[11px] text-cobalt-200">Rewards paid here ↑</span>
+                        <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-black/60">← Rewards paid here</span>
                     </div>
 
                     {/* Input mode toggle */}
-                    <div className="flex gap-1 p-0.5 rounded-md bg-surface-inset w-fit">
+                    <div className="flex border border-black p-0.5 bg-surface-base w-fit">
                         <button
                             type="button"
                             onClick={() => setInputMode("file")}
-                            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${inputMode === "file"
-                                ? "bg-surface-default text-primary shadow-sm"
-                                : "text-muted hover:text-secondary"
+                            className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors ${inputMode === "file"
+                                ? "bg-black text-white"
+                                : "text-black/60 hover:text-black"
                                 }`}
                         >
                             Upload File
@@ -203,9 +215,9 @@ export function SubmitSolution({
                         <button
                             type="button"
                             onClick={() => setInputMode("text")}
-                            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${inputMode === "text"
-                                ? "bg-surface-default text-primary shadow-sm"
-                                : "text-muted hover:text-secondary"
+                            className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors ${inputMode === "text"
+                                ? "bg-black text-white"
+                                : "text-black/60 hover:text-black"
                                 }`}
                         >
                             Text Answer
@@ -216,9 +228,9 @@ export function SubmitSolution({
                     {inputMode === "file" && (
                         <div>
                             <label
-                                className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${resultFile
-                                    ? "border-cobalt-200 bg-cobalt-100/30"
-                                    : "border-border-default hover:border-cobalt-200 hover:bg-surface-inset"
+                                className={`flex flex-col items-center justify-center gap-3 p-8 border hover:bg-black/5 border-dashed cursor-pointer transition-colors ${resultFile
+                                    ? "border-black bg-black/5"
+                                    : "border-black/30"
                                     }`}
                             >
                                 <input
@@ -236,19 +248,19 @@ export function SubmitSolution({
                                 />
                                 {resultFile ? (
                                     <>
-                                        <FileCheck className="w-6 h-6 text-cobalt-200" />
-                                        <span className="text-sm font-medium text-primary">{resultFile.name}</span>
-                                        <span className="text-[11px] text-muted">
+                                        <FileCheck className="w-8 h-8 text-black" strokeWidth={1.5} />
+                                        <span className="text-sm font-bold text-black font-mono">{resultFile.name}</span>
+                                        <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/60 bg-white border border-black/10 px-2 py-0.5">
                                             {(resultFile.size / 1024).toFixed(1)} KB — click to change
                                         </span>
                                     </>
                                 ) : (
                                     <>
-                                        <FileUp className="w-6 h-6 text-muted" />
-                                        <span className="text-sm text-secondary">
-                                            Drop your result file here or <span className="text-cobalt-200 font-medium">browse</span>
+                                        <FileUp className="w-8 h-8 text-black/40" strokeWidth={1.5} />
+                                        <span className="text-sm font-medium text-black/70">
+                                            Drop your result file here or <span className="text-black font-bold underline underline-offset-2">browse</span>
                                         </span>
-                                        <span className="text-[11px] text-muted">
+                                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-black/40">
                                             CSV, JSON, or any file format
                                         </span>
                                     </>
@@ -259,20 +271,20 @@ export function SubmitSolution({
 
                     {/* Text input */}
                     {inputMode === "text" && (
-                        <div>
-                            <label className="block text-xs font-medium text-secondary mb-1.5">
+                        <div className="flex flex-col">
+                            <label className="block text-[10px] font-bold font-mono tracking-wider uppercase text-black/70 mb-2">
                                 Your answer
                             </label>
                             <textarea
-                                className="w-full px-3 py-2.5 text-sm border border-border-default rounded-md bg-surface-default text-primary placeholder:text-muted resize-none input-focus"
-                                rows={3}
+                                className="w-full px-4 py-3 text-sm border font-mono border-black bg-white text-black placeholder:text-black/40 resize-none input-focus"
+                                rows={4}
                                 placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
                                 value={resultText}
                                 onChange={(e) => { setResultText(e.target.value); setStatus(""); }}
                                 disabled={isSubmitting}
                             />
-                            <p className="text-[11px] text-muted mt-1">
-                                Your answer will be stored on IPFS and its hash recorded on-chain.
+                            <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
+                                Stored on IPFS, hash recorded on-chain.
                             </p>
                         </div>
                     )}
@@ -282,7 +294,7 @@ export function SubmitSolution({
                         type="button"
                         onClick={handleSubmit}
                         disabled={isSubmitting || uploading || !hasResult}
-                        className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-xs font-bold font-mono uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                         {isSubmitting ? (
                             <>
@@ -297,27 +309,20 @@ export function SubmitSolution({
                         )}
                     </button>
 
-                    {/* How it works */}
-                    {!isSuccess && !isError && (
-                        <p className="text-[11px] text-muted text-center">
-                            Your result is pinned to IPFS automatically. Only the hash is stored on-chain.
-                        </p>
-                    )}
-
                     {/* Status messages */}
                     {isSuccess && (
-                        <div className="flex items-start gap-2 p-3 rounded-md bg-green-50 border border-green-200 text-green-700 text-sm">
-                            <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div className="flex items-start gap-3 p-4 border border-black bg-[#f4f4f0] text-black text-sm">
+                            <CheckCircle className="w-5 h-5 mt-0.5 shrink-0" strokeWidth={2} />
                             <div>
-                                <p className="font-medium">Submission confirmed!</p>
+                                <p className="font-bold underline text-base font-display">Submission confirmed!</p>
                                 {txHash && (
                                     <a
                                         href={`https://sepolia.basescan.org/tx/${txHash}`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-xs text-green-600 underline mt-1 block font-mono"
+                                        className="text-xs font-mono font-bold mt-2 inline-flex items-center gap-1 hover:underline"
                                     >
-                                        View on Basescan →
+                                        View on Basescan <ArrowRight className="w-3 h-3" />
                                     </a>
                                 )}
                             </div>
@@ -325,9 +330,9 @@ export function SubmitSolution({
                     )}
 
                     {isError && (
-                        <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
-                            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                            <p className="break-all">{status}</p>
+                        <div className="flex items-start gap-3 p-4 border border-black bg-white text-black text-sm">
+                            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" strokeWidth={2} />
+                            <p className="break-all font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">{status}</p>
                         </div>
                     )}
                 </div>

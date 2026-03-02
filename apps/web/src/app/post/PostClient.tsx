@@ -1,13 +1,18 @@
 "use client";
 
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
+import {
+  SCORER_PRESETS,
+  validateScoringContainer,
+  type ChallengePresetType,
+} from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useMemo, useState } from "react";
 import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import {
   Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
-  FlaskConical, BarChart3, Pill, ChevronRight, Check, Settings2,
+  FlaskConical, BarChart3, Settings2, ChevronRight, Check,
   Upload, Eye, X,
 } from "lucide-react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
@@ -53,45 +58,11 @@ const erc20Abi = [
   },
 ] as const;
 
-// ─── Evaluation Template Presets ────────────────────
-
-type ChallengeType = "reproducibility" | "prediction" | "custom";
-
-const TYPE_PRESETS: Record<
-  ChallengeType,
-  {
-    label: string;
-    desc: string;
-    icon: typeof FlaskConical;
-    container: string;
-    metric: string;
-    domain: string;
-  }
-> = {
-  reproducibility: {
-    label: "Deterministic",
-    desc: "Same input → same score, fully reproducible",
-    icon: FlaskConical,
-    container: "hermes/toy-arithmetic-scorer:latest",
-    metric: "custom",
-    domain: "other",
-  },
-  prediction: {
-    label: "Metric-Based",
-    desc: "Submissions scored by a numerical metric (RMSE, R², etc.)",
-    icon: BarChart3,
-    container: "ghcr.io/hermes-science/prediction-scorer:latest",
-    metric: "r2",
-    domain: "omics",
-  },
-  custom: {
-    label: "Custom",
-    desc: "Bring your own scorer and rules",
-    icon: Settings2,
-    container: "",
-    metric: "custom",
-    domain: "other",
-  },
+// ─── Icon mapping for presets ───────────────────────
+const TYPE_ICONS: Record<ChallengePresetType, typeof FlaskConical> = {
+  reproducibility: FlaskConical,
+  prediction: BarChart3,
+  custom: Settings2,
 };
 
 // ─── Form State ─────────────────────────────────────
@@ -100,7 +71,7 @@ type FormState = {
   title: string;
   description: string;
   domain: string;
-  type: ChallengeType;
+  type: ChallengePresetType;
   train: string;
   test: string;
   metric: string;
@@ -115,15 +86,17 @@ type FormState = {
   successDefinition: string;
 };
 
+const defaultPreset = SCORER_PRESETS.reproducibility;
+
 const initialState: FormState = {
   title: "",
   description: "",
-  domain: "longevity",
+  domain: defaultPreset.defaultDomain,
   type: "reproducibility",
   train: "",
   test: "",
-  metric: "rmse",
-  container: "ghcr.io/hermes-science/repro-scorer:latest",
+  metric: defaultPreset.metricHint,
+  container: defaultPreset.container ?? "",
   reward: "10",
   distribution: "winner_take_all",
   deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -246,6 +219,8 @@ export function PostClient() {
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
 
+  const isCustomType = state.type === "custom";
+
   async function handleFileUpload(file: File, field: "train" | "test") {
     setUploadingField(field);
     try {
@@ -262,28 +237,30 @@ export function PostClient() {
     }
   }
 
-  function selectType(t: ChallengeType) {
-    const preset = TYPE_PRESETS[t];
+  function selectType(t: ChallengePresetType) {
+    const preset = SCORER_PRESETS[t];
     setState((s) => ({
       ...s,
       type: t,
-      container: preset.container,
-      metric: preset.metric,
-      domain: preset.domain,
+      container: preset.container ?? "",
+      metric: preset.metricHint,
+      domain: preset.defaultDomain,
     }));
   }
 
   function validateInput() {
     if (!state.title.trim() || !state.description.trim())
       return "Title and description are required.";
-    // if (!state.train.trim() || !state.test.trim())
-    //   return "Train and test dataset links are required.";
     if (!Number.isFinite(rewardValue) || rewardValue <= 0)
       return "Reward must be a positive number.";
     if (rewardValue < 1 || rewardValue > 30)
       return "Reward must be between 1 and 30 USDC.";
     if (!state.container.trim())
       return "Scoring container is required.";
+    // Validate container reference
+    const containerError = validateScoringContainer(state.container);
+    if (containerError)
+      return containerError;
     const minScore = Number(state.minimumScore);
     if (!Number.isFinite(minScore) || minScore < 0)
       return "Qualifying threshold must be 0 or above.";
@@ -325,7 +302,7 @@ export function PostClient() {
       if (!pinRes.ok) throw new Error(await pinRes.text());
       const { specCid } = (await pinRes.json()) as { specCid: string };
 
-      const rewardUnits = parseUnits(String(spec.reward.total), 6); // Contract constants use 6-decimal format
+      const rewardUnits = parseUnits(String(spec.reward.total), 6);
       const minimumScoreWad = parseUnits(String(spec.minimum_score ?? 0), 18);
       const deadlineTs = new Date(spec.deadline).getTime();
 
@@ -342,7 +319,6 @@ export function PostClient() {
         );
       }
 
-      // Check existing allowance — skip approve if already sufficient
       const currentAllowance = await publicClient.readContract({
         address: USDC_ADDRESS,
         abi: erc20Abi,
@@ -415,9 +391,9 @@ export function PostClient() {
 
       {/* ── Challenge Type Selector ── */}
       <div className="type-selector">
-        {(Object.entries(TYPE_PRESETS) as [ChallengeType, typeof TYPE_PRESETS[ChallengeType]][]).map(
+        {(Object.entries(SCORER_PRESETS) as [ChallengePresetType, typeof SCORER_PRESETS[ChallengePresetType]][]).map(
           ([key, preset]) => {
-            const Icon = preset.icon;
+            const Icon = TYPE_ICONS[key];
             const active = state.type === key;
             return (
               <button
@@ -433,7 +409,7 @@ export function PostClient() {
                   <Icon size={18} />
                 </div>
                 <div className="type-card-title">{preset.label}</div>
-                <div className="type-card-desc">{preset.desc}</div>
+                <div className="type-card-desc">{preset.description}</div>
               </button>
             );
           },
@@ -583,10 +559,14 @@ export function PostClient() {
 
       {showAdvanced && (
         <div className="advanced-body">
-          <FormField label="Scoring container" hint="Docker image that evaluates submissions. Use @sha256:... digest for reproducibility.">
+          <FormField label="Scoring container" hint={isCustomType ? "Provide your own OCI image reference. Avoid :latest for reproducibility." : "Managed by preset. Switch to Custom to override."}>
             <input className="form-input form-input-mono"
               placeholder="ghcr.io/org/image@sha256:..."
-              value={state.container} onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))} />
+              value={state.container}
+              onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
+              readOnly={!isCustomType}
+              style={!isCustomType ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
+            />
           </FormField>
           <FormField label="Qualifying threshold (optional)" hint="Submissions scoring below this are rejected by the contract">
             <input className="form-input form-input-mono" type="number" step="any"
@@ -674,9 +654,10 @@ export function PostClient() {
             <div className="preview-summary">
               <div className="preview-row"><span className="preview-label">Title</span><span className="preview-value">{state.title || "—"}</span></div>
               <div className="preview-row"><span className="preview-label">Domain</span><span className="preview-value">{state.domain}</span></div>
-              <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{state.type}</span></div>
+              <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{SCORER_PRESETS[state.type].label}</span></div>
               {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
               <div className="preview-divider" />
+              <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
               {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}

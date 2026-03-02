@@ -75,6 +75,9 @@ contract HermesFactory is Ownable {
         uint8 distributionType,
         address labTBA
     ) internal returns (uint256 challengeId, address challengeAddr) {
+        if (distributionType > uint8(IHermesChallenge.DistributionType.Proportional)) {
+            revert HermesErrors.InvalidDistribution();
+        }
         IHermesChallenge.DistributionType dist = IHermesChallenge.DistributionType(distributionType);
 
         HermesChallenge challenge = new HermesChallenge(
@@ -96,7 +99,7 @@ contract HermesFactory is Ownable {
         challengeCount += 1;
 
         bool success = usdc.transferFrom(msg.sender, challengeAddr, rewardAmount);
-        require(success, "USDC_TRANSFER_FAILED");
+        if (!success) revert HermesErrors.TransferFromFailed();
 
         emit HermesEvents.ChallengeCreated(challengeId, challengeAddr, msg.sender, rewardAmount);
         if (labTBA != address(0)) {

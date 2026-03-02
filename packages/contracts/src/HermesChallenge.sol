@@ -146,7 +146,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         (uint256[] memory winners, uint256[] memory scores) = _computeWinners();
         if (winners.length == 0) {
             status = Status.Cancelled;
-            require(usdc.transfer(poster, rewardAmount), "REFUND_FAILED");
+            if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
             emit HermesEvents.Cancelled();
             return;
         }
@@ -169,7 +169,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         winningSubmissionId = winners[0];
 
         if (protocolFee > 0) {
-            require(usdc.transfer(treasury, protocolFee), "FEE_TRANSFER_FAILED");
+            if (!usdc.transfer(treasury, protocolFee)) revert HermesErrors.TransferFailed();
         }
 
         emit HermesEvents.Finalized(protocolFee, remaining);
@@ -221,7 +221,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         winningSubmissionId = winnerSubId;
 
         if (protocolFee > 0) {
-            require(usdc.transfer(treasury, protocolFee), "FEE_TRANSFER_FAILED");
+            if (!usdc.transfer(treasury, protocolFee)) revert HermesErrors.TransferFailed();
         }
 
         emit HermesEvents.DisputeResolved(winnerSubId);
@@ -234,7 +234,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         if (submissions.length > 0) revert HermesErrors.SubmissionsExist();
 
         status = Status.Cancelled;
-        require(usdc.transfer(poster, rewardAmount), "REFUND_FAILED");
+        if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
         emit HermesEvents.Cancelled();
     }
 
@@ -243,7 +243,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         if (block.timestamp <= disputeStartedAt + 30 days) revert HermesErrors.DeadlineNotPassed();
 
         status = Status.Cancelled;
-        require(usdc.transfer(poster, rewardAmount), "REFUND_FAILED");
+        if (!usdc.transfer(poster, rewardAmount)) revert HermesErrors.TransferFailed();
         emit HermesEvents.Cancelled();
     }
 
@@ -252,7 +252,7 @@ contract HermesChallenge is IHermesChallenge, ReentrancyGuard {
         uint256 payout = payoutByAddress[msg.sender];
         if (payout == 0) revert HermesErrors.NothingToClaim();
         payoutByAddress[msg.sender] = 0;
-        require(usdc.transfer(msg.sender, payout), "CLAIM_FAILED");
+        if (!usdc.transfer(msg.sender, payout)) revert HermesErrors.TransferFailed();
         emit HermesEvents.Claimed(msg.sender, payout);
     }
 

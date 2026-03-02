@@ -1,5 +1,5 @@
-import { ExplorerClient } from "./ExplorerClient";
+import { redirect } from "next/navigation";
 
 export default function ChallengesPage() {
-  return <ExplorerClient />;
+  redirect("/");
 }

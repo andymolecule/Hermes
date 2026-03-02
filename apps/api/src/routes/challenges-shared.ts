@@ -51,7 +51,7 @@ export async function listChallengesFromQuery(
   return minReward === undefined
     ? rows
     : rows.filter(
-      (row: { reward_amount: unknown }) => Number(row.reward_amount) >= minReward,
+      (row: Record<string, unknown>) => Number(row.reward_amount) >= minReward,
     );
 }
 

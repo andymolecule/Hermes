@@ -36,6 +36,21 @@ function getLogArg(
   return undefined;
 }
 
+export function extractSubmissionIdFromSubmittedEvent(
+  args: readonly unknown[] | Record<string, unknown> | undefined,
+): bigint | undefined {
+  const rawSubId =
+    getLogArg(args, 0, "submissionId") ?? getLogArg(args, 0, "subId");
+  if (typeof rawSubId === "bigint") return rawSubId;
+  if (typeof rawSubId === "number" && Number.isSafeInteger(rawSubId) && rawSubId >= 0) {
+    return BigInt(rawSubId);
+  }
+  if (typeof rawSubId === "string" && /^[0-9]+$/.test(rawSubId)) {
+    return BigInt(rawSubId);
+  }
+  return undefined;
+}
+
 const router = new Hono<ApiEnv>();
 
 router.get("/:id", async (c) => {
@@ -89,8 +104,8 @@ router.post(
     const args = event.args as unknown as
       | readonly unknown[]
       | Record<string, unknown>;
-    const subId = getLogArg(args, 0, "subId");
-    if (subId === undefined || typeof subId !== "bigint") {
+    const subId = extractSubmissionIdFromSubmittedEvent(args);
+    if (subId === undefined) {
       return c.json({ error: "Invalid Submitted event payload." }, 400);
     }
 

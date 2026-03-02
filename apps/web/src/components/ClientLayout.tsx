@@ -4,38 +4,79 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import {
-    LayoutDashboard,
-    Database,
-    Zap,
-    Moon,
-    Sun,
-} from "lucide-react";
-import { ActivityPanel } from "./ActivityPanel";
+import { ChevronDown, Sparkles } from "lucide-react";
+import { HatchedDivider } from "./HatchedDivider";
+import { LogoBar } from "./LogoBar";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const WebProviders = dynamic(
     () => import("../lib/wagmi").then((m) => m.WebProviders),
-    { ssr: false },
+    { ssr: false }
 );
 
-// ─── Sidebar ─────────────────────────────────────────
+function CustomConnectButton() {
+    return (
+        <ConnectButton.Custom>
+            {({
+                account,
+                chain,
+                openAccountModal,
+                openChainModal,
+                openConnectModal,
+                mounted,
+            }) => {
+                const ready = mounted;
+                const connected = ready && account && chain;
 
-function Sidebar() {
+                return (
+                    <div
+                        {...(!ready && {
+                            "aria-hidden": true,
+                            style: {
+                                opacity: 0,
+                                pointerEvents: "none",
+                                userSelect: "none",
+                            },
+                        })}
+                    >
+                        {(() => {
+                            if (!connected) {
+                                return (
+                                    <button onClick={openConnectModal} type="button" className="btn-primary inline-flex items-center justify-center px-6 py-2.5 font-semibold text-sm transition-all duration-200 uppercase font-mono tracking-wider">
+                                        Sign In
+                                    </button>
+                                );
+                            }
+
+                            if (chain.unsupported) {
+                                return (
+                                    <button onClick={openChainModal} type="button" className="btn-primary bg-red-600 border-red-800 inline-flex items-center justify-center px-6 py-2.5 font-semibold text-sm transition-all duration-200 uppercase font-mono tracking-wider">
+                                        Wrong network
+                                    </button>
+                                );
+                            }
+
+                            return (
+                                <div style={{ display: "flex", gap: 8 }}>
+                                    <button
+                                        onClick={openAccountModal}
+                                        type="button"
+                                        className="btn-primary inline-flex items-center justify-center px-6 py-2.5 font-semibold text-sm transition-all duration-200 uppercase font-mono tracking-wider"
+                                    >
+                                        {account.displayName}
+                                    </button>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                );
+            }}
+        </ConnectButton.Custom>
+    );
+}
+
+function TopNav() {
     const pathname = usePathname();
-    const [isDark, setIsDark] = useState(false);
-
-    useEffect(() => {
-        setIsDark(
-            document.documentElement.getAttribute("data-theme") === "dark",
-        );
-    }, []);
-
-    const toggleTheme = () => {
-        const next = isDark ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", next);
-        localStorage.setItem("hermes-theme", next);
-        setIsDark(!isDark);
-    };
 
     const isActive = (href: string) => {
         if (!pathname) return false;
@@ -44,103 +85,65 @@ function Sidebar() {
     };
 
     const navItems = [
-        { href: "/", label: "Dashboard", icon: LayoutDashboard },
-        { href: "/challenges", label: "All Challenges", icon: Database },
-        { href: "/post", label: "Post Bounty", icon: Zap },
+        { href: "/", label: "Dashboard" },
+        { href: "/leaderboard", label: "Leaderboard" },
     ];
 
     return (
-        <nav className="sidebar">
-            <div className="sidebar-header">
-                <div className="logo">
-                    <div className="logo-mark">
-                        <svg
-                            viewBox="0 0 28 28"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M14 2L25.26 8.5V21.5L14 28L2.74 21.5V8.5L14 2Z"
-                                fill={isDark ? "#1565C0" : "#001B3D"}
-                            />
-                            <circle cx="14" cy="9" r="2.2" fill="white" />
-                            <circle cx="9.5" cy="17" r="2.2" fill="white" />
-                            <circle cx="18.5" cy="17" r="2.2" fill="white" />
-                            <line
-                                x1="14"
-                                y1="9"
-                                x2="9.5"
-                                y2="17"
-                                stroke="white"
-                                strokeWidth="1.4"
-                            />
-                            <line
-                                x1="14"
-                                y1="9"
-                                x2="18.5"
-                                y2="17"
-                                stroke="white"
-                                strokeWidth="1.4"
-                            />
-                            <line
-                                x1="9.5"
-                                y1="17"
-                                x2="18.5"
-                                y2="17"
-                                stroke="white"
-                                strokeWidth="1.4"
-                            />
-                        </svg>
-                    </div>
-                    <div className="logo-text-block">
-                        <span className="logo-primary">molecule</span>
-                        <span className="logo-secondary">Hermes Protocol</span>
+        <div className="w-full bg-surface-base flex flex-col">
+            <header className="flex items-center justify-between px-6 py-4">
+                {/* Logo Left */}
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-[2px] border-2 border-black flex items-center justify-center bg-white">
+                        <div className="w-5 h-5 border-2 border-black rounded-full relative">
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-black rounded-full" />
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="sidebar-section-label">Navigation</div>
-            <ul className="sidebar-nav">
-                {navItems.map((item) => (
-                    <li key={item.href}>
+                {/* Nav Center */}
+                <nav className="flex items-center gap-6">
+                    {navItems.map((item) => (
                         <Link
+                            key={item.href}
                             href={item.href}
-                            className={`sidebar-nav-item ${isActive(item.href) ? "active" : ""}`}
+                            className={`text-sm font-semibold font-mono uppercase tracking-wider flex items-center gap-1.5 text-black no-underline transition-all duration-200 ${isActive(item.href) ? "opacity-100 border-b-2 border-black pb-0.5" : "opacity-60 hover:opacity-100"}`}
                         >
-                            <item.icon size={16} />
                             {item.label}
+                            <ChevronDown className="w-3 h-3 opacity-40" />
                         </Link>
-                    </li>
-                ))}
-            </ul>
+                    ))}
+                </nav>
 
-            <div className="sidebar-footer">
-                <button
-                    type="button"
-                    onClick={toggleTheme}
-                    className="theme-toggle-btn"
-                    aria-label="Toggle theme"
-                >
-                    {isDark ? <Sun size={14} /> : <Moon size={14} />}
-                    {isDark ? "Light mode" : "Dark mode"}
-                </button>
-            </div>
-        </nav>
+                {/* Actions Right */}
+                <div className="flex items-center gap-3">
+                    <Link
+                        href="/post"
+                        className="btn-secondary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider no-underline"
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Post Bounty
+                    </Link>
+                    <CustomConnectButton />
+                </div>
+            </header>
+            <HatchedDivider />
+        </div>
     );
 }
 
 // ─── Client Layout (Dashboard Shell) ─────────────────
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
-    const pathname = usePathname();
-    const hidePanel = pathname === "/post";
-
     return (
         <WebProviders>
-            <div className={`dashboard-layout ${hidePanel ? "no-panel" : ""}`}>
-                <Sidebar />
-                <main className="main-content">{children}</main>
-                {!hidePanel && <ActivityPanel />}
+            <div className="min-h-screen flex flex-col bg-surface-base text-black font-sans">
+                <TopNav />
+                <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-12">
+                    {children}
+                </main>
+                <HatchedDivider />
+                <LogoBar />
             </div>
         </WebProviders>
     );

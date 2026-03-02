@@ -95,7 +95,7 @@ export async function getChallengeById(db: HermesDbClient, id: string) {
 export async function listChallenges(db: HermesDbClient) {
   const { data, error } = await db
     .from("challenges")
-    .select("id, contract_address");
+    .select("id, contract_address, tx_hash");
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);
   }
@@ -113,7 +113,7 @@ export async function listChallengesWithDetails(
   db: HermesDbClient,
   filters: ChallengeListFilters = {},
 ) {
-  let query = db.from("challenges").select("*");
+  let query = db.from("challenges").select("*, submissions(count)");
 
   if (filters.status) {
     query = query.eq("status", filters.status);
@@ -132,7 +132,14 @@ export async function listChallengesWithDetails(
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);
   }
-  return data ?? [];
+
+  // Flatten the Supabase embedded count into submissions_count
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const subs = row.submissions as Array<{ count: number }> | undefined;
+    const submissions_count = subs?.[0]?.count ?? 0;
+    const { submissions, ...rest } = row;
+    return { ...rest, submissions_count };
+  });
 }
 
 export async function updateChallengeStatus(

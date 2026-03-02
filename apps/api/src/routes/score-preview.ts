@@ -28,9 +28,10 @@ function scoreToWad(score: number): bigint {
   if (!Number.isFinite(score) || score < 0) {
     throw new Error(`Invalid score: ${score}`);
   }
-  const value = score.toString();
-  const [wholePart, fractionRaw = ""] = value.split(".");
-  const fraction = `${fractionRaw}000000000000000000`.slice(0, 18);
+  // Use fixed-decimal normalization to handle scientific notation safely.
+  const normalized = score.toFixed(18);
+  const [wholePart, fractionRaw = ""] = normalized.split(".");
+  const fraction = fractionRaw.padEnd(18, "0").slice(0, 18);
   return BigInt(wholePart || "0") * WAD_SCALE + BigInt(fraction);
 }
 
@@ -42,6 +43,8 @@ function scoreRank(previewWad: bigint, scoredWads: bigint[]) {
 function requestKey(c: { req: { header: (name: string) => string | undefined } }) {
   const forwarded = c.req.header("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]?.trim() ?? "unknown";
+  const realIp = c.req.header("x-real-ip");
+  if (realIp) return realIp.trim();
   return "unknown";
 }
 
@@ -66,6 +69,16 @@ const router = new Hono<ApiEnv>();
 
 router.post(
   "/",
+  async (c, next) => {
+    const enabled = process.env.HERMES_ENABLE_SCORE_PREVIEW === "true";
+    if (!enabled) {
+      return c.json(
+        { error: "Score preview is disabled for v0 to protect challenge integrity. Submit to get scored by the oracle." },
+        403,
+      );
+    }
+    return next();
+  },
   zValidator("json", bodySchema),
   async (c) => {
     const quotaKey = requestKey(c);

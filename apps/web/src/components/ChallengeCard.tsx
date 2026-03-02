@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, FileText, Microscope, Dna, FlaskConical, Database, BrainCircuit } from "lucide-react";
+import { Clock, Microscope, Dna, FlaskConical, Database, BrainCircuit } from "lucide-react";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
-import { getStatusStyle } from "../lib/status-styles";
 import type { Challenge } from "../lib/types";
+import { IsometricIcon } from "./IsometricIcon";
 
 const DOMAIN_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   longevity: Dna,
@@ -26,72 +26,67 @@ export function ChallengeCard({
   index?: number;
 }) {
   const Icon = DOMAIN_ICONS[challenge.domain?.toLowerCase()] ?? FlaskConical;
-  const status = getStatusStyle(challenge.status);
 
   return (
     <Link
       href={`/challenges/${challenge.id}`}
-      className="group block rounded-lg border border-border-default p-5 no-underline bg-surface-default card-hover"
+      className="group flex flex-col rounded-[2px] border border-black no-underline bg-white card-hover overflow-hidden h-full"
     >
-      {/* Top row: Domain icon + status badge */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="w-9 h-9 rounded-md flex items-center justify-center bg-surface-inset">
-          <Icon className="w-4 h-4 text-cobalt-200" />
+      {/* Top Graphic Area (40%) */}
+      <div className="h-44 bg-surface-base border-b border-black flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Subtle background hatched border for texture */}
+        <div className="absolute inset-0 bg-black/[0.02] pointer-events-none" />
+
+        <IsometricIcon>
+          <Icon className="w-14 h-14 text-black" strokeWidth={1.5} />
+        </IsometricIcon>
+
+        {/* Status Badge Top-Right */}
+        <div className="absolute top-3 right-3">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
+            <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === 'active' ? 'bg-green-500' : 'bg-black'}`} />
+            {challenge.status}
+          </span>
         </div>
-        <span
-          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-[2px]"
-          style={{
-            backgroundColor: status.bg,
-            color: status.text,
-            border: `1px solid ${status.borderColor}`,
-          }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: status.text }}
-          />
-          {challenge.status}
-        </span>
       </div>
 
-      {/* Title */}
-      <h3 className="text-lg font-display font-semibold mb-2 line-clamp-2 text-primary group-hover:text-cobalt-200 transition-colors duration-150">
-        {challenge.title}
-      </h3>
+      {/* Content Area */}
+      <div className="p-5 flex flex-col flex-1">
+        <h3 className="text-xl font-display font-bold mb-2 line-clamp-2 text-black transition-colors duration-150 group-hover:underline decoration-2 underline-offset-4">
+          {challenge.title}
+        </h3>
 
-      {/* Description */}
-      <p className="text-sm line-clamp-3 mb-4 text-secondary">
-        {challenge.description?.slice(0, 200) ?? "No description."}
-      </p>
+        <p className="text-sm line-clamp-3 mb-6 text-black/70 flex-1">
+          {challenge.description?.slice(0, 160) ?? "No description."}
+        </p>
 
-      {/* Footer: domain, reward, deadline */}
-      <div className="flex items-center justify-between pt-3 border-t border-border-subtle">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono font-medium uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-blue-100 text-blue-500 border border-blue-200">
-            {challenge.domain}
-          </span>
-          <span className="flex items-center gap-1 text-xs text-muted">
-            <Clock className="w-3 h-3" />
-            {deadlineCountdown(challenge.deadline)}
-          </span>
+        {/* Vertical stacking meta for mobile, side-by-side for desktop */}
+        <div className="flex flex-col gap-2 mt-auto">
+          {/* Metadata Row */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] px-2 py-1 bg-black text-white">
+              {challenge.domain}
+            </span>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black border border-black px-2 py-1">
+              {formatUsdc(challenge.reward_amount)} USDC
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between mt-2 pt-3 border-t border-black/10">
+            <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black/60">
+              <Clock className="w-3 h-3" />
+              {deadlineCountdown(challenge.deadline)}
+            </span>
+
+            {challenge.status === "active" && (
+              <span className="text-[11px] font-bold font-mono uppercase tracking-[0.5px] text-black flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                Solve &gt;&gt;
+              </span>
+            )}
+          </div>
         </div>
-        <span className="text-sm font-mono font-semibold text-cobalt-200 tabular-nums">
-          {formatUsdc(challenge.reward_amount)} USDC
-        </span>
-      </div>
-
-      {/* Footer row: submissions + participate CTA */}
-      <div className="flex items-center justify-between mt-2">
-        <div className="flex items-center gap-1 text-[11px] text-muted">
-          <FileText className="w-3 h-3" />
-          {challenge.submissions_count ?? 0} submissions
-        </div>
-        {challenge.status === "active" && (
-          <span className="text-[11px] font-semibold text-cobalt-200 group-hover:underline">
-            Participate →
-          </span>
-        )}
       </div>
     </Link>
   );
 }
+

@@ -4,6 +4,7 @@ import {
   challengeSpecSchema,
   isValidPinnedSpecCid,
   loadConfig,
+  validateScoringContainer,
 } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json" with { type: "json" };
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
@@ -123,6 +124,12 @@ router.post(
       parsedSpec.deadline = parsedSpec.deadline.toISOString();
     }
     const spec = challengeSpecSchema.parse(parsedSpec);
+
+    // P0: Reject unscorable bounties — container must be valid
+    const containerError = validateScoringContainer(spec.scoring.container);
+    if (containerError) {
+      return c.json({ error: `Invalid scoring container: ${containerError}` }, 400);
+    }
 
     await upsertChallenge(
       db,

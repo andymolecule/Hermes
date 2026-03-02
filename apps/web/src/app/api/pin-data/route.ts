@@ -19,7 +19,18 @@ function hasValidOrigin(req: Request) {
     if (!origin || !host) return false;
     try {
         const parsed = new URL(origin);
-        return parsed.host === host;
+        // Always allow same-host requests.
+        if (parsed.host === host) return true;
+        // In local development, also allow localhost variants.
+        if (
+            process.env.NODE_ENV !== "production"
+            && (parsed.hostname === "localhost"
+                || parsed.hostname === "127.0.0.1"
+                || parsed.hostname === "::1")
+        ) {
+            return true;
+        }
+        return false;
     } catch {
         return false;
     }
@@ -72,8 +83,10 @@ export async function POST(req: Request) {
         const cid = await pinFile(tempFilePath, safeName);
         return NextResponse.json({ cid });
     } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[pin-data] Upload failed:", message);
         return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Upload failed." },
+            { error: message || "Upload failed." },
             { status: 500 },
         );
     } finally {
