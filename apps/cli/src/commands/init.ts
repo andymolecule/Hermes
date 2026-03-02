@@ -108,7 +108,7 @@ tags:
   - omics
 
 # Optional settings
-minimum_score: 0.1
+minimum_score: 0.0
 # Dispute window in hours (${CHALLENGE_LIMITS.disputeWindowMinHours}-${CHALLENGE_LIMITS.disputeWindowMaxHours}, i.e. 7-90 days)
 dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 

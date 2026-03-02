@@ -436,9 +436,20 @@ contract HermesChallengeTest is Test {
 
 
 
-    function testConstructorRevertsDisputeWindowTooShort() public {
-        vm.expectRevert(HermesErrors.InvalidDisputeWindow.selector);
-        new HermesChallenge(usdc, poster, oracle, treasury, "cid", 10e6, uint64(block.timestamp + 1 days), 100, 0, IHermesChallenge.DistributionType.WinnerTakeAll);
+    function testConstructorAcceptsZeroDisputeWindow() public {
+        HermesChallenge c = new HermesChallenge(
+            usdc,
+            poster,
+            oracle,
+            treasury,
+            "cid",
+            10e6,
+            uint64(block.timestamp + 1 days),
+            0,
+            0,
+            IHermesChallenge.DistributionType.WinnerTakeAll
+        );
+        assertEq(c.disputeWindowHours(), 0);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {

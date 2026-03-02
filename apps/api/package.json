@@ -8,9 +8,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "worker": "node dist/worker.js",
-    "worker:dev": "node --import tsx src/worker.ts",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "worker": "node --env-file=../../.env dist/worker.js",
+    "worker:dev": "node --import tsx --env-file=../../.env src/worker.ts",
+    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
   },
   "dependencies": {
     "@hermes/chain": "workspace:*",

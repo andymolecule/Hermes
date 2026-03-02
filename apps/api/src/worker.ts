@@ -14,7 +14,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { loadConfig } from "@hermes/common";
-import { getOnChainSubmission, getPublicClient, postScore } from "@hermes/chain";
+import { getOnChainSubmission, getPublicClient, postScore, finalizeChallenge } from "@hermes/chain";
+import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
     createSupabaseClient,
     getChallengeById,
@@ -32,19 +33,23 @@ import { pinFile } from "@hermes/ipfs";
 import {
     runScorer,
     buildProofBundle,
+    ensureDockerReady,
     createScoringWorkspace,
     stageGroundTruth,
     stageSubmissionFromCid,
     scoreToWad,
     cleanupWorkspace,
 } from "@hermes/scorer";
-import { keccak256, toBytes } from "viem";
+import { keccak256, toBytes, type Abi } from "viem";
+
+const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL_MS = Number(process.env.HERMES_WORKER_POLL_MS ?? 15_000);
+const FINALIZE_SWEEP_INTERVAL_MS = Number(process.env.HERMES_WORKER_FINALIZE_SWEEP_MS ?? 60_000);
 const WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -192,37 +197,29 @@ async function processJob(
             return;
         }
 
-        // 3. Check for missing test dataset
-        if (!challenge.dataset_test_cid) {
-            log("warn", "Challenge missing test dataset CID — cannot score", {
-                challengeId: challenge.id,
-                submissionId: submission.id,
-            });
-            await failJob(
-                db,
-                job.id,
-                "missing_dataset_test_cid",
-                job.max_attempts,
-                job.max_attempts,
-            );
-            return;
-        }
-
-        // 4. Prepare scoring workspace
+        // 3. Prepare scoring workspace
         log("info", "Preparing scoring inputs", { submissionId: submission.id, challengeId: challenge.id });
         const workspace = await createScoringWorkspace();
         workspaceRoot = workspace.root;
 
-        const groundTruthPath = await stageGroundTruth(
-            workspace.inputDir,
-            challenge.dataset_test_cid,
-        );
+        const inputPaths: string[] = [];
+
+        // Ground truth is optional — not all bounty types have datasets
+        if (challenge.dataset_test_cid) {
+            const groundTruthPath = await stageGroundTruth(
+                workspace.inputDir,
+                challenge.dataset_test_cid,
+            );
+            inputPaths.push(groundTruthPath);
+        }
+
         const submissionPath = await stageSubmissionFromCid(
             workspace.inputDir,
             submission.result_cid,
         );
+        inputPaths.push(submissionPath);
 
-        // 5. Run scorer container
+        // 4. Run scorer container
         log("info", "Running scorer container", {
             submissionId: submission.id,
             image: challenge.scoring_container,
@@ -231,6 +228,23 @@ async function processJob(
             image: challenge.scoring_container,
             inputDir: workspace.inputDir,
         });
+        // Check if the submission was valid
+        if (!result.ok) {
+            const reason = result.error ?? "Scorer rejected submission (invalid format or data)";
+            log("warn", `Submission invalid — not posting score on-chain`, {
+                submissionId: submission.id,
+                challengeId: challenge.id,
+                error: reason,
+            });
+            await failJob(
+                db,
+                job.id,
+                `invalid_submission: ${reason}`,
+                job.max_attempts,
+                job.max_attempts,
+            );
+            return;
+        }
 
         log("info", `Scored submission ${submission.id} for challenge ${challenge.id} with score ${result.score}`, {
             submissionId: submission.id,
@@ -238,14 +252,14 @@ async function processJob(
             score: result.score,
         });
 
-        // 6. Build and pin proof bundle
+        // 5. Build and pin proof bundle
         const proof = await buildProofBundle({
             challengeId: challenge.id,
             submissionId: submission.id,
             score: result.score,
             scorerLog: result.log,
             containerImageDigest: result.containerImageDigest,
-            inputPaths: [groundTruthPath, submissionPath],
+            inputPaths,
             outputPath: result.outputPath,
         });
 
@@ -266,13 +280,15 @@ async function processJob(
             scoreWad,
             proofHash,
         );
+        // Persist tx hash immediately so retries become reconcile-only, even if the worker crashes.
+        await markJobPosted(db, job.id, txHash);
+        log("info", "Score tx submitted", { submissionId: submission.id, txHash });
+
         const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
         if (receipt.status !== "success") {
             throw new Error(`Score transaction reverted: ${txHash}`);
         }
-        // Persist tx hash immediately so retries become reconcile-only.
-        await markJobPosted(db, job.id, txHash);
-        log("info", "Score posted on-chain", { submissionId: submission.id, txHash });
+        log("info", "Score tx confirmed on-chain", { submissionId: submission.id, txHash });
 
         // 8. Update DB
         await upsertProofBundle(db, {
@@ -299,17 +315,105 @@ async function processJob(
 
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        log("error", `Job failed for submission ${job.submission_id}`, {
-            jobId: job.id,
-            submissionId: job.submission_id,
-            attempts: job.attempts,
-            maxAttempts: job.max_attempts,
-            error: message,
-        });
-        await failJob(db, job.id, message, job.attempts, job.max_attempts);
+        const isDockerError = /docker is required|docker.*not running|docker info failed/i.test(message);
+
+        if (isDockerError) {
+            // Infra failure — don't burn attempts. Requeue and pause.
+            log("error", "Docker unavailable — requeuing job without penalty", {
+                jobId: job.id,
+                submissionId: job.submission_id,
+            });
+            await requeueJobWithoutAttemptPenalty(db, job.id, job.attempts, `docker_unavailable: ${message}`);
+        } else {
+            log("error", `Job failed for submission ${job.submission_id}`, {
+                jobId: job.id,
+                submissionId: job.submission_id,
+                attempts: job.attempts,
+                maxAttempts: job.max_attempts,
+                error: message,
+            });
+            await failJob(db, job.id, message, job.attempts, job.max_attempts);
+        }
     } finally {
         if (workspaceRoot) {
             await cleanupWorkspace(workspaceRoot);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-finalize sweep
+// ---------------------------------------------------------------------------
+
+async function sweepFinalizable(db: ReturnType<typeof createSupabaseClient>) {
+    // Find candidate challenges that may need finalization.
+    // Include both active and scoring states; scoring rows are common after deadline.
+    const { data: challenges, error } = await db
+        .from("challenges")
+        .select("id, contract_address, status")
+        .in("status", ["active", "scoring"]);
+
+    if (error || !challenges || challenges.length === 0) return;
+
+    const publicClient = getPublicClient();
+
+    for (const challenge of challenges) {
+        try {
+            // Guard using on-chain source of truth (status + finalizable timestamp).
+            const [onChainStatusRaw, onChainDeadline, onChainDisputeWindowHours] = await Promise.all([
+                publicClient.readContract({
+                    address: challenge.contract_address as `0x${string}`,
+                    abi: HermesChallengeAbi,
+                    functionName: "status",
+                }),
+                publicClient.readContract({
+                    address: challenge.contract_address as `0x${string}`,
+                    abi: HermesChallengeAbi,
+                    functionName: "deadline",
+                }) as Promise<bigint>,
+                publicClient.readContract({
+                    address: challenge.contract_address as `0x${string}`,
+                    abi: HermesChallengeAbi,
+                    functionName: "disputeWindowHours",
+                }) as Promise<bigint>,
+            ]);
+            const onChainStatus = Number(onChainStatusRaw);
+            if (!Number.isFinite(onChainStatus)) continue;
+
+            // Status enum: Active=0, Scoring=1, Finalized=2, Disputed=3, Cancelled=4
+            if (onChainStatus >= 2) continue; // Already finalized/disputed/cancelled
+
+            const finalizeAfterSeconds = onChainDeadline + (onChainDisputeWindowHours * 3600n);
+            const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+            if (nowSeconds <= finalizeAfterSeconds) continue; // Not yet eligible
+
+            log("info", `Auto-finalizing challenge ${challenge.id}`, {
+                challengeId: challenge.id,
+                contract: challenge.contract_address,
+            });
+
+            const txHash = await finalizeChallenge(
+                challenge.contract_address as `0x${string}`,
+            );
+
+            const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+            if (receipt.status === "success") {
+                log("info", `Challenge finalized`, { challengeId: challenge.id, txHash });
+            } else {
+                log("warn", `Finalize tx reverted`, { challengeId: challenge.id, txHash });
+            }
+            // DB update happens via the indexer picking up the Finalized event
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // ChallengeFinalized revert = idempotent, skip silently
+            if (msg.includes("ChallengeFinalized") || msg.includes("Finalized")) {
+                continue;
+            }
+            // Other errors: log and try again next cycle
+            log("warn", `Auto-finalize failed for challenge ${challenge.id}`, {
+                challengeId: challenge.id,
+                error: msg,
+            });
         }
     }
 }
@@ -331,37 +435,59 @@ async function runWorker() {
         process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
     }
 
+    // Startup health check — refuse to start without Docker
+    try {
+        await ensureDockerReady();
+        log("info", "Docker health check passed");
+    } catch {
+        log("error", "Docker is not available. Worker cannot start without Docker.");
+        process.exit(1);
+    }
+
     const db = createSupabaseClient(true);
 
     log("info", "Scoring worker started", {
         pollIntervalMs: POLL_INTERVAL_MS,
+        finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
         workerId: WORKER_ID,
     });
 
+    let lastFinalizeSweepAt = 0;
     while (true) {
+        let claimedJob = false;
         try {
+            // 1. Score one job if available
             const job = await claimNextJob(db, WORKER_ID);
 
-            if (!job) {
-                await sleep(POLL_INTERVAL_MS);
-                continue;
+            if (job) {
+                claimedJob = true;
+                log("info", `Claimed job ${job.id}`, {
+                    submissionId: job.submission_id,
+                    challengeId: job.challenge_id,
+                    attempt: job.attempts,
+                    maxAttempts: job.max_attempts,
+                });
+
+                await processJob(
+                    db,
+                    job as ScoreJobRow,
+                );
             }
 
-            log("info", `Claimed job ${job.id}`, {
-                submissionId: job.submission_id,
-                challengeId: job.challenge_id,
-                attempt: job.attempts,
-                maxAttempts: job.max_attempts,
-            });
+            // 2. Run finalize sweep on a fixed interval, even under sustained job load.
+            const now = Date.now();
+            if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+                await sweepFinalizable(db);
+                lastFinalizeSweepAt = now;
+            }
 
-            await processJob(
-                db,
-                job as ScoreJobRow,
-            );
         } catch (error) {
             log("error", "Worker loop error", {
                 error: error instanceof Error ? error.message : String(error),
             });
+        }
+
+        if (!claimedJob) {
             await sleep(POLL_INTERVAL_MS);
         }
     }

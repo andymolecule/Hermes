@@ -261,9 +261,7 @@ export function PostClient() {
     const containerError = validateScoringContainer(state.container);
     if (containerError)
       return containerError;
-    const minScore = Number(state.minimumScore);
-    if (!Number.isFinite(minScore) || minScore < 0)
-      return "Qualifying threshold must be 0 or above.";
+
     const disputeWindow = Number(state.disputeWindow);
     if (!Number.isFinite(disputeWindow) || disputeWindow < 168 || disputeWindow > 2160)
       return "Review period must be between 168 and 2160 hours (7–90 days).";
@@ -568,11 +566,7 @@ export function PostClient() {
               style={!isCustomType ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
             />
           </FormField>
-          <FormField label="Qualifying threshold (optional)" hint="Submissions scoring below this are rejected by the contract">
-            <input className="form-input form-input-mono" type="number" step="any"
-              placeholder="Leave empty or 0 to accept all scores"
-              value={state.minimumScore} onChange={(e) => setState((s) => ({ ...s, minimumScore: e.target.value }))} />
-          </FormField>
+
         </div>
       )}
 
@@ -666,7 +660,7 @@ export function PostClient() {
               <div className="preview-row"><span className="preview-label">Distribution</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
               <div className="preview-row"><span className="preview-label">Deadline</span><span className="preview-value">{new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
               <div className="preview-row"><span className="preview-label">Review period</span><span className="preview-value">{state.disputeWindow}h</span></div>
-              <div className="preview-row"><span className="preview-label">Min score</span><span className="preview-value">{state.minimumScore}</span></div>
+
             </div>
             <div className="preview-actions">
               <button type="button" onClick={() => setShowPreview(false)}

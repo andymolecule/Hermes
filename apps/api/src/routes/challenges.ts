@@ -164,5 +164,83 @@ router.get("/:id/leaderboard", async (c) => {
 
   return c.json({ data: sortByScoreDesc(data.submissions) });
 });
+router.get("/:id/claimable", async (c) => {
+  const challengeId = c.req.param("id");
+  const address = c.req.query("address");
+
+  const db = createSupabaseClient(false);
+  const { data: challenge } = await db
+    .from("challenges")
+    .select("contract_address")
+    .eq("id", challengeId)
+    .single();
+
+  if (!challenge) return c.json({ error: "Challenge not found" }, 404);
+
+  const contractAddress = challenge.contract_address as `0x${string}`;
+  const publicClient = getPublicClient();
+  const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+
+  // Read on-chain status and timing values (source of truth)
+  const [onChainStatusRaw, onChainDeadline, onChainDisputeWindowHours] =
+    await Promise.all([
+      publicClient.readContract({
+        address: contractAddress,
+        abi: HermesChallengeAbi,
+        functionName: "status",
+      }),
+      publicClient.readContract({
+        address: contractAddress,
+        abi: HermesChallengeAbi,
+        functionName: "deadline",
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: contractAddress,
+        abi: HermesChallengeAbi,
+        functionName: "disputeWindowHours",
+      }) as Promise<bigint>,
+    ]);
+  const onChainStatus = Number(onChainStatusRaw);
+  if (!Number.isFinite(onChainStatus)) {
+    return c.json({ error: "Invalid on-chain status value." }, 500);
+  }
+
+  // Status enum: Active=0, Scoring=1, Finalized=2, Disputed=3, Cancelled=4
+  const statusNames = ["active", "scoring", "finalized", "disputed", "cancelled"];
+
+  // Compute finalization timestamp from on-chain fields.
+  const finalizableAfterSeconds =
+    onChainDeadline + (onChainDisputeWindowHours * 3600n);
+  if (finalizableAfterSeconds > BigInt(Number.MAX_SAFE_INTEGER / 1000)) {
+    return c.json({ error: "Finalization timestamp out of range." }, 500);
+  }
+  const finalizableAfter = new Date(
+    Number(finalizableAfterSeconds) * 1000,
+  ).toISOString();
+
+  // Read claimable amount for address (if provided)
+  let claimable = "0";
+  if (address && onChainStatus === 2) {
+    try {
+      const payout = await publicClient.readContract({
+        address: contractAddress,
+        abi: HermesChallengeAbi,
+        functionName: "payoutByAddress",
+        args: [address as `0x${string}`],
+      }) as bigint;
+      claimable = payout.toString();
+    } catch {
+      claimable = "0";
+    }
+  }
+
+  return c.json({
+    data: {
+      onChainStatus: statusNames[onChainStatus] ?? "unknown",
+      finalizableAfter,
+      claimable,
+    },
+  });
+});
 
 export default router;

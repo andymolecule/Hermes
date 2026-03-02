@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
 import { SubmitSolution } from "../../../components/SubmitSolution";
 import { TimelineStatus } from "../../../components/TimelineStatus";
+import { ChallengeActions } from "../../../components/ChallengeActions";
 import { getChallenge } from "../../../lib/api";
 import { formatUsdc } from "../../../lib/format";
 import { getStatusStyle } from "../../../lib/status-styles";
@@ -134,6 +135,17 @@ export function DetailClient({ id }: { id: string }) {
             Leaderboard
           </h3>
           <LeaderboardTable rows={allEntries} />
+        </div>
+
+        {/* Finalize / Claim Actions */}
+        <div className="mt-6">
+          <ChallengeActions
+            challengeId={challenge.id}
+            contractAddress={challenge.contract_address}
+            challengeStatus={challenge.status}
+            deadline={challenge.deadline}
+            disputeWindowHours={challenge.dispute_window_hours ?? 168}
+          />
         </div>
       </div>
     </div>

@@ -17,8 +17,8 @@ export function formatUsdc(value: number | string) {
   }).format(n);
 }
 
-export function formatWadToScore(wad: string | null) {
-  if (!wad) return "-";
+export function formatWadToScore(wad: string | number | null | undefined) {
+  if (wad === null || wad === undefined) return "-";
   try {
     const raw = BigInt(wad);
     const whole = raw / 10n ** 18n;

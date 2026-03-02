@@ -12,7 +12,9 @@ export interface RunScorerInput {
 }
 
 export interface ScoreResult {
+  ok: boolean;
   score: number;
+  error?: string;
   details: Record<string, unknown>;
   log: string;
   outputPath: string;
@@ -63,7 +65,7 @@ function runCommand(
   });
 }
 
-async function ensureDockerReady() {
+export async function ensureDockerReady() {
   try {
     const result = await runCommand("docker", ["info"], 30_000);
     if (result.code !== 0) {
@@ -100,10 +102,23 @@ function parseScorePayload(raw: string) {
       `Invalid scorer output JSON: ${error instanceof Error ? error.message : "parse failed"}`,
     );
   }
-  const scoreValue = parsed.score;
-  if (typeof scoreValue !== "number" || Number.isNaN(scoreValue)) {
-    throw new Error("Invalid scorer output: score must be a number.");
+
+  // Determine ok/error state:
+  // - Explicit "ok": false  → invalid submission
+  // - Legacy "error" field present → treat as invalid
+  // - Otherwise → valid
+  const hasExplicitOk = typeof parsed.ok === "boolean";
+  const errorMessage = typeof parsed.error === "string" ? parsed.error : undefined;
+  const ok = hasExplicitOk ? (parsed.ok as boolean) : !errorMessage;
+
+  const scoreValue = typeof parsed.score === "number" && !Number.isNaN(parsed.score)
+    ? parsed.score
+    : 0;
+
+  if (ok && (typeof parsed.score !== "number" || Number.isNaN(parsed.score))) {
+    throw new Error("Invalid scorer output: score must be a number when ok is true.");
   }
+
   const detailsBase =
     typeof parsed.details === "object" && parsed.details !== null
       ? (parsed.details as Record<string, unknown>)
@@ -114,7 +129,9 @@ function parseScorePayload(raw: string) {
     total_rows: parsed.total_rows,
   };
   return {
+    ok,
     score: scoreValue,
+    error: errorMessage,
     details,
   };
 }
@@ -197,7 +214,9 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
   const parsed = parseScorePayload(scoreRaw);
 
   return {
+    ok: parsed.ok,
     score: parsed.score,
+    error: parsed.error,
     details: parsed.details,
     log: [pull.stdout, pull.stderr, run.stdout, run.stderr]
       .filter(Boolean)
