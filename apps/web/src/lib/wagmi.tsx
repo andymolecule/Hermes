@@ -5,6 +5,13 @@ import {
   darkTheme,
   getDefaultConfig,
 } from "@rainbow-me/rainbowkit";
+import {
+  phantomWallet,
+  metaMaskWallet,
+  coinbaseWallet,
+  walletConnectWallet,
+  rainbowWallet,
+} from "@rainbow-me/rainbowkit/wallets";
 import "@rainbow-me/rainbowkit/styles.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http } from "wagmi";
@@ -29,6 +36,18 @@ const config = getDefaultConfig({
     [chain.id]: http(RPC_URL),
   },
   ssr: true,
+  wallets: [
+    {
+      groupName: "Popular",
+      wallets: [
+        metaMaskWallet,
+        phantomWallet,
+        coinbaseWallet,
+        walletConnectWallet,
+        rainbowWallet,
+      ],
+    },
+  ],
 });
 
 const queryClient = new QueryClient();

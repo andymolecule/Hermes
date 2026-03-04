@@ -120,6 +120,7 @@ export function DetailClient({ id }: { id: string }) {
               challengeAddress={challenge.contract_address}
               challengeStatus={challenge.status}
               deadline={challenge.deadline}
+              expectedColumns={challenge.expected_columns}
             />
           </div>
 

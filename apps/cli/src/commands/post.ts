@@ -11,9 +11,10 @@ import {
 } from "@hermes/chain";
 import {
   CHALLENGE_LIMITS,
+  DEFAULT_CHAIN_ID,
   defaultMinimumScoreForChallengeType,
   type ChallengeSpecOutput,
-  challengeSpecSchema,
+  validateChallengeSpec,
 } from "@hermes/common";
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import { pinFile } from "@hermes/ipfs";
@@ -183,7 +184,8 @@ export function buildPostCommand() {
           }
         }
 
-        const validation = challengeSpecSchema.safeParse(parsed);
+        const chainId = config.chain_id ?? DEFAULT_CHAIN_ID;
+        const validation = validateChallengeSpec(parsed, chainId);
         if (!validation.success) {
           throw new Error(
             `Invalid challenge spec:\n${formatZodError(validation.error)}`,

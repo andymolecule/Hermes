@@ -66,6 +66,8 @@ export async function runIndexer() {
         ? BigInt(lastBlock.block_number)
         : envStartBlock);
 
+  let pollCount = 0;
+
   while (true) {
     try {
       const chainHead = await publicClient.getBlockNumber();
@@ -74,11 +76,17 @@ export async function runIndexer() {
           ? chainHead - CONFIRMATION_DEPTH
           : BigInt(0);
 
+      if (pollCount === 0 || pollCount % 10 === 0) {
+        console.log(`[indexer] poll #${pollCount} from=${fromBlock} to=${toBlock} head=${chainHead}`);
+      }
+      pollCount++;
+
       if (toBlock < fromBlock) {
         await sleep(POLL_INTERVAL_MS);
         continue;
       }
 
+      // ── Critical: factory log ingestion ──────────────────────────────
       const factoryLogs = await chunkedGetLogs(
         publicClient,
         factoryAddress,
@@ -101,47 +109,62 @@ export async function runIndexer() {
         });
       }
 
-      const challenges = (await listChallenges(db)) as ChallengeListRow[];
-      const resolvedChallengeKeys = new Set<string>();
-      const challengePersistTargets = new Map<string, bigint>();
+      // ── Non-critical: challenge polling ──────────────────────────────
+      // Wrapped in its own try/catch so a listChallenges failure (e.g.
+      // missing DB column) never blocks factory event ingestion or cursor
+      // persistence.
+      let resolvedChallengeKeys = new Set<string>();
+      let challengePersistTargets = new Map<string, bigint>();
 
-      for (const challenge of challenges) {
-        const { challengeAddress, challengeCursorKey, challengeFromBlock } =
-          await loadChallengeCursor({
-            db,
-            challenge,
-            chainId,
+      try {
+        const challenges = (await listChallenges(db)) as ChallengeListRow[];
+        for (const challenge of challenges) {
+          const { challengeAddress, challengeCursorKey, challengeFromBlock } =
+            await loadChallengeCursor({
+              db,
+              challenge,
+              chainId,
+              publicClient,
+              fromBlock,
+              resolvedChallengeKeys,
+            });
+
+          const challengeLogs = await chunkedGetLogs(
             publicClient,
-            fromBlock,
-            resolvedChallengeKeys,
-          });
-
-        const challengeLogs = await chunkedGetLogs(
-          publicClient,
-          challengeAddress,
-          challengeFromBlock,
-          toBlock,
-        );
-        const parsedChallengeLogs = parseEventLogs({
-          abi: HermesChallengeAbi,
-          logs: challengeLogs,
-          strict: false,
-        }) as unknown as ParsedLog[];
-
-        for (const log of parsedChallengeLogs) {
-          await processChallengeLog({
-            db,
-            publicClient,
-            challenge,
-            log,
-            fromBlock,
+            challengeAddress,
             challengeFromBlock,
-            challengeCursorKey,
-            challengePersistTargets,
-          });
+            toBlock,
+          );
+          const parsedChallengeLogs = parseEventLogs({
+            abi: HermesChallengeAbi,
+            logs: challengeLogs,
+            strict: false,
+          }) as unknown as ParsedLog[];
+
+          for (const log of parsedChallengeLogs) {
+            await processChallengeLog({
+              db,
+              publicClient,
+              challenge,
+              log,
+              fromBlock,
+              challengeFromBlock,
+              challengeCursorKey,
+              challengePersistTargets,
+            });
+          }
         }
+      } catch (challengePollError) {
+        console.error(
+          "[indexer] challenge polling failed (factory ingestion unaffected)",
+          challengePollError instanceof Error ? challengePollError.message : String(challengePollError),
+        );
+        // Reset tracking so cursor persist still runs cleanly below
+        resolvedChallengeKeys = new Set<string>();
+        challengePersistTargets = new Map<string, bigint>();
       }
 
+      // ── Always: persist cursors ──────────────────────────────────────
       const nextBlock = toBlock + BigInt(1);
       const dueReplayBlock = getDueReplayBlock(Date.now());
       const globalPersistedBlock =
@@ -156,7 +179,10 @@ export async function runIndexer() {
         nextBlock,
       });
     } catch (error) {
-      console.error("Indexer poll failed", error);
+      console.error(
+        "[indexer] poll failed",
+        error instanceof Error ? error.message : String(error),
+      );
     }
 
     await sleep(POLL_INTERVAL_MS);
@@ -165,7 +191,7 @@ export async function runIndexer() {
 
 if (process.env.NODE_ENV !== "test") {
   runIndexer().catch((error) => {
-    console.error("Indexer failed", error);
+    console.error("Indexer failed", error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 }

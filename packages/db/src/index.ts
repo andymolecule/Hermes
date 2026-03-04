@@ -31,3 +31,4 @@ export * from "./queries/indexed-events.js";
 export * from "./queries/indexer-cursors.js";
 export * from "./queries/proofs.js";
 export * from "./queries/score-jobs.js";
+export * from "./queries/analytics.js";

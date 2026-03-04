@@ -2,7 +2,7 @@ import { getPublicClient } from "@hermes/chain";
 import {
   CHALLENGE_LIMITS,
   ON_CHAIN_STATUS_ORDER,
-  challengeSpecSchema,
+  validateChallengeSpec,
   isValidPinnedSpecCid,
   loadConfig,
   validateScoringContainer,
@@ -124,7 +124,14 @@ router.post(
     if (parsedSpec.deadline instanceof Date) {
       parsedSpec.deadline = parsedSpec.deadline.toISOString();
     }
-    const spec = challengeSpecSchema.parse(parsedSpec);
+    const specResult = validateChallengeSpec(parsedSpec, config.HERMES_CHAIN_ID);
+    if (!specResult.success) {
+      return c.json(
+        { error: "Invalid challenge spec", issues: specResult.error.issues },
+        400,
+      );
+    }
+    const spec = specResult.data;
 
     // P0: Reject unscorable bounties — container must be valid
     const containerError = validateScoringContainer(spec.scoring.container);
@@ -214,7 +221,7 @@ router.get("/:id/claimable", async (c) => {
   // Compute finalization timestamp from on-chain fields.
   const finalizableAfterSeconds =
     onChainDeadline + (onChainDisputeWindowHours * 3600n);
-  if (finalizableAfterSeconds > BigInt(Number.MAX_SAFE_INTEGER / 1000)) {
+  if (finalizableAfterSeconds > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000))) {
     return c.json({ error: "Finalization timestamp out of range." }, 500);
   }
   const finalizableAfter = new Date(

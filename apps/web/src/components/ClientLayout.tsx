@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
+import { useAccount } from "wagmi";
 import { ChevronDown, Sparkles } from "lucide-react";
 import { HatchedDivider } from "./HatchedDivider";
 import { LogoBar } from "./LogoBar";
@@ -77,6 +78,7 @@ function CustomConnectButton() {
 
 function TopNav() {
     const pathname = usePathname();
+    const { isConnected } = useAccount();
 
     const isActive = (href: string) => {
         if (!pathname) return false;
@@ -86,7 +88,9 @@ function TopNav() {
 
     const navItems = [
         { href: "/", label: "Dashboard" },
+        { href: "/analytics", label: "Analytics" },
         { href: "/leaderboard", label: "Leaderboard" },
+        ...(isConnected ? [{ href: "/portfolio", label: "Portfolio" }] : []),
     ];
 
     return (

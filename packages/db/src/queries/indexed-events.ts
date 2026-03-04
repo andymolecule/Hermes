@@ -24,13 +24,16 @@ export async function markEventIndexed(
   eventName: string,
   blockNumber: number,
 ) {
-  const { error } = await db.from("indexed_events").insert({
-    tx_hash: txHash,
-    log_index: logIndex,
-    event_name: eventName,
-    block_number: blockNumber,
-  });
+  const { error } = await db.from("indexed_events").upsert(
+    {
+      tx_hash: txHash,
+      log_index: logIndex,
+      event_name: eventName,
+      block_number: blockNumber,
+    },
+    { onConflict: "tx_hash,log_index" },
+  );
   if (error) {
-    throw new Error(`Failed to insert indexed event: ${error.message}`);
+    throw new Error(`Failed to upsert indexed event: ${error.message}`);
   }
 }

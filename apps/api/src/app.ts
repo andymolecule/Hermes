@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
+import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
 import scorePreviewRoutes from "./routes/score-preview.js";
+import portfolioRoutes from "./routes/portfolio.js";
 import statsRoutes from "./routes/stats.js";
 import submissionRoutes from "./routes/submissions.js";
 import verifyRoutes from "./routes/verify.js";
@@ -57,6 +59,7 @@ export function createApp() {
 
   app.use("*", x402Middleware);
 
+  app.route("/api/analytics", analyticsRoutes);
   app.route("/api/auth", authRoutes);
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
@@ -64,6 +67,7 @@ export function createApp() {
   app.route("/api/submissions", submissionRoutes);
   app.route("/api/verify", verifyRoutes);
   app.route("/api/score-preview", scorePreviewRoutes);
+  app.route("/api/solver", portfolioRoutes);
   app.route("/api/stats", statsRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));

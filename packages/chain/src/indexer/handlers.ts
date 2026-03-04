@@ -1,10 +1,10 @@
 import {
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  challengeSpecSchema,
+  validateChallengeSpec,
+  parseCsvHeaders,
   getSubmissionLimitViolation,
   isValidPinnedSpecCid,
-  loadConfig,
   resolveSubmissionLimits,
   type HermesConfig,
 } from "@hermes/common";
@@ -24,7 +24,6 @@ import {
   setChallengeFinalized,
   setIndexerCursor,
   updateChallengeStatus,
-  updateScore,
   upsertChallenge,
   upsertSubmissionOnChain,
   type createSupabaseClient,
@@ -83,7 +82,7 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
   throw new Error(`Invalid event arg '${field}': expected address string`);
 }
 
-async function fetchChallengeSpec(specCid: string) {
+async function fetchChallengeSpec(specCid: string, chainId: number) {
   if (!isValidPinnedSpecCid(specCid)) {
     throw new Error(`Invalid or placeholder spec CID: ${specCid}`);
   }
@@ -97,7 +96,13 @@ async function fetchChallengeSpec(specCid: string) {
       if (parsed.deadline instanceof Date) {
         parsed.deadline = parsed.deadline.toISOString();
       }
-      return challengeSpecSchema.parse(parsed);
+      const result = validateChallengeSpec(parsed, chainId);
+      if (!result.success) {
+        throw new Error(
+          `Invalid challenge spec: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+        );
+      }
+      return result.data;
     } catch (error) {
       lastError = error;
 
@@ -239,7 +244,7 @@ export async function processFactoryLog(input: {
         functionName: "specCid",
       })) as string;
 
-      const spec = await fetchChallengeSpec(specCid);
+      const spec = await fetchChallengeSpec(specCid, config.HERMES_CHAIN_ID);
 
       await upsertChallenge(
         db,
@@ -256,6 +261,27 @@ export async function processFactoryLog(input: {
           txHash,
         }),
       );
+
+      // Populate expected_columns from ground truth CSV headers (non-critical)
+      const testCid = spec.dataset?.test;
+      if (testCid && typeof testCid === "string" && testCid.length > 0) {
+        try {
+          const gtText = await getText(testCid);
+          const headers = parseCsvHeaders(gtText);
+          if (headers.length > 0) {
+            await db
+              .from("challenges")
+              .update({ expected_columns: headers })
+              .eq("contract_address", challengeAddr);
+          }
+        } catch (headerErr) {
+          console.warn("[indexer] Failed to extract expected_columns (non-critical)", {
+            challengeAddr,
+            testCid,
+            error: headerErr instanceof Error ? headerErr.message : String(headerErr),
+          });
+        }
+      }
     }
 
     await markEventIndexed(
@@ -309,7 +335,7 @@ export async function processFactoryLog(input: {
       eventName: log.eventName,
       txHash,
       logIndex,
-      error,
+      error: error instanceof Error ? error.message : String(error),
     });
     await markEventIndexed(
       db,
@@ -446,7 +472,11 @@ export async function processChallengeLog(input: {
         submissionId,
         publicClient,
       );
-      const row = await upsertSubmissionOnChain(db, {
+      // upsertSubmissionOnChain writes all on-chain-owned fields (score,
+      // scored, scored_at, proof_bundle_hash).  proof_bundle_cid is owned
+      // exclusively by the oracle worker via updateScore — the indexer
+      // must never touch it.
+      await upsertSubmissionOnChain(db, {
         challenge_id: challenge.id,
         on_chain_sub_id: Number(submissionId),
         solver_address: submission.solver,
@@ -459,14 +489,6 @@ export async function processChallengeLog(input: {
         ).toISOString(),
         scored_at: new Date().toISOString(),
         tx_hash: txHash,
-      });
-
-      await updateScore(db, {
-        submission_id: row.id,
-        score: score.toString(),
-        proof_bundle_cid: row.proof_bundle_cid ?? "",
-        proof_bundle_hash: proofBundleHash,
-        scored_at: new Date().toISOString(),
       });
     }
 
@@ -594,7 +616,7 @@ export async function processChallengeLog(input: {
       eventName: log.eventName,
       txHash,
       logIndex,
-      error,
+      error: error instanceof Error ? error.message : String(error),
     });
     await markEventIndexed(
       db,

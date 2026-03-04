@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
+import { getDisputeWindowMinHours } from "../dispute-policy.js";
 
 const domainEnum = z.enum([
   "longevity",
@@ -70,7 +71,10 @@ const evalSpecSchema = z.object({
 export { evalSpecSchema };
 export type EvalSpec = z.infer<typeof evalSpecSchema>;
 
-export const challengeSpecSchema = z.object({
+// Internal permissive shape — dispute_window_hours accepts 0+.
+// Never export this directly; use challengeSpecSchema (strict) or
+// challengeSpecSchemaForChain(chainId) (chain-aware).
+const _baseSpecShape = z.object({
   id: z.string().min(1),
   preset_id: z.string().min(1).optional(),
   title: z.string().min(1),
@@ -104,7 +108,7 @@ export const challengeSpecSchema = z.object({
   dispute_window_hours: z
     .number()
     .int()
-    .min(CHALLENGE_LIMITS.disputeWindowMinHours)
+    .min(0)
     .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
     .optional(),
   evaluation: z
@@ -138,8 +142,53 @@ export const challengeSpecSchema = z.object({
   }
 });
 
+/** Adds a dispute-window minimum refinement to the base shape. */
+function _withDisputeMin(minHours: number) {
+  return _baseSpecShape.superRefine((val, ctx) => {
+    if (
+      val.dispute_window_hours !== undefined &&
+      val.dispute_window_hours < minHours
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_small,
+        minimum: minHours,
+        type: "number",
+        inclusive: true,
+        path: ["dispute_window_hours"],
+        message: `dispute_window_hours must be >= ${minHours}h`,
+      });
+    }
+  });
+}
+
+/**
+ * Default (strict) schema — enforces dispute_window_hours >= 168.
+ * Safe for any code path. Use this unless you need chain-aware validation.
+ */
+export const challengeSpecSchema = _withDisputeMin(
+  CHALLENGE_LIMITS.disputeWindowMinHours, // 168
+);
+
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
+
+/**
+ * Chain-aware schema. Testnet (Base Sepolia) allows 0h; mainnet enforces 168h.
+ * API and frontend use this with the active chain ID.
+ */
+export function challengeSpecSchemaForChain(chainId: number) {
+  return _withDisputeMin(getDisputeWindowMinHours(chainId));
+}
+
+/**
+ * Single validation entry point for all app-layer consumers.
+ * Returns a Zod SafeParseReturnType — callers decide whether to throw or return errors.
+ *
+ * Prefer this over importing schemas directly to prevent policy drift.
+ */
+export function validateChallengeSpec(raw: unknown, chainId: number) {
+  return challengeSpecSchemaForChain(chainId).safeParse(raw);
+}
 
 // ---------------------------------------------------------------------------
 // Resolve effective eval spec from a parsed challenge spec

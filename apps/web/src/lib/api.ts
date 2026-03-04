@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./config";
-import type { Challenge, ChallengeDetails, Stats } from "./types";
+import type { AnalyticsData, Challenge, ChallengeDetails, SolverPortfolio, Stats } from "./types";
 
 const BASE = API_BASE_URL.replace(/\/$/, "");
 
@@ -23,6 +23,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function getStats(): Promise<Stats> {
   return request<Stats>("/api/stats");
+}
+
+export async function getAnalytics(): Promise<AnalyticsData> {
+  return request<AnalyticsData>("/api/analytics");
 }
 
 export async function listChallenges(filters: {
@@ -54,6 +58,10 @@ export async function accelerateChallengeIndex(input: {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function getSolverPortfolio(address: string): Promise<SolverPortfolio> {
+  return request<SolverPortfolio>(`/api/solver/${address}`);
 }
 
 export async function createSubmissionRecord(input: {

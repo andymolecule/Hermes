@@ -19,6 +19,7 @@ export type Challenge = {
   distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;
+  expected_columns?: string[] | null;
   created_at?: string;
 };
 
@@ -40,4 +41,63 @@ export type Stats = {
   challengesTotal: number;
   submissionsTotal: number;
   scoredSubmissions: number;
+};
+
+export type SolverSubmission = {
+  id: string;
+  challenge_id: string;
+  on_chain_sub_id: number;
+  solver_address: string;
+  score: string | null;
+  scored: boolean;
+  submitted_at: string;
+  scored_at: string | null;
+  tx_hash: string;
+  challenges: {
+    id: string;
+    title: string;
+    domain: string;
+    challenge_type: string;
+    status: string;
+    reward_amount: number | string;
+    distribution_type: string | null;
+    contract_address: string;
+    deadline: string;
+  };
+};
+
+export type SolverPortfolio = {
+  address: string;
+  totalSubmissions: number;
+  challengesParticipated: number;
+  submissions: SolverSubmission[];
+};
+
+export type AnalyticsData = {
+  totalChallenges: number;
+  totalSubmissions: number;
+  totalRewardUsdc: number;
+  uniqueSolvers: number;
+  challengesByStatus: Record<string, number>;
+  challengesByDomain: Record<string, number>;
+  challengesByDistribution: Record<string, number>;
+  scoredSubmissions: number;
+  unscoredSubmissions: number;
+  recentChallenges: {
+    id: string;
+    title: string;
+    domain: string;
+    status: string;
+    reward_amount: string;
+    created_at: string;
+  }[];
+  recentSubmissions: {
+    id: string;
+    solver_address: string;
+    challenge_id: string;
+    score: string | null;
+    scored: boolean;
+    submitted_at: string;
+  }[];
+  topSolvers: { address: string; count: number }[];
 };

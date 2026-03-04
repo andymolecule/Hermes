@@ -183,6 +183,28 @@ export async function countSubmissionsBySolverForChallengeUpToOnChainSubId(
   return count ?? 0;
 }
 
+export async function listSubmissionsBySolver(
+  db: HermesDbClient,
+  solverAddress: string,
+  limit = 50,
+) {
+  const { data, error } = await db
+    .from("submissions")
+    .select(`
+      id, challenge_id, on_chain_sub_id, solver_address,
+      score, scored, submitted_at, scored_at, tx_hash,
+      challenges!inner(id, title, domain, challenge_type, status, reward_amount,
+                        distribution_type, contract_address, deadline)
+    `)
+    .eq("solver_address", solverAddress.toLowerCase())
+    .order("submitted_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    throw new Error(`Failed to list submissions by solver: ${error.message}`);
+  }
+  return data ?? [];
+}
+
 export async function setSubmissionResultCid(
   db: HermesDbClient,
   challengeId: string,

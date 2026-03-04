@@ -1,4 +1,5 @@
-import { challengeSpecSchema } from "@hermes/common";
+import { validateChallengeSpec } from "@hermes/common";
+import { CHAIN_ID } from "../../../lib/config";
 import { pinJSON } from "@hermes/ipfs";
 import { NextResponse } from "next/server";
 import { verifyMessage } from "viem";
@@ -185,7 +186,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const parsed = challengeSpecSchema.safeParse(body.spec);
+    const parsed = validateChallengeSpec(body.spec, CHAIN_ID);
     if (!parsed.success) {
       return NextResponse.json(
         {

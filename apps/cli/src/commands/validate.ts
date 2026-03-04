@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { challengeSpecSchema } from "@hermes/common";
+import { DEFAULT_CHAIN_ID, validateChallengeSpec } from "@hermes/common";
 import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import yaml from "yaml";
@@ -26,7 +26,7 @@ export function buildValidateCommand() {
 
             // 1. Schema validation
             const schemaSpinner = createSpinner("Validating schema...");
-            const parsed = challengeSpecSchema.safeParse(spec);
+            const parsed = validateChallengeSpec(spec, DEFAULT_CHAIN_ID);
             if (!parsed.success) {
                 schemaSpinner.fail("Schema validation failed");
                 for (const issue of parsed.error.issues) {

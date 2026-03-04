@@ -1,9 +1,9 @@
 "use client";
 
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { CHALLENGE_STATUS, isValidPinnedSpecCid } from "@hermes/common";
+import { CHALLENGE_STATUS, isValidPinnedSpecCid, validateCsvHeaders } from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Abi } from "viem";
 import { keccak256, toHex } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
@@ -27,6 +27,7 @@ interface SubmitSolutionProps {
     challengeAddress: string;
     challengeStatus: string;
     deadline: string;
+    expectedColumns?: string[] | null;
 }
 
 export function SubmitSolution({
@@ -34,6 +35,7 @@ export function SubmitSolution({
     challengeAddress,
     challengeStatus,
     deadline,
+    expectedColumns,
 }: SubmitSolutionProps) {
     const { address, isConnected, chainId } = useAccount();
     const publicClient = usePublicClient();
@@ -46,6 +48,8 @@ export function SubmitSolution({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [status, setStatus] = useState("");
     const [txHash, setTxHash] = useState("");
+    const [dragging, setDragging] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const isActive = challengeStatus === CHALLENGE_STATUS.active;
     const isPastDeadline = new Date(deadline).getTime() <= Date.now();
@@ -116,6 +120,19 @@ export function SubmitSolution({
 
         try {
             setIsSubmitting(true);
+
+            // Pre-flight CSV header validation (saves gas on malformed files)
+            if (inputMode === "file" && resultFile && expectedColumns?.length && resultFile.name.endsWith(".csv")) {
+                setStatus("Validating CSV format...");
+                const fileText = await resultFile.text();
+                const validation = validateCsvHeaders(fileText, expectedColumns);
+                if (!validation.valid) {
+                    setStatus(`Missing required columns: ${validation.missingColumns.join(", ")}`);
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
             setStatus("Uploading result to IPFS...");
             const cid = await pinResultToIpfs();
             if (!isValidPinnedSpecCid(cid)) {
@@ -224,16 +241,32 @@ export function SubmitSolution({
                         </button>
                     </div>
 
-                    {/* File upload */}
+                    {/* File upload with drag-and-drop */}
                     {inputMode === "file" && (
                         <div>
-                            <label
-                                className={`flex flex-col items-center justify-center gap-3 p-8 border hover:bg-black/5 border-dashed cursor-pointer transition-colors ${resultFile
-                                    ? "border-black bg-black/5"
-                                    : "border-black/30"
-                                    }`}
+                            <div
+                                className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed cursor-pointer transition-colors ${
+                                    dragging
+                                        ? "border-black bg-black/10"
+                                        : resultFile
+                                            ? "border-black bg-black/5 hover:bg-black/5"
+                                            : "border-black/30 hover:bg-black/5"
+                                }`}
+                                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                                onDragLeave={() => setDragging(false)}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    setDragging(false);
+                                    const file = e.dataTransfer.files[0];
+                                    if (file) {
+                                        setResultFile(file);
+                                        setStatus("");
+                                    }
+                                }}
+                                onClick={() => !isSubmitting && fileInputRef.current?.click()}
                             >
                                 <input
+                                    ref={fileInputRef}
                                     type="file"
                                     className="hidden"
                                     disabled={isSubmitting}
@@ -243,7 +276,7 @@ export function SubmitSolution({
                                             setResultFile(file);
                                             setStatus("");
                                         }
-                                        e.currentTarget.value = "";
+                                        if (fileInputRef.current) fileInputRef.current.value = "";
                                     }}
                                 />
                                 {resultFile ? (
@@ -265,7 +298,7 @@ export function SubmitSolution({
                                         </span>
                                     </>
                                 )}
-                            </label>
+                            </div>
                         </div>
                     )}
 

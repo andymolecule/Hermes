@@ -3,19 +3,22 @@
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
   defaultPresetIdForChallengeType,
+  getDisputeWindowMinHours,
+  isTestnetChain,
   PRESET_REGISTRY,
   validatePresetIntegrity,
   validateScoringContainer,
 } from "@hermes/common";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { type Abi, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
+import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
 import {
-  Wallet, ArrowRight, Coins, AlertCircle, Loader2, CheckCircle,
+  Wallet, ArrowRight, AlertCircle, Loader2, CheckCircle,
   FlaskConical, BarChart3, Settings2, ChevronRight, Check,
-  Upload, Eye, X, Tag,
+  Upload, Eye, X, Tag
 } from "lucide-react";
+import { motion } from "motion/react";
 import { buildPinSpecMessage, computeSpecHash } from "../../lib/pin-spec-auth";
 import { accelerateChallengeIndex } from "../../lib/api";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
@@ -90,7 +93,7 @@ const REPRODUCIBILITY_PRESET_ID =
 const PREDICTION_PRESET_ID = defaultPresetIdForChallengeType("prediction");
 const reproducibilityPreset =
   REPRODUCIBILITY_PRESET_ID &&
-  REPRODUCIBILITY_PRESET_ID !== "custom"
+    REPRODUCIBILITY_PRESET_ID !== "custom"
     ? PRESET_REGISTRY[REPRODUCIBILITY_PRESET_ID]
     : undefined;
 const predictionPreset =
@@ -155,6 +158,122 @@ const TYPE_CONFIG = {
 } as const;
 
 const TYPE_OPTIONS = Object.keys(TYPE_CONFIG) as PostChallengeType[];
+
+// ─── Pipeline diagrams per type ──────────────────────
+
+type PipelineFlow = {
+  posterAction: string;
+  posterFiles: string;
+  solverAction: string;
+  solverFiles: string;
+  scorerAction: string;
+  scorerResult: string;
+  helper: string;
+};
+
+const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
+  prediction: {
+    posterAction: "Uploads",
+    posterFiles: "train + test + labels",
+    solverAction: "Submits",
+    solverFiles: "predictions",
+    scorerAction: "Compares",
+    scorerResult: "vs. labels \u2192 score",
+    helper: "Solvers train on your data and predict values for the test set. The scorer compares their predictions against your hidden labels.",
+  },
+  reproducibility: {
+    posterAction: "Uploads",
+    posterFiles: "inputs + expected",
+    solverAction: "Submits",
+    solverFiles: "reproduced_output",
+    scorerAction: "Compares",
+    scorerResult: "vs. expected \u2192 score",
+    helper: "Solvers reproduce a known result from your input data. The scorer compares their output to yours.",
+  },
+  optimization: {
+    posterAction: "Uploads",
+    posterFiles: "evaluation_bundle",
+    solverAction: "Submits",
+    solverFiles: "parameters",
+    scorerAction: "Simulates",
+    scorerResult: "with your image \u2192 score",
+    helper: "Solvers submit parameters. Your scorer runs the simulation and returns a score.",
+  },
+  custom: {
+    posterAction: "Uploads",
+    posterFiles: "public + private data",
+    solverAction: "Submits",
+    solverFiles: "solution",
+    scorerAction: "Evaluates",
+    scorerResult: "with docker \u2192 score",
+    helper: "Define your own scoring logic via a Docker container.",
+  },
+};
+
+function PipelineVisual({ type }: { type: PostChallengeType }) {
+  const flow = PIPELINE_FLOWS[type];
+
+  return (
+    <div className="pipeline-diagram">
+      <div className="pipeline-visual">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="pipeline-node"
+        >
+          <div className="pipeline-icon"><Upload size={18} /></div>
+          <div className="pipeline-title">Poster</div>
+          <div className="pipeline-action">{flow.posterAction}</div>
+          <div className="pipeline-files">{flow.posterFiles}</div>
+        </motion.div>
+
+        <div className="pipeline-track">
+          <motion.div
+            className="pipeline-dot"
+            animate={{ x: ["-100%", "200%"] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="pipeline-node"
+        >
+          <div className="pipeline-icon"><Wallet size={18} /></div>
+          <div className="pipeline-title">Solver</div>
+          <div className="pipeline-action">{flow.solverAction}</div>
+          <div className="pipeline-files">{flow.solverFiles}</div>
+        </motion.div>
+
+        <div className="pipeline-track">
+          <motion.div
+            className="pipeline-dot"
+            animate={{ x: ["-100%", "200%"] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "linear", delay: 0.75 }}
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="pipeline-node pipeline-node-scorer"
+        >
+          <div className="pipeline-icon"><CheckCircle size={18} /></div>
+          <div className="pipeline-title">Scorer</div>
+          <div className="pipeline-action">{flow.scorerAction}</div>
+          <div className="pipeline-files">{flow.scorerResult}</div>
+        </motion.div>
+      </div>
+      <p className="pipeline-diagram-helper">
+        {flow.helper}
+      </p>
+    </div>
+  );
+}
 
 function engineDisplayName(container: string): string {
   const linkedPresets = REGISTRY_PRESETS.filter((preset) => preset.container === container);
@@ -229,7 +348,7 @@ type FormState = {
   container: string;
   reward: string;
   distribution: "winner_take_all" | "top_3" | "proportional";
-  deadline: string;
+  deadlineDays: string;
   minimumScore: string;
   disputeWindow: string;
   submissionType: string;
@@ -241,6 +360,8 @@ type FormState = {
   reproPresetId: string;
   tolerance: string;
   tags: string[];
+  detectedColumns: string[];
+  expectedSubmissionColumns: string[];
 };
 
 const defaultPreset = TYPE_CONFIG.reproducibility;
@@ -257,7 +378,7 @@ const initialState: FormState = {
   container: defaultPreset.container,
   reward: "10",
   distribution: "winner_take_all",
-  deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  deadlineDays: "7",
   minimumScore: String(defaultPreset.defaultMinimumScore),
   disputeWindow: "168",
   submissionType: "number",
@@ -269,6 +390,8 @@ const initialState: FormState = {
   reproPresetId: "csv_comparison_v1",
   tolerance: "",
   tags: [],
+  detectedColumns: [],
+  expectedSubmissionColumns: [],
 };
 
 function buildSpec(state: FormState) {
@@ -302,7 +425,7 @@ function buildSpec(state: FormState) {
       total: Number(state.reward),
       distribution: state.distribution,
     },
-    deadline: state.deadline,
+    deadline: computeDeadlineIso(state.deadlineDays),
     minimum_score: Number(state.minimumScore),
     dispute_window_hours: Number(state.disputeWindow),
     evaluation: {
@@ -312,10 +435,64 @@ function buildSpec(state: FormState) {
       id_column: state.idColumn || undefined,
       label_column: state.labelColumn || undefined,
       ...(state.tolerance ? { tolerance: state.tolerance } : {}),
+      ...(state.expectedSubmissionColumns.length > 0
+        ? { submission_columns: state.expectedSubmissionColumns }
+        : {}),
     },
     ...(state.tags.length > 0 ? { tags: state.tags } : {}),
     lab_tba: "0x0000000000000000000000000000000000000000",
   };
+}
+
+// ─── Deadline Helpers ────────────────────────────────
+
+/** Compute a fresh deadline ISO from days. Always computed live, never stored stale. */
+function computeDeadlineIso(days: string): string {
+  const d = Number(days);
+  if (d === 0) return new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min for testnet
+  return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** Format a deadline date for display. */
+function formatDeadlineDate(days: string): string {
+  return new Date(computeDeadlineIso(days)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Format payout date (deadline + dispute window). */
+function formatPayoutDate(days: string, disputeWindowHours: string): string {
+  const deadlineMs = new Date(computeDeadlineIso(days)).getTime();
+  const payoutMs = deadlineMs + Number(disputeWindowHours) * 3600000;
+  return new Date(payoutMs).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ─── CSV Header Detection ───────────────────────────
+
+/** Read the first line of a CSV file and return column names. Handles BOM, \r\n, and quoted headers. */
+function readCsvHeader(file: File): Promise<string[]> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let text = reader.result as string;
+      // Strip UTF-8 BOM
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      // Get first line, strip \r
+      const firstLine = text.split("\n")[0]?.replace(/\r$/, "").trim();
+      if (!firstLine || !firstLine.includes(",")) { resolve([]); return; }
+      // Quote-aware split: respect commas inside double quotes
+      const cols: string[] = [];
+      let current = "";
+      let inQuotes = false;
+      for (const ch of firstLine) {
+        if (ch === '"') { inQuotes = !inQuotes; continue; }
+        if (ch === "," && !inQuotes) { cols.push(current.trim()); current = ""; continue; }
+        current += ch;
+      }
+      cols.push(current.trim());
+      resolve(cols.filter(Boolean));
+    };
+    reader.onerror = () => resolve([]);
+    reader.readAsText(file.slice(0, 4096));
+  });
 }
 
 // ─── Helpers ────────────────────────────────────────
@@ -337,15 +514,17 @@ function FormField({
 // ─── Data Upload Field ──────────────────────────────
 
 function DataUploadField({
-  value, onChange, uploading, onUpload, placeholder,
+  value, onChange, uploading, onUpload, placeholder, fileName,
 }: {
   value: string;
   onChange: (v: string) => void;
   uploading: boolean;
   onUpload: (file: File) => void;
   placeholder: string;
+  fileName?: string;
 }) {
   const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -354,24 +533,64 @@ function DataUploadField({
     if (file) onUpload(file);
   }
 
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+    // Reset so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  const hasValue = value.trim().length > 0;
+  const isIpfs = value.startsWith("ipfs://") || /^Qm[A-Za-z0-9]{44}/.test(value) || /^bafy[A-Za-z0-9]+/.test(value);
+
+  // Uploaded / has URL — show compact success row
+  if (hasValue && !uploading) {
+    return (
+      <div className="drop-zone has-value">
+        <div className="drop-zone-filled">
+          <CheckCircle size={14} className="drop-zone-filled-icon" />
+          <span className="drop-zone-filled-name">{fileName || (isIpfs ? value.slice(0, 24) + "…" : value)}</span>
+          <button type="button" className="drop-zone-clear" onClick={() => onChange("")} aria-label="Clear">
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`drop-zone ${dragging ? "dragging" : ""}`}
+      className={`drop-zone-area ${dragging ? "dragging" : ""} ${uploading ? "uploading" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
+      onClick={() => !uploading && fileInputRef.current?.click()}
     >
       <input
-        className="form-input form-input-mono"
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={uploading}
+        ref={fileInputRef}
+        type="file"
+        className="drop-zone-file-input"
+        onChange={handleFileSelect}
+        tabIndex={-1}
       />
       {uploading ? (
-        <span className="drop-zone-hint"><Loader2 size={12} className="animate-spin" /> Uploading...</span>
+        <>
+          <Loader2 size={20} className="animate-spin drop-zone-area-icon" />
+          <span className="drop-zone-area-label">Uploading &amp; pinning to IPFS…</span>
+        </>
       ) : (
-        <span className="drop-zone-hint"><Upload size={12} /> or drag a file here</span>
+        <>
+          <Upload size={20} className="drop-zone-area-icon" />
+          <span className="drop-zone-area-label">Click to browse or drag a file</span>
+          <span className="drop-zone-area-sub">or paste an IPFS / HTTPS link below</span>
+          <input
+            className="drop-zone-url-input"
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </>
       )}
     </div>
   );
@@ -386,12 +605,18 @@ export function PostClient() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [uploadingField, setUploadingField] = useState<"train" | "test" | "hiddenLabels" | null>(null);
+  const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [tagInput, setTagInput] = useState("");
 
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
+  const { openConnectModal } = useConnectModal();
+  const { openChainModal } = useChainModal();
+
+  const isWrongChain = isConnected && chainId !== CHAIN_ID;
+  const walletReady = isConnected && !isWrongChain;
 
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
@@ -400,15 +625,42 @@ export function PostClient() {
 
   async function handleFileUpload(file: File, field: "train" | "test" | "hiddenLabels") {
     setUploadingField(field);
+    setStatus("");
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/pin-data", { method: "POST", body: formData });
-      if (!res.ok) throw new Error(await res.text());
-      const { cid } = (await res.json()) as { cid: string };
-      setState((s) => ({ ...s, [field]: cid }));
+      // Pin to IPFS + detect CSV columns in parallel (zero added latency)
+      const shouldDetectColumns = field === "test" && state.type === "reproducibility";
+      const [pinResult, detectedCols] = await Promise.all([
+        (async () => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/pin-data", { method: "POST", body: formData });
+          if (!res.ok) {
+            const body = await res.text();
+            let msg = "Upload failed";
+            try { msg = JSON.parse(body).error || msg; } catch { msg = body || msg; }
+            throw new Error(msg);
+          }
+          return (await res.json()) as { cid: string };
+        })(),
+        shouldDetectColumns ? readCsvHeader(file) : Promise.resolve([] as string[]),
+      ]);
+      setState((s) => ({
+        ...s,
+        [field]: pinResult.cid,
+        // Auto-fill columns only if user hasn't edited them yet
+        ...(shouldDetectColumns && detectedCols.length > 0
+          ? {
+              detectedColumns: detectedCols,
+              ...(s.expectedSubmissionColumns.length === 0
+                ? { expectedSubmissionColumns: detectedCols }
+                : {}),
+            }
+          : {}),
+      }));
+      setFileNames((prev) => ({ ...prev, [field]: file.name }));
     } catch (err) {
-      setStatus(`Upload failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      const msg = err instanceof Error ? err.message : "unknown error";
+      setStatus(`Upload failed: ${msg}`);
     } finally {
       setUploadingField(null);
     }
@@ -455,6 +707,8 @@ export function PostClient() {
       // Clear type-specific fields when switching
       hiddenLabels: "",
       tolerance: "",
+      train: "",
+      test: "",
       // Reset repro sub-preset to default when switching to reproducibility
       ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1" } : {}),
       // Prediction: default to CSV submission with id + prediction columns
@@ -465,18 +719,7 @@ export function PostClient() {
         labelColumn: "prediction",
       } : {}),
     }));
-  }
-
-  function selectReproPreset(presetId: string) {
-    const preset = PRESET_REGISTRY[presetId];
-    if (!preset) return;
-    setState((s) => ({
-      ...s,
-      reproPresetId: presetId,
-      container: preset.container,
-      minimumScore: String(preset.defaultMinimumScore),
-      evaluationCriteria: preset.scoringDescription,
-    }));
+    setFileNames({});
   }
 
   function validateInput() {
@@ -513,20 +756,18 @@ export function PostClient() {
       return presetIntegrityError;
 
     const disputeWindow = Number(state.disputeWindow);
-    if (!Number.isFinite(disputeWindow) || disputeWindow < 0 || disputeWindow > 2160)
-      return "Review period must be between 0 and 2160 hours.";
-    if (new Date(state.deadline).getTime() <= Date.now())
-      return "Deadline must be in the future.";
+    const minDispute = getDisputeWindowMinHours(CHAIN_ID);
+    if (!Number.isFinite(disputeWindow) || disputeWindow < minDispute || disputeWindow > 2160)
+      return `Dispute window must be between ${minDispute} and 2160 hours.`;
     return null;
   }
 
   async function handleSubmit() {
-    if (!isConnected) { setStatus("Connect wallet first."); return; }
+    if (!walletReady) return; // button is disabled — should not reach here
     if (!FACTORY_ADDRESS || !USDC_ADDRESS) {
       setStatus("Missing NEXT_PUBLIC_HERMES_FACTORY_ADDRESS or NEXT_PUBLIC_HERMES_USDC_ADDRESS.");
       return;
     }
-    if (chainId !== CHAIN_ID) { setStatus(`Wrong network. Expected chain id ${CHAIN_ID}.`); return; }
     if (!publicClient) { setStatus("Wallet client is not ready. Reconnect wallet and retry."); return; }
     const error = validateInput();
     if (error) { setStatus(error); return; }
@@ -656,26 +897,26 @@ export function PostClient() {
       <div className="type-selector">
         {TYPE_OPTIONS.map((key) => {
           const preset = TYPE_CONFIG[key];
-            const Icon = TYPE_ICONS[key];
-            const active = state.type === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                className={`type-card ${active ? "active" : ""}`}
-                onClick={() => selectType(key)}
-              >
-                <div className="type-card-check">
-                  {active && <Check size={10} strokeWidth={3} />}
-                </div>
-                <div className="type-card-icon">
-                  <Icon size={18} />
-                </div>
-                <div className="type-card-title">{preset.label}</div>
-                <div className="type-card-desc">{preset.description}</div>
-              </button>
-            );
-          })}
+          const Icon = TYPE_ICONS[key];
+          const active = state.type === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`type-card ${active ? "active" : ""}`}
+              onClick={() => selectType(key)}
+            >
+              <div className="type-card-check">
+                {active && <Check size={10} strokeWidth={3} />}
+              </div>
+              <div className="type-card-icon">
+                <Icon size={18} />
+              </div>
+              <div className="type-card-title">{preset.label}</div>
+              <div className="type-card-desc">{preset.description}</div>
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Section 1: Problem ── */}
@@ -747,6 +988,7 @@ export function PostClient() {
           <span className="form-section-title">Data &amp; Inputs</span>
         </div>
         <div className="form-section-body">
+          <PipelineVisual type={state.type} />
           <div className="form-grid">
             {/* ── Prediction: 3 uploads ── */}
             {state.type === "prediction" && (
@@ -754,28 +996,31 @@ export function PostClient() {
                 <FormField label="Train (with labels)" hint="Public dataset solvers use to build and train models">
                   <DataUploadField
                     value={state.train}
-                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
                     uploading={uploadingField === "train"}
                     onUpload={(file) => handleFileUpload(file, "train")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.train}
                   />
                 </FormField>
                 <FormField label="Test (no labels)" hint="Public test inputs — solvers predict values for these rows">
                   <DataUploadField
                     value={state.test}
-                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
                     uploading={uploadingField === "test"}
                     onUpload={(file) => handleFileUpload(file, "test")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.test}
                   />
                 </FormField>
                 <FormField label="Hidden labels (for scoring)" hint="Ground truth labels the scorer compares submissions against" className="span-full">
                   <DataUploadField
                     value={state.hiddenLabels}
-                    onChange={(v) => setState((s) => ({ ...s, hiddenLabels: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, hiddenLabels: v })); if (!v) setFileNames((p) => ({ ...p, hiddenLabels: "" })); }}
                     uploading={uploadingField === "hiddenLabels"}
                     onUpload={(file) => handleFileUpload(file, "hiddenLabels")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.hiddenLabels}
                   />
                 </FormField>
               </>
@@ -787,19 +1032,28 @@ export function PostClient() {
                 <FormField label="Input dataset (visible to solvers)" hint="Source data and inputs solvers must reproduce from">
                   <DataUploadField
                     value={state.train}
-                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
                     uploading={uploadingField === "train"}
                     onUpload={(file) => handleFileUpload(file, "train")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.train}
                   />
                 </FormField>
                 <FormField label="Expected output (used for scoring)" hint="Reference artifact the scorer compares submissions against">
                   <DataUploadField
                     value={state.test}
-                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    onChange={(v) => {
+                      setState((s) => ({
+                        ...s, test: v,
+                        // Clear detected columns when file is removed
+                        ...(!v ? { detectedColumns: [], expectedSubmissionColumns: [] } : {}),
+                      }));
+                      if (!v) setFileNames((p) => ({ ...p, test: "" }));
+                    }}
                     uploading={uploadingField === "test"}
                     onUpload={(file) => handleFileUpload(file, "test")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.test}
                   />
                 </FormField>
                 <FormField label="Tolerance" hint="Numeric tolerance for comparison (e.g. 1e-4). Leave empty for exact match.">
@@ -814,10 +1068,11 @@ export function PostClient() {
               <FormField label="Evaluation bundle" hint="Config and data your scorer container needs" className="span-full">
                 <DataUploadField
                   value={state.train}
-                  onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                  onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
                   uploading={uploadingField === "train"}
                   onUpload={(file) => handleFileUpload(file, "train")}
                   placeholder="ipfs://... or https://..."
+                  fileName={fileNames.train}
                 />
               </FormField>
             )}
@@ -828,19 +1083,21 @@ export function PostClient() {
                 <FormField label="Public inputs" hint="Files or data available to solvers">
                   <DataUploadField
                     value={state.train}
-                    onChange={(v) => setState((s) => ({ ...s, train: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
                     uploading={uploadingField === "train"}
                     onUpload={(file) => handleFileUpload(file, "train")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.train}
                   />
                 </FormField>
                 <FormField label="Evaluation dataset" hint="Used during scoring (visible on IPFS)">
                   <DataUploadField
                     value={state.test}
-                    onChange={(v) => setState((s) => ({ ...s, test: v }))}
+                    onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
                     uploading={uploadingField === "test"}
                     onUpload={(file) => handleFileUpload(file, "test")}
                     placeholder="ipfs://... or https://..."
+                    fileName={fileNames.test}
                   />
                 </FormField>
               </>
@@ -875,7 +1132,7 @@ export function PostClient() {
                   value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
               </FormField>
             ) : (
-              <FormField label="Validation rules" hint="What makes a submission valid? (plain English)">
+              <FormField label="Submission rules" hint="What makes a submission valid? (plain English)">
                 <input className="form-input" placeholder="e.g. Must be a positive integer"
                   value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
               </FormField>
@@ -916,52 +1173,73 @@ export function PostClient() {
                 <div className="span-full">
                   <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Expected submission format</p>
                   <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
-{`${state.idColumn || "id"},${state.labelColumn || "prediction"}
+                    {`${state.idColumn || "id"},${state.labelColumn || "prediction"}
 SAMPLE_001,1.23
 SAMPLE_002,0.85
 SAMPLE_003,2.10`}
                   </pre>
                 </div>
+                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  The scorer compares each row of solver predictions against your hidden labels using {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
+                </p>
               </>
             )}
-
 
             {/* ── Reproducibility-specific fields ── */}
             {state.type === "reproducibility" && (
               <>
                 <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
-                {/* Sub-preset selector */}
+                {/* Locked scoring method badge */}
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.5rem", fontWeight: 600 }}>Scoring method</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                    {REPRO_SUB_PRESETS.map((rp) => (
-                      <label key={rp.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", borderRadius: "6px", cursor: "pointer", border: `1px solid ${state.reproPresetId === rp.id ? "var(--text-accent)" : "var(--border-default)"}`, background: state.reproPresetId === rp.id ? "var(--surface-inset)" : "transparent", transition: "all 0.15s ease" }}>
-                        <input type="radio" name="reproPreset" value={rp.id} checked={state.reproPresetId === rp.id}
-                          onChange={() => selectReproPreset(rp.id)}
-                          style={{ accentColor: "var(--text-accent)" }} />
-                        <div>
-                          <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>{rp.label}</span>
-                          <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", marginLeft: "0.5rem" }}>{rp.desc}</span>
-                        </div>
-                      </label>
-                    ))}
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Scoring method</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-base)", border: "1px solid var(--border-default)", borderRadius: "6px" }}>
+                    <Check size={14} style={{ color: "#000" }} />
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV Comparison</span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Row-by-row comparison against ground truth</span>
                   </div>
                 </div>
                 <FormField label="Scoring description" hint="Describe how submissions are compared to expected output" className="span-full">
                   <textarea className="form-textarea" placeholder="e.g. Row-by-row comparison of output CSV against expected_output.csv with numeric tolerance 1e-4"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                {/* Submission preview */}
-                {state.submissionType === "csv" && (
-                  <div className="span-full">
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Expected submission format</p>
-                    <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
-{`gene_id,log2fc,padj
-BRCA1,-2.31,0.001
-TP53,1.85,0.0003`}
-                    </pre>
-                  </div>
-                )}
+                {/* Auto-detected submission format */}
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>
+                    Expected submission format
+                    {state.detectedColumns.length > 0 && (
+                      <span style={{ fontWeight: 400, fontStyle: "italic", marginLeft: "0.5rem" }}>
+                        (auto-detected from {fileNames.test || "expected output"})
+                      </span>
+                    )}
+                  </p>
+                  {state.detectedColumns.length > 0 ? (
+                    <>
+                      <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+                        {state.detectedColumns.join(",")}
+                      </pre>
+                      <input
+                        className="form-input form-input-mono"
+                        style={{ marginTop: "0.35rem", fontSize: "0.72rem" }}
+                        value={state.expectedSubmissionColumns.join(",")}
+                        onChange={(e) => setState((s) => ({
+                          ...s,
+                          expectedSubmissionColumns: e.target.value.split(",").map((c) => c.trim()).filter(Boolean),
+                        }))}
+                        placeholder="Edit column names if needed"
+                      />
+                      <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.25rem 0 0", fontStyle: "italic" }}>
+                        Submission CSV must match these columns. Edit above if needed.
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                      Upload expected output to auto-detect submission columns.
+                    </p>
+                  )}
+                </div>
+                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  The scorer does a row-by-row comparison of the solver&#39;s output against your expected output.
+                </p>
               </>
             )}
 
@@ -980,6 +1258,9 @@ TP53,1.85,0.0003`}
                   <textarea className="form-textarea" placeholder="e.g. Minimize binding energy. Score = 100 - abs(energy - target_energy)."
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
+                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  Your custom scorer container runs the solver's parameters through your simulation.
+                </p>
               </>
             )}
 
@@ -998,6 +1279,9 @@ TP53,1.85,0.0003`}
                   <textarea className="form-textarea" placeholder="e.g. Exact hash match scores 100, partial matches scored by edit distance."
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
+                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  Define your own scoring logic via a Docker container. The scoring description is informational.
+                </p>
               </>
             )}
 
@@ -1014,12 +1298,6 @@ TP53,1.85,0.0003`}
               </div>
             )}
 
-            {/* Custom/optimization disclaimer */}
-            {isCustomType && (
-              <p className="span-full" style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                The scoring description is informational. The scorer container is the source of truth.
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -1044,30 +1322,33 @@ TP53,1.85,0.0003`}
                 <option value="proportional">Proportional</option>
               </select>
             </FormField>
-            <FormField label="Deadline">
-              <input className="form-input" type="datetime-local"
-                value={state.deadline.slice(0, 16)}
-                onChange={(e) => {
-                  const ts = Date.parse(e.target.value);
-                  if (Number.isFinite(ts)) setState((s) => ({ ...s, deadline: new Date(ts).toISOString() }));
-                }} />
+            <FormField label="Submission deadline" hint="How long solvers have to submit">
+              <select className="form-select" value={state.deadlineDays}
+                onChange={(e) => setState((s) => ({ ...s, deadlineDays: e.target.value }))}>
+                {isTestnetChain(CHAIN_ID) && <option value="0">Quick test (15 min)</option>}
+                <option value="7">7 days</option>
+                <option value="14">14 days</option>
+                <option value="30">30 days</option>
+                <option value="60">60 days</option>
+                <option value="90">90 days</option>
+              </select>
             </FormField>
-            <FormField label="Review period" hint="Funds locked until review period ends (0–2160 hours)">
+            <FormField label="Dispute window" hint="Time for anyone to challenge scores before payout">
               <select className="form-select" value={state.disputeWindow}
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
-                <option value="0">Instant (0h) — Testnet only</option>
-                <option value="1">1 hour — Testing</option>
-                <option value="168">7 days (168h) — Standard</option>
-                <option value="336">14 days (336h)</option>
-                <option value="720">30 days (720h)</option>
-                <option value="1440">60 days (1440h)</option>
-                <option value="2160">90 days (2160h) — Maximum</option>
+                {isTestnetChain(CHAIN_ID) && <option value="0">No dispute window (testnet only)</option>}
+                {isTestnetChain(CHAIN_ID) && <option value="1">1 hour — Testing</option>}
+                <option value="168">7 days — Standard</option>
+                <option value="336">14 days</option>
+                <option value="720">30 days</option>
+                <option value="1440">60 days</option>
+                <option value="2160">90 days — Maximum</option>
               </select>
             </FormField>
             {state.disputeWindow === "0" && (
               <div className="span-full" style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#fff3cd", borderRadius: "6px", fontSize: "0.75rem", color: "#856404", border: "1px solid #ffc107" }}>
                 <AlertCircle size={14} />
-                <span>Instant review (0h) means <strong>no dispute window</strong>. Funds are released immediately after scoring. Use only for testing.</span>
+                <span>No dispute window means funds are released <strong>immediately after scoring</strong>. Use only for testing.</span>
               </div>
             )}
           </div>
@@ -1131,20 +1412,42 @@ TP53,1.85,0.0003`}
           <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.distribution.replace(/_/g, " ")}</span>
         </div>
         <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Deadline</span>
-          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>
-            {new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-          </span>
-        </div>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Review period</span>
-          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.disputeWindow}h</span>
-        </div>
-        <div className="cost-row">
           <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Scorer</span>
           <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.72rem", fontFamily: "var(--font-mono)" }}>
             {isCustomType ? (state.container.length > 40 ? state.container.slice(0, 40) + "…" : state.container || "—") : engineDisplayName(state.container)}
           </span>
+        </div>
+        {/* Challenge Timeline */}
+        <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.5rem 0" }} />
+        <p style={{ fontSize: "0.68rem", fontWeight: 600, color: "var(--text-tertiary)", margin: "0 0 0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          Challenge Timeline
+        </p>
+        <div className="challenge-timeline">
+          <div className="timeline-step">
+            <span className="timeline-icon" style={{ color: "#16A34A" }}>&#9679;</span>
+            <span className="timeline-label">Submission window</span>
+            <span className="timeline-date">{state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`}</span>
+          </div>
+          <div className="timeline-step">
+            <span className="timeline-icon" style={{ color: "var(--text-tertiary)" }}>&#9679;</span>
+            <span className="timeline-label">Submissions close</span>
+            <span className="timeline-date">{formatDeadlineDate(state.deadlineDays)}</span>
+          </div>
+          <div className="timeline-step">
+            <span className="timeline-icon" style={{ color: "var(--text-tertiary)" }}>&#9679;</span>
+            <span className="timeline-label">Automatic scoring</span>
+            <span className="timeline-date" style={{ fontStyle: "italic" }}>after deadline</span>
+          </div>
+          <div className="timeline-step">
+            <span className="timeline-icon" style={{ color: "#D97706" }}>&#9679;</span>
+            <span className="timeline-label">Dispute window</span>
+            <span className="timeline-date">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span>
+          </div>
+          <div className="timeline-step">
+            <span className="timeline-icon" style={{ color: "var(--text-accent, #1399F4)" }}>&#9679;</span>
+            <span className="timeline-label">Payout released</span>
+            <span className="timeline-date">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span>
+          </div>
         </div>
       </div>
 
@@ -1152,23 +1455,26 @@ TP53,1.85,0.0003`}
       <div className="post-submit-row">
         <button
           type="button"
-          disabled={isPosting}
+          disabled={isPosting || !walletReady}
           onClick={() => {
             const error = validateInput();
             if (error) { setStatus(error); return; }
             setShowPreview(true);
           }}
-          className="dash-btn dash-btn-primary"
-          style={{ padding: "0.65rem 1.5rem", fontSize: "0.85rem", opacity: isPosting ? 0.6 : 1 }}
+          className="post-submit-btn"
         >
           {isPosting ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-          {isPosting ? "Posting..." : "Review & Post"}
+          {isPosting ? "Posting…" : "Review & Post"}
         </button>
-        {!isConnected && (
-          <span className="form-hint">
-            Connect wallet to submit →
-          </span>
-        )}
+        {!isConnected ? (
+          <button type="button" onClick={() => openConnectModal?.()} className="post-submit-hint" style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}>
+            <Wallet size={13} /> Connect wallet to post
+          </button>
+        ) : isWrongChain ? (
+          <button type="button" onClick={() => openChainModal?.()} className="post-submit-hint" style={{ cursor: "pointer", background: "none", border: "none", padding: 0, color: "#D97706" }}>
+            <AlertCircle size={13} /> Switch to Base Sepolia
+          </button>
+        ) : null}
       </div>
 
       {/* ── Status ── */}
@@ -1218,8 +1524,9 @@ TP53,1.85,0.0003`}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Reward</span><span className="preview-value">{state.reward} USDC</span></div>
               <div className="preview-row"><span className="preview-label">Distribution</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
-              <div className="preview-row"><span className="preview-label">Deadline</span><span className="preview-value">{new Date(state.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
-              <div className="preview-row"><span className="preview-label">Review period</span><span className="preview-value">{state.disputeWindow}h</span></div>
+              <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`}</span></div>
+              <div className="preview-row"><span className="preview-label">Dispute window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
+              <div className="preview-row"><span className="preview-label">Payout released</span><span className="preview-value">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span></div>
 
             </div>
             <div className="preview-actions">

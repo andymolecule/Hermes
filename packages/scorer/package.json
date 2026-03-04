@@ -7,6 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "oracle-worker:local": "node dist/oracle-worker.js",
     "test": "echo 'no tests'"
   },
   "devDependencies": {
@@ -19,6 +20,10 @@
     }
   },
   "dependencies": {
-    "@hermes/ipfs": "workspace:^"
+    "@hermes/chain": "workspace:*",
+    "@hermes/common": "workspace:*",
+    "@hermes/db": "workspace:*",
+    "@hermes/ipfs": "workspace:^",
+    "viem": "^2.21.15"
   }
 }
