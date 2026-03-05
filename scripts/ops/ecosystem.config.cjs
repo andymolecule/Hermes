@@ -11,6 +11,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
+      max_memory_restart: "512M",
       time: true,
     },
     {
@@ -24,6 +25,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
+      max_memory_restart: "256M",
       time: true,
     },
     {
@@ -37,6 +39,21 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       exp_backoff_restart_delay: 3000,
+      max_memory_restart: "512M",
+      time: true,
+    },
+    {
+      name: "hermes-mcp",
+      cwd: process.cwd(),
+      script: "node",
+      args: "apps/mcp-server/dist/index.js",
+      env: {
+        NODE_ENV: "production",
+      },
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 3000,
+      max_memory_restart: "256M",
       time: true,
     },
   ],

@@ -6,10 +6,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { readFeaturePolicy } from "@hermes/common";
 import { z } from "zod";
+import { hermesClaimPayout } from "./tools/claim-payout.js";
 import { hermesGetChallenge } from "./tools/get-challenge.js";
 import { hermesGetLeaderboard } from "./tools/get-leaderboard.js";
 import { hermesGetSubmissionStatus } from "./tools/get-submission-status.js";
 import { hermesListChallenges } from "./tools/list-challenges.js";
+import { hermesScoreLocal } from "./tools/score-local.js";
 import { hermesSubmitSolution } from "./tools/submit-solution.js";
 import { hermesVerifySubmission } from "./tools/verify-submission.js";
 import { enforceMcpSessionPayment, getMcpX402Metadata } from "./x402.js";
@@ -34,12 +36,13 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   server.registerTool(
     "hermes-list-challenges",
     {
-      description: "List challenges filtered by status/domain/minReward.",
+      description:
+        "List open science bounties. Filter by status (active, scoring, finalized), domain (longevity, drug_discovery, protein_design, omics, other), minimum USDC reward, or limit. Returns challenge UUID, title, reward, deadline, and current status.",
       inputSchema: z.object({
-        status: z.string().optional(),
-        domain: z.string().optional(),
-        minReward: z.number().optional(),
-        limit: z.number().int().positive().optional(),
+        status: z.string().optional().describe("Filter: active, scoring, finalized, cancelled"),
+        domain: z.string().optional().describe("Filter: longevity, drug_discovery, protein_design, omics, other"),
+        minReward: z.number().optional().describe("Minimum USDC reward (e.g. 10 for $10+)"),
+        limit: z.number().int().positive().optional().describe("Max results to return"),
       }),
     },
     async (input) => asToolResult(await hermesListChallenges(input)),
@@ -48,22 +51,37 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   server.registerTool(
     "hermes-get-challenge",
     {
-      description: "Return challenge details, submissions, and leaderboard.",
+      description:
+        "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with direct download URLs (train_url, test_url, spec_url) for IPFS-pinned files.",
       inputSchema: z.object({
-        challengeId: z.string().uuid(),
+        challengeId: z.string().uuid().describe("Challenge UUID from hermes-list-challenges"),
       }),
     },
     async (input) => asToolResult(await hermesGetChallenge(input)),
   );
 
   server.registerTool(
+    "hermes-score-local",
+    {
+      description:
+        "Dry-run the Docker scorer on your submission file without submitting on-chain. Free and unlimited — use this to test your solution before committing gas. Returns score (0-1), details, and container digest.",
+      inputSchema: z.object({
+        challengeId: z.string().uuid().describe("Challenge UUID"),
+        filePath: z.string().min(1).describe("Absolute path to your submission file (e.g. results.csv)"),
+      }),
+    },
+    async (input) => asToolResult(await hermesScoreLocal(input)),
+  );
+
+  server.registerTool(
     "hermes-submit-solution",
     {
-      description: "Pin a submission file and submit on-chain.",
+      description:
+        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use hermes-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. In HTTP mode, provide a privateKey.",
       inputSchema: z.object({
-        challengeId: z.string().uuid(),
-        filePath: z.string().min(1),
-        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+        challengeId: z.string().uuid().describe("Challenge UUID"),
+        filePath: z.string().min(1).describe("Absolute path to submission file"),
+        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key (required in HTTP mode)"),
       }),
     },
     async (input) =>
@@ -75,11 +93,30 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   );
 
   server.registerTool(
+    "hermes-claim-payout",
+    {
+      description:
+        "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash.",
+      inputSchema: z.object({
+        challengeId: z.string().uuid().describe("Challenge UUID"),
+        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key (required in HTTP mode)"),
+      }),
+    },
+    async (input) =>
+      asToolResult(
+        await hermesClaimPayout(input, {
+          allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+        }),
+      ),
+  );
+
+  server.registerTool(
     "hermes-get-leaderboard",
     {
-      description: "Return ranked submissions for a challenge.",
+      description:
+        "Get ranked submissions for a challenge, sorted by score (highest first). Each entry includes solver address, score, and submission ID.",
       inputSchema: z.object({
-        challengeId: z.string().uuid(),
+        challengeId: z.string().uuid().describe("Challenge UUID"),
       }),
     },
     async (input) => asToolResult(await hermesGetLeaderboard(input)),
@@ -88,9 +125,10 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
   server.registerTool(
     "hermes-get-submission-status",
     {
-      description: "Return score/rank/proof-bundle status for a submission.",
+      description:
+        "Check the scoring status of a specific submission. Returns score, proof bundle CID, and whether the submission has been scored on-chain.",
       inputSchema: z.object({
-        submissionId: z.string().uuid(),
+        submissionId: z.string().uuid().describe("Submission UUID from hermes-get-challenge or hermes-submit-solution"),
       }),
     },
     async (input) => asToolResult(await hermesGetSubmissionStatus(input)),
@@ -100,11 +138,11 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     "hermes-verify-submission",
     {
       description:
-        "Re-run scoring and return MATCH/MISMATCH against on-chain score.",
+        "Re-run the Docker scorer independently and compare against the on-chain score. Returns MATCH if scores agree within tolerance, MISMATCH otherwise. Requires Docker.",
       inputSchema: z.object({
-        challengeId: z.string().uuid(),
-        submissionId: z.string().uuid(),
-        tolerance: z.number().optional(),
+        challengeId: z.string().uuid().describe("Challenge UUID"),
+        submissionId: z.string().uuid().describe("Submission UUID"),
+        tolerance: z.number().optional().describe("Score comparison tolerance (default 0.001)"),
       }),
     },
     async (input) => asToolResult(await hermesVerifySubmission(input)),
