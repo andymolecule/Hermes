@@ -239,11 +239,18 @@ export async function processFactoryLog(input: {
         "rewardAmount",
       );
 
-      const specCid = (await publicClient.readContract({
-        address: challengeAddr,
-        abi: HermesChallengeAbi,
-        functionName: "specCid",
-      })) as string;
+      const [specCid, onChainDeadline] = await Promise.all([
+        publicClient.readContract({
+          address: challengeAddr,
+          abi: HermesChallengeAbi,
+          functionName: "specCid",
+        }) as Promise<string>,
+        publicClient.readContract({
+          address: challengeAddr,
+          abi: HermesChallengeAbi,
+          functionName: "deadline",
+        }) as Promise<bigint>,
+      ]);
 
       const spec = await fetchChallengeSpec(specCid, config.HERMES_CHAIN_ID);
 
@@ -260,6 +267,8 @@ export async function processFactoryLog(input: {
           disputeWindowHours:
             spec.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours,
           txHash,
+          // On-chain deadline is the source of truth — spec deadline is informational
+          onChainDeadline: new Date(Number(onChainDeadline) * 1000).toISOString(),
         }),
       );
 

@@ -51,6 +51,8 @@ export interface BuildChallengeInsertInput {
   rewardAmountUsdc: number;
   disputeWindowHours: number;
   txHash: string;
+  /** On-chain deadline (ISO string). Preferred over spec.deadline when available. */
+  onChainDeadline?: string;
 }
 
 export function buildChallengeInsert(
@@ -127,7 +129,7 @@ export function buildChallengeInsert(
       SUBMISSION_LIMITS.maxPerSolverPerChallenge,
     reward_amount: input.rewardAmountUsdc,
     distribution_type: input.spec.reward.distribution,
-    deadline: input.spec.deadline,
+    deadline: input.onChainDeadline ?? input.spec.deadline,
     dispute_window_hours: input.disputeWindowHours,
     status: CHALLENGE_STATUS.active,
     tx_hash: input.txHash,

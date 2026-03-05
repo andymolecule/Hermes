@@ -476,10 +476,15 @@ function buildSpec(state: FormState) {
 
 // ─── Deadline Helpers ────────────────────────────────
 
-/** Compute a fresh deadline ISO from days. Always computed live, never stored stale. */
+/** Compute a fresh deadline ISO from days. Always computed live, never stored stale.
+ *  Quick-test (0 days) adds a 2-min buffer beyond the displayed 15 min to
+ *  absorb IPFS pinning, wallet confirmations, and slow RPC round-trips. */
+const QUICK_TEST_MINUTES = 15;
+const QUICK_TEST_BUFFER_MINUTES = 2;
+
 function computeDeadlineIso(days: string): string {
   const d = Number(days);
-  if (d === 0) return new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min for testnet
+  if (d === 0) return new Date(Date.now() + (QUICK_TEST_MINUTES + QUICK_TEST_BUFFER_MINUTES) * 60 * 1000).toISOString();
   return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
 }
 
@@ -821,7 +826,9 @@ export function PostClient() {
     try {
       setIsPosting(true);
       setStatus("Pinning spec to IPFS...");
-      const spec = buildSpec(state);
+      // Build spec with a fresh deadline computed NOW — ensures IPFS spec and
+      // on-chain deadline are identical and not stale from form interaction time.
+      const spec = { ...buildSpec(state), deadline: computeDeadlineIso(state.deadlineDays) };
       if (!address) throw new Error("Wallet address is required to authorize spec pinning.");
 
       const timestamp = Date.now();
