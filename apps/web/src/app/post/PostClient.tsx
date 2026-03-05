@@ -619,6 +619,8 @@ function DataUploadField({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onClick={(e) => e.stopPropagation()}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) onUpload(f); }}
           />
         </>
       )}
