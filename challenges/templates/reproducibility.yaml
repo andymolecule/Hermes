@@ -6,7 +6,7 @@ id: ch-001
 title: "Reproduce a published longevity score"
 
 domain: longevity
-# reproducibility | prediction | docking
+# reproducibility | prediction | docking | red_team
 type: reproducibility
 
 description: |

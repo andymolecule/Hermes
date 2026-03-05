@@ -136,6 +136,7 @@ const DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE: Partial<
     prediction: "regression_v1",
     docking: "docking_v1",
     optimization: "custom",
+    red_team: "custom",
     custom: "custom",
 };
 

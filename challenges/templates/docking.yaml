@@ -6,7 +6,7 @@ id: ch-003
 title: "Dock small molecules to a target protein"
 
 domain: drug_discovery
-# reproducibility | prediction | docking
+# reproducibility | prediction | docking | red_team
 type: docking
 
 description: |

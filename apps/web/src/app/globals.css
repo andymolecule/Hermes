@@ -1517,41 +1517,6 @@ a:hover {
   text-align: center;
 }
 
-/* ─── Challenge Timeline ─── */
-.challenge-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  position: relative;
-  padding-left: 0.25rem;
-}
-
-.timeline-step {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.72rem;
-  line-height: 1.8;
-}
-
-.timeline-icon {
-  font-size: 0.5rem;
-  flex-shrink: 0;
-  width: 0.75rem;
-  text-align: center;
-}
-
-.timeline-label {
-  color: var(--text-secondary, #464B52);
-  min-width: 8rem;
-}
-
-.timeline-date {
-  color: var(--text-secondary, #464B52);
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 0.7rem;
-  margin-left: auto;
-}
 
 /* ─── Drop Zone (Data Upload) ─── */
 /* ─── Drop Zone: dashed-border upload area ─── */

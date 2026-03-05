@@ -8,7 +8,7 @@ id: ch-004
 title: "Optimize binding affinity for target protein"
 
 domain: drug_discovery
-# reproducibility | prediction | optimization | docking
+# reproducibility | prediction | optimization | docking | red_team
 type: optimization
 
 description: |

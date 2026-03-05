@@ -11,6 +11,7 @@ export type ChallengeType =
   | "prediction"
   | "optimization"
   | "docking"
+  | "red_team"
   | "custom";
 
 export const CHALLENGE_DB_STATUS = {

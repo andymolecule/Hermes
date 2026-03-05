@@ -27,6 +27,7 @@ const templateMap: Record<string, string> = {
   prediction: "prediction.yaml",
   optimization: "optimization.yaml",
   docking: "docking.yaml",
+  red_team: "red-team.yaml",
 };
 
 const embeddedTemplates: Record<string, string> = {
@@ -38,7 +39,7 @@ id: ch-001
 title: "Reproduce a published longevity score"
 
 domain: longevity
-# reproducibility | prediction | docking
+# reproducibility | prediction | optimization | docking | red_team | custom
 type: reproducibility
 
 description: |
@@ -88,7 +89,7 @@ id: ch-002
 title: "Predict gene expression from promoter sequences"
 
 domain: omics
-# reproducibility | prediction | docking
+# reproducibility | prediction | optimization | docking | red_team | custom
 type: prediction
 
 description: |
@@ -140,6 +141,7 @@ id: ch-004
 title: "Optimize binding affinity for target protein"
 
 domain: drug_discovery
+# reproducibility | prediction | optimization | docking | red_team | custom
 type: optimization
 
 description: |
@@ -181,7 +183,7 @@ id: ch-003
 title: "Dock small molecules to a target protein"
 
 domain: drug_discovery
-# reproducibility | prediction | docking
+# reproducibility | prediction | optimization | docking | red_team | custom
 type: docking
 
 description: |
@@ -222,6 +224,47 @@ dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
 # Optional lab TBA address
 lab_tba: "0x0000000000000000000000000000000000000000"
 `,
+  red_team: `# Hermes challenge template: red team
+# Solvers find adversarial inputs that break your model.
+# The poster provides a custom scorer that measures model degradation.
+# Run: hm post challenge.yaml --deposit 10
+
+id: ch-005
+title: "Find adversarial inputs that degrade model performance"
+
+domain: other
+# reproducibility | prediction | optimization | docking | red_team | custom
+type: red_team
+
+description: |
+  Submit adversarial test cases that cause the target model to fail.
+  Your scorer runs the model on submitted inputs and measures degradation.
+  Higher degradation = higher score.
+
+dataset:
+  train: "https://example.com/baseline_data.csv"
+  test: "https://example.com/reference_outputs.csv"
+
+scoring:
+  # YOUR custom scorer — must accept /input/submission.* and write /output/score.json
+  container: "ghcr.io/your-org/your-red-team-scorer@sha256:abc123..."
+  metric: custom
+
+reward:
+  total: 10
+  distribution: top_3
+
+deadline: "2026-03-20T00:00:00Z"
+
+tags:
+  - red_team
+  - adversarial
+
+minimum_score: 0
+max_submissions_total: ${SUBMISSION_LIMITS.maxPerChallenge}
+max_submissions_per_solver: ${SUBMISSION_LIMITS.maxPerSolverPerChallenge}
+dispute_window_hours: ${CHALLENGE_LIMITS.defaultDisputeWindowHours}
+`,
 };
 
 function resolveTemplatePath(templateFile: string) {
@@ -254,7 +297,7 @@ export function buildInitCommand() {
     .description("Create a challenge.yaml template")
     .option(
       "-t, --template <template>",
-      "prediction | optimization | reproducibility | docking",
+      "prediction | optimization | reproducibility | docking | red_team",
       "reproducibility",
     )
     .option("-f, --force", "overwrite existing challenge.yaml", false)

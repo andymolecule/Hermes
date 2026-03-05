@@ -113,7 +113,7 @@ deadline: "2026-03-04T23:59:59Z"
 - Required top-level fields: `id`, `title`, `domain`, `type`, `description`, `dataset`, `scoring`, `reward`, `deadline`
 - Optional top-level fields: `tags`, `minimum_score`, `dispute_window_hours`, `lab_tba`
 - `domain` enum: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`
-- `type` enum: `reproducibility`, `prediction`, `docking`
+- `type` enum: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`
 - `dataset.train` and `dataset.test` accept `ipfs://` or `https://` URLs
 - `scoring.container` must be a pinned image reference (tag or digest)
 - `scoring.metric` enum: `rmse`, `mae`, `r2`, `pearson`, `spearman`, `custom`

@@ -15,7 +15,7 @@ import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "w
 import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
 import {
   Wallet, ArrowRight, AlertCircle, Loader2, CheckCircle,
-  FlaskConical, BarChart3, Settings2, ChevronRight, Check,
+  FlaskConical, BarChart3, Settings2, ShieldAlert, ChevronRight, Check,
   Upload, Eye, X, Tag
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -62,13 +62,14 @@ const erc20Abi = [
   },
 ] as const;
 
-type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "custom";
+type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "red_team" | "custom";
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
   prediction: BarChart3,
   optimization: FlaskConical,
   reproducibility: FlaskConical,
+  red_team: ShieldAlert,
   custom: Settings2,
 };
 
@@ -145,6 +146,16 @@ const TYPE_CONFIG = {
     presetId: reproducibilityPreset.id,
     scoringTemplate: reproducibilityPreset.scoringDescription,
   },
+  red_team: {
+    label: "Red Team",
+    description: "Solvers find adversarial inputs that break a model or claim",
+    defaultDomain: "other",
+    metricHint: "custom",
+    container: "",
+    defaultMinimumScore: 0,
+    presetId: "custom",
+    scoringTemplate: "",
+  },
   custom: {
     label: "Custom",
     description: "Bring your own scorer and rules",
@@ -198,6 +209,15 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
     scorerAction: "Simulates",
     scorerResult: "with your image \u2192 score",
     helper: "Solvers submit parameters. Your scorer runs the simulation and returns a score.",
+  },
+  red_team: {
+    posterAction: "Uploads",
+    posterFiles: "model + baseline data",
+    solverAction: "Submits",
+    solverFiles: "adversarial inputs",
+    scorerAction: "Measures",
+    scorerResult: "model degradation \u2192 score",
+    helper: "Solvers find inputs that break your model. Your scorer measures how much the model degrades on adversarial cases.",
   },
   custom: {
     posterAction: "Uploads",
@@ -621,7 +641,7 @@ export function PostClient() {
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } = computeProtocolFee(rewardValue);
 
-  const isCustomType = state.type === "custom" || state.type === "optimization";
+  const isCustomType = state.type === "custom" || state.type === "optimization" || state.type === "red_team";
 
   async function handleFileUpload(file: File, field: "train" | "test" | "hiddenLabels") {
     setUploadingField(field);
@@ -740,6 +760,8 @@ export function PostClient() {
       if (!state.test.trim()) return "Expected artifact is required for reproducibility challenges. Upload the reference output the scorer compares against.";
     } else if (state.type === "optimization") {
       if (!state.train.trim()) return "Evaluation bundle is required for optimization challenges.";
+    } else if (state.type === "red_team") {
+      if (!state.train.trim()) return "Baseline data is required for red team challenges.";
     }
 
     if (!state.container.trim())
@@ -1077,6 +1099,32 @@ export function PostClient() {
               </FormField>
             )}
 
+            {/* ── Red Team: baseline data + optional reference outputs ── */}
+            {state.type === "red_team" && (
+              <>
+                <FormField label="Baseline data" hint="Data showing normal model behavior — solvers study this to craft adversarial inputs" className="span-full">
+                  <DataUploadField
+                    value={state.train}
+                    onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
+                    uploading={uploadingField === "train"}
+                    onUpload={(file) => handleFileUpload(file, "train")}
+                    placeholder="ipfs://... or https://..."
+                    fileName={fileNames.train}
+                  />
+                </FormField>
+                <FormField label="Reference outputs (optional)" hint="Baseline performance the scorer compares degradation against" className="span-full">
+                  <DataUploadField
+                    value={state.test}
+                    onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
+                    uploading={uploadingField === "test"}
+                    onUpload={(file) => handleFileUpload(file, "test")}
+                    placeholder="ipfs://... or https://..."
+                    fileName={fileNames.test}
+                  />
+                </FormField>
+              </>
+            )}
+
             {/* ── Custom: 2 generic uploads ── */}
             {state.type === "custom" && (
               <>
@@ -1264,6 +1312,27 @@ SAMPLE_003,2.10`}
               </>
             )}
 
+            {/* ── Red Team–specific fields ── */}
+            {state.type === "red_team" && (
+              <>
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
+                <FormField label="Scoring container" hint="Your Docker image that runs the model on adversarial inputs and measures degradation" className="span-full">
+                  <input className="form-input form-input-mono"
+                    placeholder="ghcr.io/org/red-team-scorer@sha256:..."
+                    value={state.container}
+                    onChange={(e) => setState((s) => ({ ...s, container: e.target.value }))}
+                  />
+                </FormField>
+                <FormField label="Scoring description" hint="Explain how degradation is measured" className="span-full">
+                  <textarea className="form-textarea" placeholder="e.g. Scorer runs model on adversarial inputs, measures accuracy drop vs baseline. Score = percentage degradation (0–100)."
+                    value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
+                </FormField>
+                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
+                  Your scorer loads the target model, runs it on adversarial inputs, and outputs a degradation score. Higher score = more degradation = better attack.
+                </p>
+              </>
+            )}
+
             {/* ── Custom-specific fields ── */}
             {state.type === "custom" && (
               <>
@@ -1422,32 +1491,33 @@ SAMPLE_003,2.10`}
         <p style={{ fontSize: "0.68rem", fontWeight: 600, color: "var(--text-tertiary)", margin: "0 0 0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
           Challenge Timeline
         </p>
-        <div className="challenge-timeline">
-          <div className="timeline-step">
-            <span className="timeline-icon" style={{ color: "#16A34A" }}>&#9679;</span>
-            <span className="timeline-label">Submission window</span>
-            <span className="timeline-date">{state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`}</span>
-          </div>
-          <div className="timeline-step">
-            <span className="timeline-icon" style={{ color: "var(--text-tertiary)" }}>&#9679;</span>
-            <span className="timeline-label">Submissions close</span>
-            <span className="timeline-date">{formatDeadlineDate(state.deadlineDays)}</span>
-          </div>
-          <div className="timeline-step">
-            <span className="timeline-icon" style={{ color: "var(--text-tertiary)" }}>&#9679;</span>
-            <span className="timeline-label">Automatic scoring</span>
-            <span className="timeline-date" style={{ fontStyle: "italic" }}>after deadline</span>
-          </div>
-          <div className="timeline-step">
-            <span className="timeline-icon" style={{ color: "#D97706" }}>&#9679;</span>
-            <span className="timeline-label">Dispute window</span>
-            <span className="timeline-date">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span>
-          </div>
-          <div className="timeline-step">
-            <span className="timeline-icon" style={{ color: "var(--text-accent, #1399F4)" }}>&#9679;</span>
-            <span className="timeline-label">Payout released</span>
-            <span className="timeline-date">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span>
-          </div>
+        {/* Horizontal timeline with checkpoint marks */}
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "0.5rem 0 0" }}>
+          {/* Connecting line */}
+          <div style={{ position: "absolute", top: "0.85rem", left: "0.5rem", right: "0.5rem", height: "2px", background: "var(--border-default)", borderRadius: "1px" }} />
+          {/* Progress fill — from first to second checkpoint */}
+          <div style={{ position: "absolute", top: "0.85rem", left: "0.5rem", width: "20%", height: "2px", background: "#3D2E1F", borderRadius: "1px" }} />
+
+          {[
+            { label: "Submissions open", sub: state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`, active: true },
+            { label: "Deadline", sub: formatDeadlineDate(state.deadlineDays), active: false },
+            { label: "Scoring", sub: "automatic", active: false },
+            { label: "Dispute window", sub: state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`, active: false },
+            { label: "Payout", sub: formatPayoutDate(state.deadlineDays, state.disputeWindow), active: false },
+          ].map((step, i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1, flex: "1 1 0", minWidth: 0 }}>
+              {/* Checkpoint dot */}
+              <div style={{
+                width: "0.75rem", height: "0.75rem", borderRadius: "50%",
+                background: step.active ? "#3D2E1F" : "var(--surface-default)",
+                border: step.active ? "2px solid #3D2E1F" : "2px solid var(--border-default)",
+                boxShadow: "0 0 0 3px var(--surface-default)",
+                marginBottom: "0.35rem",
+              }} />
+              <span style={{ fontSize: "0.72rem", fontWeight: 600, color: step.active ? "#3D2E1F" : "var(--text-secondary)", lineHeight: 1.3, textAlign: "center" }}>{step.label}</span>
+              <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", lineHeight: 1.3, textAlign: "center", marginTop: "0.1rem", fontFamily: "var(--font-mono)" }}>{step.sub}</span>
+            </div>
+          ))}
         </div>
       </div>
 

@@ -6,7 +6,7 @@ id: ch-002
 title: "Predict gene expression from promoter sequences"
 
 domain: omics
-# reproducibility | prediction | docking
+# reproducibility | prediction | docking | red_team
 type: prediction
 
 description: |

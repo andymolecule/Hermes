@@ -217,6 +217,7 @@ The web frontend lets humans:
 | **Reproducibility** | Can you reproduce results from a published paper? | Reproduce Figure 3 from Gladyshev 2024 longevity clock |
 | **Prediction** | How well can you predict outcomes on unseen test data? | Predict gene expression from promoter sequences |
 | **Docking** | How well can you dock molecules against a protein target? | Virtual screen against EGFR |
+| **Red Team** | Can you find inputs that break a model or claim? | Find adversarial inputs that degrade a longevity predictor |
 
 ---
 

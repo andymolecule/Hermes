@@ -1,0 +1,56 @@
+# Hermes challenge template: red team
+# The poster provides a target model/claim and a custom scorer that measures degradation.
+# Solvers submit adversarial inputs; the scorer runs the model and measures how badly it breaks.
+# Run: hm post challenge.yaml --deposit 10
+
+id: ch-005
+# Short, human-readable title
+title: "Find adversarial inputs that degrade model performance"
+
+domain: other
+# reproducibility | prediction | optimization | docking | red_team
+type: red_team
+
+description: |
+  Submit adversarial test cases that cause the target model to fail.
+  The scorer runs the model on your submitted inputs and measures degradation
+  relative to baseline performance. Higher degradation = higher score.
+
+  ## Submission format
+  Submit a CSV with adversarial inputs (see train data for column schema).
+
+  ## Scoring
+  Your custom scorer should:
+  1. Load the target model
+  2. Run it on the adversarial inputs
+  3. Compare against baseline performance
+  4. Output a degradation score in /output/score.json
+
+dataset:
+  # Baseline data so solvers understand the input format and model behavior
+  train: "https://example.com/baseline_data.csv"
+  # Reference outputs for baseline performance measurement
+  test: "https://example.com/reference_outputs.csv"
+
+scoring:
+  # YOUR custom scorer container
+  # Must accept /input/submission.* and write /output/score.json
+  # The scorer should load the target model, run adversarial inputs, and measure degradation
+  container: "ghcr.io/your-org/your-red-team-scorer:v1"
+  metric: custom
+
+reward:
+  total: 10
+  distribution: top_3
+
+# Deadline in ISO-8601 with timezone offset
+deadline: "2026-03-20T00:00:00Z"
+
+tags:
+  - red_team
+  - adversarial
+
+# Optional settings
+minimum_score: 0
+# Dispute window in hours (168-2160, i.e. 7-90 days)
+dispute_window_hours: 168

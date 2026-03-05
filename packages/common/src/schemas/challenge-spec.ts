@@ -11,7 +11,7 @@ const domainEnum = z.enum([
   "other",
 ]);
 
-const typeEnum = z.enum(["reproducibility", "prediction", "optimization", "docking", "custom"]);
+const typeEnum = z.enum(["reproducibility", "prediction", "optimization", "docking", "red_team", "custom"]);
 
 const rewardDistributionEnum = z.enum([
   "winner_take_all",
