@@ -1,5 +1,6 @@
 import { getOnChainSubmission, getPublicClient } from "@hermes/chain";
 import {
+  CHALLENGE_STATUS,
   getSubmissionLimitViolation,
   resolveSubmissionLimits,
 } from "@hermes/common";
@@ -166,7 +167,7 @@ router.post(
       normalizedResultCid,
     );
 
-    if (!onChain.scored) {
+    if (!onChain.scored && challenge.status === CHALLENGE_STATUS.active) {
       const limits = resolveSubmissionLimits({
         max_submissions_total: challenge.max_submissions_total,
         max_submissions_per_solver: challenge.max_submissions_per_solver,

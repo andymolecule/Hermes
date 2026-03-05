@@ -58,6 +58,7 @@ export interface ChallengeListRow {
   id: string;
   contract_address: string;
   tx_hash: string;
+  status: string;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
 }
@@ -405,7 +406,7 @@ export async function processChallengeLog(input: {
         tx_hash: txHash,
       });
 
-      if (!submission.scored) {
+      if (!submission.scored && challenge.status === CHALLENGE_STATUS.active) {
         const limits = resolveSubmissionLimits({
           max_submissions_total: challenge.max_submissions_total,
           max_submissions_per_solver: challenge.max_submissions_per_solver,
