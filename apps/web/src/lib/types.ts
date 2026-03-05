@@ -83,6 +83,12 @@ export type AnalyticsData = {
   challengesByDistribution: Record<string, number>;
   scoredSubmissions: number;
   unscoredSubmissions: number;
+  tvlUsdc: number;
+  distributedUsdc: number;
+  protocolRevenueUsdc: number;
+  avgBountyUsdc: number;
+  completionRate: number;
+  scoringSuccessRate: number;
   recentChallenges: {
     id: string;
     title: string;
@@ -100,4 +106,20 @@ export type AnalyticsData = {
     submitted_at: string;
   }[];
   topSolvers: { address: string; count: number }[];
+};
+
+export type WorkerHealth = {
+  ok: boolean;
+  status: "ok" | "warning" | "idle" | "error";
+  jobs?: {
+    queued: number;
+    running: number;
+    scored: number;
+    failed: number;
+    skipped: number;
+  };
+  oldestPendingAt?: string | null;
+  lastScoredAt?: string | null;
+  checkedAt: string;
+  error?: string;
 };

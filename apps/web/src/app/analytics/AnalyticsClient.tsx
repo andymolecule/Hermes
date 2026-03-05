@@ -11,9 +11,13 @@ import {
     Activity,
     FlaskConical,
     ExternalLink,
+    TrendingUp,
+    Target,
+    CheckCircle2,
+    Zap,
 } from "lucide-react";
-import { getAnalytics } from "../../lib/api";
-import { formatUsdc, shortAddress } from "../../lib/format";
+import { getAnalytics, getWorkerHealth } from "../../lib/api";
+import { formatUsdc, formatWadToScore } from "../../lib/format";
 import { getStatusStyle } from "../../lib/status-styles";
 import type { AnalyticsData } from "../../lib/types";
 
@@ -25,40 +29,105 @@ function formatDate(iso: string) {
     });
 }
 
-function formatScore(score: string | null) {
-    if (score === null || score === undefined) return "--";
-    const num = Number(score);
-    if (!Number.isFinite(num)) return score;
-    return num.toFixed(4);
-}
+// ─── Hero Metric (large, prominent) ────────────────────
 
-// ─── Stat Card ──────────────────────────────────────────
-
-function StatCard({
-    icon: Icon,
+function HeroMetric({
     label,
     value,
+    sub,
+    accent,
 }: {
-    icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
     label: string;
-    value: string | number;
+    value: string;
+    sub?: string;
+    accent?: boolean;
 }) {
     return (
-        <div className="border border-black p-4 text-center">
-            <div className="flex items-center justify-center gap-2 mb-1">
-                <Icon className="w-4 h-4 opacity-60" strokeWidth={2} />
-                <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/60">
-                    {label}
-                </span>
-            </div>
-            <span className="text-2xl font-display font-bold tabular-nums">
+        <div className="text-center">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-1">
+                {label}
+            </p>
+            <p className={`text-3xl sm:text-4xl font-display font-bold tabular-nums tracking-tight ${accent ? "text-green-700" : "text-black"}`}>
                 {value}
-            </span>
+            </p>
+            {sub && (
+                <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mt-1">
+                    {sub}
+                </p>
+            )}
         </div>
     );
 }
 
-// ─── Breakdown Section ──────────────────────────────────
+// ─── Gauge Card (circular-feeling metric) ──────────────
+
+function GaugeCard({
+    icon: Icon,
+    label,
+    value,
+    unit,
+    detail,
+}: {
+    icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+    label: string;
+    value: string | number;
+    unit?: string;
+    detail?: string;
+}) {
+    return (
+        <div className="border border-black p-4 flex items-center gap-4">
+            <div className="flex items-center justify-center w-10 h-10 bg-black text-white flex-shrink-0">
+                <Icon className="w-5 h-5" strokeWidth={2} />
+            </div>
+            <div className="min-w-0">
+                <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40">
+                    {label}
+                </p>
+                <p className="text-xl font-mono font-bold tabular-nums text-black">
+                    {value}
+                    {unit && <span className="text-sm text-black/50 ml-1">{unit}</span>}
+                </p>
+                {detail && (
+                    <p className="text-[10px] font-mono text-black/40 mt-0.5">{detail}</p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Progress Bar ──────────────────────────────────────
+
+function ProgressMetric({
+    label,
+    value,
+    icon: Icon,
+    color,
+}: {
+    label: string;
+    value: number;
+    icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+    color: string;
+}) {
+    return (
+        <div className="border border-black p-4">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
+                    <Icon className="w-4 h-4" strokeWidth={2} />
+                    {label}
+                </span>
+                <span className="text-xl font-mono font-bold tabular-nums">{value}%</span>
+            </div>
+            <div className="w-full bg-black/10 h-3 rounded-[1px] overflow-hidden">
+                <div
+                    className={`h-full transition-all duration-700 ${color}`}
+                    style={{ width: `${Math.min(value, 100)}%` }}
+                />
+            </div>
+        </div>
+    );
+}
+
+// ─── Breakdown Section ─────────────────────────────────
 
 function BreakdownSection({
     title,
@@ -72,6 +141,7 @@ function BreakdownSection({
     colorDot?: boolean;
 }) {
     const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((sum, [, v]) => sum + v, 0);
 
     return (
         <div className="border border-black p-4">
@@ -82,21 +152,28 @@ function BreakdownSection({
             <div className="space-y-0">
                 {entries.map(([key, count]) => {
                     const style = colorDot ? getStatusStyle(key) : null;
+                    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
                     return (
                         <div
                             key={key}
-                            className="flex justify-between py-2 border-b border-black/10 last:border-b-0"
+                            className="flex items-center gap-3 py-2 border-b border-black/10 last:border-b-0"
                         >
-                            <span className="text-sm font-medium flex items-center gap-2">
-                                {style ? (
-                                    <span
-                                        className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0"
-                                        style={{ backgroundColor: style.text }}
-                                    />
-                                ) : null}
-                                {key}
-                            </span>
-                            <span className="font-mono text-sm font-bold tabular-nums">
+                            {style ? (
+                                <span
+                                    className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0"
+                                    style={{ backgroundColor: style.text }}
+                                />
+                            ) : (
+                                <span className="w-2.5 h-2.5 rounded-[1px] inline-block flex-shrink-0 bg-black" />
+                            )}
+                            <span className="text-sm font-medium flex-1">{key}</span>
+                            <div className="w-20 bg-black/10 h-1.5 rounded-[1px] overflow-hidden flex-shrink-0">
+                                <div
+                                    className="bg-black h-full"
+                                    style={{ width: `${pct}%` }}
+                                />
+                            </div>
+                            <span className="font-mono text-sm font-bold tabular-nums w-8 text-right">
                                 {count}
                             </span>
                         </div>
@@ -110,82 +187,7 @@ function BreakdownSection({
     );
 }
 
-// ─── Scoring Pipeline ───────────────────────────────────
-
-function ScoringPipeline({ data }: { data: AnalyticsData }) {
-    const total = data.scoredSubmissions + data.unscoredSubmissions;
-    const pct = total > 0 ? Math.round((data.scoredSubmissions / total) * 100) : 0;
-
-    return (
-        <div className="border border-black p-4">
-            <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 mb-3">
-                <Activity className="w-4 h-4" strokeWidth={2} />
-                Scoring Pipeline
-            </h3>
-            <div className="mb-3">
-                <div className="w-full bg-black/10 h-2 rounded-[1px] overflow-hidden">
-                    <div
-                        className="bg-black h-full transition-all duration-500"
-                        style={{ width: `${pct}%` }}
-                    />
-                </div>
-                <p className="text-xs font-mono font-bold mt-1.5 text-black/60">
-                    {pct}% scored
-                </p>
-            </div>
-            <div className="flex justify-between py-2 border-b border-black/10">
-                <span className="text-sm font-medium">Scored</span>
-                <span className="font-mono text-sm font-bold tabular-nums">
-                    {data.scoredSubmissions}
-                </span>
-            </div>
-            <div className="flex justify-between py-2">
-                <span className="text-sm font-medium">Unscored</span>
-                <span className="font-mono text-sm font-bold tabular-nums">
-                    {data.unscoredSubmissions}
-                </span>
-            </div>
-        </div>
-    );
-}
-
-// ─── Top Solvers ────────────────────────────────────────
-
-function TopSolvers({ solvers }: { solvers: AnalyticsData["topSolvers"] }) {
-    return (
-        <div className="border border-black p-4">
-            <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 mb-3">
-                <Trophy className="w-4 h-4" strokeWidth={2} />
-                Top Solvers
-            </h3>
-            <div className="space-y-0">
-                {solvers.map((solver, i) => (
-                    <div
-                        key={solver.address}
-                        className="flex justify-between py-2 border-b border-black/10 last:border-b-0"
-                    >
-                        <span className="text-sm font-medium flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-black/40 w-5">
-                                {i + 1}.
-                            </span>
-                            <span className="font-mono text-xs">
-                                {shortAddress(solver.address)}
-                            </span>
-                        </span>
-                        <span className="font-mono text-sm font-bold tabular-nums">
-                            {solver.count} {solver.count === 1 ? "sub" : "subs"}
-                        </span>
-                    </div>
-                ))}
-                {solvers.length === 0 && (
-                    <p className="text-sm text-black/40 font-mono">No solvers yet</p>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// ─── Recent Tables ──────────────────────────────────────
+// ─── Recent Tables ─────────────────────────────────────
 
 function RecentChallengesTable({
     challenges,
@@ -207,7 +209,7 @@ function RecentChallengesTable({
                         <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
                             Domain
                         </th>
-                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
                             Status
                         </th>
                         <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
@@ -231,7 +233,7 @@ function RecentChallengesTable({
                                         href={`/challenges/${c.id}`}
                                         className="font-semibold text-black text-sm hover:underline no-underline flex items-center gap-1.5"
                                     >
-                                        <span className="truncate max-w-[200px]">{c.title}</span>
+                                        <span>{c.title}</span>
                                         <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
                                     </Link>
                                 </td>
@@ -240,7 +242,7 @@ function RecentChallengesTable({
                                         {c.domain}
                                     </span>
                                 </td>
-                                <td className="py-2 px-4 border-r border-black">
+                                <td className="py-2 px-4 text-right border-r border-black">
                                     <span
                                         className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border"
                                         style={{
@@ -298,7 +300,7 @@ function RecentSubmissionsTable({
                         <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
                             Score
                         </th>
-                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
                             Scored
                         </th>
                         <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-b border-black">
@@ -313,20 +315,26 @@ function RecentSubmissionsTable({
                             className="border-b last:border-b-0 border-black hover:bg-black/5 transition-colors"
                         >
                             <td className="py-2 px-4 border-r border-black">
-                                <span className="font-mono text-xs">
-                                    {shortAddress(s.solver_address)}
-                                </span>
+                                <a
+                                    href={`https://sepolia.basescan.org/address/${s.solver_address}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-xs hover:underline flex items-center gap-1"
+                                >
+                                    {s.solver_address}
+                                    <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
+                                </a>
                             </td>
                             <td className="py-2 px-4 text-right border-r border-black">
                                 <span className="font-mono text-xs font-bold tabular-nums">
-                                    {formatScore(s.score)}
+                                    {formatWadToScore(s.score)}
                                 </span>
                             </td>
-                            <td className="py-2 px-4 border-r border-black">
+                            <td className="py-2 px-4 text-right border-r border-black">
                                 <span
                                     className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
                                         s.scored
-                                            ? "bg-green-50 text-green-700 border-green-300"
+                                            ? "bg-[#e8efe8] text-[#2d6a2e] border-[#b5cdb6]"
                                             : "bg-black/5 text-black/40 border-black/10"
                                     }`}
                                 >
@@ -353,11 +361,12 @@ function RecentSubmissionsTable({
     );
 }
 
-// ─── Skeleton Loader ────────────────────────────────────
+// ─── Skeleton ──────────────────────────────────────────
 
 function AnalyticsSkeleton() {
     return (
         <div className="space-y-6 animate-pulse">
+            <div className="border border-black/20 p-8 h-32" />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[1, 2, 3, 4].map((i) => (
                     <div key={i} className="border border-black/20 p-4 h-20" />
@@ -372,13 +381,68 @@ function AnalyticsSkeleton() {
     );
 }
 
-// ─── Main Dashboard ─────────────────────────────────────
+// ─── Worker Status ─────────────────────────────────────
+
+function WorkerStatus() {
+    const query = useQuery({
+        queryKey: ["worker-health"],
+        queryFn: getWorkerHealth,
+        refetchInterval: 30_000,
+    });
+
+    const health = query.data;
+    const statusMap = {
+        ok: { color: "bg-green-500", label: "Operational" },
+        warning: { color: "bg-yellow-500", label: "Delayed" },
+        idle: { color: "bg-black/30", label: "Idle" },
+        error: { color: "bg-red-500", label: "Error" },
+    } as const;
+    const s = health ? statusMap[health.status] ?? statusMap.error : { color: "bg-red-500", label: "Unavailable" };
+
+    return (
+        <div className="border border-black p-4">
+            <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 mb-3">
+                <Activity className="w-4 h-4" strokeWidth={2} />
+                Scoring Worker
+                <span className={`w-2 h-2 rounded-full ${s.color}`} />
+                <span className="text-[10px] font-normal text-black/60">{s.label}</span>
+            </h3>
+            {health?.jobs ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {(
+                        [
+                            ["Queued", health.jobs.queued],
+                            ["Running", health.jobs.running],
+                            ["Scored", health.jobs.scored],
+                            ["Failed", health.jobs.failed],
+                        ] as const
+                    ).map(([label, count]) => (
+                        <div key={label} className="text-center">
+                            <span className="text-lg font-mono font-bold tabular-nums">{count}</span>
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
+                                {label}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <p className="text-sm text-black/40 font-mono">
+                    {query.isLoading ? "Loading..." : "Worker health unavailable"}
+                </p>
+            )}
+        </div>
+    );
+}
+
+// ─── Main Dashboard ────────────────────────────────────
 
 export function AnalyticsClient() {
     const query = useQuery({
         queryKey: ["platform-analytics"],
         queryFn: getAnalytics,
     });
+
+    const d = query.data;
 
     return (
         <div className="space-y-8">
@@ -399,60 +463,128 @@ export function AnalyticsClient() {
                 <div className="border border-black p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-black/60">
                     Unable to load analytics data. Try refreshing.
                 </div>
-            ) : query.data ? (
+            ) : d ? (
                 <>
-                    {/* Top-level Stats */}
+                    {/* ── Section 1: Financial Overview (hero banner) ── */}
+                    <div className="border border-black overflow-hidden">
+                        <div className="bg-[#f4f4f0] px-4 py-2 border-b border-black">
+                            <h2 className="text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2">
+                                <DollarSign className="w-3.5 h-3.5" strokeWidth={2} />
+                                Financial Overview
+                            </h2>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-black bg-white">
+                            <div className="p-5 text-center">
+                                <HeroMetric
+                                    label="Total Value Locked"
+                                    value={`$${formatUsdc(d.tvlUsdc ?? 0)}`}
+                                    sub="Active escrows"
+                                />
+                            </div>
+                            <div className="p-5 text-center">
+                                <HeroMetric
+                                    label="Total Distributed"
+                                    value={`$${formatUsdc(d.distributedUsdc ?? 0)}`}
+                                    sub="To solvers"
+                                    accent
+                                />
+                            </div>
+                            <div className="p-5 text-center">
+                                <HeroMetric
+                                    label="Protocol Revenue"
+                                    value={`$${formatUsdc(d.protocolRevenueUsdc ?? 0)}`}
+                                    sub="5% fee"
+                                />
+                            </div>
+                            <div className="p-5 text-center">
+                                <HeroMetric
+                                    label="Avg Bounty"
+                                    value={`$${formatUsdc(d.avgBountyUsdc ?? 0)}`}
+                                    sub="Per challenge"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Section 2: Activity Metrics ── */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <StatCard
-                            icon={DollarSign}
-                            label="Total Rewards"
-                            value={`${formatUsdc(query.data.totalRewardUsdc)} USDC`}
-                        />
-                        <StatCard
+                        <GaugeCard
                             icon={FlaskConical}
                             label="Challenges"
-                            value={query.data.totalChallenges}
+                            value={d.totalChallenges}
+                            detail={`${formatUsdc(d.totalRewardUsdc)} USDC total`}
                         />
-                        <StatCard
+                        <GaugeCard
                             icon={FileText}
                             label="Submissions"
-                            value={query.data.totalSubmissions}
+                            value={d.totalSubmissions}
+                            detail={`${d.scoredSubmissions} scored`}
                         />
-                        <StatCard
+                        <GaugeCard
                             icon={Users}
                             label="Unique Solvers"
-                            value={query.data.uniqueSolvers}
+                            value={d.uniqueSolvers}
+                        />
+                        <GaugeCard
+                            icon={TrendingUp}
+                            label="Avg Submissions"
+                            value={d.totalChallenges > 0
+                                ? (d.totalSubmissions / d.totalChallenges).toFixed(1)
+                                : "0"}
+                            unit="per challenge"
                         />
                     </div>
 
-                    {/* Breakdowns Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* ── Section 3: Health Gauges ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <ProgressMetric
+                            label="Completion Rate"
+                            value={d.completionRate ?? 0}
+                            icon={CheckCircle2}
+                            color="bg-green-600"
+                        />
+                        <ProgressMetric
+                            label="Scoring Success"
+                            value={d.scoringSuccessRate ?? 0}
+                            icon={Target}
+                            color="bg-black"
+                        />
+                        <ProgressMetric
+                            label="Scored Pipeline"
+                            value={d.totalSubmissions > 0
+                                ? Math.round((d.scoredSubmissions / d.totalSubmissions) * 100)
+                                : 0}
+                            icon={Zap}
+                            color="bg-blue-600"
+                        />
+                    </div>
+
+                    {/* ── Section 4: Breakdowns ── */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <BreakdownSection
-                            title="Status Breakdown"
+                            title="By Status"
                             icon={Activity}
-                            data={query.data.challengesByStatus}
+                            data={d.challengesByStatus}
                             colorDot
                         />
                         <BreakdownSection
-                            title="Domain Breakdown"
+                            title="By Domain"
                             icon={FlaskConical}
-                            data={query.data.challengesByDomain}
+                            data={d.challengesByDomain}
                         />
-                        <ScoringPipeline data={query.data} />
                         <BreakdownSection
-                            title="Distribution Types"
+                            title="By Distribution"
                             icon={Trophy}
-                            data={query.data.challengesByDistribution}
+                            data={d.challengesByDistribution}
                         />
                     </div>
 
-                    {/* Top Solvers */}
-                    <TopSolvers solvers={query.data.topSolvers} />
+                    {/* ── Section 5: Worker + Recent Tables ── */}
+                    <WorkerStatus />
 
-                    {/* Recent Tables */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <RecentChallengesTable challenges={query.data.recentChallenges} />
-                        <RecentSubmissionsTable submissions={query.data.recentSubmissions} />
+                    <div className="space-y-4">
+                        <RecentChallengesTable challenges={d.recentChallenges} />
+                        <RecentSubmissionsTable submissions={d.recentSubmissions} />
                     </div>
                 </>
             ) : null}

@@ -11,6 +11,7 @@ import { buildInitCommand } from "./commands/init";
 import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
 import { buildReindexCommand } from "./commands/reindex";
+import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
 import { buildScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
@@ -42,6 +43,7 @@ async function main() {
   program.addCommand(buildScoreCommand());
   program.addCommand(buildVerifyCommand());
   program.addCommand(buildValidateCommand());
+  program.addCommand(buildRetryFailedJobsCommand());
 
   await program.parseAsync(process.argv);
 }

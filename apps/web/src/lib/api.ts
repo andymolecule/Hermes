@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./config";
-import type { AnalyticsData, Challenge, ChallengeDetails, SolverPortfolio, Stats } from "./types";
+import type { AnalyticsData, Challenge, ChallengeDetails, SolverPortfolio, Stats, WorkerHealth } from "./types";
 
 const BASE = API_BASE_URL.replace(/\/$/, "");
 
@@ -27,6 +27,13 @@ export async function getStats(): Promise<Stats> {
 
 export async function getAnalytics(): Promise<AnalyticsData> {
   return request<AnalyticsData>("/api/analytics");
+}
+
+export async function getWorkerHealth(): Promise<WorkerHealth> {
+  const response = await fetch(`${BASE}/api/worker-health`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  return (await response.json()) as WorkerHealth;
 }
 
 export async function listChallenges(filters: {

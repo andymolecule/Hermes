@@ -30,6 +30,29 @@ const DEFAULT_JOB_LEASE_MS = Number(
 );
 
 /**
+ * Atomically claim the next queued (or stale running) job.
+ * Uses a Postgres function with FOR UPDATE SKIP LOCKED — no race window.
+ */
+export async function claimNextJob(
+  db: HermesDbClient,
+  workerId: string,
+): Promise<ScoreJobRow | null> {
+  const { data, error } = await db.rpc("claim_next_score_job", {
+    p_worker_id: workerId,
+    p_lease_ms: DEFAULT_JOB_LEASE_MS,
+  });
+
+  if (error) {
+    throw new Error(`Failed to claim score job: ${error.message}`);
+  }
+
+  if (!data || (Array.isArray(data) && data.length === 0)) return null;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return row as ScoreJobRow;
+}
+
+/**
  * Create a score job for a submission. Idempotent - ignores duplicates
  * via the unique index on submission_id.
  */
@@ -86,121 +109,6 @@ export async function markScoreJobSkipped(
     throw new Error(`Failed to mark score job skipped: ${error.message}`);
   }
   return data as ScoreJobRow | null;
-}
-
-/**
- * Atomically claim the next queued job for this worker.
- * Also reclaims stale running jobs whose lock has expired.
- */
-export async function claimNextJob(
-  db: HermesDbClient,
-  workerId: string,
-): Promise<ScoreJobRow | null> {
-  const now = new Date();
-  const nowIso = now.toISOString();
-  const staleCutoffIso = new Date(now.getTime() - DEFAULT_JOB_LEASE_MS).toISOString();
-
-  // Reclaim stale running jobs first so they cannot starve indefinitely.
-  const { data: staleCandidates, error: staleFindError } = await db
-    .from("score_jobs")
-    .select("id, attempts, status, locked_at")
-    .eq("status", SCORE_JOB_STATUS.running)
-    .lt("locked_at", staleCutoffIso)
-    .order("locked_at", { ascending: true })
-    .limit(1);
-
-  if (staleFindError) {
-    throw new Error(`Failed to find stale running jobs: ${staleFindError.message}`);
-  }
-
-  let candidate: {
-    id: string;
-    attempts: number;
-    status: ScoreJobStatus;
-    locked_at: string | null;
-  } | null =
-    staleCandidates && staleCandidates.length > 0
-      ? (staleCandidates[0] as {
-          id: string;
-          attempts: number;
-          status: ScoreJobStatus;
-          locked_at: string | null;
-        })
-      : null;
-
-  // Otherwise claim the oldest queued job.
-  if (!candidate) {
-    const { data: queuedCandidates, error: queuedFindError } = await db
-      .from("score_jobs")
-      .select("id, attempts, status, locked_at")
-      .eq("status", SCORE_JOB_STATUS.queued)
-      .order("created_at", { ascending: true })
-      .limit(1);
-
-    if (queuedFindError) {
-      throw new Error(`Failed to find queued jobs: ${queuedFindError.message}`);
-    }
-    if (!queuedCandidates || queuedCandidates.length === 0) return null;
-    candidate = queuedCandidates[0] as {
-      id: string;
-      attempts: number;
-      status: ScoreJobStatus;
-      locked_at: string | null;
-    };
-  }
-
-  if (
-    candidate.status !== SCORE_JOB_STATUS.queued &&
-    candidate.status !== SCORE_JOB_STATUS.running
-  ) {
-    throw new Error(`Invalid claimable score job status: ${candidate.status}`);
-  }
-
-  const jobId = candidate.id;
-  const nextAttempts = candidate.attempts + 1;
-
-  // Atomically claim and increment attempts in the same update.
-  const updatePayload = {
-    status: SCORE_JOB_STATUS.running,
-    attempts: nextAttempts,
-    locked_at: nowIso,
-    locked_by: workerId,
-    updated_at: nowIso,
-  };
-  let data: ScoreJobRow | null = null;
-
-  if (candidate.status === SCORE_JOB_STATUS.queued) {
-    const { data: claimed, error } = await db
-      .from("score_jobs")
-      .update(updatePayload)
-      .eq("id", jobId)
-      .eq("status", SCORE_JOB_STATUS.queued) // optimistic lock - only if still queued
-      .select("*")
-      .maybeSingle();
-    if (error) {
-      throw new Error(`Failed to claim queued job: ${error.message}`);
-    }
-    data = claimed as ScoreJobRow | null;
-  } else {
-    const lockedAt = candidate.locked_at;
-    if (!lockedAt) return null;
-    const { data: claimed, error } = await db
-      .from("score_jobs")
-      .update(updatePayload)
-      .eq("id", jobId)
-      .eq("status", SCORE_JOB_STATUS.running)
-      .eq("locked_at", lockedAt) // optimistic lock - only if same stale lease
-      .select("*")
-      .maybeSingle();
-    if (error) {
-      throw new Error(`Failed to reclaim stale running job: ${error.message}`);
-    }
-    data = claimed as ScoreJobRow | null;
-  }
-
-  if (!data) return null; // another worker claimed it
-
-  return data;
 }
 
 export async function markJobPosted(
@@ -346,4 +254,103 @@ export async function getScoreJobCounts(
   }
 
   return counts;
+}
+
+/**
+ * Get the oldest pending (queued) job's created_at timestamp.
+ * Used by worker-health to detect stuck queues.
+ */
+export async function getOldestPendingJobTime(
+  db: HermesDbClient,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("score_jobs")
+    .select("created_at")
+    .eq("status", SCORE_JOB_STATUS.queued)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to get oldest pending job: ${error.message}`);
+  }
+  return data?.created_at ?? null;
+}
+
+/**
+ * Get the most recent scored job's updated_at timestamp.
+ * Used by worker-health to infer worker liveness.
+ */
+export async function getLastScoredJobTime(
+  db: HermesDbClient,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from("score_jobs")
+    .select("updated_at")
+    .eq("status", SCORE_JOB_STATUS.scored)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to get last scored job: ${error.message}`);
+  }
+  return data?.updated_at ?? null;
+}
+
+/**
+ * List failed jobs, optionally scoped to a challenge.
+ */
+export async function getFailedJobs(
+  db: HermesDbClient,
+  challengeId?: string,
+): Promise<ScoreJobRow[]> {
+  let query = db
+    .from("score_jobs")
+    .select("*")
+    .eq("status", SCORE_JOB_STATUS.failed)
+    .order("updated_at", { ascending: false });
+
+  if (challengeId) {
+    query = query.eq("challenge_id", challengeId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to list failed jobs: ${error.message}`);
+  }
+  return (data ?? []) as ScoreJobRow[];
+}
+
+/**
+ * Reset failed jobs back to queued with attempts=0 for retry.
+ * Returns the number of jobs retried.
+ */
+export async function retryFailedJobs(
+  db: HermesDbClient,
+  challengeId?: string,
+): Promise<number> {
+  let query = db
+    .from("score_jobs")
+    .update({
+      status: SCORE_JOB_STATUS.queued,
+      attempts: 0,
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("status", SCORE_JOB_STATUS.failed);
+
+  if (challengeId) {
+    query = query.eq("challenge_id", challengeId);
+  }
+
+  const { data, error } = await query.select("id");
+
+  if (error) {
+    throw new Error(`Failed to retry failed jobs: ${error.message}`);
+  }
+  return data?.length ?? 0;
 }

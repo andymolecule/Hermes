@@ -3,9 +3,9 @@ import { CHALLENGE_STATUS, type ChallengeStatus } from "@hermes/common";
 export type StatusStyle = { bg: string; text: string; borderColor: string };
 
 export const DEFAULT_STATUS_STYLE: StatusStyle = {
-  bg: "var(--color-success-bg)",
-  text: "var(--color-success)",
-  borderColor: "#BBF7D0",
+  bg: "#e8efe8",
+  text: "#2d6a2e",
+  borderColor: "#b5cdb6",
 };
 
 export const STATUS_STYLES: Record<ChallengeStatus | "judging", StatusStyle> = {

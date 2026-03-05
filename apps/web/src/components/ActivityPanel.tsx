@@ -11,8 +11,10 @@ import {
     AlertTriangle,
     Server,
     Settings,
+    Cpu,
 } from "lucide-react";
 import { API_BASE_URL, FACTORY_ADDRESS, USDC_ADDRESS, CHAIN_ID } from "../lib/config";
+import type { WorkerHealth } from "../lib/types";
 
 // ─── System Status Panel ─────────────────────────────
 
@@ -39,6 +41,29 @@ function useApiHealth() {
     return ok;
 }
 
+function useWorkerHealth() {
+    const [health, setHealth] = useState<WorkerHealth | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function check() {
+            try {
+                const res = await fetch(`${API_BASE_URL.replace(/\/$/, "")}/api/worker-health`, {
+                    signal: AbortSignal.timeout(5000),
+                });
+                if (!cancelled) setHealth(await res.json() as WorkerHealth);
+            } catch {
+                if (!cancelled) setHealth({ ok: false, status: "error", checkedAt: new Date().toISOString() });
+            }
+        }
+        check();
+        const id = setInterval(check, 30000);
+        return () => { cancelled = true; clearInterval(id); };
+    }, []);
+
+    return health;
+}
+
 function StatusDot({ ok }: { ok: boolean | null }) {
     if (ok === null) return <span className="status-dot" style={{ background: "var(--text-tertiary)", boxShadow: "none" }} />;
     if (ok) return <span className="status-dot" />;
@@ -48,6 +73,7 @@ function StatusDot({ ok }: { ok: boolean | null }) {
 export function ActivityPanel() {
     const { isConnected, address, chainId } = useAccount();
     const apiHealth = useApiHealth();
+    const workerHealth = useWorkerHealth();
 
     const wrongChain = isConnected && chainId !== CHAIN_ID;
     const hasConfig = !!FACTORY_ADDRESS && !!USDC_ADDRESS;
@@ -135,6 +161,24 @@ export function ActivityPanel() {
                         </div>
                     </div>
                     <StatusDot ok={hasConfig} />
+                </div>
+
+                {/* Scorer Worker */}
+                <div className="feed-entry">
+                    <div className={`feed-icon ${workerHealth?.ok === true ? "verify" : workerHealth?.ok === false ? "error" : "system"}`}>
+                        {workerHealth?.ok === true ? <CheckCircle2 size={14} /> : workerHealth?.ok === false ? <AlertTriangle size={14} /> : <Cpu size={14} />}
+                    </div>
+                    <div className="feed-body">
+                        <div className="feed-headline">
+                            <strong>Scorer</strong> {workerHealth === null ? "Checking\u2026" : workerHealth.status === "idle" ? "Idle" : workerHealth.ok ? "Running" : "Warning"}
+                        </div>
+                        <div className="feed-detail">
+                            {workerHealth?.jobs
+                                ? `${workerHealth.jobs.queued} queued \u00b7 ${workerHealth.jobs.scored} scored${workerHealth.jobs.failed > 0 ? ` \u00b7 ${workerHealth.jobs.failed} failed` : ""}`
+                                : "Scorer worker status"}
+                        </div>
+                    </div>
+                    <StatusDot ok={workerHealth === null ? null : workerHealth.ok} />
                 </div>
             </div>
 

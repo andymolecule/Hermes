@@ -10,6 +10,14 @@ export interface PlatformAnalytics {
   challengesByDistribution: Record<string, number>;
   scoredSubmissions: number;
   unscoredSubmissions: number;
+  // Derived financial metrics
+  tvlUsdc: number;
+  distributedUsdc: number;
+  protocolRevenueUsdc: number;
+  avgBountyUsdc: number;
+  // Platform health metrics
+  completionRate: number;
+  scoringSuccessRate: number;
   recentChallenges: {
     id: string;
     title: string;
@@ -45,6 +53,7 @@ export async function getPlatformAnalytics(
     solverAddressesResult,
     recentChallengesResult,
     recentSubmissionsResult,
+    scoredWithScoresResult,
   ] = await Promise.all([
     // 1. All challenges — explicit columns for grouping + reward sum
     db
@@ -80,6 +89,12 @@ export async function getPlatformAnalytics(
       .select("id, solver_address, challenge_id, score, scored, submitted_at")
       .order("submitted_at", { ascending: false })
       .limit(10),
+
+    // 7. Scored submissions with scores — for scoring success rate
+    db
+      .from("submissions")
+      .select("score")
+      .eq("scored", true),
   ]);
 
   if (challengesResult.error) {
@@ -100,11 +115,15 @@ export async function getPlatformAnalytics(
   if (recentSubmissionsResult.error) {
     throw new Error(`Analytics: failed to fetch recent submissions: ${recentSubmissionsResult.error.message}`);
   }
+  if (scoredWithScoresResult.error) {
+    throw new Error(`Analytics: failed to fetch scored submissions: ${scoredWithScoresResult.error.message}`);
+  }
 
   const challenges = challengesResult.data ?? [];
   const totalSubmissions = totalSubsResult.count ?? 0;
   const scoredSubmissions = scoredSubsResult.count ?? 0;
   const solverRows = solverAddressesResult.data ?? [];
+  const scoredWithScores = scoredWithScoresResult.data ?? [];
 
   // Total reward (reward_amount is stored as decimal string in DB)
   const totalRewardUsdc = challenges.reduce((sum, c) => {
@@ -112,26 +131,51 @@ export async function getPlatformAnalytics(
     return sum + (Number.isFinite(val) ? val : 0);
   }, 0);
 
-  // Group challenges by status
+  // Financial metrics — single pass over challenges
+  let tvlUsdc = 0;
+  let nonCancelledReward = 0;
+  let finalizedCount = 0;
+  let terminalCount = 0;
   const challengesByStatus: Record<string, number> = {};
-  for (const c of challenges) {
-    const key = c.status ?? "unknown";
-    challengesByStatus[key] = (challengesByStatus[key] ?? 0) + 1;
-  }
-
-  // Group challenges by domain
   const challengesByDomain: Record<string, number> = {};
+  const challengesByDistribution: Record<string, number> = {};
+
   for (const c of challenges) {
-    const key = c.domain ?? "unknown";
-    challengesByDomain[key] = (challengesByDomain[key] ?? 0) + 1;
+    const reward = Number(c.reward_amount) || 0;
+    const status = c.status ?? "unknown";
+
+    // TVL: active escrows
+    if (status === "active" || status === "scoring") tvlUsdc += reward;
+    // Revenue pool: everything except cancelled
+    if (status !== "cancelled") nonCancelledReward += reward;
+    // Completion: finalized / (finalized + cancelled)
+    if (status === "finalized") finalizedCount++;
+    if (status === "finalized" || status === "cancelled") terminalCount++;
+
+    // Groupings
+    challengesByStatus[status] = (challengesByStatus[status] ?? 0) + 1;
+    challengesByDomain[c.domain ?? "unknown"] = (challengesByDomain[c.domain ?? "unknown"] ?? 0) + 1;
+    const dist = c.distribution_type ?? "unknown";
+    challengesByDistribution[dist] = (challengesByDistribution[dist] ?? 0) + 1;
   }
 
-  // Group challenges by distribution type
-  const challengesByDistribution: Record<string, number> = {};
-  for (const c of challenges) {
-    const key = c.distribution_type ?? "unknown";
-    challengesByDistribution[key] = (challengesByDistribution[key] ?? 0) + 1;
-  }
+  // 5% protocol fee is contractually guaranteed on escrowed USDC
+  const distributedUsdc = nonCancelledReward * 0.95;
+  const protocolRevenueUsdc = nonCancelledReward * 0.05;
+  const avgBountyUsdc = challenges.length > 0 ? totalRewardUsdc / challenges.length : 0;
+  const completionRate = terminalCount > 0 ? (finalizedCount / terminalCount) * 100 : 0;
+
+  // Scoring success: % of scored submissions with score > 0 (WAD)
+  const successfulScores = scoredWithScores.filter((s) => {
+    try {
+      return s.score !== null && BigInt(s.score) > 0n;
+    } catch {
+      return false;
+    }
+  }).length;
+  const scoringSuccessRate = scoredSubmissions > 0
+    ? (successfulScores / scoredSubmissions) * 100
+    : 0;
 
   // Unique solvers + top solvers
   const solverCounts = new Map<string, number>();
@@ -155,6 +199,12 @@ export async function getPlatformAnalytics(
     challengesByDistribution,
     scoredSubmissions,
     unscoredSubmissions: totalSubmissions - scoredSubmissions,
+    tvlUsdc,
+    distributedUsdc,
+    protocolRevenueUsdc,
+    avgBountyUsdc,
+    completionRate: Math.round(completionRate),
+    scoringSuccessRate: Math.round(scoringSuccessRate),
     recentChallenges: (recentChallengesResult.data ?? []).map((c) => ({
       id: c.id,
       title: c.title,

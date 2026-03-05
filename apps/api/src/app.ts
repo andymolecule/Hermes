@@ -7,6 +7,7 @@ import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
 import scorePreviewRoutes from "./routes/score-preview.js";
 import portfolioRoutes from "./routes/portfolio.js";
+import workerHealthRoutes from "./routes/worker-health.js";
 import statsRoutes from "./routes/stats.js";
 import submissionRoutes from "./routes/submissions.js";
 import verifyRoutes from "./routes/verify.js";
@@ -63,6 +64,7 @@ export function createApp() {
   app.route("/api/auth", authRoutes);
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
+  app.route("/api/worker-health", workerHealthRoutes);
   app.route("/api/agent/challenges", agentChallengeRoutes);
   app.route("/api/submissions", submissionRoutes);
   app.route("/api/verify", verifyRoutes);

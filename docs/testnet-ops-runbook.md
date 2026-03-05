@@ -19,11 +19,20 @@ pnpm turbo build
 
 ## 2. Service Startup
 
+Three processes run in production: **API**, **Indexer**, and **Worker** (scoring automation).
+
+| Process | Entrypoint | Role |
+|---------|-----------|------|
+| `hermes-api` | `apps/api/dist/index.js` | REST API + web backend |
+| `hermes-indexer` | `packages/chain/dist/indexer.js` | Chain event poller → Supabase |
+| `hermes-worker` | `apps/api/dist/worker.js` | Polls `score_jobs`, runs Docker scorer, posts scores on-chain |
+
 ### Option A: Manual
 
 ```bash
 node apps/api/dist/index.js
 node packages/chain/dist/indexer.js
+node apps/api/dist/worker.js
 ```
 
 ### Option B: PM2 (recommended)
@@ -31,8 +40,16 @@ node packages/chain/dist/indexer.js
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
-pm2 status
+pm2 status   # should show 3 processes: hermes-api, hermes-indexer, hermes-worker
 ```
+
+### Architecture boundary
+
+- **API** creates `score_jobs` rows when submissions arrive (via indexer events).
+- **Worker** polls the `score_jobs` table, claims jobs atomically (Postgres RPC), runs the Docker scorer container, and posts scores + proof bundles on-chain.
+- **Scorer** is the Docker container itself (e.g. `ghcr.io/hermes-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+
+The worker and API share no runtime state. The only coordination point is the `score_jobs` table.
 
 ## 3. Smoke Test (Live)
 
@@ -58,6 +75,15 @@ Check every 15-30 minutes during first launch window:
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
 4. `hm doctor` passes all required checks.
+5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true`.
+6. Tail worker logs: `pm2 logs hermes-worker --lines 50`.
+
+### Confirming the worker is scoring
+
+1. Check `score_jobs` transitions: jobs should move from `queued` → `running` → `scored`.
+2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll) and the worker picks it up within ~15s (worker poll).
+3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
+4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 
 ## 5. Incident Playbook
 
@@ -88,6 +114,16 @@ hm reindex --from-block <block_number>
 1. Roll back API and web to previous release in hosting platform.
 2. Keep indexer running if schema is unchanged.
 3. If schema changed, roll back DB migration first, then restart indexer.
+
+### Worker stalled
+
+1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
+2. Tail logs: `pm2 logs hermes-worker --lines 100`.
+3. Common causes:
+   - Docker daemon not running or unreachable → restart Docker, then `pm2 restart hermes-worker`.
+   - RPC errors → check `HERMES_RPC_URL` reachability.
+   - All jobs stuck in `failed` → inspect `last_error` column, then retry: `hm retry-failed-jobs` (dry-run first), `hm retry-failed-jobs --yes` to execute.
+4. If the worker process itself crashed: `pm2 restart hermes-worker`. PM2 uses exponential backoff (3s base).
 
 ### Oracle key issue
 

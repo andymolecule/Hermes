@@ -26,5 +26,18 @@ module.exports = {
       restart_delay: 3000,
       time: true,
     },
+    {
+      name: "hermes-worker",
+      cwd: process.cwd(),
+      script: "node",
+      args: "apps/api/dist/worker.js",
+      env: {
+        NODE_ENV: "production",
+      },
+      autorestart: true,
+      max_restarts: 10,
+      exp_backoff_restart_delay: 3000,
+      time: true,
+    },
   ],
 };
