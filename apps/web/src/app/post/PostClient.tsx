@@ -740,7 +740,7 @@ export function PostClient() {
       train: "",
       test: "",
       // Reset repro sub-preset to default when switching to reproducibility
-      ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1" } : {}),
+      ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1", submissionType: "csv", submissionFormat: "CSV file" } : {}),
       // Prediction: default to CSV submission with id + prediction columns
       ...(t === "prediction" ? {
         submissionType: "csv",
@@ -748,6 +748,8 @@ export function PostClient() {
         idColumn: "id",
         labelColumn: "prediction",
       } : {}),
+      // Docking: default to CSV submission
+      ...(t === "docking" ? { submissionType: "csv", submissionFormat: "CSV with columns: ligand_id, docking_score" } : {}),
     }));
     setFileNames({});
   }
@@ -1208,7 +1210,7 @@ export function PostClient() {
         </div>
         <div className="form-section-body">
           <div className="form-grid">
-            {/* Submission format — always shown */}
+            {/* Submission type dropdown — always shown */}
             <FormField label="Submission type" hint={SUBMISSION_TYPES.find(t => t.value === state.submissionType)?.desc ?? ""}>
               <select className="form-select" value={state.submissionType}
                 onChange={(e) => {
@@ -1235,7 +1237,6 @@ export function PostClient() {
             {/* ── Prediction-specific fields ── */}
             {state.type === "prediction" && (
               <>
-                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <FormField label="ID column" hint="Column name for row identifiers in test.csv">
                   <input className="form-input form-input-mono" placeholder="id"
                     value={state.idColumn} onChange={(e) => setState((s) => ({ ...s, idColumn: e.target.value }))} />
@@ -1263,26 +1264,26 @@ export function PostClient() {
                   <input className="form-input" placeholder="e.g. Evaluated on held-out test split"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                {/* Submission preview */}
+                {/* Solver output format preview */}
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Expected submission format</p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Solver output format</p>
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
+                    Solvers submit a CSV file with these columns:
+                  </p>
                   <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
-                    {`${state.idColumn || "id"},${state.labelColumn || "prediction"}
-SAMPLE_001,1.23
-SAMPLE_002,0.85
-SAMPLE_003,2.10`}
+                    {`${state.idColumn || "id"},${state.labelColumn || "prediction"}\n1,3.42\n2,7.89\n3,1.05\n...`}
                   </pre>
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0.35rem 0 0", lineHeight: 1.4 }}>
+                    <code style={{ fontSize: "0.68rem", background: "var(--surface-inset)", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.idColumn || "id"}</code> must match the IDs in your test set. <code style={{ fontSize: "0.68rem", background: "var(--surface-inset)", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.labelColumn || "prediction"}</code> is the numeric value scored by {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
+                  </p>
                 </div>
-                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                  The scorer compares each row of solver predictions against your hidden labels using {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
-                </p>
               </>
             )}
 
             {/* ── Reproducibility-specific fields ── */}
             {state.type === "reproducibility" && (
               <>
-                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 {/* Locked scoring method badge */}
                 <div className="span-full">
                   <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Scoring method</p>
@@ -1296,10 +1297,11 @@ SAMPLE_003,2.10`}
                   <textarea className="form-textarea" placeholder="e.g. Row-by-row comparison of output CSV against expected_output.csv with numeric tolerance 1e-4"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
-                {/* Auto-detected submission format */}
+                {/* Solver output format */}
+                <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>
-                    Expected submission format
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>
+                    Solver output format
                     {state.detectedColumns.length > 0 && (
                       <span style={{ fontWeight: 400, fontStyle: "italic", marginLeft: "0.5rem" }}>
                         (auto-detected from {fileNames.test || "expected output"})
@@ -1308,6 +1310,9 @@ SAMPLE_003,2.10`}
                   </p>
                   {state.detectedColumns.length > 0 ? (
                     <>
+                      <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
+                        Solvers submit a CSV matching these columns:
+                      </p>
                       <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
                         {state.detectedColumns.join(",")}
                       </pre>
@@ -1322,18 +1327,15 @@ SAMPLE_003,2.10`}
                         placeholder="Edit column names if needed"
                       />
                       <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.25rem 0 0", fontStyle: "italic" }}>
-                        Submission CSV must match these columns. Edit above if needed.
+                        The scorer compares each row of the solver&#39;s output against your expected output.
                       </p>
                     </>
                   ) : (
                     <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                      Upload expected output to auto-detect submission columns.
+                      Upload expected output above to auto-detect the required columns.
                     </p>
                   )}
                 </div>
-                <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                  The scorer does a row-by-row comparison of the solver&#39;s output against your expected output.
-                </p>
               </>
             )}
 
@@ -1355,6 +1357,25 @@ SAMPLE_003,2.10`}
                 <p className="span-full" style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
                   Your custom scorer container runs the solver's parameters through your simulation.
                 </p>
+              </>
+            )}
+
+            {/* ── Docking-specific fields ── */}
+            {state.type === "docking" && (
+              <>
+                {/* Solver output format preview */}
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Solver output format</p>
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
+                    Solvers submit a CSV ranked by docking score:
+                  </p>
+                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+                    {`ligand_id,docking_score\nZINC000001,-8.42\nZINC000002,-7.91\nZINC000003,-6.55\n...`}
+                  </pre>
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0.35rem 0 0", lineHeight: 1.4 }}>
+                    Most negative score = best binding affinity. The scorer compares against reference docking scores using Spearman correlation.
+                  </p>
+                </div>
               </>
             )}
 

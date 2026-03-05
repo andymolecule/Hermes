@@ -1054,9 +1054,9 @@ a:hover {
 }
 
 .type-card.active {
-  border-color: var(--dash-blue);
-  background: var(--dash-tint);
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.08);
+  border-color: var(--accent-emerald, #059669);
+  background: rgba(5, 150, 105, 0.06);
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.08);
 }
 
 .type-card-icon {
@@ -1073,8 +1073,8 @@ a:hover {
 }
 
 .type-card.active .type-card-icon {
-  background: rgba(21, 101, 192, 0.12);
-  color: var(--dash-blue);
+  background: rgba(5, 150, 105, 0.10);
+  color: var(--accent-emerald, #059669);
 }
 
 .type-card-title {
@@ -1092,7 +1092,7 @@ a:hover {
 }
 
 .type-card.active .type-card-title {
-  color: var(--dash-blue);
+  color: var(--accent-emerald, #059669);
 }
 
 .type-card-check {
@@ -1102,7 +1102,7 @@ a:hover {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1.5px solid var(--border-default);
+  border: 1.5px solid var(--border-strong, #B0BEC5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1111,8 +1111,8 @@ a:hover {
 }
 
 .type-card.active .type-card-check {
-  background: var(--dash-blue);
-  border-color: var(--dash-blue);
+  background: var(--accent-emerald, #059669);
+  border-color: var(--accent-emerald, #059669);
   color: white;
 }
 
@@ -1416,7 +1416,7 @@ a:hover {
 }
 
 [data-theme="dark"] .type-card.active {
-  background: rgba(21, 101, 192, 0.08);
+  background: rgba(5, 150, 105, 0.08);
 }
 
 [data-theme="dark"] .type-card:hover {
