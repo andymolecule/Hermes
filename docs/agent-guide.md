@@ -47,8 +47,6 @@ hm config set chain_id "${HERMES_CHAIN_ID:-84532}"
 ## Post Workflow
 
 ```bash
-hm init --template reproducibility
-# edit challenge.yaml
 hm post challenge.yaml --dry-run --format json
 hm post challenge.yaml --format json
 ```

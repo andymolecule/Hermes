@@ -138,7 +138,6 @@ Exercises the full lifecycle: `post → indexer pickup → list → get → scor
 
 ```bash
 ./scripts/deploy.sh                  # Contracts to Base Sepolia
-./scripts/seed-challenges.sh         # Seed 5 challenge templates
 ./scripts/preflight-testnet.sh       # Pre-launch validation
 ```
 

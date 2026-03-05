@@ -126,7 +126,6 @@ deadline: "2026-03-04T23:59:59Z"
 **Poster (Human or Agent)**
 
 ```bash
-hm init --template reproducibility > challenge.yaml
 hm post challenge.yaml --deposit 500
 ```
 

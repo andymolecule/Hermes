@@ -7,7 +7,6 @@ import { buildClaimCommand } from "./commands/claim";
 import { buildDoctorCommand } from "./commands/doctor";
 import { buildFinalizeCommand } from "./commands/finalize";
 import { buildGetCommand } from "./commands/get";
-import { buildInitCommand } from "./commands/init";
 import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
 import { buildReindexCommand } from "./commands/reindex";
@@ -29,7 +28,6 @@ async function main() {
     .showHelpAfterError();
 
   program.addCommand(buildConfigCommand());
-  program.addCommand(buildInitCommand());
   program.addCommand(buildPostCommand());
   program.addCommand(buildReindexCommand());
   program.addCommand(buildListCommand());

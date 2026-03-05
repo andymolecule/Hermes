@@ -62,13 +62,14 @@ const erc20Abi = [
   },
 ] as const;
 
-type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "red_team" | "custom";
+type PostChallengeType = "prediction" | "optimization" | "reproducibility" | "docking" | "red_team" | "custom";
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
   prediction: BarChart3,
   optimization: FlaskConical,
   reproducibility: FlaskConical,
+  docking: FlaskConical,
   red_team: ShieldAlert,
   custom: Settings2,
 };
@@ -88,32 +89,25 @@ const WINNER_LABELS: Record<string, string> = {
   proportional: "Reward distributed proportionally by score",
 };
 
-const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
-const REPRODUCIBILITY_PRESET_ID =
-  defaultPresetIdForChallengeType("reproducibility");
-const PREDICTION_PRESET_ID = defaultPresetIdForChallengeType("prediction");
-const reproducibilityPreset =
-  REPRODUCIBILITY_PRESET_ID &&
-    REPRODUCIBILITY_PRESET_ID !== "custom"
-    ? PRESET_REGISTRY[REPRODUCIBILITY_PRESET_ID]
-    : undefined;
-const predictionPreset =
-  PREDICTION_PRESET_ID && PREDICTION_PRESET_ID !== "custom"
-    ? PRESET_REGISTRY[PREDICTION_PRESET_ID]
-    : undefined;
+function requirePresetForType(type: string) {
+  const id = defaultPresetIdForChallengeType(type as Parameters<typeof defaultPresetIdForChallengeType>[0]);
+  if (!id || id === "custom") return undefined;
+  const preset = PRESET_REGISTRY[id];
+  if (!preset) throw new Error(`Required preset "${id}" missing from PRESET_REGISTRY.`);
+  return preset;
+}
 
-if (!reproducibilityPreset || !predictionPreset) {
+const reproducibilityPreset = requirePresetForType("reproducibility")!;
+const predictionPreset = requirePresetForType("prediction")!;
+const dockingPreset = requirePresetForType("docking")!;
+
+if (!reproducibilityPreset || !predictionPreset || !dockingPreset) {
   throw new Error(
-    "Required presets (reproducibility/prediction) are missing from PRESET_REGISTRY.",
+    "Required presets (reproducibility/prediction/docking) are missing from PRESET_REGISTRY.",
   );
 }
 
-// ─── Reproducibility sub-presets ─────────────────────
-const REPRO_SUB_PRESETS = [
-  { id: "csv_comparison_v1", label: "CSV Comparison", desc: "Row-by-row comparison against ground truth" },
-  { id: "file_hash_v1", label: "File Hash Match", desc: "SHA-256 exact match (100 or 0)" },
-  { id: "number_absdiff_v1", label: "Number Match", desc: "Score = 100 − abs(answer − target)" },
-] as const;
+const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
 
 const TYPE_CONFIG = {
   prediction: {
@@ -145,6 +139,16 @@ const TYPE_CONFIG = {
     defaultMinimumScore: reproducibilityPreset.defaultMinimumScore,
     presetId: reproducibilityPreset.id,
     scoringTemplate: reproducibilityPreset.scoringDescription,
+  },
+  docking: {
+    label: "Docking",
+    description: "Solvers rank molecules by docking score against a protein target",
+    defaultDomain: "drug_discovery",
+    metricHint: "spearman",
+    container: dockingPreset.container,
+    defaultMinimumScore: dockingPreset.defaultMinimumScore,
+    presetId: dockingPreset.id,
+    scoringTemplate: dockingPreset.scoringDescription,
   },
   red_team: {
     label: "Red Team",
@@ -209,6 +213,15 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
     scorerAction: "Simulates",
     scorerResult: "with your image \u2192 score",
     helper: "Solvers submit parameters. Your scorer runs the simulation and returns a score.",
+  },
+  docking: {
+    posterAction: "Uploads",
+    posterFiles: "target + ligands",
+    solverAction: "Submits",
+    solverFiles: "ranked docking scores",
+    scorerAction: "Compares",
+    scorerResult: "vs. reference \u2192 score",
+    helper: "Solvers dock molecules against your protein target. The scorer ranks their predictions against reference docking scores.",
   },
   red_team: {
     posterAction: "Uploads",
@@ -455,9 +468,6 @@ function buildSpec(state: FormState) {
       id_column: state.idColumn || undefined,
       label_column: state.labelColumn || undefined,
       ...(state.tolerance ? { tolerance: state.tolerance } : {}),
-      ...(state.expectedSubmissionColumns.length > 0
-        ? { submission_columns: state.expectedSubmissionColumns }
-        : {}),
     },
     ...(state.tags.length > 0 ? { tags: state.tags } : {}),
     lab_tba: "0x0000000000000000000000000000000000000000",
@@ -760,6 +770,9 @@ export function PostClient() {
       if (!state.test.trim()) return "Expected artifact is required for reproducibility challenges. Upload the reference output the scorer compares against.";
     } else if (state.type === "optimization") {
       if (!state.train.trim()) return "Evaluation bundle is required for optimization challenges.";
+    } else if (state.type === "docking") {
+      if (!state.train.trim()) return "Target structure is required for docking challenges.";
+      if (!state.test.trim()) return "Ligand set is required for docking challenges.";
     } else if (state.type === "red_team") {
       if (!state.train.trim()) return "Baseline data is required for red team challenges.";
     }
@@ -776,6 +789,13 @@ export function PostClient() {
     const presetIntegrityError = validatePresetIntegrity(presetId, state.container);
     if (presetIntegrityError)
       return presetIntegrityError;
+
+    const minScore = Number(state.minimumScore);
+    if (state.minimumScore.trim() && !Number.isFinite(minScore))
+      return "Minimum score must be a valid number.";
+
+    if (state.tolerance.trim() && !Number.isFinite(Number(state.tolerance)))
+      return "Tolerance must be a valid number (e.g. 1e-4 or 0.001).";
 
     const disputeWindow = Number(state.disputeWindow);
     const minDispute = getDisputeWindowMinHours(CHAIN_ID);
@@ -1097,6 +1117,32 @@ export function PostClient() {
                   fileName={fileNames.train}
                 />
               </FormField>
+            )}
+
+            {/* ── Docking: target + ligands ── */}
+            {state.type === "docking" && (
+              <>
+                <FormField label="Target structure" hint="Protein target (PDB file or reference data for the scorer)">
+                  <DataUploadField
+                    value={state.train}
+                    onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
+                    uploading={uploadingField === "train"}
+                    onUpload={(file) => handleFileUpload(file, "train")}
+                    placeholder="ipfs://... or https://..."
+                    fileName={fileNames.train}
+                  />
+                </FormField>
+                <FormField label="Ligand set" hint="Molecules to dock — solvers rank these by predicted binding affinity">
+                  <DataUploadField
+                    value={state.test}
+                    onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
+                    uploading={uploadingField === "test"}
+                    onUpload={(file) => handleFileUpload(file, "test")}
+                    placeholder="ipfs://... or https://..."
+                    fileName={fileNames.test}
+                  />
+                </FormField>
+              </>
             )}
 
             {/* ── Red Team: baseline data + optional reference outputs ── */}
@@ -1582,7 +1628,7 @@ SAMPLE_003,2.10`}
               {state.tags.length > 0 && <div className="preview-row"><span className="preview-label">Tags</span><span className="preview-value">{state.tags.join(", ")}</span></div>}
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
-              {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Scoring method</span><span className="preview-value">{REPRO_SUB_PRESETS.find(rp => rp.id === state.reproPresetId)?.label ?? state.reproPresetId}</span></div>}
+              {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Scoring method</span><span className="preview-value">{PRESET_REGISTRY[state.reproPresetId]?.label ?? state.reproPresetId}</span></div>}
               {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Tolerance</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.tolerance}</span></div>}
               {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
