@@ -52,7 +52,7 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     "hermes-get-challenge",
     {
       description:
-        "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with direct download URLs (train_url, test_url, spec_url) for IPFS-pinned files.",
+        "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID from hermes-list-challenges"),
       }),
@@ -77,11 +77,11 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     "hermes-submit-solution",
     {
       description:
-        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use hermes-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. In HTTP mode, provide a privateKey.",
+        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use hermes-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections — keys are transmitted in plaintext and could be intercepted.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
         filePath: z.string().min(1).describe("Absolute path to submission file"),
-        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key (required in HTTP mode)"),
+        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP."),
       }),
     },
     async (input) =>
@@ -96,10 +96,10 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     "hermes-claim-payout",
     {
       description:
-        "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash.",
+        "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
-        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key (required in HTTP mode)"),
+        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP."),
       }),
     },
     async (input) =>

@@ -36,6 +36,26 @@ import type { Abi } from "viem";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
+/**
+ * Simple semaphore to limit concurrent Docker scorer runs.
+ * Prevents resource exhaustion from parallel score-local / verify calls.
+ */
+let scorerRunning = false;
+
+async function withScorerLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (scorerRunning) {
+    throw new Error(
+      "A scoring container is already running. Wait for it to finish before starting another. Only one concurrent score-local or verify run is allowed.",
+    );
+  }
+  scorerRunning = true;
+  try {
+    return await fn();
+  } finally {
+    scorerRunning = false;
+  }
+}
+
 function cidToGatewayUrl(cid: string | null | undefined): string | null {
   if (!cid) return null;
   const bare = cid.replace("ipfs://", "");
@@ -113,8 +133,11 @@ export async function getChallenge(challengeId: string) {
       return bScore > aScore ? 1 : bScore < aScore ? -1 : 0;
     });
   const datasets = {
+    train_cid: challenge.dataset_train_cid ?? null,
     train_url: cidToGatewayUrl(challenge.dataset_train_cid),
+    test_cid: challenge.dataset_test_cid ?? null,
     test_url: cidToGatewayUrl(challenge.dataset_test_cid),
+    spec_cid: challenge.spec_cid ?? null,
     spec_url: cidToGatewayUrl(challenge.spec_cid),
   };
 
@@ -274,30 +297,32 @@ export async function scoreLocal(input: {
   challengeId: string;
   filePath: string;
 }) {
-  const db = createSupabaseClient(false);
-  const challenge = await getChallengeById(db, input.challengeId);
-  if (!challenge.scoring_container) {
-    throw new Error("Challenge has no scoring container configured.");
-  }
-  if (!challenge.dataset_test_cid) {
-    throw new Error("Challenge missing dataset_test_cid.");
-  }
+  return withScorerLock(async () => {
+    const db = createSupabaseClient(false);
+    const challenge = await getChallengeById(db, input.challengeId);
+    if (!challenge.scoring_container) {
+      throw new Error("Challenge has no scoring container configured.");
+    }
+    if (!challenge.dataset_test_cid) {
+      throw new Error("Challenge missing dataset_test_cid.");
+    }
 
-  const run = await executeScoringPipeline({
-    image: challenge.scoring_container,
-    groundTruth: { cid: challenge.dataset_test_cid },
-    submission: { localPath: input.filePath },
+    const run = await executeScoringPipeline({
+      image: challenge.scoring_container,
+      groundTruth: { cid: challenge.dataset_test_cid },
+      submission: { localPath: input.filePath },
+    });
+
+    try {
+      return {
+        score: run.result.score,
+        details: run.result.details,
+        containerImageDigest: run.result.containerImageDigest,
+      };
+    } finally {
+      await run.cleanup();
+    }
   });
-
-  try {
-    return {
-      score: run.result.score,
-      details: run.result.details,
-      containerImageDigest: run.result.containerImageDigest,
-    };
-  } finally {
-    await run.cleanup();
-  }
 }
 
 export async function verifySubmission(input: {
@@ -305,39 +330,41 @@ export async function verifySubmission(input: {
   submissionId: string;
   tolerance?: number;
 }) {
-  const db = createSupabaseClient(true);
-  const challenge = await getChallengeById(db, input.challengeId);
-  const submission = await getSubmissionById(db, input.submissionId);
-  const proof = await getProofBundleBySubmissionId(db, input.submissionId);
-  if (!proof) throw new Error("No proof bundle found.");
-  if (!challenge.dataset_test_cid)
-    throw new Error("Challenge missing dataset_test_cid.");
-  if (!submission.result_cid) throw new Error("Submission missing result_cid.");
-  if (submission.on_chain_sub_id == null)
-    throw new Error("Submission missing on_chain_sub_id.");
+  return withScorerLock(async () => {
+    const db = createSupabaseClient(true);
+    const challenge = await getChallengeById(db, input.challengeId);
+    const submission = await getSubmissionById(db, input.submissionId);
+    const proof = await getProofBundleBySubmissionId(db, input.submissionId);
+    if (!proof) throw new Error("No proof bundle found.");
+    if (!challenge.dataset_test_cid)
+      throw new Error("Challenge missing dataset_test_cid.");
+    if (!submission.result_cid) throw new Error("Submission missing result_cid.");
+    if (submission.on_chain_sub_id == null)
+      throw new Error("Submission missing on_chain_sub_id.");
 
-  const run = await executeScoringPipeline({
-    image: proof.container_image_hash,
-    groundTruth: { cid: challenge.dataset_test_cid },
-    submission: { cid: submission.result_cid },
+    const run = await executeScoringPipeline({
+      image: proof.container_image_hash,
+      groundTruth: { cid: challenge.dataset_test_cid },
+      submission: { cid: submission.result_cid },
+    });
+    try {
+      const onChain = await getOnChainSubmission(
+        challenge.contract_address as `0x${string}`,
+        BigInt(submission.on_chain_sub_id),
+      );
+      const onChainScore = wadToScore(onChain.score);
+      const tolerance = input.tolerance ?? 0.001;
+      const delta = Math.abs(run.result.score - onChainScore);
+
+      return {
+        match: delta <= tolerance,
+        localScore: run.result.score,
+        onChainScore,
+        delta,
+        tolerance,
+      };
+    } finally {
+      await run.cleanup();
+    }
   });
-  try {
-    const onChain = await getOnChainSubmission(
-      challenge.contract_address as `0x${string}`,
-      BigInt(submission.on_chain_sub_id),
-    );
-    const onChainScore = wadToScore(onChain.score);
-    const tolerance = input.tolerance ?? 0.001;
-    const delta = Math.abs(run.result.score - onChainScore);
-
-    return {
-      match: delta <= tolerance,
-      localScore: run.result.score,
-      onChainScore,
-      delta,
-      tolerance,
-    };
-  } finally {
-    await run.cleanup();
-  }
 }
