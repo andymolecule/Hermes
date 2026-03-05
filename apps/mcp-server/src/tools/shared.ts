@@ -1,4 +1,6 @@
 import {
+  claimPayout,
+  claimPayoutWithPrivateKey,
   getOnChainSubmission,
   getPublicClient,
   submitChallengeResult,
@@ -7,6 +9,7 @@ import {
 import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
+  DEFAULT_IPFS_GATEWAY,
   deriveDisplayStatus,
   getSubmissionLimitViolation,
   isChallengeDbStatus,
@@ -32,6 +35,32 @@ import { keccak256, parseEventLogs, toBytes } from "viem";
 import type { Abi } from "viem";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
+
+/**
+ * Simple semaphore to limit concurrent Docker scorer runs.
+ * Prevents resource exhaustion from parallel score-local / verify calls.
+ */
+let scorerRunning = false;
+
+async function withScorerLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (scorerRunning) {
+    throw new Error(
+      "A scoring container is already running. Wait for it to finish before starting another. Only one concurrent score-local or verify run is allowed.",
+    );
+  }
+  scorerRunning = true;
+  try {
+    return await fn();
+  } finally {
+    scorerRunning = false;
+  }
+}
+
+function cidToGatewayUrl(cid: string | null | undefined): string | null {
+  if (!cid) return null;
+  const bare = cid.replace("ipfs://", "");
+  return `${DEFAULT_IPFS_GATEWAY}${bare}`;
+}
 
 export async function listChallenges(input: {
   status?: string;
@@ -103,7 +132,16 @@ export async function getChallenge(challengeId: string) {
       const bScore = BigInt(String(b.score ?? "0"));
       return bScore > aScore ? 1 : bScore < aScore ? -1 : 0;
     });
-  return { challenge: displayChallenge, submissions, leaderboard };
+  const datasets = {
+    train_cid: challenge.dataset_train_cid ?? null,
+    train_url: cidToGatewayUrl(challenge.dataset_train_cid),
+    test_cid: challenge.dataset_test_cid ?? null,
+    test_url: cidToGatewayUrl(challenge.dataset_test_cid),
+    spec_cid: challenge.spec_cid ?? null,
+    spec_url: cidToGatewayUrl(challenge.spec_cid),
+  };
+
+  return { challenge: displayChallenge, datasets, submissions, leaderboard };
 }
 
 export async function getSubmissionStatus(submissionId: string) {
@@ -220,44 +258,113 @@ export async function submitSolution(input: {
   return { txHash, resultCid, submission: row };
 }
 
+export async function claimChallengePayout(input: {
+  challengeId: string;
+  privateKey?: string;
+  allowRemotePrivateKey?: boolean;
+}) {
+  const db = createSupabaseClient(false);
+  const challenge = await getChallengeById(db, input.challengeId);
+  const challengeAddress = challenge.contract_address as `0x${string}`;
+
+  const normalizedPrivateKey = input.privateKey?.trim();
+  if (normalizedPrivateKey && !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
+    throw new Error("Invalid privateKey: expected 0x-prefixed 32-byte hex.");
+  }
+  if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
+    throw new Error(
+      "privateKey over MCP HTTP is disabled. Use MCP stdio mode, or set HERMES_ENABLE_NON_CORE_FEATURES=true and HERMES_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true.",
+    );
+  }
+
+  const txHash = normalizedPrivateKey
+    ? await claimPayoutWithPrivateKey(
+        challengeAddress,
+        normalizedPrivateKey as `0x${string}`,
+      )
+    : await claimPayout(challengeAddress);
+
+  const publicClient = getPublicClient();
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== "success") {
+    throw new Error(`Claim transaction reverted: ${txHash}. The challenge may not be finalized yet, or you may not be a winner.`);
+  }
+
+  return { txHash, challengeId: input.challengeId, status: "claimed" };
+}
+
+export async function scoreLocal(input: {
+  challengeId: string;
+  filePath: string;
+}) {
+  return withScorerLock(async () => {
+    const db = createSupabaseClient(false);
+    const challenge = await getChallengeById(db, input.challengeId);
+    if (!challenge.scoring_container) {
+      throw new Error("Challenge has no scoring container configured.");
+    }
+    if (!challenge.dataset_test_cid) {
+      throw new Error("Challenge missing dataset_test_cid.");
+    }
+
+    const run = await executeScoringPipeline({
+      image: challenge.scoring_container,
+      groundTruth: { cid: challenge.dataset_test_cid },
+      submission: { localPath: input.filePath },
+    });
+
+    try {
+      return {
+        score: run.result.score,
+        details: run.result.details,
+        containerImageDigest: run.result.containerImageDigest,
+      };
+    } finally {
+      await run.cleanup();
+    }
+  });
+}
+
 export async function verifySubmission(input: {
   challengeId: string;
   submissionId: string;
   tolerance?: number;
 }) {
-  const db = createSupabaseClient(true);
-  const challenge = await getChallengeById(db, input.challengeId);
-  const submission = await getSubmissionById(db, input.submissionId);
-  const proof = await getProofBundleBySubmissionId(db, input.submissionId);
-  if (!proof) throw new Error("No proof bundle found.");
-  if (!challenge.dataset_test_cid)
-    throw new Error("Challenge missing dataset_test_cid.");
-  if (!submission.result_cid) throw new Error("Submission missing result_cid.");
-  if (submission.on_chain_sub_id == null)
-    throw new Error("Submission missing on_chain_sub_id.");
+  return withScorerLock(async () => {
+    const db = createSupabaseClient(true);
+    const challenge = await getChallengeById(db, input.challengeId);
+    const submission = await getSubmissionById(db, input.submissionId);
+    const proof = await getProofBundleBySubmissionId(db, input.submissionId);
+    if (!proof) throw new Error("No proof bundle found.");
+    if (!challenge.dataset_test_cid)
+      throw new Error("Challenge missing dataset_test_cid.");
+    if (!submission.result_cid) throw new Error("Submission missing result_cid.");
+    if (submission.on_chain_sub_id == null)
+      throw new Error("Submission missing on_chain_sub_id.");
 
-  const run = await executeScoringPipeline({
-    image: proof.container_image_hash,
-    groundTruth: { cid: challenge.dataset_test_cid },
-    submission: { cid: submission.result_cid },
+    const run = await executeScoringPipeline({
+      image: proof.container_image_hash,
+      groundTruth: { cid: challenge.dataset_test_cid },
+      submission: { cid: submission.result_cid },
+    });
+    try {
+      const onChain = await getOnChainSubmission(
+        challenge.contract_address as `0x${string}`,
+        BigInt(submission.on_chain_sub_id),
+      );
+      const onChainScore = wadToScore(onChain.score);
+      const tolerance = input.tolerance ?? 0.001;
+      const delta = Math.abs(run.result.score - onChainScore);
+
+      return {
+        match: delta <= tolerance,
+        localScore: run.result.score,
+        onChainScore,
+        delta,
+        tolerance,
+      };
+    } finally {
+      await run.cleanup();
+    }
   });
-  try {
-    const onChain = await getOnChainSubmission(
-      challenge.contract_address as `0x${string}`,
-      BigInt(submission.on_chain_sub_id),
-    );
-    const onChainScore = wadToScore(onChain.score);
-    const tolerance = input.tolerance ?? 0.001;
-    const delta = Math.abs(run.result.score - onChainScore);
-
-    return {
-      match: delta <= tolerance,
-      localScore: run.result.score,
-      onChainScore,
-      delta,
-      tolerance,
-    };
-  } finally {
-    await run.cleanup();
-  }
 }

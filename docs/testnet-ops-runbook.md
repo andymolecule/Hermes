@@ -19,13 +19,14 @@ pnpm turbo build
 
 ## 2. Service Startup
 
-Three processes run in production: **API**, **Indexer**, and **Worker** (scoring automation).
+Four processes run in production: **API**, **Indexer**, **Worker** (scoring automation), and **MCP** (agent interface).
 
 | Process | Entrypoint | Role |
 |---------|-----------|------|
 | `hermes-api` | `apps/api/dist/index.js` | REST API + web backend |
 | `hermes-indexer` | `packages/chain/dist/indexer.js` | Chain event poller → Supabase |
 | `hermes-worker` | `apps/api/dist/worker.js` | Polls `score_jobs`, runs Docker scorer, posts scores on-chain |
+| `hermes-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agent discovery, submission, and payout |
 
 ### Option A: Manual
 
@@ -40,7 +41,7 @@ node apps/api/dist/worker.js
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
-pm2 status   # should show 3 processes: hermes-api, hermes-indexer, hermes-worker
+pm2 status   # should show 4 processes: hermes-api, hermes-indexer, hermes-worker, hermes-mcp
 ```
 
 ### Architecture boundary

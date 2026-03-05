@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
     BarChart3,
-    Trophy,
     FileText,
     Users,
     DollarSign,
@@ -35,19 +34,17 @@ function HeroMetric({
     label,
     value,
     sub,
-    accent,
 }: {
     label: string;
     value: string;
     sub?: string;
-    accent?: boolean;
 }) {
     return (
         <div className="text-center">
             <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-1">
                 {label}
             </p>
-            <p className={`text-3xl sm:text-4xl font-display font-bold tabular-nums tracking-tight ${accent ? "text-green-700" : "text-black"}`}>
+            <p className="text-3xl sm:text-4xl font-display font-bold tabular-nums tracking-tight text-black">
                 {value}
             </p>
             {sub && (
@@ -75,9 +72,9 @@ function GaugeCard({
     detail?: string;
 }) {
     return (
-        <div className="border border-black p-4 flex items-center gap-4">
-            <div className="flex items-center justify-center w-10 h-10 bg-black text-white flex-shrink-0">
-                <Icon className="w-5 h-5" strokeWidth={2} />
+        <div className="p-4 flex items-center gap-4">
+            <div className="flex items-center justify-center w-10 h-10 border border-black text-black flex-shrink-0">
+                <Icon className="w-5 h-5" strokeWidth={1.5} />
             </div>
             <div className="min-w-0">
                 <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40">
@@ -101,91 +98,34 @@ function ProgressMetric({
     label,
     value,
     icon: Icon,
-    color,
 }: {
     label: string;
     value: number;
     icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-    color: string;
 }) {
     return (
         <div className="border border-black p-4">
             <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
-                    <Icon className="w-4 h-4" strokeWidth={2} />
+                    <Icon className="w-4 h-4" strokeWidth={1.5} />
                     {label}
                 </span>
                 <span className="text-xl font-mono font-bold tabular-nums">{value}%</span>
             </div>
-            <div className="w-full bg-black/10 h-3 rounded-[1px] overflow-hidden">
+            <div className="w-full border border-black h-[14px] p-[2px]">
                 <div
-                    className={`h-full transition-all duration-700 ${color}`}
-                    style={{ width: `${Math.min(value, 100)}%` }}
+                    className="h-full transition-all duration-700"
+                    style={{
+                        width: `${Math.min(value, 100)}%`,
+                        background: "repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px)",
+                        borderRight: value > 0 && value < 100 ? "1px solid #000" : undefined,
+                    }}
                 />
             </div>
         </div>
     );
 }
 
-// ─── Breakdown Section ─────────────────────────────────
-
-function BreakdownSection({
-    title,
-    icon: Icon,
-    data,
-    colorDot,
-}: {
-    title: string;
-    icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-    data: Record<string, number>;
-    colorDot?: boolean;
-}) {
-    const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
-    const total = entries.reduce((sum, [, v]) => sum + v, 0);
-
-    return (
-        <div className="border border-black p-4">
-            <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 mb-3">
-                <Icon className="w-4 h-4" strokeWidth={2} />
-                {title}
-            </h3>
-            <div className="space-y-0">
-                {entries.map(([key, count]) => {
-                    const style = colorDot ? getStatusStyle(key) : null;
-                    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                    return (
-                        <div
-                            key={key}
-                            className="flex items-center gap-3 py-2 border-b border-black/10 last:border-b-0"
-                        >
-                            {style ? (
-                                <span
-                                    className="w-2.5 h-2.5 rounded-full inline-block flex-shrink-0"
-                                    style={{ backgroundColor: style.text }}
-                                />
-                            ) : (
-                                <span className="w-2.5 h-2.5 rounded-[1px] inline-block flex-shrink-0 bg-black" />
-                            )}
-                            <span className="text-sm font-medium flex-1">{key}</span>
-                            <div className="w-20 bg-black/10 h-1.5 rounded-[1px] overflow-hidden flex-shrink-0">
-                                <div
-                                    className="bg-black h-full"
-                                    style={{ width: `${pct}%` }}
-                                />
-                            </div>
-                            <span className="font-mono text-sm font-bold tabular-nums w-8 text-right">
-                                {count}
-                            </span>
-                        </div>
-                    );
-                })}
-                {entries.length === 0 && (
-                    <p className="text-sm text-black/40 font-mono">No data</p>
-                )}
-            </div>
-        </div>
-    );
-}
 
 // ─── Recent Tables ─────────────────────────────────────
 
@@ -203,19 +143,19 @@ function RecentChallengesTable({
             <table className="w-full text-sm border-collapse">
                 <thead>
                     <tr className="bg-[#f4f4f0]">
-                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Title
                         </th>
-                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Domain
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Status
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Reward
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Created
                         </th>
                     </tr>
@@ -226,9 +166,9 @@ function RecentChallengesTable({
                         return (
                             <tr
                                 key={c.id}
-                                className="border-b last:border-b-0 border-black hover:bg-black/5 transition-colors"
+                                className="border-b last:border-b-0 border-black/20 hover:bg-black/[0.02] transition-colors"
                             >
-                                <td className="py-2 px-4 border-r border-black">
+                                <td className="py-2 px-4">
                                     <Link
                                         href={`/challenges/${c.id}`}
                                         className="font-semibold text-black text-sm hover:underline no-underline flex items-center gap-1.5"
@@ -237,12 +177,12 @@ function RecentChallengesTable({
                                         <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
                                     </Link>
                                 </td>
-                                <td className="py-2 px-4 border-r border-black">
-                                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-black text-white">
+                                <td className="py-2 px-4">
+                                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider border border-black text-black">
                                         {c.domain}
                                     </span>
                                 </td>
-                                <td className="py-2 px-4 text-right border-r border-black">
+                                <td className="py-2 px-4 text-right">
                                     <span
                                         className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border"
                                         style={{
@@ -254,7 +194,7 @@ function RecentChallengesTable({
                                         {c.status}
                                     </span>
                                 </td>
-                                <td className="py-2 px-4 text-right border-r border-black">
+                                <td className="py-2 px-4 text-right">
                                     <span className="font-mono text-xs font-bold tabular-nums">
                                         {formatUsdc(c.reward_amount)} USDC
                                     </span>
@@ -294,16 +234,16 @@ function RecentSubmissionsTable({
             <table className="w-full text-sm border-collapse">
                 <thead>
                     <tr className="bg-[#f4f4f0]">
-                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Solver
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Score
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-r border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Scored
                         </th>
-                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black border-b border-black">
+                        <th className="text-right py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-black/40 border-b border-black">
                             Submitted
                         </th>
                     </tr>
@@ -312,9 +252,9 @@ function RecentSubmissionsTable({
                     {submissions.map((s) => (
                         <tr
                             key={s.id}
-                            className="border-b last:border-b-0 border-black hover:bg-black/5 transition-colors"
+                            className="border-b last:border-b-0 border-black/20 hover:bg-black/[0.02] transition-colors"
                         >
-                            <td className="py-2 px-4 border-r border-black">
+                            <td className="py-2 px-4">
                                 <a
                                     href={`https://sepolia.basescan.org/address/${s.solver_address}`}
                                     target="_blank"
@@ -325,12 +265,12 @@ function RecentSubmissionsTable({
                                     <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
                                 </a>
                             </td>
-                            <td className="py-2 px-4 text-right border-r border-black">
+                            <td className="py-2 px-4 text-right">
                                 <span className="font-mono text-xs font-bold tabular-nums">
                                     {formatWadToScore(s.score)}
                                 </span>
                             </td>
-                            <td className="py-2 px-4 text-right border-r border-black">
+                            <td className="py-2 px-4 text-right">
                                 <span
                                     className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
                                         s.scored
@@ -399,14 +339,26 @@ function WorkerStatus() {
     } as const;
     const s = health ? statusMap[health.status] ?? statusMap.error : { color: "bg-red-500", label: "Unavailable" };
 
+    const ready = health?.status === "ok" || health?.status === "idle";
+
     return (
         <div className="border border-black p-4">
-            <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 mb-3">
-                <Activity className="w-4 h-4" strokeWidth={2} />
-                Scoring Worker
-                <span className={`w-2 h-2 rounded-full ${s.color}`} />
-                <span className="text-[10px] font-normal text-black/60">{s.label}</span>
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
+                    <Activity className="w-4 h-4" strokeWidth={2} />
+                    Scoring Worker
+                </h3>
+                <span
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 border"
+                    style={
+                        ready
+                            ? { backgroundColor: "#e8efe8", color: "#2d6a2e", borderColor: "#b5cdb6" }
+                            : { backgroundColor: "#fef2f2", color: "#dc2626", borderColor: "#fca5a5" }
+                    }
+                >
+                    {ready ? "Active — Ready to Score" : s.label}
+                </span>
+            </div>
             {health?.jobs ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(
@@ -465,15 +417,13 @@ export function AnalyticsClient() {
                 </div>
             ) : d ? (
                 <>
-                    {/* ── Section 1: Financial Overview (hero banner) ── */}
-                    <div className="border border-black overflow-hidden">
-                        <div className="bg-[#f4f4f0] px-4 py-2 border-b border-black">
-                            <h2 className="text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2">
-                                <DollarSign className="w-3.5 h-3.5" strokeWidth={2} />
-                                Financial Overview
-                            </h2>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-black bg-white">
+                    {/* ── Section 1: Financial Overview ── */}
+                    <div>
+                        <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-2 flex items-center gap-1.5">
+                            <DollarSign className="w-3 h-3" strokeWidth={1.5} />
+                            Financial Overview
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 border border-black divide-x divide-black bg-white">
                             <div className="p-5 text-center">
                                 <HeroMetric
                                     label="Total Value Locked"
@@ -486,7 +436,6 @@ export function AnalyticsClient() {
                                     label="Total Distributed"
                                     value={`$${formatUsdc(d.distributedUsdc ?? 0)}`}
                                     sub="To solvers"
-                                    accent
                                 />
                             </div>
                             <div className="p-5 text-center">
@@ -507,7 +456,7 @@ export function AnalyticsClient() {
                     </div>
 
                     {/* ── Section 2: Activity Metrics ── */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 border border-black divide-x divide-black bg-white">
                         <GaugeCard
                             icon={FlaskConical}
                             label="Challenges"
@@ -541,13 +490,11 @@ export function AnalyticsClient() {
                             label="Completion Rate"
                             value={d.completionRate ?? 0}
                             icon={CheckCircle2}
-                            color="bg-green-600"
                         />
                         <ProgressMetric
                             label="Scoring Success"
                             value={d.scoringSuccessRate ?? 0}
                             icon={Target}
-                            color="bg-black"
                         />
                         <ProgressMetric
                             label="Scored Pipeline"
@@ -555,31 +502,10 @@ export function AnalyticsClient() {
                                 ? Math.round((d.scoredSubmissions / d.totalSubmissions) * 100)
                                 : 0}
                             icon={Zap}
-                            color="bg-blue-600"
                         />
                     </div>
 
-                    {/* ── Section 4: Breakdowns ── */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <BreakdownSection
-                            title="By Status"
-                            icon={Activity}
-                            data={d.challengesByStatus}
-                            colorDot
-                        />
-                        <BreakdownSection
-                            title="By Domain"
-                            icon={FlaskConical}
-                            data={d.challengesByDomain}
-                        />
-                        <BreakdownSection
-                            title="By Distribution"
-                            icon={Trophy}
-                            data={d.challengesByDistribution}
-                        />
-                    </div>
-
-                    {/* ── Section 5: Worker + Recent Tables ── */}
+                    {/* ── Section 4: Worker + Recent Tables ── */}
                     <WorkerStatus />
 
                     <div className="space-y-4">

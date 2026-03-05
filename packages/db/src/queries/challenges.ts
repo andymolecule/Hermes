@@ -167,7 +167,7 @@ export async function listChallenges(db: HermesDbClient) {
   const { data, error } = await db
     .from("challenges")
     .select(
-      "id, contract_address, tx_hash, max_submissions_total, max_submissions_per_solver",
+      "id, contract_address, tx_hash, status, max_submissions_total, max_submissions_per_solver",
     );
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);

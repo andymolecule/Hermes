@@ -103,6 +103,26 @@ export async function claimPayout(challengeAddress: `0x${string}`) {
   });
 }
 
+export async function claimPayoutWithPrivateKey(
+  challengeAddress: `0x${string}`,
+  privateKey: `0x${string}`,
+) {
+  const config = loadConfig();
+  const chainId = config.HERMES_CHAIN_ID;
+  const chain = chainId === CHAIN_IDS.baseMainnet ? base : baseSepolia;
+  const walletClient = createWalletClient({
+    chain,
+    transport: http(config.HERMES_RPC_URL),
+    account: privateKeyToAccount(privateKey),
+  });
+  return walletClient.writeContract({
+    address: challengeAddress,
+    abi: HermesChallengeAbi,
+    functionName: "claim",
+    args: [],
+  });
+}
+
 export type OnChainSubmission = {
   solver: `0x${string}`;
   resultHash: `0x${string}`;
