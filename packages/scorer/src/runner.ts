@@ -156,7 +156,7 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
   // removes it reliably (prevents /tmp leak across runs).
   const outputDir = path.join(path.dirname(inputDir), "output");
   await fs.rm(outputDir, { recursive: true, force: true });
-  await fs.mkdir(outputDir, { recursive: true });
+  await fs.mkdir(outputDir, { recursive: true, mode: 0o777 });
   const containerName = `hermes-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const pull = await runCommand("docker", ["pull", input.image], timeoutMs);
@@ -205,6 +205,7 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
     input.limits?.cpus ?? DEFAULT_RUNNER_LIMITS.cpus,
     "--pids-limit",
     String(input.limits?.pids ?? DEFAULT_RUNNER_LIMITS.pids),
+    "--tmpfs", "/tmp:size=64m",
     "--mount",
     `type=bind,src=${inputDir},dst=/input,readonly`,
     "--mount",
@@ -226,13 +227,25 @@ export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
     }
     throw error;
   }
+  const scorePath = path.join(outputDir, "score.json");
+
   if (run.code !== 0) {
+    // Try to read score.json for a structured error (scorer writes errors there before exiting)
+    let scorerError: string | undefined;
+    try {
+      const raw = await fs.readFile(scorePath, "utf8");
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.error === "string") scorerError = parsed.error;
+    } catch {
+      // score.json doesn't exist or isn't valid — fall through to generic error
+    }
+    const containerOutput = [run.stderr, run.stdout].filter(Boolean).join("\n").trim();
+    const details = [scorerError, containerOutput].filter(Boolean).join(" | ");
     throw new Error(
-      `Scorer container failed for image ${input.image}. If image is missing, run: docker pull ${input.image}. ${run.stderr || run.stdout}`,
+      `Scorer container exited with code ${run.code} for image ${input.image}.${details ? ` ${details}` : ""} If image is missing, run: docker pull ${input.image}`,
     );
   }
 
-  const scorePath = path.join(outputDir, "score.json");
   let scoreRaw: string;
   try {
     scoreRaw = await fs.readFile(scorePath, "utf8");
