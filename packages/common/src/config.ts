@@ -35,6 +35,9 @@ const configSchema = z.object({
     .optional(),
   HERMES_PINATA_JWT: z.string().min(1).optional(),
   HERMES_IPFS_GATEWAY: z.string().url().optional(),
+  HERMES_SUBMISSION_SEAL_KEY_ID: z.string().min(1).optional(),
+  HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM: z.string().min(1).optional(),
+  HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM: z.string().min(1).optional(),
   HERMES_SUPABASE_URL: z.string().url().optional(),
   HERMES_SUPABASE_ANON_KEY: z.string().min(1).optional(),
   HERMES_SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
@@ -94,6 +97,20 @@ export function loadConfig(): HermesConfig {
     throw new Error(formatZodError(result.error));
   }
   const config = result.data;
+
+  const sealingConfigValues = [
+    config.HERMES_SUBMISSION_SEAL_KEY_ID,
+    config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+    config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+  ];
+  const configuredSealingValues = sealingConfigValues.filter(
+    (value) => typeof value === "string" && value.length > 0,
+  ).length;
+  if (configuredSealingValues > 0 && configuredSealingValues < sealingConfigValues.length) {
+    throw new Error(
+      "Submission sealing config must be fully specified. Provide HERMES_SUBMISSION_SEAL_KEY_ID, HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM, and HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM together.",
+    );
+  }
 
   const missing: string[] = [];
   if (!config.HERMES_RPC_URL) missing.push("HERMES_RPC_URL");

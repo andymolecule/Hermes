@@ -41,7 +41,7 @@ export function LeaderboardTable({ rows }: { rows: Submission[] }) {
         <tbody className="bg-white">
           {rows.map((row, i) => (
             <tr
-              key={row.id}
+              key={`${row.solver_address}-${row.on_chain_sub_id}`}
               className="border-b last:border-b-0 border-black hover:bg-black/5 transition-colors"
             >
               <td className="py-3 px-4 border-r border-black">

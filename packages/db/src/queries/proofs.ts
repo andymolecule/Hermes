@@ -6,7 +6,7 @@ export interface ProofBundleInsert {
   input_hash: string;
   output_hash: string;
   container_image_hash: string;
-  scorer_log: string;
+  scorer_log?: string | null;
   reproducible?: boolean;
 }
 

@@ -24,10 +24,10 @@ export type Challenge = {
 };
 
 export type Submission = {
-  id: string;
   on_chain_sub_id: number;
   solver_address: string;
   score: string | null;
+  scored: boolean;
   submitted_at: string;
 };
 
@@ -44,7 +44,6 @@ export type Stats = {
 };
 
 export type SolverSubmission = {
-  id: string;
   challenge_id: string;
   on_chain_sub_id: number;
   solver_address: string;
@@ -52,7 +51,6 @@ export type SolverSubmission = {
   scored: boolean;
   submitted_at: string;
   scored_at: string | null;
-  tx_hash: string;
   challenges: {
     id: string;
     title: string;

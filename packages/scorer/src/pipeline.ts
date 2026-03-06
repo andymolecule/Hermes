@@ -12,6 +12,7 @@ export interface ScoringInputSource {
   cid?: string;
   localPath?: string;
   content?: string;
+  bytes?: Uint8Array;
 }
 
 export type ScoringPipelinePhase = "fetch_inputs" | "run_scorer";
@@ -60,11 +61,13 @@ async function stageSourceToPath(
     typeof source.localPath === "string" && source.localPath.length > 0;
   const hasContent =
     typeof source.content === "string" && source.content.length > 0;
-  const sourceCount = [hasCid, hasLocalPath, hasContent].filter(Boolean).length;
+  const hasBytes =
+    source.bytes instanceof Uint8Array && source.bytes.byteLength > 0;
+  const sourceCount = [hasCid, hasLocalPath, hasContent, hasBytes].filter(Boolean).length;
 
   if (sourceCount !== 1) {
     throw new Error(
-      "Scoring input source must provide exactly one of: cid, localPath, content.",
+      "Scoring input source must provide exactly one of: cid, localPath, content, bytes.",
     );
   }
 
@@ -76,6 +79,11 @@ async function stageSourceToPath(
   if (hasLocalPath) {
     const content = await fs.readFile(path.resolve(source.localPath as string));
     await fs.writeFile(destinationPath, content);
+    return;
+  }
+
+  if (hasBytes) {
+    await fs.writeFile(destinationPath, source.bytes as Uint8Array);
     return;
   }
 

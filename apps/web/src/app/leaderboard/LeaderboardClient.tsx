@@ -208,7 +208,7 @@ export function LeaderboardClient() {
                                                         {/* Submission rows */}
                                                         {subs.map((sub) => (
                                                             <div
-                                                                key={sub.id}
+                                                                key={`${sub.challenge_id}-${sub.on_chain_sub_id}-${sub.solver_address}`}
                                                                 className="flex items-center gap-4 px-4 py-1.5 pl-11 text-xs border-t border-black/10"
                                                             >
                                                                 <span className="font-mono text-black/40">

@@ -15,7 +15,7 @@ router.get("/:address", async (c) => {
     );
   }
 
-  const db = createSupabaseClient(false);
+  const db = createSupabaseClient(true);
   const submissions = await listSubmissionsBySolver(db, address, 100);
 
   const challengeIds = new Set(submissions.map((s) => s.challenge_id));
@@ -25,7 +25,16 @@ router.get("/:address", async (c) => {
       address: address.toLowerCase(),
       totalSubmissions: submissions.length,
       challengesParticipated: challengeIds.size,
-      submissions,
+      submissions: submissions.map((submission) => ({
+        challenge_id: submission.challenge_id,
+        on_chain_sub_id: submission.on_chain_sub_id,
+        solver_address: submission.solver_address,
+        score: submission.score,
+        scored: submission.scored,
+        submitted_at: submission.submitted_at,
+        scored_at: submission.scored_at,
+        challenges: submission.challenges,
+      })),
     },
   });
 });

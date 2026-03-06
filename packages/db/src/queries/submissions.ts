@@ -1,3 +1,7 @@
+import {
+  SUBMISSION_RESULT_FORMAT,
+  type SubmissionResultFormat,
+} from "@hermes/common";
 import type { HermesDbClient } from "../index";
 
 export interface SubmissionOnChainWrite {
@@ -210,10 +214,14 @@ export async function setSubmissionResultCid(
   challengeId: string,
   onChainSubId: number,
   resultCid: string,
+  resultFormat: SubmissionResultFormat = SUBMISSION_RESULT_FORMAT.plainV0,
 ) {
   const { data, error } = await db
     .from("submissions")
-    .update({ result_cid: resultCid })
+    .update({
+      result_cid: resultCid,
+      result_format: resultFormat,
+    })
     .eq("challenge_id", challengeId)
     .eq("on_chain_sub_id", onChainSubId)
     .select("*")

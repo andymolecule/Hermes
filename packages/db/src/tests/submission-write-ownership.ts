@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import {
-  setSubmissionResultCid,
-  upsertSubmissionOnChain,
-} from "../queries/submissions.js";
+import { SUBMISSION_RESULT_FORMAT } from "@hermes/common";
+import { setSubmissionResultCid, upsertSubmissionOnChain } from "../queries/submissions.js";
 
 function makeConflictDbMock() {
   const calls: {
@@ -122,10 +120,12 @@ async function testSetSubmissionResultCidTouchesOnlyResultCid() {
   } as never;
 
   await setSubmissionResultCid(db, "challenge-1", 1, "ipfs://bafy-test");
-  assert.deepEqual(updatePayload, { result_cid: "ipfs://bafy-test" });
+  assert.deepEqual(updatePayload, {
+    result_cid: "ipfs://bafy-test",
+    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+  });
 }
 
 await testOnChainUpsertConflictPathDoesNotTouchOffchainFields();
 await testSetSubmissionResultCidTouchesOnlyResultCid();
 console.log("submission write ownership tests passed");
-

@@ -75,6 +75,7 @@ export async function createSubmissionRecord(input: {
   challengeId: string;
   resultCid: string;
   txHash: `0x${string}`;
+  resultFormat?: "plain_v0" | "sealed_v1";
 }) {
   const response = await fetch(`${BASE}/api/submissions`, {
     method: "POST",
@@ -92,4 +93,13 @@ export async function createSubmissionRecord(input: {
     ok: boolean;
     submission?: { id: string };
   };
+}
+
+export async function getSubmissionPublicKey() {
+  return request<{
+    version: "sealed_submission_v1";
+    alg: "aes-256-gcm+rsa-oaep-256";
+    kid: string;
+    publicKeyPem: string;
+  }>("/api/submissions/public-key");
 }

@@ -155,7 +155,10 @@ export function TimelineStatus({ challenge, submissions = [] }: { challenge: Cha
 
         {/* Submissions */}
         {submissions.map((sub, i) => (
-          <div key={sub.id} className="flex items-start gap-3 text-xs">
+          <div
+            key={`${sub.on_chain_sub_id}-${sub.solver_address}-${i}`}
+            className="flex items-start gap-3 text-xs"
+          >
             <div className="w-1.5 h-1.5 rounded-full bg-black/40 mt-1.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="font-mono font-bold text-black">

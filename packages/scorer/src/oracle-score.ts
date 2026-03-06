@@ -6,7 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@hermes/chain";
-import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
+import { loadConfig, resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
 import {
   type HermesDbClient,
   getChallengeById,
@@ -18,6 +18,7 @@ import { pinFile } from "@hermes/ipfs";
 import { keccak256, toBytes } from "viem";
 import { buildProofBundle } from "./proof.js";
 import { executeScoringPipeline } from "./pipeline.js";
+import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
 
 export interface OracleScoreInput {
@@ -45,6 +46,8 @@ export async function oracleScore(
     challenge_id: string;
     on_chain_sub_id: number;
     result_cid: string | null;
+    result_format?: string | null;
+    solver_address: string;
   };
   if (!submission.result_cid) {
     throw new Error(
@@ -64,10 +67,17 @@ export async function oracleScore(
   }
 
   // 2. Run scorer container
+  const submissionSource = await resolveSubmissionSource({
+    resultCid: submission.result_cid,
+    resultFormat: submission.result_format,
+    challengeId: challenge.id,
+    solverAddress: submission.solver_address,
+    privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+  });
   const run = await executeScoringPipeline({
     image: evalPlan.image,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-    submission: { cid: submission.result_cid },
+    submission: submissionSource,
     keepWorkspace: true,
   });
 
@@ -77,7 +87,7 @@ export async function oracleScore(
       challengeId: challenge.id,
       submissionId: submission.id,
       score: run.result.score,
-      scorerLog: run.result.log,
+      scorerLog: null,
       containerImageDigest: run.result.containerImageDigest,
       inputPaths: run.inputPaths,
       outputPath: run.result.outputPath,
@@ -112,7 +122,7 @@ export async function oracleScore(
       input_hash: proof.inputHash,
       output_hash: proof.outputHash,
       container_image_hash: proof.containerImageDigest,
-      scorer_log: proof.scorerLog,
+      scorer_log: null,
       reproducible: true,
     });
 

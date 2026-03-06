@@ -7,14 +7,14 @@ export interface ProofBundleInput {
   challengeId: string;
   submissionId: string;
   score: number;
-  scorerLog: string;
+  scorerLog?: string | null;
   containerImageDigest: string;
   inputPaths: string[];
   outputPath: string;
 }
 
 export interface ProofBundle extends SharedProofBundle {
-  scorerLog: string;
+  scorerLog?: string;
   meta: {
     challengeId: string;
     submissionId: string;
@@ -47,7 +47,7 @@ export async function buildProofBundle(
     inputHash: hashJoined(inputHashes.sort()),
     outputHash,
     containerImageDigest: input.containerImageDigest,
-    scorerLog: input.scorerLog,
+    ...(input.scorerLog ? { scorerLog: input.scorerLog } : {}),
     meta: {
       challengeId: input.challengeId,
       submissionId: input.submissionId,

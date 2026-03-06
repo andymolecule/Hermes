@@ -1,14 +1,10 @@
-import {
-  createSupabaseClient,
-  getChallengeById,
-  listSubmissionsForChallenge,
-} from "@hermes/db";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
   loadCliConfig,
   requireConfigValues,
 } from "../lib/config-store";
+import { fetchApiJson } from "../lib/api";
 import { printJson, printSuccess, printTable } from "../lib/output";
 
 type ChallengeRecord = {
@@ -19,6 +15,14 @@ type ChallengeRecord = {
 
 type SubmissionRecord = {
   score?: string | null;
+};
+
+type ChallengeStatusResponse = {
+  data: {
+    challenge: ChallengeRecord;
+    submissions: SubmissionRecord[];
+    leaderboard: SubmissionRecord[];
+  };
 };
 
 function formatCountdown(deadline: string) {
@@ -45,20 +49,13 @@ export function buildStatusCommand() {
     .action(async (id: string, opts: { format: string }) => {
       const config = loadCliConfig();
       applyConfigToEnv(config);
-      requireConfigValues(config, [
-        "rpc_url",
-        "factory_address",
-        "usdc_address",
-        "supabase_url",
-        "supabase_anon_key",
-      ]);
+      requireConfigValues(config, ["api_url"]);
 
-      const db = createSupabaseClient();
-      const challenge = (await getChallengeById(db, id)) as ChallengeRecord;
-      const submissions = (await listSubmissionsForChallenge(
-        db,
-        id,
-      )) as SubmissionRecord[];
+      const response = await fetchApiJson<ChallengeStatusResponse>(
+        `/api/challenges/${id}`,
+      );
+      const challenge = response.data.challenge;
+      const submissions = response.data.leaderboard;
 
       const topScore = submissions[0]?.score ?? null;
       const status = {

@@ -204,7 +204,7 @@ export async function processJob(
       input_hash: scoringOutcome.proof.inputHash,
       output_hash: scoringOutcome.proof.outputHash,
       container_image_hash: scoringOutcome.proof.containerImageDigest,
-      scorer_log: scoringOutcome.proof.scorerLog,
+      scorer_log: null,
       reproducible: true,
     });
 
