@@ -14,9 +14,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-abi.mjs",
-    "test": "node --import tsx src/tests/validate-challenge.ts && node --import tsx src/tests/proof-bundle.ts && node --import tsx src/tests/scoring-types.ts && node --import tsx src/tests/preset-registry.ts && node --import tsx src/tests/constants-config.ts && node --import tsx src/tests/submission-limits.ts && node --import tsx src/tests/x402-facilitator.ts"
+    "test": "node --import tsx src/tests/validate-challenge.ts && node --import tsx src/tests/proof-bundle.ts && node --import tsx src/tests/scoring-types.ts && node --import tsx src/tests/preset-registry.ts && node --import tsx src/tests/constants-config.ts && node --import tsx src/tests/submission-limits.ts && node --import tsx src/tests/submission-sealing.ts && node --import tsx src/tests/x402-facilitator.ts"
   },
   "dependencies": {
+    "viem": "^2.21.15",
     "zod": "^3.23.8"
   },
   "devDependencies": {

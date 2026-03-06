@@ -1,5 +1,9 @@
 import { getOnChainSubmission } from "@hermes/chain";
-import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
+import {
+  loadConfig,
+  resolveEvalSpec,
+  type ChallengeEvalRow,
+} from "@hermes/common";
 import {
   createSupabaseClient,
   createVerification,
@@ -9,7 +13,10 @@ import {
 } from "@hermes/db";
 import type { ProofBundle as ProofBundlePayload } from "@hermes/common";
 import { getJSON } from "@hermes/ipfs";
-import { executeScoringPipeline } from "@hermes/scorer";
+import {
+  executeScoringPipeline,
+  resolveSubmissionSource,
+} from "@hermes/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -31,9 +38,11 @@ type SubmissionRecord = {
   id: string;
   challenge_id: string;
   result_cid: string | null;
+  result_format?: string | null;
   score: string | null;
   proof_bundle_hash: string | null;
   on_chain_sub_id: number | null;
+  solver_address: string;
 };
 
 type ChallengeRecord = ChallengeEvalRow & {
@@ -171,11 +180,18 @@ export function buildVerifyCommand() {
         );
 
         const runSpinner = createSpinner("Running scorer for verification...");
+        const submissionSource = await resolveSubmissionSource({
+          resultCid: submission.result_cid,
+          resultFormat: submission.result_format,
+          challengeId: challenge.id,
+          solverAddress: submission.solver_address,
+          privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+        });
         const run = await executeScoringPipeline({
           image:
             proofPayload.containerImageDigest ?? proof.container_image_hash,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-          submission: { cid: submission.result_cid },
+          submission: submissionSource,
         });
         runSpinner.succeed("Verification scoring finished");
 

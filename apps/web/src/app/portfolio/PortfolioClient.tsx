@@ -192,7 +192,10 @@ export function PortfolioClient() {
                         </thead>
                         <tbody className="bg-white">
                             {query.data.submissions.map((s) => (
-                                <SubmissionRow key={s.id} submission={s} />
+                                <SubmissionRow
+                                    key={`${s.challenge_id}-${s.on_chain_sub_id}-${s.solver_address}`}
+                                    submission={s}
+                                />
                             ))}
                         </tbody>
                     </table>

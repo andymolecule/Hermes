@@ -7,12 +7,59 @@ import {
 import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
+  SUBMISSION_RESULT_FORMAT,
   deriveDisplayStatus,
   isChallengeDbStatus,
   type ChallengeDbStatus,
   type ChallengeDisplayStatus,
 } from "@hermes/common";
 import { z } from "zod";
+
+type SubmissionRow = Awaited<ReturnType<typeof listSubmissionsForChallenge>>[number];
+type ProofBundleRow = {
+  cid?: string | null;
+  input_hash?: string | null;
+  output_hash?: string | null;
+  container_image_hash?: string | null;
+  reproducible?: boolean;
+  verified_count?: number;
+};
+
+export function toPublicSubmission(row: SubmissionRow) {
+  return {
+    on_chain_sub_id: row.on_chain_sub_id,
+    solver_address: row.solver_address,
+    score: row.score,
+    scored: row.scored,
+    submitted_at: row.submitted_at,
+  };
+}
+
+export function toPrivateSubmission(row: SubmissionRow) {
+  return {
+    id: row.id,
+    challenge_id: row.challenge_id,
+    on_chain_sub_id: row.on_chain_sub_id,
+    solver_address: row.solver_address,
+    score: row.score,
+    scored: row.scored,
+    submitted_at: row.submitted_at,
+    scored_at: row.scored_at ?? null,
+    result_format: row.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
+  };
+}
+
+export function toPrivateProofBundle(row: ProofBundleRow | null) {
+  if (!row) return null;
+  return {
+    cid: row.cid ?? null,
+    input_hash: row.input_hash ?? null,
+    output_hash: row.output_hash ?? null,
+    container_image_hash: row.container_image_hash ?? null,
+    reproducible: row.reproducible ?? false,
+    verified_count: row.verified_count ?? 0,
+  };
+}
 
 export const listChallengesQuerySchema = z.object({
   status: z
@@ -102,9 +149,10 @@ export async function listChallengesFromQuery(
 }
 
 export async function getChallengeWithLeaderboard(challengeId: string) {
-  const db = createSupabaseClient(false);
+  const db = createSupabaseClient(true);
   const challenge = withDerivedDisplayStatus(await getChallengeById(db, challengeId));
-  const submissions = await listSubmissionsForChallenge(db, challengeId);
+  const rawSubmissions = await listSubmissionsForChallenge(db, challengeId);
+  const submissions = rawSubmissions.map((row) => toPublicSubmission(row));
   const leaderboard = sortByScoreDesc(submissions);
   return { challenge, submissions, leaderboard };
 }

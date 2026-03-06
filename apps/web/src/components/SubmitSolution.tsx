@@ -1,11 +1,19 @@
 "use client";
 
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
-import { CHALLENGE_STATUS, isValidPinnedSpecCid, validateCsvHeaders } from "@hermes/common";
+import {
+    CHALLENGE_STATUS,
+    SUBMISSION_RESULT_FORMAT,
+    computeSubmissionResultHash,
+    importSubmissionSealPublicKey,
+    isValidPinnedSpecCid,
+    sealSubmission,
+    serializeSealedSubmissionEnvelope,
+    validateCsvHeaders,
+} from "@hermes/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useRef, useState } from "react";
 import type { Abi } from "viem";
-import { keccak256, toHex } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import {
     Upload,
@@ -18,7 +26,7 @@ import {
     FileCheck,
 } from "lucide-react";
 import { CHAIN_ID } from "../lib/config";
-import { createSubmissionRecord } from "../lib/api";
+import { createSubmissionRecord, getSubmissionPublicKey } from "../lib/api";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -75,18 +83,11 @@ export function SubmitSolution({
     const isError = status && !isSuccess && !isSubmitting && !uploading;
     const hasResult = inputMode === "file" ? !!resultFile : !!resultText.trim();
 
-    async function pinResultToIpfs(): Promise<string> {
+    async function pinResultToIpfs(file: File): Promise<string> {
         setUploading(true);
         try {
             const formData = new FormData();
-            if (inputMode === "file") {
-                if (!resultFile) throw new Error("No file selected.");
-                formData.append("file", resultFile);
-            } else {
-                const blob = new Blob([resultText.trim()], { type: "text/plain" });
-                const textFile = new File([blob], "result.txt", { type: "text/plain" });
-                formData.append("file", textFile);
-            }
+            formData.append("file", file);
 
             const pinRes = await fetch("/api/pin-data", {
                 method: "POST",
@@ -113,6 +114,10 @@ export function SubmitSolution({
             setStatus("Wallet client not ready. Reconnect and retry.");
             return;
         }
+        if (!address) {
+            setStatus("Wallet address not available. Reconnect and retry.");
+            return;
+        }
         if (!hasResult) {
             setStatus("Upload a result file or enter your answer.");
             return;
@@ -133,13 +138,44 @@ export function SubmitSolution({
                 }
             }
 
-            setStatus("Uploading result to IPFS...");
-            const cid = await pinResultToIpfs();
+            const submissionPublicKey = await getSubmissionPublicKey();
+            const publicKey = await importSubmissionSealPublicKey(
+                submissionPublicKey.publicKeyPem,
+            );
+            const normalizedAddress = address.toLowerCase();
+
+            let sourceFile: File;
+            if (inputMode === "file") {
+                if (!resultFile) throw new Error("No file selected.");
+                sourceFile = resultFile;
+            } else {
+                const blob = new Blob([resultText.trim()], { type: "text/plain" });
+                sourceFile = new File([blob], "result.txt", { type: "text/plain" });
+            }
+
+            setStatus("Sealing submission locally...");
+            const sealedEnvelope = await sealSubmission({
+                challengeId,
+                solverAddress: normalizedAddress,
+                fileName: sourceFile.name || "submission.bin",
+                mimeType: sourceFile.type || "application/octet-stream",
+                bytes: new Uint8Array(await sourceFile.arrayBuffer()),
+                keyId: submissionPublicKey.kid,
+                publicKey,
+            });
+            const sealedFile = new File(
+                [serializeSealedSubmissionEnvelope(sealedEnvelope)],
+                "sealed-submission.json",
+                { type: "application/json" },
+            );
+
+            setStatus("Uploading sealed submission to IPFS...");
+            const cid = await pinResultToIpfs(sealedFile);
             if (!isValidPinnedSpecCid(cid)) {
                 throw new Error("Pinned CID is invalid.");
             }
 
-            const resultHash = keccak256(toHex(cid));
+            const resultHash = computeSubmissionResultHash(cid);
 
             setStatus("Submitting on-chain — confirm in your wallet...");
             const tx = await writeContractAsync({
@@ -158,6 +194,7 @@ export function SubmitSolution({
                 challengeId,
                 resultCid: cid,
                 txHash: tx,
+                resultFormat: SUBMISSION_RESULT_FORMAT.sealedV1,
             });
 
             setTxHash(tx);
@@ -294,11 +331,17 @@ export function SubmitSolution({
                                             Drop your result file here or <span className="text-black font-bold underline underline-offset-2">browse</span>
                                         </span>
                                         <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-black/40">
+                                            Encrypted locally before upload
+                                        </span>
+                                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-black/40">
                                             CSV, JSON, or any file format
                                         </span>
                                     </>
                                 )}
                             </div>
+                            <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
+                                Only the scorer can decrypt after deadline.
+                            </p>
                         </div>
                     )}
 
@@ -317,7 +360,10 @@ export function SubmitSolution({
                                 disabled={isSubmitting}
                             />
                             <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
-                                Stored on IPFS, hash recorded on-chain.
+                                Encrypted locally, sealed to IPFS, hash recorded on-chain.
+                            </p>
+                            <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-1">
+                                Only the scorer can decrypt after deadline.
                             </p>
                         </div>
                     )}

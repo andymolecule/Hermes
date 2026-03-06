@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { loadConfig } from "@hermes/common";
+import { loadConfig, runSubmissionSealSelfCheck } from "@hermes/common";
 import {
   claimNextJob,
   createSupabaseClient,
@@ -70,6 +70,7 @@ function startJobLeaseHeartbeat(
 
 export async function startWorker() {
   loadConfig();
+  const config = loadConfig();
 
   if (!process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
     throw new Error(
@@ -78,6 +79,21 @@ export async function startWorker() {
   }
   if (process.env.HERMES_ORACLE_KEY && !process.env.HERMES_PRIVATE_KEY) {
     process.env.HERMES_PRIVATE_KEY = process.env.HERMES_ORACLE_KEY;
+  }
+
+  if (
+    config.HERMES_SUBMISSION_SEAL_KEY_ID &&
+    config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
+    config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM
+  ) {
+    await runSubmissionSealSelfCheck({
+      keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
+      publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+      privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+    });
+    log("info", "Submission sealing self-check passed", {
+      keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
+    });
   }
 
   try {

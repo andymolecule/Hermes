@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@hermes/chain";
-import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
+import {
+  loadConfig,
+  resolveEvalSpec,
+  type ChallengeEvalRow,
+} from "@hermes/common";
 import {
   createSupabaseClient,
   getChallengeById,
@@ -10,7 +14,11 @@ import {
   upsertProofBundle,
 } from "@hermes/db";
 import { pinFile } from "@hermes/ipfs";
-import { buildProofBundle, executeScoringPipeline } from "@hermes/scorer";
+import {
+  buildProofBundle,
+  executeScoringPipeline,
+  resolveSubmissionSource,
+} from "@hermes/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import {
@@ -30,6 +38,8 @@ type SubmissionRecord = {
   challenge_id: string;
   on_chain_sub_id: number;
   result_cid: string | null;
+  result_format?: string | null;
+  solver_address: string;
 };
 
 type ChallengeRecord = ChallengeEvalRow & {
@@ -86,10 +96,17 @@ export function buildScoreCommand() {
         }
 
         const runSpinner = createSpinner("Running scorer container...");
+        const submissionSource = await resolveSubmissionSource({
+          resultCid: submission.result_cid,
+          resultFormat: submission.result_format,
+          challengeId: challenge.id,
+          solverAddress: submission.solver_address,
+          privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+        });
         const run = await executeScoringPipeline({
           image: evalPlan.image,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-          submission: { cid: submission.result_cid },
+          submission: submissionSource,
           keepWorkspace: true,
         });
         runSpinner.succeed(`Scored submission: ${run.result.score}`);
@@ -99,7 +116,7 @@ export function buildScoreCommand() {
             challengeId: challenge.id,
             submissionId: submission.id,
             score: run.result.score,
-            scorerLog: run.result.log,
+            scorerLog: null,
             containerImageDigest: run.result.containerImageDigest,
             inputPaths: run.inputPaths,
             outputPath: run.result.outputPath,
@@ -135,7 +152,7 @@ export function buildScoreCommand() {
             input_hash: proof.inputHash,
             output_hash: proof.outputHash,
             container_image_hash: proof.containerImageDigest,
-            scorer_log: proof.scorerLog,
+            scorer_log: null,
             reproducible: true,
           });
 

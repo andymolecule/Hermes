@@ -3,6 +3,7 @@ import {
   claimPayoutWithPrivateKey,
   getOnChainSubmission,
   getPublicClient,
+  getWalletClient,
   submitChallengeResult,
   submitChallengeResultWithPrivateKey,
 } from "@hermes/chain";
@@ -10,11 +11,17 @@ import {
   CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
   DEFAULT_IPFS_GATEWAY,
+  SUBMISSION_LIMITS,
+  SUBMISSION_RESULT_FORMAT,
+  computeSubmissionResultHash,
   deriveDisplayStatus,
   getSubmissionLimitViolation,
   isChallengeDbStatus,
+  importSubmissionSealPublicKey,
+  loadConfig,
   resolveEvalSpec,
   resolveSubmissionLimits,
+  sealSubmission,
 } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
 import {
@@ -30,10 +37,17 @@ import {
   setSubmissionResultCid,
   upsertSubmissionOnChain,
 } from "@hermes/db";
-import { pinFile, unpinCid } from "@hermes/ipfs";
-import { executeScoringPipeline, wadToScore } from "@hermes/scorer";
-import { keccak256, parseEventLogs, toBytes } from "viem";
+import { pinJSON, unpinCid } from "@hermes/ipfs";
+import {
+  executeScoringPipeline,
+  resolveSubmissionSource,
+  wadToScore,
+} from "@hermes/scorer";
+import { parseEventLogs } from "viem";
 import type { Abi } from "viem";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { privateKeyToAccount } from "viem/accounts";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -61,6 +75,18 @@ function cidToGatewayUrl(cid: string | null | undefined): string | null {
   if (!cid) return null;
   const bare = cid.replace("ipfs://", "");
   return `${DEFAULT_IPFS_GATEWAY}${bare}`;
+}
+
+function toPublicSubmission(
+  submission: Awaited<ReturnType<typeof listSubmissionsForChallenge>>[number],
+) {
+  return {
+    on_chain_sub_id: submission.on_chain_sub_id,
+    solver_address: submission.solver_address,
+    score: submission.score,
+    scored: submission.scored,
+    submitted_at: submission.submitted_at,
+  };
 }
 
 export async function listChallenges(input: {
@@ -111,7 +137,7 @@ export async function listChallenges(input: {
 }
 
 export async function getChallenge(challengeId: string) {
-  const db = createSupabaseClient(false);
+  const db = createSupabaseClient(true);
   const challenge = await getChallengeById(db, challengeId);
   const dbStatus = isChallengeDbStatus(challenge.status)
     ? challenge.status
@@ -125,9 +151,10 @@ export async function getChallenge(challengeId: string) {
         typeof challenge.deadline === "string" ? challenge.deadline : undefined,
     }),
   };
-  const submissions = await listSubmissionsForChallenge(db, challengeId);
+  const rawSubmissions = await listSubmissionsForChallenge(db, challengeId);
+  const submissions = rawSubmissions.map((row) => toPublicSubmission(row));
   const leaderboard = submissions
-    .filter((row: { score: unknown }) => row.score !== null)
+    .filter((row: { score: unknown; scored: boolean }) => row.scored && row.score !== null)
     .sort((a: { score: unknown }, b: { score: unknown }) => {
       const aScore = BigInt(String(a.score ?? "0"));
       const bScore = BigInt(String(b.score ?? "0"));
@@ -146,7 +173,7 @@ export async function getChallenge(challengeId: string) {
 }
 
 export async function getSubmissionStatus(submissionId: string) {
-  const db = createSupabaseClient(false);
+  const db = createSupabaseClient(true);
   const submission = await getSubmissionById(db, submissionId);
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
 
@@ -159,7 +186,23 @@ export async function getSubmissionStatus(submissionId: string) {
     scoringStatus = "scored_awaiting_proof";
   }
 
-  return { submission, proofBundle, scoringStatus };
+  return {
+    submission: {
+      on_chain_sub_id: submission.on_chain_sub_id,
+      solver_address: submission.solver_address,
+      score: submission.score,
+      scored: submission.scored,
+      submitted_at: submission.submitted_at,
+      scored_at: submission.scored_at ?? null,
+    },
+    proofBundle: proofBundle
+      ? {
+          reproducible: proofBundle.reproducible,
+          verified_count: proofBundle.verified_count,
+        }
+      : null,
+    scoringStatus,
+  };
 }
 
 export async function submitSolution(input: {
@@ -189,8 +232,58 @@ export async function submitSolution(input: {
     );
   }
 
-  const resultCid = await pinFile(input.filePath);
-  const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
+  const config = loadConfig();
+  if (!config.HERMES_API_URL) {
+    throw new Error("HERMES_API_URL is required for sealed submissions.");
+  }
+
+  const publicKeyResponse = await fetch(
+    `${config.HERMES_API_URL.replace(/\/$/, "")}/api/submissions/public-key`,
+  );
+  if (!publicKeyResponse.ok) {
+    throw new Error(
+      `Failed to fetch submission public key: ${await publicKeyResponse.text()}`,
+    );
+  }
+  const publicKeyPayload = (await publicKeyResponse.json()) as {
+    data?: { kid: string; publicKeyPem: string };
+  };
+  if (!publicKeyPayload.data) {
+    throw new Error("Submission public key response missing data.");
+  }
+
+  const sourceBytes = await fs.readFile(path.resolve(input.filePath));
+  if (sourceBytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
+    throw new Error(
+      `Submission file exceeds max size of ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB.`,
+    );
+  }
+  const publicKey = await importSubmissionSealPublicKey(
+    publicKeyPayload.data.publicKeyPem,
+  );
+  const solverAddress = normalizedPrivateKey
+    ? privateKeyToAccount(normalizedPrivateKey as `0x${string}`).address.toLowerCase()
+    : getWalletClient().account?.address?.toLowerCase();
+  if (!solverAddress) {
+    throw new Error(
+      "MCP sealed submission requires a wallet-backed submitter identity. Configure the local wallet or provide a private key where allowed.",
+    );
+  }
+
+  const sealedEnvelope = await sealSubmission({
+    challengeId: input.challengeId,
+    solverAddress,
+    fileName: path.basename(input.filePath),
+    mimeType: "application/octet-stream",
+    bytes: new Uint8Array(sourceBytes),
+    keyId: publicKeyPayload.data.kid,
+    publicKey,
+  });
+  const resultCid = await pinJSON(
+    `sealed-submission-${input.challengeId}`,
+    sealedEnvelope,
+  );
+  const resultHash = computeSubmissionResultHash(resultCid);
 
   let txHash: `0x${string}`;
   try {
@@ -240,6 +333,7 @@ export async function submitSolution(input: {
     input.challengeId,
     Number(args.subId),
     resultCid,
+    SUBMISSION_RESULT_FORMAT.sealedV1,
   );
 
   if (!onChain.scored) {
@@ -368,7 +462,13 @@ export async function verifySubmission(input: {
     const run = await executeScoringPipeline({
       image: proof.container_image_hash,
       evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-      submission: { cid: submission.result_cid },
+      submission: await resolveSubmissionSource({
+        resultCid: submission.result_cid,
+        resultFormat: submission.result_format,
+        challengeId: challenge.id,
+        solverAddress: submission.solver_address,
+        privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      }),
     });
     try {
       const onChain = await getOnChainSubmission(

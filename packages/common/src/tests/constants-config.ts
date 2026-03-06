@@ -73,6 +73,16 @@ try {
   assert.equal(featurePolicy.x402Enabled, false);
   assert.equal(featurePolicy.allowMcpRemotePrivateKeys, false);
 
+  process.env.HERMES_SUBMISSION_SEAL_KEY_ID = "kid-only";
+  resetConfigCache();
+  assert.throws(
+    () => loadConfig(),
+    /Submission sealing config must be fully specified/,
+    "partial submission sealing config should be rejected",
+  );
+  delete process.env.HERMES_SUBMISSION_SEAL_KEY_ID;
+  resetConfigCache();
+
   process.env.HERMES_ENABLE_NON_CORE_FEATURES = "true";
   process.env.HERMES_X402_ENABLED = "true";
   process.env.HERMES_X402_REPORT_ONLY = "true";

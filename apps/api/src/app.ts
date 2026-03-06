@@ -12,6 +12,7 @@ import statsRoutes from "./routes/stats.js";
 import submissionRoutes from "./routes/submissions.js";
 import verifyRoutes from "./routes/verify.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
+import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
@@ -55,7 +56,23 @@ export function createApp() {
     await next();
   });
 
-  app.get("/healthz", (c) => c.json({ ok: true }));
+  app.get("/healthz", async (c) => {
+    const sealing = await readSubmissionSealHealth();
+    const ok = !sealing.enabled || sealing.selfCheck === "ok";
+    return c.json(
+      {
+        ok,
+        sealing: {
+          enabled: sealing.enabled,
+          keyId: sealing.keyId,
+          publicKeyLoaded: sealing.publicKeyLoaded,
+          privateKeyLoaded: sealing.privateKeyLoaded,
+          selfCheck: sealing.selfCheck,
+        },
+      },
+      ok ? 200 : 503,
+    );
+  });
   app.get("/.well-known/x402", (c) => c.json(buildX402Metadata()));
 
   app.use("*", x402Middleware);

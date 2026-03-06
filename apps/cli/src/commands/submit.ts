@@ -5,16 +5,22 @@ import {
   getWalletClient,
   submitChallengeResult,
 } from "@hermes/chain";
-import { CHALLENGE_STATUS } from "@hermes/common";
+import {
+  CHALLENGE_STATUS,
+  SUBMISSION_RESULT_FORMAT,
+  computeSubmissionResultHash,
+  importSubmissionSealPublicKey,
+  sealSubmission,
+} from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json";
 import {
   createSupabaseClient,
   getChallengeById,
   setSubmissionResultCid,
 } from "@hermes/db";
-import { pinFile } from "@hermes/ipfs";
+import { pinJSON } from "@hermes/ipfs";
 import { Command } from "commander";
-import { keccak256, parseEventLogs, toBytes } from "viem";
+import { parseEventLogs } from "viem";
 import {
   applyConfigToEnv,
   loadCliConfig,
@@ -70,6 +76,7 @@ export function buildSubmitCommand() {
         applyConfigToEnv(config);
         requireConfigValues(config, [
           "rpc_url",
+          "api_url",
           "factory_address",
           "usdc_address",
           "pinata_jwt",
@@ -84,9 +91,43 @@ export function buildSubmitCommand() {
         }
 
         const pinSpinner = createSpinner("Pinning result file...");
-        const resultCid = await pinFile(
-          path.resolve(process.cwd(), file),
-          path.basename(file),
+        const sourcePath = path.resolve(process.cwd(), file);
+        const sourceBytes = await fs.readFile(sourcePath);
+        const publicKeyResponse = await fetch(
+          `${process.env.HERMES_API_URL?.replace(/\/$/, "")}/api/submissions/public-key`,
+        );
+        if (!publicKeyResponse.ok) {
+          throw new Error(`Failed to fetch submission public key: ${await publicKeyResponse.text()}`);
+        }
+        const submissionPublicKey = (await publicKeyResponse.json()) as {
+          data?: { kid: string; publicKeyPem: string };
+        };
+        if (!submissionPublicKey.data) {
+          throw new Error("Submission public key response missing data.");
+        }
+
+        const walletClient = getWalletClient();
+        const walletAddress = walletClient.account?.address?.toLowerCase();
+        if (!walletAddress) {
+          throw new Error("Wallet client is missing an account address.");
+        }
+
+        const publicKey = await importSubmissionSealPublicKey(
+          submissionPublicKey.data.publicKeyPem,
+        );
+        const sealedEnvelope = await sealSubmission({
+          challengeId: opts.challenge,
+          solverAddress: walletAddress,
+          fileName: path.basename(sourcePath),
+          mimeType: "application/octet-stream",
+          bytes: new Uint8Array(sourceBytes),
+          keyId: submissionPublicKey.data.kid,
+          publicKey,
+        });
+
+        const resultCid = await pinJSON(
+          `sealed-submission-${opts.challenge}`,
+          sealedEnvelope,
         );
         pinSpinner.succeed(`Pinned result: ${resultCid}`);
 
@@ -110,12 +151,6 @@ export function buildSubmitCommand() {
           opts.challenge,
         )) as ChallengeRecord;
 
-        const walletClient = getWalletClient();
-        const walletAddress = walletClient.account?.address?.toLowerCase();
-        if (!walletAddress) {
-          throw new Error("Wallet client is missing an account address.");
-        }
-
         if (challenge.status !== CHALLENGE_STATUS.active) {
           throw new Error("Challenge not active.");
         }
@@ -125,8 +160,7 @@ export function buildSubmitCommand() {
           throw new Error("Deadline passed.");
         }
 
-        const cidValue = resultCid.replace("ipfs://", "");
-        const resultHash = keccak256(toBytes(cidValue));
+        const resultHash = computeSubmissionResultHash(resultCid);
 
         const submitSpinner =
           opts.format === "json"
@@ -168,6 +202,7 @@ export function buildSubmitCommand() {
                 challenge.id,
                 Number(submissionId),
                 resultCid,
+                SUBMISSION_RESULT_FORMAT.sealedV1,
               );
               cidUpdated = true;
             } catch {

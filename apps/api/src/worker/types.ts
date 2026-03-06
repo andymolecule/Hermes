@@ -16,6 +16,7 @@ export interface SubmissionRow {
   on_chain_sub_id: number;
   solver_address: string;
   result_cid: string | null;
+  result_format?: string | null;
   proof_bundle_cid?: string | null;
 }
 

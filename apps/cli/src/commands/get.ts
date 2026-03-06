@@ -1,10 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  createSupabaseClient,
-  getChallengeById,
-  listSubmissionsForChallenge,
-} from "@hermes/db";
 import { downloadToPath, getText } from "@hermes/ipfs";
 import { Command } from "commander";
 import {
@@ -12,6 +7,7 @@ import {
   loadCliConfig,
   requireConfigValues,
 } from "../lib/config-store";
+import { fetchApiJson } from "../lib/api";
 import {
   printJson,
   printSuccess,
@@ -33,10 +29,18 @@ type ChallengeRecord = {
 };
 
 type SubmissionRecord = {
-  id: string;
   on_chain_sub_id: number;
   score?: string | null;
+  scored: boolean;
   solver_address: string;
+};
+
+type ChallengeDetailsResponse = {
+  data: {
+    challenge: ChallengeRecord;
+    submissions: SubmissionRecord[];
+    leaderboard: SubmissionRecord[];
+  };
 };
 
 function filenameFromUrl(url: string, fallback: string) {
@@ -58,20 +62,13 @@ export function buildGetCommand() {
     .action(async (id: string, opts: { download?: string; format: string }) => {
       const config = loadCliConfig();
       applyConfigToEnv(config);
-      requireConfigValues(config, [
-        "rpc_url",
-        "factory_address",
-        "usdc_address",
-        "supabase_url",
-        "supabase_anon_key",
-      ]);
+      requireConfigValues(config, ["api_url"]);
 
-      const db = createSupabaseClient();
-      const challenge = (await getChallengeById(db, id)) as ChallengeRecord;
-      const submissions = (await listSubmissionsForChallenge(
-        db,
-        id,
-      )) as SubmissionRecord[];
+      const response = await fetchApiJson<ChallengeDetailsResponse>(
+        `/api/challenges/${id}`,
+      );
+      const challenge = response.data.challenge;
+      const submissions = response.data.leaderboard;
 
       if (opts.download) {
         const targetDir = path.resolve(process.cwd(), opts.download, id);
@@ -129,7 +126,6 @@ export function buildGetCommand() {
         const leaderboard = submissions.map(
           (submission: SubmissionRecord, index: number) => ({
             rank: index + 1,
-            submission_id: submission.id,
             on_chain_sub_id: submission.on_chain_sub_id,
             score: submission.score ?? "",
             solver: submission.solver_address,

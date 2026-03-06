@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   findPresetIdsByContainer,
   getSubmissionLimitViolation,
+  loadConfig,
   lookupPreset,
   resolveEvalSpec,
   resolveSubmissionLimits,
@@ -18,6 +19,8 @@ import { pinFile } from "@hermes/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
+  SealedSubmissionError,
+  resolveSubmissionSource,
   scoreToWad,
 } from "@hermes/scorer";
 import { keccak256, toBytes } from "viem";
@@ -126,7 +129,7 @@ export interface ScoringOutcomeSuccess {
     inputHash: string;
     outputHash: string;
     containerImageDigest: string;
-    scorerLog: string;
+    scorerLog?: string;
   };
 }
 
@@ -208,12 +211,31 @@ export async function scoreSubmissionAndBuildProof(
   }
 
   const isProduction = process.env.NODE_ENV === "production";
+  let submissionSource;
+  try {
+    submissionSource = await resolveSubmissionSource({
+      resultCid: submission.result_cid as string,
+      resultFormat: submission.result_format,
+      challengeId: challenge.id,
+      solverAddress: submission.solver_address,
+      privateKeyPem: loadConfig().HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+    });
+  } catch (error) {
+    if (error instanceof SealedSubmissionError) {
+      return {
+        ok: false,
+        kind: "invalid",
+        reason: `sealed_submission_${error.code}: ${error.message}`,
+      };
+    }
+    throw error;
+  }
   const run = await executeScoringPipeline({
     image: evalPlan.image,
     evaluationBundle: evalPlan.evaluationBundleCid
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
-    submission: { cid: submission.result_cid as string },
+    submission: submissionSource,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
     strictPull: isProduction,
@@ -251,7 +273,7 @@ export async function scoreSubmissionAndBuildProof(
           challengeId: challenge.id,
           submissionId: submission.id,
           score: result.score,
-          scorerLog: result.log,
+          scorerLog: null,
           containerImageDigest: result.containerImageDigest,
           inputPaths: run.inputPaths,
           outputPath: result.outputPath,

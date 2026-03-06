@@ -6,6 +6,14 @@ export interface SubmissionMetadata {
   submittedAt: string;
 }
 
+export const SUBMISSION_RESULT_FORMAT = {
+  plainV0: "plain_v0",
+  sealedV1: "sealed_v1",
+} as const;
+
+export type SubmissionResultFormat =
+  (typeof SUBMISSION_RESULT_FORMAT)[keyof typeof SUBMISSION_RESULT_FORMAT];
+
 export interface ProofBundle {
   inputHash: string;
   outputHash: string;

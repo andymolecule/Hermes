@@ -1,7 +1,10 @@
 import { getOnChainSubmission, getPublicClient } from "@hermes/chain";
 import {
   CHALLENGE_STATUS,
+  SUBMISSION_RESULT_FORMAT,
+  computeSubmissionResultHash,
   getSubmissionLimitViolation,
+  loadConfig,
   resolveSubmissionLimits,
 } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
@@ -19,10 +22,15 @@ import {
 } from "@hermes/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { type Abi, keccak256, parseEventLogs, toHex } from "viem";
+import { type Abi, parseEventLogs } from "viem";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
+import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
+import {
+  toPrivateProofBundle,
+  toPrivateSubmission,
+} from "./challenges-shared.js";
 
 const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
@@ -30,6 +38,12 @@ const createSubmissionBodySchema = z.object({
   challengeId: z.string().uuid(),
   resultCid: z.string().min(1),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  resultFormat: z
+    .enum([
+      SUBMISSION_RESULT_FORMAT.plainV0,
+      SUBMISSION_RESULT_FORMAT.sealedV1,
+    ])
+    .optional(),
 });
 
 function getLogArg(
@@ -62,13 +76,43 @@ export function extractSubmissionIdFromSubmittedEvent(
 
 const router = new Hono<ApiEnv>();
 
-router.get("/:id", async (c) => {
+router.get("/public-key", async (c) => {
+  const config = loadConfig();
+  if (
+    !config.HERMES_SUBMISSION_SEAL_KEY_ID ||
+    !config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM
+  ) {
+    return c.json({ error: "Submission sealing is not configured." }, 503);
+  }
+
+  return c.json({
+    data: {
+      version: "sealed_submission_v1",
+      alg: "aes-256-gcm+rsa-oaep-256",
+      kid: config.HERMES_SUBMISSION_SEAL_KEY_ID,
+      publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+    },
+  });
+});
+
+router.get("/:id", requireSiweSession, async (c) => {
   const submissionId = c.req.param("id");
-  const db = createSupabaseClient(false);
+  const db = createSupabaseClient(true);
   const submission = await getSubmissionById(db, submissionId);
+  if (
+    submission.solver_address.toLowerCase() !==
+    c.get("sessionAddress").toLowerCase()
+  ) {
+    return c.json({ error: "Forbidden." }, 403);
+  }
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
 
-  return c.json({ data: { submission, proofBundle } });
+  return c.json({
+    data: {
+      submission: toPrivateSubmission(submission),
+      proofBundle: toPrivateProofBundle(proofBundle),
+    },
+  });
 });
 
 router.post(
@@ -76,7 +120,7 @@ router.post(
   requireWriteQuota("/api/submissions"),
   zValidator("json", createSubmissionBodySchema),
   async (c) => {
-    const { challengeId, resultCid, txHash } = c.req.valid("json");
+    const { challengeId, resultCid, txHash, resultFormat } = c.req.valid("json");
     const normalizedResultCid = resultCid.trim();
     const sessionAddress = c.get("sessionAddress");
 
@@ -123,7 +167,7 @@ router.post(
       subId,
     );
 
-    const expectedHash = keccak256(toHex(normalizedResultCid));
+    const expectedHash = computeSubmissionResultHash(normalizedResultCid);
     if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {
       return c.json(
         { error: "Provided resultCid does not match on-chain result hash." },
@@ -165,6 +209,7 @@ router.post(
       challengeId,
       Number(subId),
       normalizedResultCid,
+      resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
     );
 
     if (!onChain.scored && challenge.status === CHALLENGE_STATUS.active) {

@@ -6,6 +6,7 @@ import {
   getOldestRunningStartedAt,
   runningOverThresholdCount,
 } from "@hermes/db";
+import { getSubmissionSealHealth, loadConfig } from "@hermes/common";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -88,7 +89,8 @@ const router = new Hono<ApiEnv>();
 
 router.get("/", async (c) => {
   try {
-    const db = createSupabaseClient(false);
+    const db = createSupabaseClient(true);
+    const config = loadConfig();
 
     const [
       jobs,
@@ -96,23 +98,35 @@ router.get("/", async (c) => {
       lastScoredAt,
       oldestRunningStartedAt,
       runningOverThreshold,
+      sealing,
     ] = await Promise.all([
       getScoreJobCounts(db),
       getOldestPendingJobTime(db),
       getLastScoredJobTime(db),
       getOldestRunningStartedAt(db),
       runningOverThresholdCount(db, RUNNING_STALE_THRESHOLD_MS),
+      getSubmissionSealHealth({
+        keyId: config.HERMES_SUBMISSION_SEAL_KEY_ID,
+        publicKeyPem: config.HERMES_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+        privateKeyPem: config.HERMES_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      }),
     ]);
 
-    return c.json(
-      buildWorkerHealthResponse({
+    return c.json({
+      ...buildWorkerHealthResponse({
         jobs,
         oldestPendingAt,
         lastScoredAt,
         oldestRunningStartedAt,
         runningOverThresholdCount: runningOverThreshold,
       }),
-    );
+      sealing: {
+        enabled: sealing.enabled,
+        keyId: sealing.keyId,
+        publicKeyLoaded: sealing.publicKeyLoaded,
+        privateKeyLoaded: sealing.privateKeyLoaded,
+      },
+    });
   } catch (error) {
     return c.json(
       {

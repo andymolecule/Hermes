@@ -107,8 +107,14 @@ router.post(
     }
 
     const { challengeId, resultCid } = c.req.valid("json");
-    const db = createSupabaseClient(false);
+    const db = createSupabaseClient(true);
     const challenge = await getChallengeById(db, challengeId);
+    if (challenge.deadline && new Date(challenge.deadline) > new Date()) {
+      return c.json(
+        { error: "Score preview is unavailable until the challenge deadline passes." },
+        403,
+      );
+    }
     let scoringInput: ExecuteScoringPipelineInput;
     try {
       scoringInput = createScorePreviewInput(challenge, resultCid);
