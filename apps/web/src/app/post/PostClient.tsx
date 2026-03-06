@@ -2,12 +2,11 @@
 
 import HermesFactoryAbiJson from "@hermes/common/abi/HermesFactory.json";
 import {
-  challengeSpecSchema,
   defaultPresetIdForChallengeType,
-  getDisputeWindowMinHours,
   isTestnetChain,
   PRESET_REGISTRY,
   validateChallengeScoreability,
+  validateChallengeSpec,
   validatePresetIntegrity,
   validateScoringContainer,
 } from "@hermes/common";
@@ -447,6 +446,9 @@ function buildSpec(state: FormState) {
     ? state.reproPresetId
     : TYPE_CONFIG[state.type].presetId;
 
+  const minimumScore = state.minimumScore.trim();
+  const disputeWindow = state.disputeWindow.trim();
+
   return {
     id: `web-${Date.now()}`,
     preset_id: presetId,
@@ -461,8 +463,8 @@ function buildSpec(state: FormState) {
       distribution: state.distribution,
     },
     deadline: computeDeadlineIso(state.deadlineDays),
-    minimum_score: Number(state.minimumScore),
-    dispute_window_hours: Number(state.disputeWindow),
+    ...(minimumScore ? { minimum_score: Number(minimumScore) } : {}),
+    ...(disputeWindow ? { dispute_window_hours: Number(disputeWindow) } : {}),
     evaluation: {
       submission_format: state.submissionFormat || undefined,
       criteria: state.evaluationCriteria || undefined,
@@ -808,12 +810,13 @@ export function PostClient() {
     if (state.tolerance.trim() && !Number.isFinite(Number(state.tolerance)))
       return "Tolerance must be a valid number (e.g. 1e-4 or 0.001).";
 
-    const disputeWindow = Number(state.disputeWindow);
-    const minDispute = getDisputeWindowMinHours(CHAIN_ID);
-    if (!Number.isFinite(disputeWindow) || disputeWindow < minDispute || disputeWindow > 2160)
-      return `Dispute window must be between ${minDispute} and 2160 hours.`;
+    if (state.disputeWindow.trim()) {
+      const disputeWindow = Number(state.disputeWindow);
+      if (!Number.isFinite(disputeWindow) || disputeWindow < 0 || disputeWindow > 2160)
+        return "Dispute window must be between 0 and 2160 hours.";
+    }
 
-    const specResult = challengeSpecSchema.safeParse(buildSpec(state));
+    const specResult = validateChallengeSpec(buildSpec(state), CHAIN_ID);
     if (!specResult.success) {
       return specResult.error.issues[0]?.message ?? "Challenge spec is invalid.";
     }

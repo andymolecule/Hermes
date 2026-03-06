@@ -1,106 +1,279 @@
 # Prediction Test Data
 
-Test fixtures for the **regression scorer** (`containers/regression-scorer`).
+Test fixtures for the current Hermes prediction flow using the regression scorer in `containers/regression-scorer`.
 
-Tiny synthetic dataset: 20 training rows, 10 test rows, 3 features. The underlying relationship is roughly `label ~ 3*feature_a - 0.5*feature_b + 5*feature_c + noise`.
+This folder is designed for two related workflows:
+- posting a prediction challenge through the web UI as a human poster
+- submitting solver outputs to verify scoring behavior and error handling
+
+It is intentionally small and synthetic so you can repeat the full flow quickly.
+
+## What This Fixture Set Covers
+
+The dataset models a simple regression task:
+- 20 training rows
+- 10 test rows
+- 3 numeric features
+- 1 numeric target label
+
+Underlying pattern:
+- `label ~= 3*feature_a - 0.5*feature_b + 5*feature_c + noise`
+
+This is enough to test:
+- normal prediction challenge posting
+- hidden-labels upload and private evaluation artifact flow
+- successful solver submission scoring
+- malformed solver submissions
+- partial / duplicate / non-numeric prediction edge cases
+
+It is not meant to simulate a full production-scale benchmark. It is meant to look like a believable small tabular-science bounty that a human can post and test quickly.
+
+## Current Runtime Contract
+
+These fixtures are aligned to the current scorer implementation.
+
+Important current constraint:
+- the prediction scorer expects `ground_truth.csv` with columns `id,label`
+- the submission scorer expects `submission.csv` with columns `id,prediction`
+- the current web UI exposes `ID column` and `Label column`, but the scorer does not actually honor arbitrary custom column names yet
+
+For human UI testing, use the default prediction field names:
+- `ID column`: `id`
+- `Label column`: `prediction`
+
+Do not treat those two UI fields as truly configurable yet.
 
 ## Files
 
-| File | Role | Who uses it |
-|------|------|-------------|
-| `train.csv` | Public training data with labels | Solver downloads to build model |
-| `test.csv` | Public test inputs (no labels) | Solver predicts on these |
-| `hidden_labels.csv` | Private ground truth for test set | Scorer compares predictions against this |
-| `sample_submission.csv` | Example solver output | Quick testing without building a model |
+### Challenge posting inputs
 
-## Posting a Challenge (Web UI)
+| File | Use in UI | Purpose |
+|------|-----------|---------|
+| `train.csv` | Training Data | Public training set with labels |
+| `test.csv` | Test Data | Public held-out inputs with no labels |
+| `hidden_labels.csv` | Hidden Labels | Private evaluation labels used during scoring |
 
-Go to `/post`, select **Prediction** type, then fill each section:
+### Solver submission fixtures
+
+| File | Expected result | Purpose |
+|------|-----------------|---------|
+| `sample_submission.csv` | Valid, high score | Standard happy path |
+| `perfect_submission.csv` | Valid, score = 1.0 | Proves best-case scoring path |
+| `bad_submission_missing_prediction.csv` | Invalid | Missing required `prediction` column |
+| `bad_submission_wrong_id_header.csv` | Invalid | Uses `sample_id` instead of `id` |
+| `bad_submission_partial_ids.csv` | Valid but incomplete | Only predicts a subset of rows |
+| `bad_submission_nonnumeric.csv` | Valid file, degraded/incomplete scoring | Contains non-numeric prediction value |
+| `bad_submission_duplicate_ids.csv` | Accepted by current scorer | Exposes duplicate-row behavior |
+
+### Local scorer convenience
+
+| File | Purpose |
+|------|---------|
+| `ground_truth.csv` | Local alias for direct Docker scorer runs |
+
+## Recommended Human UI Test Plan
+
+## 1. Post a realistic prediction challenge
+
+Use these values in `/post`:
 
 ### Section 1: Problem
+- Title: `Predict assay response from tabular feature measurements`
+- Domain: `Omics`
+- Description:
+  `We provide a public training set of samples with numeric feature measurements and observed response values.`
+  `Your task is to predict the response for a held-out test set using the same feature schema.`
+  `Submissions must be a CSV with columns id,prediction. Scores are computed against private labels using R².`
+- Tags: `prediction, regression, assay`
 
-| Field | What to enter | Example |
-|-------|---------------|---------|
-| **Title** | Short description of the prediction task | "Predict label from 3 synthetic features" |
-| **Domain** | Scientific domain dropdown | Omics (or any) |
-| **Description** | Explain what solvers need to predict and why | "Given features a, b, c — predict the numeric label." |
-| **Tags** | Comma-separated keywords | prediction, regression, synthetic |
+Why this is a better test post:
+- it sounds like a normal applied science prediction bounty
+- it tells solvers what the target is, what format to submit, and how scoring works
+- it is still simple enough to debug end to end
 
 ### Section 2: Data
+- Training Data: `train.csv`
+- Test Data: `test.csv`
+- Hidden Labels: `hidden_labels.csv`
 
-| Field | Upload this file | What it contains |
-|-------|-----------------|------------------|
-| **Training Data** | `train.csv` | `id, feature_a, feature_b, feature_c, label` (20 rows) |
-| **Test Data** | `test.csv` | `id, feature_a, feature_b, feature_c` — no label column (10 rows) |
-| **Hidden Labels** | `hidden_labels.csv` | `id, label` — the ground truth (10 rows, kept private) |
+Why this matters:
+- verifies the canonical prediction path where hidden labels become the evaluation bundle
+- matches the current scoreability gate for prediction challenges
+- mirrors the common public-train / public-test / private-labels bounty pattern
 
 ### Section 3: Evaluation
+- ID column: `id`
+- Label column: `prediction`
+- Metric: `R²`
+- Scoring detail: `Predictions are matched to the held-out test set by id and evaluated against private labels using R².`
+- Minimum score: `0`
 
-| Field | What to enter | Example |
-|-------|---------------|---------|
-| **ID column** | Column name that joins test + submission | `id` |
-| **Label column** | Column name solvers must predict | `prediction` |
-| **Metric** | Primary scoring metric | R² (default) |
-| **Scoring detail** | Optional extra context | "Evaluated on held-out test split" |
-| **Minimum score** | Threshold for a valid submission | `0` (accept all) or `0.5` |
+Why this matters:
+- matches the actual scorer contract
+- avoids the current runtime mismatch around custom column names
+- gives solvers a realistic, explicit submission contract
 
 ### Section 4: Reward & Execution
+- Reward: `10`
+- Winner selection: `Top 3`
+- Deadline: `7 days`
+- Dispute window: pick any dropdown option you want to validate
 
-| Field | What to enter | Example |
-|-------|---------------|---------|
-| **Reward (USDC)** | Bounty amount (1–30 on testnet) | `10` |
-| **Winner selection** | How reward is split | Top 3 |
-| **Deadline** | Days until submissions close | 7 |
-| **Dispute window** | Hours for dispute period (168–2160) | 168 (minimum, 7 days) |
+Why this matters:
+- the frontend/backend now align to the selected dropdown value instead of silently forcing a 168h minimum
+- `7 days` / `Top 3` / moderate reward is a common default-shaped bounty setup
 
-## Submitting as a Solver
+## 2. Submit a valid solver output
 
-Upload `sample_submission.csv` (or your own predictions). The file must have:
-- `id` column matching the IDs in `test.csv`
-- `prediction` column with numeric values
+Use:
+- `sample_submission.csv`
 
-Example (`sample_submission.csv`):
-```csv
-id,prediction
-11,38.42
-12,9.15
-13,30.87
-...
-```
+What this tests:
+- standard valid submission path
+- prediction scorer happy path
+- proof/scoring generation with a realistic but not perfect score
 
-## Expected Scores (sample_submission.csv)
+Expected score characteristics:
+- `matched_rows = 10`
+- `missing_ids = 0`
+- `r2 = 0.992235768329`
+- `rmse = 0.531036721894`
+- `mae = 0.52`
+- `pearson = 0.99943662487`
+- `spearman = 1`
 
-The sample submission contains near-correct predictions with small offsets:
+## 3. Submit the perfect case
 
-| Metric | Value |
-|--------|-------|
-| R² (primary score) | ~0.99 |
-| RMSE | ~0.50 |
-| MAE | ~0.43 |
-| Pearson | ~0.998 |
-| Spearman | ~0.988 |
+Use:
+- `perfect_submission.csv`
 
-## Scorer Details
+What this tests:
+- best-case scoring path
+- sanity check that the scorer can produce a perfect result on aligned data
 
-- **Container:** `ghcr.io/hermes-science/regression-scorer:v1`
-- **Primary metric:** R² (clamped to 0-1, higher is better)
-- **All metrics:** R², RMSE, MAE, Pearson, Spearman (all reported in `details`)
-- **Dependencies:** None (pure Python stdlib)
+Expected score characteristics:
+- `score = 1.0`
+- all rows matched
+- zero prediction error
 
-## Testing Locally
+## 4. Test malformed solver files intentionally
+
+### Missing prediction column
+Use:
+- `bad_submission_missing_prediction.csv`
+
+Why:
+- verifies user-facing failure for wrong submission header
+
+Expected scorer behavior:
+- rejects because `submission.csv` must contain `id` and `prediction`
+
+### Wrong ID header
+Use:
+- `bad_submission_wrong_id_header.csv`
+
+Why:
+- exposes the current limitation that the scorer is hardcoded to `id`
+- important because the UI currently makes column names look configurable
+
+Expected scorer behavior:
+- rejects because `submission.csv` does not contain `id`
+
+### Non-numeric prediction
+Use:
+- `bad_submission_nonnumeric.csv`
+
+Why:
+- verifies handling of parse failures inside otherwise valid CSV structure
+
+Expected scorer behavior:
+- row with non-numeric prediction is skipped as missing/invalid
+- scoring may still succeed if other rows match
+
+## 5. Test edge-case acceptance behavior
+
+### Partial submission
+Use:
+- `bad_submission_partial_ids.csv`
+
+Why:
+- checks whether partial predictions are accepted
+- useful for deciding whether the platform should require complete coverage in the future
+
+Expected current behavior:
+- accepted by scorer
+- lower `matched_rows`
+- non-zero `missing_ids`
+- not necessarily treated as invalid
+
+### Duplicate IDs
+Use:
+- `bad_submission_duplicate_ids.csv`
+
+Why:
+- checks whether duplicates are rejected or double-counted
+- useful robustness test because duplicates are common in real CSV mistakes
+
+Expected current behavior:
+- accepted by current scorer
+- duplicate rows are not explicitly rejected
+- use this to confirm whether you want stricter validation later
+
+## What Each Posting Field Means In Practice
+
+| UI field | Recommended value | Why |
+|----------|-------------------|-----|
+| Training Data | `train.csv` | Gives solvers labeled examples they can train on |
+| Test Data | `test.csv` | Defines the held-out rows they must predict |
+| Hidden Labels | `hidden_labels.csv` | Provides the private ground truth used only at scoring time |
+| ID column | `id` | Must match the current scorer contract and the test set key |
+| Label column | `prediction` | Must match the current scorer contract for solver uploads |
+| Metric | `R²` | Matches the scorer's primary ranking score |
+| Minimum score | `0` | Keeps the challenge permissive while you test success and failure cases |
+
+## If You Want It To Feel More Like A Real Bounty
+
+When posting through the UI, a realistic poster usually answers four questions clearly:
+- What is being predicted?
+- What files are public vs private?
+- What exact CSV format must solvers submit?
+- What metric determines the leaderboard?
+
+This fixture set is strongest when your post description answers those explicitly.
+
+Recommended plain-English bounty summary:
+- `Predict the numeric assay response for each held-out sample in the test set.`
+- `Use the public training data to fit any model you want.`
+- `Submit a CSV with columns id,prediction.`
+- `Scores are computed against private labels using R², with higher scores ranked better.`
+
+## Local Docker Testing
+
+If you want to test the scorer directly without the app:
 
 ```bash
-# Build the scorer
 docker build -t regression-scorer containers/regression-scorer/
 
-# Run against sample data
 docker run --rm \
   -v $(pwd)/challenges/test-data/prediction:/input:ro \
   -v /tmp/regression-output:/output \
   regression-scorer
 
-# Check the score
-cat /tmp/regression-output/score.json | python -m json.tool
+cat /tmp/regression-output/score.json
 ```
 
-Note: For local Docker testing, rename `hidden_labels.csv` to `ground_truth.csv` in the input directory, or create a symlink — the scorer expects `/input/ground_truth.csv`.
+For local direct runs:
+- `ground_truth.csv` is provided as a convenience alias
+- `sample_submission.csv` should be copied or mounted as `/input/submission.csv` if you are not using the Hermes staging pipeline
+
+## Robustness Gaps These Fixtures Expose
+
+These fixtures are intentionally useful for product review, not just happy-path demos.
+
+Current codebase gaps exposed by this folder:
+- prediction column-name fields in the UI are advisory only; scoring is still hardcoded to `id`, `label`, and `prediction`
+- partial submissions are currently accepted instead of being explicitly rejected
+- duplicate submission IDs are currently accepted instead of being explicitly rejected
+- non-numeric predictions degrade matching rather than always hard-failing the submission
+
+If you want stricter production behavior later, these are the first places to tighten.

@@ -4,6 +4,7 @@ import {
   challengeSpecSchema,
   resolveEvalSpec,
   validateChallengeScoreability,
+  validateChallengeSpec,
 } from "../schemas/challenge-spec";
 import { CHALLENGE_TYPES } from "../types/challenge.js";
 
@@ -38,6 +39,22 @@ if (!result.success) {
 
 if (result.data.preset_id !== "csv_comparison_v1") {
   console.error("preset_id should be preserved by challengeSpecSchema");
+  process.exit(1);
+}
+
+const shortDisputeWindow = validateChallengeSpec(
+  {
+    ...sample,
+    id: "ch-001b",
+    dispute_window_hours: 1,
+  },
+  8453,
+);
+if (!shortDisputeWindow.success) {
+  console.error(
+    "validateChallengeSpec should accept UI-selected short dispute windows",
+    shortDisputeWindow.error.format(),
+  );
   process.exit(1);
 }
 

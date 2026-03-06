@@ -1,16 +1,14 @@
-import { CHAIN_IDS, CHALLENGE_LIMITS } from "./constants.js";
+import { CHAIN_IDS } from "./constants.js";
 
 /**
- * Chain-aware dispute window policy.
+ * Dispute window validation policy.
  *
- * - Testnet (Base Sepolia): allow 0h for quick iteration
- * - Production (everything else): enforce 168h minimum (7 days)
- *
- * Single source of truth — imported by both frontend UI and API validation.
+ * The parser only enforces the numeric range. Product/UI decides which
+ * selectable dispute-window options to expose to posters.
  */
 export function getDisputeWindowMinHours(chainId: number): number {
-  if (chainId === CHAIN_IDS.baseSepolia) return 0;
-  return CHALLENGE_LIMITS.disputeWindowMinHours; // 168
+  void chainId;
+  return 0;
 }
 
 export function isTestnetChain(chainId: number): boolean {

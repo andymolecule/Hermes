@@ -87,9 +87,8 @@ function resolveSpecEvaluationBundle(
   return spec.dataset?.test;
 }
 
-// Internal permissive shape — dispute_window_hours accepts 0+.
-// Never export this directly; use challengeSpecSchema (strict) or
-// challengeSpecSchemaForChain(chainId) (chain-aware).
+// Shared challenge spec shape. dispute_window_hours is range-validated only;
+// callers decide which UI options to offer.
 const _baseSpecShape = z.object({
   id: z.string().min(1),
   preset_id: z.string().min(1).optional(),
@@ -190,6 +189,9 @@ const _baseSpecShape = z.object({
 
 /** Adds a dispute-window minimum refinement to the base shape. */
 function _withDisputeMin(minHours: number) {
+  if (minHours <= 0) {
+    return _baseSpecShape;
+  }
   return _baseSpecShape.superRefine((val, ctx) => {
     if (
       val.dispute_window_hours !== undefined &&
@@ -208,12 +210,10 @@ function _withDisputeMin(minHours: number) {
 }
 
 /**
- * Default (strict) schema — enforces dispute_window_hours >= 168.
- * Safe for any code path. Use this unless you need chain-aware validation.
+ * Default schema — validates the shared challenge contract without imposing a
+ * product policy minimum on dispute_window_hours.
  */
-export const challengeSpecSchema = _withDisputeMin(
-  CHALLENGE_LIMITS.disputeWindowMinHours,
-);
+export const challengeSpecSchema = _baseSpecShape;
 
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
@@ -227,8 +227,9 @@ export interface ChallengeEvalRow {
 }
 
 /**
- * Chain-aware schema. Testnet (Base Sepolia) allows 0h; mainnet enforces 168h.
- * API and frontend use this with the active chain ID.
+ * Chain-aware schema hook. Currently the parser uses the same range-based
+ * validation across chains; the active UI determines which dispute-window
+ * options are available.
  */
 export function challengeSpecSchemaForChain(chainId: number) {
   return _withDisputeMin(getDisputeWindowMinHours(chainId));
