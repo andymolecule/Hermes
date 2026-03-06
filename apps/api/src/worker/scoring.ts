@@ -4,6 +4,7 @@ import {
   findPresetIdsByContainer,
   getSubmissionLimitViolation,
   lookupPreset,
+  resolveEvalSpec,
   resolveSubmissionLimits,
   type RunnerLimits,
   validatePresetIntegrity,
@@ -53,7 +54,10 @@ function policyFromLimits(
 }
 
 export function resolveRunnerPolicyForChallenge(
-  challenge: Pick<ChallengeRow, "scoring_container" | "scoring_preset_id">,
+  challenge: {
+    image: string;
+    scoring_preset_id?: string | null;
+  },
 ): ResolvedRunnerPolicy {
   const presetId =
     typeof challenge.scoring_preset_id === "string"
@@ -64,7 +68,7 @@ export function resolveRunnerPolicyForChallenge(
     if (presetId === "custom") {
       const customIntegrityError = validatePresetIntegrity(
         "custom",
-        challenge.scoring_container,
+        challenge.image,
       );
       if (customIntegrityError) {
         throw new Error(
@@ -80,7 +84,7 @@ export function resolveRunnerPolicyForChallenge(
     }
     const integrityError = validatePresetIntegrity(
       presetId,
-      challenge.scoring_container,
+      challenge.image,
     );
     if (integrityError) {
       throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
@@ -88,7 +92,7 @@ export function resolveRunnerPolicyForChallenge(
     return policyFromLimits(preset.runnerLimits, "preset_id");
   }
 
-  const matchedPresetIds = findPresetIdsByContainer(challenge.scoring_container);
+  const matchedPresetIds = findPresetIdsByContainer(challenge.image);
   if (matchedPresetIds.length === 1) {
     const matchedId = matchedPresetIds[0];
     const preset = matchedId ? lookupPreset(matchedId) : undefined;
@@ -186,26 +190,28 @@ export async function scoreSubmissionAndBuildProof(
     submissionId: submission.id,
     challengeId: challenge.id,
   });
-  const runnerPolicy = resolveRunnerPolicyForChallenge(challenge);
+  const evalPlan = resolveEvalSpec(challenge);
+  const runnerPolicy = resolveRunnerPolicyForChallenge({
+    image: evalPlan.image,
+    scoring_preset_id: challenge.scoring_preset_id,
+  });
   if (runnerPolicy.warning) {
     log("warn", runnerPolicy.warning, {
       challengeId: challenge.id,
       submissionId: submission.id,
-      image: challenge.scoring_container,
+      image: evalPlan.image,
     });
   }
 
   log("info", "Running scorer container", {
     submissionId: submission.id,
-    image: challenge.scoring_container,
+    image: evalPlan.image,
   });
   const isProduction = process.env.NODE_ENV === "production";
-  // Prefer eval_bundle_cid (new eval spec) over dataset_test_cid (legacy)
-  const groundTruthCid = challenge.eval_bundle_cid ?? challenge.dataset_test_cid;
   const run = await executeScoringPipeline({
-    image: challenge.scoring_container,
-    groundTruth: groundTruthCid
-      ? { cid: groundTruthCid }
+    image: evalPlan.image,
+    evaluationBundle: evalPlan.evaluationBundleCid
+      ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
     submission: { cid: submission.result_cid as string },
     timeoutMs: runnerPolicy.timeoutMs,

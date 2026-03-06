@@ -1,4 +1,5 @@
 import { getOnChainSubmission } from "@hermes/chain";
+import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
 import {
   createSupabaseClient,
   createVerification,
@@ -34,9 +35,8 @@ type SubmissionRecord = {
   on_chain_sub_id: number | null;
 };
 
-type ChallengeRecord = {
+type ChallengeRecord = ChallengeEvalRow & {
   id: string;
-  dataset_test_cid: string | null;
   contract_address: string | null;
 };
 
@@ -93,8 +93,9 @@ export function buildVerifyCommand() {
         if (!submission.proof_bundle_hash) {
           throw new Error("Submission has no recorded proof bundle hash.");
         }
-        if (!challenge.dataset_test_cid) {
-          throw new Error("Challenge missing test dataset CID.");
+        const evalPlan = resolveEvalSpec(challenge);
+        if (!evalPlan.evaluationBundleCid) {
+          throw new Error("Challenge missing evaluation bundle CID.");
         }
 
         const proof = (await getProofBundleBySubmissionId(
@@ -179,7 +180,7 @@ export function buildVerifyCommand() {
         const run = await executeScoringPipeline({
           image:
             proofPayload.containerImageDigest ?? proof.container_image_hash,
-          groundTruth: { cid: challenge.dataset_test_cid },
+          evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: { cid: submission.result_cid },
         });
         runSpinner.succeed("Verification scoring finished");

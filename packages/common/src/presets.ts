@@ -34,8 +34,9 @@ export interface ScorerPresetV2 {
     /** Short description */
     description: string;
     /**
-     * Pinned container digest. Must contain @sha256: for non-custom.
-     * Use OFFICIAL_IMAGES.:latest only during dev; pin before production.
+     * Official presets may use local/dev mutable refs in source.
+     * Production challenge creation must resolve those validated refs to
+     * immutable @sha256 digests before persistence.
      */
     container: string;
     /** Auto-generated scoring description (read-only for presets) */

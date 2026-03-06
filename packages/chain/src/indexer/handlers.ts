@@ -256,7 +256,7 @@ export async function processFactoryLog(input: {
 
       await upsertChallenge(
         db,
-        buildChallengeInsert({
+        await buildChallengeInsert({
           chainId: config.HERMES_CHAIN_ID,
           contractAddress: challengeAddr,
           factoryChallengeId: Number(id),

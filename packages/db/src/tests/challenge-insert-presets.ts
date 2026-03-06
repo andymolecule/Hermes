@@ -36,7 +36,7 @@ const regressionSpec = challengeSpecSchema.parse({
   dispute_window_hours: 168,
 });
 
-const insertWithPreset = buildChallengeInsert({
+const insertWithPreset = await buildChallengeInsert({
   ...baseInput,
   spec: regressionSpec,
 });
@@ -69,12 +69,13 @@ const inferredSpec = challengeSpecSchema.parse({
   dispute_window_hours: 168,
 });
 
-const insertInferred = buildChallengeInsert({
+const insertInferred = await buildChallengeInsert({
   ...baseInput,
   factoryChallengeId: 2,
   spec: inferredSpec,
 });
 assert.equal(insertInferred.scoring_preset_id, "regression_v1");
+assert.equal(insertInferred.eval_engine_id, "regression_v1");
 
 const mismatchSpec = challengeSpecSchema.parse({
   ...regressionSpec,
@@ -86,7 +87,7 @@ const mismatchSpec = challengeSpecSchema.parse({
   },
 });
 
-assert.throws(
+await assert.rejects(
   () =>
     buildChallengeInsert({
       ...baseInput,
@@ -114,7 +115,7 @@ const customUnpinnedSpec = challengeSpecSchema.parse({
   dispute_window_hours: 168,
 });
 
-assert.throws(
+await assert.rejects(
   () =>
     buildChallengeInsert({
       ...baseInput,
@@ -133,7 +134,7 @@ const customPinnedSpec = challengeSpecSchema.parse({
   },
 });
 
-const customInsert = buildChallengeInsert({
+const customInsert = await buildChallengeInsert({
   ...baseInput,
   factoryChallengeId: 5,
   spec: customPinnedSpec,
@@ -146,12 +147,60 @@ const customLimitsSpec = challengeSpecSchema.parse({
   max_submissions_total: 25,
   max_submissions_per_solver: 2,
 });
-const customLimitsInsert = buildChallengeInsert({
+const customLimitsInsert = await buildChallengeInsert({
   ...baseInput,
   factoryChallengeId: 6,
   spec: customLimitsSpec,
 });
 assert.equal(customLimitsInsert.max_submissions_total, 25);
 assert.equal(customLimitsInsert.max_submissions_per_solver, 2);
+
+const originalRequirePinned = process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS;
+const originalFetch = globalThis.fetch;
+try {
+  process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS = "true";
+
+  globalThis.fetch = (async () =>
+    new Response("{}", {
+      status: 200,
+      headers: {
+        "docker-content-digest": "sha256:" + "b".repeat(64),
+      },
+    })) as typeof fetch;
+
+  const pinnedInsert = await buildChallengeInsert({
+    ...baseInput,
+    factoryChallengeId: 7,
+    spec: regressionSpec,
+  });
+  assert.equal(
+    pinnedInsert.scoring_container,
+    "ghcr.io/hermes-science/regression-scorer@sha256:" + "b".repeat(64),
+  );
+  assert.equal(
+    pinnedInsert.eval_engine_digest,
+    "ghcr.io/hermes-science/regression-scorer@sha256:" + "b".repeat(64),
+  );
+
+  globalThis.fetch = (async () =>
+    new Response("denied", { status: 403 })) as typeof fetch;
+
+  await assert.rejects(
+    () =>
+      buildChallengeInsert({
+        ...baseInput,
+        factoryChallengeId: 8,
+        spec: regressionSpec,
+      }),
+    /Failed to resolve digest for official preset image/,
+  );
+} finally {
+  globalThis.fetch = originalFetch;
+  if (originalRequirePinned === undefined) {
+    delete process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS;
+  } else {
+    process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS = originalRequirePinned;
+  }
+}
 
 console.log("challenge insert preset tests passed");

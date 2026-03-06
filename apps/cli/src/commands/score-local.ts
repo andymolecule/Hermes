@@ -1,4 +1,5 @@
 import { createSupabaseClient, getChallengeById } from "@hermes/db";
+import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
 import { executeScoringPipeline } from "@hermes/scorer";
 import { Command } from "commander";
 import {
@@ -9,11 +10,9 @@ import {
 import { printJson, printSuccess, printWarning } from "../lib/output";
 import { createSpinner } from "../lib/spinner";
 
-type ChallengeRecord = {
+type ChallengeRecord = ChallengeEvalRow & {
   id: string;
   title: string;
-  scoring_container: string;
-  dataset_test_cid: string | null;
 };
 
 export function buildScoreLocalCommand() {
@@ -36,14 +35,15 @@ export function buildScoreLocalCommand() {
           db,
           challengeId,
         )) as ChallengeRecord;
-        if (!challenge.dataset_test_cid) {
-          throw new Error("Challenge missing test dataset CID.");
+        const evalPlan = resolveEvalSpec(challenge);
+        if (!evalPlan.evaluationBundleCid) {
+          throw new Error("Challenge missing evaluation bundle CID.");
         }
 
         const runSpinner = createSpinner("Running scorer container...");
         const run = await executeScoringPipeline({
-          image: challenge.scoring_container,
-          groundTruth: { cid: challenge.dataset_test_cid },
+          image: evalPlan.image,
+          evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: { localPath: opts.submission },
         });
         runSpinner.succeed("Scorer finished");

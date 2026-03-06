@@ -13,6 +13,7 @@ import {
   deriveDisplayStatus,
   getSubmissionLimitViolation,
   isChallengeDbStatus,
+  resolveEvalSpec,
   resolveSubmissionLimits,
 } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with { type: "json" };
@@ -323,16 +324,14 @@ export async function scoreLocal(input: {
   return withScorerLock(async () => {
     const db = createSupabaseClient(false);
     const challenge = await getChallengeById(db, input.challengeId);
-    if (!challenge.scoring_container) {
-      throw new Error("Challenge has no scoring container configured.");
-    }
-    if (!challenge.dataset_test_cid) {
-      throw new Error("Challenge missing dataset_test_cid.");
+    const evalPlan = resolveEvalSpec(challenge);
+    if (!evalPlan.evaluationBundleCid) {
+      throw new Error("Challenge missing evaluation bundle CID.");
     }
 
     const run = await executeScoringPipeline({
-      image: challenge.scoring_container,
-      groundTruth: { cid: challenge.dataset_test_cid },
+      image: evalPlan.image,
+      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
       submission: { localPath: input.filePath },
     });
 
@@ -359,15 +358,16 @@ export async function verifySubmission(input: {
     const submission = await getSubmissionById(db, input.submissionId);
     const proof = await getProofBundleBySubmissionId(db, input.submissionId);
     if (!proof) throw new Error("No proof bundle found.");
-    if (!challenge.dataset_test_cid)
-      throw new Error("Challenge missing dataset_test_cid.");
+    const evalPlan = resolveEvalSpec(challenge);
+    if (!evalPlan.evaluationBundleCid)
+      throw new Error("Challenge missing evaluation bundle CID.");
     if (!submission.result_cid) throw new Error("Submission missing result_cid.");
     if (submission.on_chain_sub_id == null)
       throw new Error("Submission missing on_chain_sub_id.");
 
     const run = await executeScoringPipeline({
       image: proof.container_image_hash,
-      groundTruth: { cid: challenge.dataset_test_cid },
+      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
       submission: { cid: submission.result_cid },
     });
     try {

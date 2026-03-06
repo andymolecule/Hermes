@@ -21,19 +21,62 @@ import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "./ty
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 
+export interface ProcessJobDeps {
+  completeJob: typeof completeJob;
+  failJob: typeof failJob;
+  getChallengeById: typeof getChallengeById;
+  getPublicClient: typeof getPublicClient;
+  getSubmissionById: typeof getSubmissionById;
+  handlePreviouslyPostedScoreTx: typeof handlePreviouslyPostedScoreTx;
+  markScoreJobSkipped: typeof markScoreJobSkipped;
+  postScoreAndWaitForConfirmation: typeof postScoreAndWaitForConfirmation;
+  reconcileScoredSubmission: typeof reconcileScoredSubmission;
+  requeueJobWithoutAttemptPenalty: typeof requeueJobWithoutAttemptPenalty;
+  scoreSubmissionAndBuildProof: typeof scoreSubmissionAndBuildProof;
+  updateScore: typeof updateScore;
+  upsertProofBundle: typeof upsertProofBundle;
+}
+
+const defaultProcessJobDeps: ProcessJobDeps = {
+  completeJob,
+  failJob,
+  getChallengeById,
+  getPublicClient,
+  getSubmissionById,
+  handlePreviouslyPostedScoreTx,
+  markScoreJobSkipped,
+  postScoreAndWaitForConfirmation,
+  reconcileScoredSubmission,
+  requeueJobWithoutAttemptPenalty,
+  scoreSubmissionAndBuildProof,
+  updateScore,
+  upsertProofBundle,
+};
+
 export async function processJob(
   db: DbClient,
   job: ScoreJobRow,
   log: WorkerLogFn,
+  deps: Partial<ProcessJobDeps> = {},
 ) {
+  const resolvedDeps: ProcessJobDeps = {
+    ...defaultProcessJobDeps,
+    ...deps,
+  };
   try {
-    const challenge = (await getChallengeById(db, job.challenge_id)) as ChallengeRow;
-    const submission = (await getSubmissionById(db, job.submission_id)) as SubmissionRow;
+    const challenge = (await resolvedDeps.getChallengeById(
+      db,
+      job.challenge_id,
+    )) as ChallengeRow;
+    const submission = (await resolvedDeps.getSubmissionById(
+      db,
+      job.submission_id,
+    )) as SubmissionRow;
     const challengeAddress = challenge.contract_address as `0x${string}`;
-    const publicClient = getPublicClient();
+    const publicClient = resolvedDeps.getPublicClient();
 
     if (
-      await reconcileScoredSubmission(
+      await resolvedDeps.reconcileScoredSubmission(
         db,
         submission,
         challengeAddress,
@@ -49,7 +92,7 @@ export async function processJob(
     }
 
     if (
-      await handlePreviouslyPostedScoreTx(
+      await resolvedDeps.handlePreviouslyPostedScoreTx(
         db,
         job,
         submission,
@@ -70,7 +113,7 @@ export async function processJob(
           challengeId: challenge.id,
         },
       );
-      await failJob(
+      await resolvedDeps.failJob(
         db,
         job.id,
         "missing_result_cid_onchain_submission",
@@ -80,7 +123,7 @@ export async function processJob(
       return;
     }
 
-    const scoringOutcome = await scoreSubmissionAndBuildProof(
+    const scoringOutcome = await resolvedDeps.scoreSubmissionAndBuildProof(
       db,
       challenge,
       submission,
@@ -93,7 +136,7 @@ export async function processJob(
           challengeId: challenge.id,
           reason: scoringOutcome.reason,
         });
-        await markScoreJobSkipped(
+        await resolvedDeps.markScoreJobSkipped(
           db,
           {
             submission_id: submission.id,
@@ -109,7 +152,7 @@ export async function processJob(
         challengeId: challenge.id,
         error: scoringOutcome.reason,
       });
-      await failJob(
+      await resolvedDeps.failJob(
         db,
         job.id,
         `invalid_submission: ${scoringOutcome.reason}`,
@@ -119,7 +162,23 @@ export async function processJob(
       return;
     }
 
-    const txHash = await postScoreAndWaitForConfirmation(
+    if (
+      await resolvedDeps.reconcileScoredSubmission(
+        db,
+        submission,
+        challengeAddress,
+        job.score_tx_hash,
+        job.id,
+      )
+    ) {
+      log("info", "Submission became scored before post; completed job without reposting", {
+        jobId: job.id,
+        submissionId: submission.id,
+      });
+      return;
+    }
+
+    const txHash = await resolvedDeps.postScoreAndWaitForConfirmation(
       db,
       job,
       challengeAddress,
@@ -130,7 +189,7 @@ export async function processJob(
       log,
     );
 
-    await upsertProofBundle(db, {
+    await resolvedDeps.upsertProofBundle(db, {
       submission_id: submission.id,
       cid: scoringOutcome.proofCid,
       input_hash: scoringOutcome.proof.inputHash,
@@ -140,7 +199,7 @@ export async function processJob(
       reproducible: true,
     });
 
-    await updateScore(db, {
+    await resolvedDeps.updateScore(db, {
       submission_id: submission.id,
       score: scoringOutcome.scoreWad.toString(),
       proof_bundle_cid: scoringOutcome.proofCid,
@@ -148,7 +207,7 @@ export async function processJob(
       scored_at: new Date().toISOString(),
     });
 
-    await completeJob(db, job.id, txHash);
+    await resolvedDeps.completeJob(db, job.id, txHash);
     log("info", `✓ Job complete for submission ${submission.id}`, {
       txHash,
       score: scoringOutcome.score,
@@ -160,7 +219,7 @@ export async function processJob(
         jobId: job.id,
         submissionId: job.submission_id,
       });
-      await requeueJobWithoutAttemptPenalty(
+      await resolvedDeps.requeueJobWithoutAttemptPenalty(
         db,
         job.id,
         job.attempts,
@@ -175,6 +234,12 @@ export async function processJob(
       maxAttempts: job.max_attempts,
       error: message,
     });
-    await failJob(db, job.id, message, job.attempts, job.max_attempts);
+    await resolvedDeps.failJob(
+      db,
+      job.id,
+      message,
+      job.attempts,
+      job.max_attempts,
+    );
   }
 }

@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "@hermes/common";
-import { claimNextJob, createSupabaseClient } from "@hermes/db";
+import {
+  claimNextJob,
+  createSupabaseClient,
+  heartbeatScoreJobLease,
+} from "@hermes/db";
 import { ensureDockerReady } from "@hermes/scorer";
 import { sweepFinalizable } from "./chain.js";
 import { processJob } from "./jobs.js";
@@ -13,6 +17,7 @@ import {
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
 const WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
+const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
 
 const log: WorkerLogFn = (level, message, meta) => {
   const ts = new Date().toISOString();
@@ -22,6 +27,46 @@ const log: WorkerLogFn = (level, message, meta) => {
 
 export { resolveRunnerPolicyForChallenge };
 export type { ResolvedRunnerPolicy };
+
+function startJobLeaseHeartbeat(
+  db: ReturnType<typeof createSupabaseClient>,
+  job: ScoreJobRow,
+  log: WorkerLogFn,
+) {
+  let stopped = false;
+
+  const tick = async () => {
+    if (stopped) return;
+    try {
+      const refreshed = await heartbeatScoreJobLease(db, job.id, WORKER_ID);
+      if (!refreshed && !stopped) {
+        log("warn", "Job lease heartbeat lost ownership", {
+          jobId: job.id,
+          submissionId: job.submission_id,
+          workerId: WORKER_ID,
+        });
+      }
+    } catch (error) {
+      if (!stopped) {
+        log("warn", "Job lease heartbeat failed", {
+          jobId: job.id,
+          submissionId: job.submission_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
+  const timer = setInterval(() => {
+    void tick();
+  }, JOB_HEARTBEAT_INTERVAL_MS);
+  timer.unref?.();
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
 
 export async function startWorker() {
   loadConfig();
@@ -66,7 +111,12 @@ export async function startWorker() {
           maxAttempts: job.max_attempts,
         });
 
-        await processJob(db, job as ScoreJobRow, log);
+        const stopHeartbeat = startJobLeaseHeartbeat(db, job as ScoreJobRow, log);
+        try {
+          await processJob(db, job as ScoreJobRow, log);
+        } finally {
+          stopHeartbeat();
+        }
       }
 
       const now = Date.now();

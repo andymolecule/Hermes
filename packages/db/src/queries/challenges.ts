@@ -3,7 +3,7 @@ import {
   defaultMinimumScoreForChallengeType,
   findPresetIdsByContainer,
   inferPresetIdByContainer,
-  resolveEvalSpec,
+  isOfficialContainer,
   SUBMISSION_LIMITS,
   CHALLENGE_STATUS,
   validatePresetIntegrity,
@@ -55,9 +55,59 @@ export interface BuildChallengeInsertInput {
   onChainDeadline?: string;
 }
 
-export function buildChallengeInsert(
+function getGhcrHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+  };
+  const token =
+    process.env.HERMES_GHCR_TOKEN ??
+    process.env.GHCR_TOKEN ??
+    process.env.GITHUB_TOKEN;
+  if (typeof token === "string" && token.length > 0) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function resolveOfficialImageToDigest(image: string): Promise<string> {
+  if (!isOfficialContainer(image) || image.includes("@sha256:")) {
+    return image;
+  }
+
+  const match = /^ghcr\.io\/([^/]+\/[^:@]+)(?::([^@]+))?$/.exec(image);
+  if (!match) {
+    throw new Error(`Unsupported official image reference for digest resolution: ${image}`);
+  }
+
+  const imagePath = match[1];
+  const tag = match[2] ?? "latest";
+  const response = await fetch(
+    `https://ghcr.io/v2/${imagePath}/manifests/${tag}`,
+    {
+      method: "GET",
+      headers: getGhcrHeaders(),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to resolve digest for official preset image ${image}: GHCR responded ${response.status}`,
+    );
+  }
+
+  const digest = response.headers.get("docker-content-digest");
+  if (!digest || !digest.startsWith("sha256:")) {
+    throw new Error(
+      `Failed to resolve digest for official preset image ${image}: missing docker-content-digest header`,
+    );
+  }
+
+  return `ghcr.io/${imagePath}@${digest}`;
+}
+
+export async function buildChallengeInsert(
   input: BuildChallengeInsertInput,
-): ChallengeInsert {
+): Promise<ChallengeInsert> {
   const requirePinnedPresetDigest =
     process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "1" ||
     process.env.HERMES_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
@@ -72,6 +122,12 @@ export function buildChallengeInsert(
   const inferredPresetId =
     effectivePresetId ?? inferPresetIdByContainer(input.spec.scoring.container);
   const presetIdsForContainer = findPresetIdsByContainer(input.spec.scoring.container);
+  const shouldResolveOfficialPresetDigest =
+    requirePinnedPresetDigest &&
+    Boolean(inferredPresetId) &&
+    inferredPresetId !== "custom" &&
+    isOfficialContainer(input.spec.scoring.container) &&
+    !input.spec.scoring.container.includes("@sha256:");
 
   if (!inferredPresetId && !usesCustomScorer && presetIdsForContainer.length > 1) {
     throw new Error(
@@ -89,15 +145,29 @@ export function buildChallengeInsert(
     const integrityError = validatePresetIntegrity(
       inferredPresetId,
       input.spec.scoring.container,
-      { requirePinnedPresetDigest },
+      {
+        requirePinnedPresetDigest:
+          requirePinnedPresetDigest && !shouldResolveOfficialPresetDigest,
+      },
     );
     if (integrityError) {
       throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
     }
   }
 
-  // Resolve the evaluation spec (supports both new eval_spec and legacy scoring fields)
-  const evalSpec = resolveEvalSpec(input.spec);
+  const persistedScoringContainer =
+    shouldResolveOfficialPresetDigest
+      ? await resolveOfficialImageToDigest(input.spec.scoring.container)
+      : input.spec.scoring.container;
+
+  const evalEngineId = input.spec.eval_spec?.engine_id ?? inferredPresetId ?? "custom";
+  const evalEngineDigest =
+    input.spec.eval_spec?.engine_digest
+      ?? (persistedScoringContainer.includes("@sha256:")
+        ? persistedScoringContainer
+        : undefined);
+  const evalBundleCid =
+    input.spec.eval_spec?.evaluation_bundle ?? input.spec.dataset?.test;
 
   return {
     chain_id: input.chainId,
@@ -111,13 +181,13 @@ export function buildChallengeInsert(
     spec_cid: input.specCid,
     dataset_train_cid: input.spec.dataset?.train ?? null,
     dataset_test_cid: input.spec.dataset?.test ?? null,
-    scoring_container: input.spec.scoring.container,
+    scoring_container: persistedScoringContainer,
     scoring_metric: input.spec.scoring.metric,
     scoring_preset_id: inferredPresetId,
     // Eval spec columns
-    eval_engine_id: evalSpec.engineId,
-    eval_engine_digest: evalSpec.engineDigest ?? null,
-    eval_bundle_cid: evalSpec.evaluationBundle ?? null,
+    eval_engine_id: evalEngineId,
+    eval_engine_digest: evalEngineDigest ?? null,
+    eval_bundle_cid: evalBundleCid ?? null,
     minimum_score:
       input.spec.minimum_score ??
       defaultMinimumScoreForChallengeType(input.spec.type) ??

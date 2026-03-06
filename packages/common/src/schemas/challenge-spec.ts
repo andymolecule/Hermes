@@ -172,6 +172,14 @@ export const challengeSpecSchema = _withDisputeMin(
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
+export interface ChallengeEvalRow {
+  scoring_container: string;
+  scoring_metric: string;
+  dataset_test_cid?: string | null;
+  eval_engine_digest?: string | null;
+  eval_bundle_cid?: string | null;
+}
+
 /**
  * Chain-aware schema. Testnet (Base Sepolia) allows 0h; mainnet enforces 168h.
  * API and frontend use this with the active chain ID.
@@ -195,38 +203,35 @@ export function validateChallengeSpec(raw: unknown, chainId: number) {
 // ---------------------------------------------------------------------------
 
 export interface ResolvedEvalSpec {
-  engineId: string;
-  engineDigest?: string;
-  evaluationBundle?: string;
-  scoringContainer: string;
-  scoringMetric: string;
+  image: string;
+  evaluationBundleCid?: string;
+  metric: string;
 }
 
 /**
  * Resolve the effective evaluation spec from a challenge spec.
  * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
  */
+export function resolveEvalSpec(spec: ChallengeSpecOutput): ResolvedEvalSpec;
+export function resolveEvalSpec(spec: ChallengeEvalRow): ResolvedEvalSpec;
 export function resolveEvalSpec(
-  spec: ChallengeSpecOutput,
+  spec: ChallengeSpecOutput | ChallengeEvalRow,
+): ResolvedEvalSpec;
+export function resolveEvalSpec(
+  spec: ChallengeSpecOutput | ChallengeEvalRow,
 ): ResolvedEvalSpec {
-  if (spec.eval_spec) {
+  if ("scoring" in spec) {
     return {
-      engineId: spec.eval_spec.engine_id,
-      engineDigest: spec.eval_spec.engine_digest,
-      evaluationBundle: spec.eval_spec.evaluation_bundle,
-      scoringContainer: spec.eval_spec.engine_digest ?? spec.scoring.container,
-      scoringMetric: spec.scoring.metric,
+      image: spec.eval_spec?.engine_digest ?? spec.scoring.container,
+      evaluationBundleCid:
+        spec.eval_spec?.evaluation_bundle ?? spec.dataset?.test,
+      metric: spec.scoring.metric,
     };
   }
 
-  // Legacy path: derive from scoring + dataset + preset_id
   return {
-    engineId: spec.preset_id ?? "custom",
-    engineDigest: spec.scoring.container.includes("@sha256:")
-      ? spec.scoring.container
-      : undefined,
-    evaluationBundle: spec.dataset?.test,
-    scoringContainer: spec.scoring.container,
-    scoringMetric: spec.scoring.metric,
+    image: spec.eval_engine_digest ?? spec.scoring_container,
+    evaluationBundleCid: spec.eval_bundle_cid ?? spec.dataset_test_cid ?? undefined,
+    metric: spec.scoring_metric,
   };
 }

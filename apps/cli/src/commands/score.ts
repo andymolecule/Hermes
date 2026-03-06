@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@hermes/chain";
+import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
 import {
   createSupabaseClient,
   getChallengeById,
@@ -31,11 +32,9 @@ type SubmissionRecord = {
   result_cid: string | null;
 };
 
-type ChallengeRecord = {
+type ChallengeRecord = ChallengeEvalRow & {
   id: string;
   contract_address: string;
-  scoring_container: string;
-  dataset_test_cid: string | null;
 };
 
 export function buildScoreCommand() {
@@ -81,14 +80,15 @@ export function buildScoreCommand() {
           db,
           submission.challenge_id,
         )) as ChallengeRecord;
-        if (!challenge.dataset_test_cid) {
-          throw new Error("Challenge missing test dataset CID.");
+        const evalPlan = resolveEvalSpec(challenge);
+        if (!evalPlan.evaluationBundleCid) {
+          throw new Error("Challenge missing evaluation bundle CID.");
         }
 
         const runSpinner = createSpinner("Running scorer container...");
         const run = await executeScoringPipeline({
-          image: challenge.scoring_container,
-          groundTruth: { cid: challenge.dataset_test_cid },
+          image: evalPlan.image,
+          evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: { cid: submission.result_cid },
           keepWorkspace: true,
         });

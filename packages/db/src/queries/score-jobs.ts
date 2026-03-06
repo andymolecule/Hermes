@@ -26,7 +26,7 @@ export interface ScoreJobRow {
 }
 
 const DEFAULT_JOB_LEASE_MS = Number(
-  process.env.HERMES_WORKER_JOB_LEASE_MS ?? 10 * 60 * 1000,
+  process.env.HERMES_WORKER_JOB_LEASE_MS ?? 60 * 60 * 1000,
 );
 
 /**
@@ -50,6 +50,31 @@ export async function claimNextJob(
 
   const row = Array.isArray(data) ? data[0] : data;
   return row as ScoreJobRow;
+}
+
+export async function heartbeatScoreJobLease(
+  db: HermesDbClient,
+  jobId: string,
+  workerId: string,
+): Promise<boolean> {
+  const heartbeatAt = new Date().toISOString();
+  const { data, error } = await db
+    .from("score_jobs")
+    .update({
+      locked_at: heartbeatAt,
+      updated_at: heartbeatAt,
+    })
+    .eq("id", jobId)
+    .eq("status", SCORE_JOB_STATUS.running)
+    .eq("locked_by", workerId)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to heartbeat score job lease: ${error.message}`);
+  }
+
+  return Boolean(data);
 }
 
 /**
