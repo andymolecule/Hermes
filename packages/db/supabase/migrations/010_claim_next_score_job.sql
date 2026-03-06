@@ -4,7 +4,7 @@
 
 create or replace function claim_next_score_job(
   p_worker_id text,
-  p_lease_ms integer default 600000  -- 10 minutes
+  p_lease_ms integer default 3600000  -- 60 minutes
 )
 returns table (
   id uuid,

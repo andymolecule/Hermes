@@ -57,7 +57,7 @@ export function buildValidateCommand() {
             try {
                 const run = await executeScoringPipeline({
                     image: container,
-                    groundTruth: { content: "id,value\n1,0.5\n" },
+                    evaluationBundle: { content: "id,value\n1,0.5\n" },
                     submission: { content: "id,value\n1,0.5\n" },
                     timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
                 });

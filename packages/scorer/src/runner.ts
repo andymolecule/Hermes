@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ScoreResult } from "@hermes/common";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_RUNNER_LIMITS = {
@@ -22,14 +23,9 @@ export interface RunScorerInput {
   strictPull?: boolean;
 }
 
-export interface ScoreResult {
-  ok: boolean;
-  score: number;
-  error?: string;
-  details: Record<string, unknown>;
+export interface RunnerScoreResult extends ScoreResult {
   log: string;
   outputPath: string;
-  containerImageDigest: string;
 }
 
 interface CommandResult {
@@ -147,7 +143,9 @@ function parseScorePayload(raw: string) {
   };
 }
 
-export async function runScorer(input: RunScorerInput): Promise<ScoreResult> {
+export async function runScorer(
+  input: RunScorerInput,
+): Promise<RunnerScoreResult> {
   await ensureDockerReady();
 
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;

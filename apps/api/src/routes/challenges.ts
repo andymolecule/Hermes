@@ -141,7 +141,7 @@ router.post(
 
     let challengeInsert;
     try {
-      challengeInsert = buildChallengeInsert({
+      challengeInsert = await buildChallengeInsert({
         chainId: config.HERMES_CHAIN_ID,
         contractAddress: challengeAddress,
         factoryChallengeId: Number(challengeId),

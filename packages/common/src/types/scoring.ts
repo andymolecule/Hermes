@@ -4,6 +4,9 @@ export interface ScorerConfig {
 }
 
 export interface ScoreResult {
+  ok: boolean;
   score: number;
-  details?: Record<string, unknown>;
+  error?: string;
+  details: Record<string, unknown>;
+  containerImageDigest: string;
 }

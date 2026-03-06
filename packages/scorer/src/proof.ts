@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ProofBundle as SharedProofBundle } from "@hermes/common";
 
 export interface ProofBundleInput {
   challengeId: string;
@@ -12,13 +13,9 @@ export interface ProofBundleInput {
   outputPath: string;
 }
 
-export interface ProofBundle {
+export interface ProofBundle extends SharedProofBundle {
   challengeId: string;
   submissionId: string;
-  score: number;
-  inputHash: string;
-  outputHash: string;
-  containerImageDigest: string;
   scorerLog: string;
   createdAt: string;
 }

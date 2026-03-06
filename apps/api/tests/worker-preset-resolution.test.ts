@@ -4,7 +4,7 @@ import { resolveRunnerPolicyForChallenge } from "../src/worker.js";
 
 test("uses preset_id to resolve runner limits", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    scoring_container: "ghcr.io/hermes-science/regression-scorer:latest",
+    image: "ghcr.io/hermes-science/regression-scorer:latest",
     scoring_preset_id: "regression_v1",
   });
   assert.equal(policy.source, "preset_id");
@@ -16,7 +16,7 @@ test("throws when preset_id is unknown", () => {
   assert.throws(
     () =>
       resolveRunnerPolicyForChallenge({
-        scoring_container: "ghcr.io/hermes-science/regression-scorer:latest",
+        image: "ghcr.io/hermes-science/regression-scorer:latest",
         scoring_preset_id: "does_not_exist",
       }),
     /Unknown scoring preset_id/,
@@ -27,7 +27,7 @@ test("throws when preset_id and container mismatch", () => {
   assert.throws(
     () =>
       resolveRunnerPolicyForChallenge({
-        scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+        image: "ghcr.io/hermes-science/repro-scorer:latest",
         scoring_preset_id: "regression_v1",
       }),
     /Invalid scoring preset configuration/,
@@ -36,7 +36,7 @@ test("throws when preset_id and container mismatch", () => {
 
 test("falls back to unique container match when preset id is missing", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    scoring_container: "ghcr.io/hermes-science/regression-scorer:latest",
+    image: "ghcr.io/hermes-science/regression-scorer:latest",
     scoring_preset_id: null,
   });
   assert.equal(policy.source, "container_unique");
@@ -46,7 +46,7 @@ test("falls back to unique container match when preset id is missing", () => {
 
 test("uses default limits when container is ambiguous and preset id is missing", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+    image: "ghcr.io/hermes-science/repro-scorer:latest",
     scoring_preset_id: null,
   });
   assert.equal(policy.source, "default");

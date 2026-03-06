@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { downloadToPath } from "@hermes/ipfs";
-import { runScorer, type RunScorerInput, type ScoreResult } from "./runner.js";
+import {
+  runScorer,
+  type RunScorerInput,
+  type RunnerScoreResult,
+} from "./runner.js";
 import { cleanupWorkspace, createScoringWorkspace } from "./staging.js";
 
 export interface ScoringInputSource {
@@ -12,7 +16,7 @@ export interface ScoringInputSource {
 
 export interface ExecuteScoringPipelineInput {
   image: string;
-  groundTruth?: ScoringInputSource;
+  evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
@@ -22,10 +26,10 @@ export interface ExecuteScoringPipelineInput {
 }
 
 export interface ScoringPipelineResult {
-  result: ScoreResult;
+  result: RunnerScoreResult;
   workspaceRoot: string;
   inputDir: string;
-  groundTruthPath?: string;
+  evaluationBundlePath?: string;
   submissionPath: string;
   inputPaths: string[];
   cleanup: () => Promise<void>;
@@ -75,11 +79,13 @@ export async function executeScoringPipeline(
   };
 
   try {
-    const groundTruthPath = input.groundTruth
+    // Current scorer family still expects the evaluation bundle staged
+    // under the historical ground_truth.csv filename.
+    const evaluationBundlePath = input.evaluationBundle
       ? path.join(workspace.inputDir, "ground_truth.csv")
       : undefined;
-    if (groundTruthPath && input.groundTruth) {
-      await stageSourceToPath(input.groundTruth, groundTruthPath);
+    if (evaluationBundlePath && input.evaluationBundle) {
+      await stageSourceToPath(input.evaluationBundle, evaluationBundlePath);
     }
 
     const submissionPath = path.join(workspace.inputDir, "submission.csv");
@@ -97,9 +103,9 @@ export async function executeScoringPipeline(
       result,
       workspaceRoot: workspace.root,
       inputDir: workspace.inputDir,
-      groundTruthPath,
+      evaluationBundlePath,
       submissionPath,
-      inputPaths: [groundTruthPath, submissionPath].filter(
+      inputPaths: [evaluationBundlePath, submissionPath].filter(
         (value): value is string => typeof value === "string",
       ),
       cleanup,

@@ -1,6 +1,15 @@
 import { createSupabaseClient, getChallengeById, listSubmissionsForChallenge } from "@hermes/db";
-import { readFeaturePolicy } from "@hermes/common";
-import { executeScoringPipeline, scoreToWad } from "@hermes/scorer";
+import {
+  readFeaturePolicy,
+  resolveEvalSpec,
+  type ChallengeEvalRow,
+  type ChallengeSpecOutput,
+} from "@hermes/common";
+import {
+  executeScoringPipeline,
+  scoreToWad,
+  type ExecuteScoringPipelineInput,
+} from "@hermes/scorer";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -52,6 +61,26 @@ function consumePreviewQuota(key: string) {
 
 const router = new Hono<ApiEnv>();
 
+export function createScorePreviewInput(
+  challenge: ChallengeEvalRow | ChallengeSpecOutput,
+  resultCid: string,
+): ExecuteScoringPipelineInput {
+  const evalPlan = resolveEvalSpec(challenge);
+
+  if (!evalPlan.evaluationBundleCid) {
+    throw new Error("Challenge is missing evaluation bundle CID.");
+  }
+  if (!evalPlan.image) {
+    throw new Error("Challenge is missing scoring image.");
+  }
+
+  return {
+    image: evalPlan.image,
+    evaluationBundle: { cid: evalPlan.evaluationBundleCid },
+    submission: { cid: resultCid },
+  };
+}
+
 router.post(
   "/",
   async (c, next) => {
@@ -80,19 +109,17 @@ router.post(
     const { challengeId, resultCid } = c.req.valid("json");
     const db = createSupabaseClient(false);
     const challenge = await getChallengeById(db, challengeId);
-
-    if (!challenge.dataset_test_cid) {
-      return c.json({ error: "Challenge is missing dataset_test_cid." }, 400);
+    let scoringInput: ExecuteScoringPipelineInput;
+    try {
+      scoringInput = createScorePreviewInput(challenge, resultCid);
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        400,
+      );
     }
-    if (!challenge.scoring_container) {
-      return c.json({ error: "Challenge is missing scoring container." }, 400);
-    }
 
-    const run = await executeScoringPipeline({
-      image: challenge.scoring_container as string,
-      groundTruth: { cid: challenge.dataset_test_cid },
-      submission: { cid: resultCid },
-    });
+    const run = await executeScoringPipeline(scoringInput);
     try {
       const previewWad = scoreToWad(run.result.score);
       const submissions = await listSubmissionsForChallenge(db, challengeId);

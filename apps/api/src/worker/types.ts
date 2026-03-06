@@ -1,13 +1,11 @@
-export interface ChallengeRow {
+import type { ChallengeEvalRow } from "@hermes/common";
+
+export interface ChallengeRow extends ChallengeEvalRow {
   id: string;
   contract_address: string;
-  scoring_container: string;
   scoring_preset_id?: string | null;
-  dataset_test_cid: string | null;
   // Eval spec columns (populated from eval_spec or backfilled from legacy fields)
   eval_engine_id?: string | null;
-  eval_engine_digest?: string | null;
-  eval_bundle_cid?: string | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
 }

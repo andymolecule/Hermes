@@ -9,7 +9,7 @@ export interface SubmissionMetadata {
 export interface ProofBundle {
   inputHash: string;
   outputHash: string;
-  containerImageHash: string;
+  containerImageDigest: string;
   score: number;
   scorerLog?: string;
 }

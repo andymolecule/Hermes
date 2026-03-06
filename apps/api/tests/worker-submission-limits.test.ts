@@ -35,6 +35,7 @@ test("worker scoring skips submissions that exceed configured limits", async () 
     id: "challenge-1",
     contract_address: "0x0000000000000000000000000000000000000001",
     scoring_container: "ghcr.io/hermes-science/repro-scorer:latest",
+    scoring_metric: "custom",
     scoring_preset_id: "csv_comparison_v1",
     dataset_test_cid: "bafybeigdyrzt3",
     max_submissions_total: 1,

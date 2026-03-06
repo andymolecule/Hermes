@@ -23,8 +23,7 @@ test("claimNextJob calls db.rpc with correct function name and params", async ()
   assert.equal(calls.length, 1, "should call db.rpc exactly once");
   assert.equal(calls[0].fn, "claim_next_score_job", "should call the correct RPC function");
   assert.equal(calls[0].params.p_worker_id, "worker-test-123");
-  assert.equal(typeof calls[0].params.p_lease_ms, "number");
-  assert.ok(calls[0].params.p_lease_ms > 0, "lease_ms should be positive");
+  assert.equal(calls[0].params.p_lease_ms, 3_600_000);
 });
 
 test("claimNextJob returns job row when RPC returns data", async () => {

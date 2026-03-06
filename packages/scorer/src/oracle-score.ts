@@ -6,6 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@hermes/chain";
+import { resolveEvalSpec, type ChallengeEvalRow } from "@hermes/common";
 import {
   type HermesDbClient,
   getChallengeById,
@@ -51,22 +52,21 @@ export async function oracleScore(
     );
   }
 
-  const challenge = (await getChallengeById(db, submission.challenge_id)) as {
+  const challenge = (await getChallengeById(db, submission.challenge_id)) as ChallengeEvalRow & {
     id: string;
     contract_address: string;
-    scoring_container: string;
-    dataset_test_cid: string | null;
   };
-  if (!challenge.dataset_test_cid) {
+  const evalPlan = resolveEvalSpec(challenge);
+  if (!evalPlan.evaluationBundleCid) {
     throw new Error(
-      `Challenge ${submission.challenge_id} missing test dataset CID.`,
+      `Challenge ${submission.challenge_id} missing evaluation bundle CID.`,
     );
   }
 
   // 2. Run scorer container
   const run = await executeScoringPipeline({
-    image: challenge.scoring_container,
-    groundTruth: { cid: challenge.dataset_test_cid },
+    image: evalPlan.image,
+    evaluationBundle: { cid: evalPlan.evaluationBundleCid },
     submission: { cid: submission.result_cid },
     keepWorkspace: true,
   });
