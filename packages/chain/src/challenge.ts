@@ -1,10 +1,17 @@
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
+import {
+  CHAIN_IDS,
+  type ChallengeStatus,
+  ON_CHAIN_STATUS_ORDER,
+  loadConfig,
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
 import type { Abi } from "viem";
+import { http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { getPublicClient, getWalletClient } from "./client.js";
-import { CHAIN_IDS, loadConfig } from "@agora/common";
-import { createWalletClient, http } from "viem";
 import { base, baseSepolia } from "viem/chains";
+import { getPublicClient, getWalletClient } from "./client.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
@@ -54,6 +61,16 @@ export async function postScore(
     abi: AgoraChallengeAbi,
     functionName: "postScore",
     args: [submissionId, score, proofBundleHash],
+  });
+}
+
+export async function startChallengeScoring(challengeAddress: `0x${string}`) {
+  const walletClient = getWalletClient();
+  return walletClient.writeContract({
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "startScoring",
+    args: [],
   });
 }
 
@@ -162,5 +179,41 @@ export async function getOnChainSubmission(
     score: result.score as bigint,
     submittedAt: result.submittedAt as bigint,
     scored: result.scored as boolean,
+  };
+}
+
+export async function getChallengeLifecycleState(
+  challengeAddress: `0x${string}`,
+): Promise<{
+  status: ChallengeStatus;
+  deadline: bigint;
+  disputeWindowHours: bigint;
+}> {
+  const publicClient = getPublicClient();
+  const [rawStatus, deadline, disputeWindowHours] = await Promise.all([
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "status",
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "deadline",
+    }) as Promise<bigint>,
+    publicClient.readContract({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "disputeWindowHours",
+    }) as Promise<bigint>,
+  ]);
+  const status = ON_CHAIN_STATUS_ORDER[Number(rawStatus)];
+  if (!status) {
+    throw new Error(`Invalid on-chain status value: ${String(rawStatus)}`);
+  }
+  return {
+    status,
+    deadline,
+    disputeWindowHours,
   };
 }

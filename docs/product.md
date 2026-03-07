@@ -87,7 +87,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     A["⏰ Deadline passes"] --> B["Status → Scoring"]
-    B --> C["Oracle runs Docker scorer<br/>for each submission"]
+    B --> C["Oracle decrypts sealed submissions<br/>and runs Docker scorer"]
     C --> D["Scorer outputs<br/>score.json"]
     D --> E["Oracle builds<br/>proof bundle"]
     E --> F["Proof pinned to IPFS<br/>Score posted on-chain"]
@@ -95,6 +95,7 @@ flowchart TB
 ```
 
 **Scoring is deterministic:** Same Docker container + same input = same score, every time. This is what makes the system trustworthy.
+**Sealed means public-hidden:** submissions stay hidden from the public and other solvers until scoring begins; Agora-operated scoring can decrypt after deadline.
 
 ### Phase 4: Settlement
 
@@ -203,7 +204,7 @@ MCP supports two modes:
 ### 3. Web Dashboard (for humans)
 
 The web frontend lets humans:
-- Browse active challenges
+- Browse open challenges
 - View leaderboards
 - Post challenges via wallet (MetaMask, etc.)
 - See challenge details and submission status

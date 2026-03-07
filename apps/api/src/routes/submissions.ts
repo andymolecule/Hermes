@@ -1,6 +1,11 @@
-import { getOnChainSubmission, getPublicClient } from "@agora/chain";
+import {
+  getChallengeLifecycleState,
+  getOnChainSubmission,
+  getPublicClient,
+} from "@agora/chain";
 import {
   CHALLENGE_STATUS,
+  type ChallengeStatus,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
   getSubmissionLimitViolation,
@@ -8,7 +13,9 @@ import {
   resolveEvalSpec,
   resolveSubmissionLimits,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -41,10 +48,7 @@ const createSubmissionBodySchema = z.object({
   resultCid: z.string().min(1),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   resultFormat: z
-    .enum([
-      SUBMISSION_RESULT_FORMAT.plainV0,
-      SUBMISSION_RESULT_FORMAT.sealedV1,
-    ])
+    .enum([SUBMISSION_RESULT_FORMAT.plainV0, SUBMISSION_RESULT_FORMAT.sealedV1])
     .optional(),
 });
 
@@ -91,13 +95,21 @@ type PublicProofBundle = {
   replaySubmissionCid?: string | null;
 };
 
+export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
+  return status !== CHALLENGE_STATUS.open;
+}
+
 export function extractSubmissionIdFromSubmittedEvent(
   args: readonly unknown[] | Record<string, unknown> | undefined,
 ): bigint | undefined {
   const rawSubId =
     getLogArg(args, 0, "submissionId") ?? getLogArg(args, 0, "subId");
   if (typeof rawSubId === "bigint") return rawSubId;
-  if (typeof rawSubId === "number" && Number.isSafeInteger(rawSubId) && rawSubId >= 0) {
+  if (
+    typeof rawSubId === "number" &&
+    Number.isSafeInteger(rawSubId) &&
+    rawSubId >= 0
+  ) {
     return BigInt(rawSubId);
   }
   if (typeof rawSubId === "string" && /^[0-9]+$/.test(rawSubId)) {
@@ -132,6 +144,18 @@ router.get("/:id/public", async (c) => {
   const db = createSupabaseClient(true);
   const submission = await getSubmissionById(db, submissionId);
   const challenge = await getChallengeById(db, submission.challenge_id);
+  const lifecycle = await getChallengeLifecycleState(
+    challenge.contract_address as `0x${string}`,
+  );
+  if (!canReadPublicSubmissionVerification(lifecycle.status)) {
+    return c.json(
+      {
+        error:
+          "Public verification is unavailable while the challenge is open. Check back when scoring begins.",
+      },
+      403,
+    );
+  }
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
   const evalPlan = resolveEvalSpec(challenge);
 
@@ -141,8 +165,8 @@ router.get("/:id/public", async (c) => {
   }
 
   const replaySubmissionCid =
-    proofPayload?.replaySubmissionCid
-    ?? (submission.result_format === SUBMISSION_RESULT_FORMAT.plainV0
+    proofPayload?.replaySubmissionCid ??
+    (submission.result_format === SUBMISSION_RESULT_FORMAT.plainV0
       ? submission.result_cid
       : null);
 
@@ -164,7 +188,9 @@ router.get("/:id/public", async (c) => {
       proofPayload?.evaluationBundleCid ?? evalPlan.evaluationBundleCid ?? null,
     replaySubmissionCid,
     containerImageDigest:
-      proofPayload?.containerImageDigest ?? proofBundle?.container_image_hash ?? null,
+      proofPayload?.containerImageDigest ??
+      proofBundle?.container_image_hash ??
+      null,
     inputHash: proofPayload?.inputHash ?? proofBundle?.input_hash ?? null,
     outputHash: proofPayload?.outputHash ?? proofBundle?.output_hash ?? null,
     reproducible: proofBundle?.reproducible ?? false,
@@ -198,7 +224,8 @@ router.post(
   requireWriteQuota("/api/submissions"),
   zValidator("json", createSubmissionBodySchema),
   async (c) => {
-    const { challengeId, resultCid, txHash, resultFormat } = c.req.valid("json");
+    const { challengeId, resultCid, txHash, resultFormat } =
+      c.req.valid("json");
     const normalizedResultCid = resultCid.trim();
     const sessionAddress = c.get("sessionAddress");
 
@@ -263,7 +290,10 @@ router.post(
           403,
         );
       }
-    } else if (!receipt.from || onChain.solver.toLowerCase() !== receipt.from.toLowerCase()) {
+    } else if (
+      !receipt.from ||
+      onChain.solver.toLowerCase() !== receipt.from.toLowerCase()
+    ) {
       return c.json(
         { error: "Transaction sender does not match submission solver." },
         403,
@@ -290,7 +320,7 @@ router.post(
       resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
     );
 
-    if (!onChain.scored && challenge.status === CHALLENGE_STATUS.active) {
+    if (!onChain.scored && challenge.status === CHALLENGE_STATUS.open) {
       const limits = resolveSubmissionLimits({
         max_submissions_total: challenge.max_submissions_total,
         max_submissions_per_solver: challenge.max_submissions_per_solver,

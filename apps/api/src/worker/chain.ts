@@ -1,19 +1,22 @@
-import { finalizeChallenge, getOnChainSubmission, getPublicClient, postScore } from "@agora/chain";
+import {
+  finalizeChallenge,
+  getChallengeLifecycleState,
+  getOnChainSubmission,
+  getPublicClient,
+  postScore,
+  startChallengeScoring,
+} from "@agora/chain";
 import { CHALLENGE_STATUS } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
 import {
   clearJobPostedTx,
   completeJob,
+  type createSupabaseClient,
   markJobPosted,
   requeueJobWithoutAttemptPenalty,
   updateScore,
-  type createSupabaseClient,
 } from "@agora/db";
-import { type Abi } from "viem";
 import { runWorkerPhase } from "./phases.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
-
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 
@@ -84,11 +87,15 @@ export async function handlePreviouslyPostedScoreTx(
     }
 
     await clearJobPostedTx(db, job.id);
-    log("warn", "Posted tx reverted; cleared score_tx_hash and retrying scoring", {
-      jobId: job.id,
-      submissionId: submission.id,
-      txHash: job.score_tx_hash,
-    });
+    log(
+      "warn",
+      "Posted tx reverted; cleared score_tx_hash and retrying scoring",
+      {
+        jobId: job.id,
+        submissionId: submission.id,
+        txHash: job.score_tx_hash,
+      },
+    );
     return false;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -126,15 +133,15 @@ export async function postScoreAndWaitForConfirmation(
     scoreWad: scoreWad.toString(),
   };
   const txHash = await runWorkerPhase(log, "post_tx", phaseMeta, async () => {
-    const txHash = await postScore(
+    const hash = await postScore(
       challengeAddress,
       BigInt(submission.on_chain_sub_id),
       scoreWad,
       proofHash,
     );
-    await markJobPosted(db, job.id, txHash);
-    log("info", "Score tx submitted", { ...phaseMeta, txHash });
-    return txHash;
+    await markJobPosted(db, job.id, hash);
+    log("info", "Score tx submitted", { ...phaseMeta, txHash: hash });
+    return hash;
   });
 
   const receipt = await runWorkerPhase(
@@ -150,72 +157,86 @@ export async function postScoreAndWaitForConfirmation(
   return txHash;
 }
 
-export async function sweepFinalizable(
-  db: DbClient,
-  log: WorkerLogFn,
-) {
+export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
   const { data: challenges, error } = await db
     .from("challenges")
     .select("id, contract_address, status")
-    .eq("status", CHALLENGE_STATUS.active);
+    .neq("status", CHALLENGE_STATUS.finalized)
+    .neq("status", CHALLENGE_STATUS.cancelled);
 
   if (error || !challenges || challenges.length === 0) return;
 
+  const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
   const publicClient = getPublicClient();
 
   for (const challenge of challenges) {
+    const challengeAddress = challenge.contract_address as `0x${string}`;
+
     try {
-      const [onChainStatusRaw, onChainDeadline, onChainDisputeWindowHours] =
-        await Promise.all([
-          publicClient.readContract({
-            address: challenge.contract_address as `0x${string}`,
-            abi: AgoraChallengeAbi,
-            functionName: "status",
-          }),
-          publicClient.readContract({
-            address: challenge.contract_address as `0x${string}`,
-            abi: AgoraChallengeAbi,
-            functionName: "deadline",
-          }) as Promise<bigint>,
-          publicClient.readContract({
-            address: challenge.contract_address as `0x${string}`,
-            abi: AgoraChallengeAbi,
-            functionName: "disputeWindowHours",
-          }) as Promise<bigint>,
-        ]);
-      const onChainStatus = Number(onChainStatusRaw);
-      if (!Number.isFinite(onChainStatus)) continue;
+      const lifecycle = await getChallengeLifecycleState(challengeAddress);
 
-      if (onChainStatus >= 2) continue;
+      if (
+        challenge.status === CHALLENGE_STATUS.open &&
+        lifecycle.status === CHALLENGE_STATUS.scoring
+      ) {
+        log("info", "Starting scoring window", {
+          challengeId: challenge.id,
+          contract: challengeAddress,
+        });
 
-      const finalizeAfterSeconds =
-        onChainDeadline + onChainDisputeWindowHours * 3600n;
-      const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-      if (nowSeconds <= finalizeAfterSeconds) continue;
-
-      log("info", `Auto-finalizing challenge ${challenge.id}`, {
-        challengeId: challenge.id,
-        contract: challenge.contract_address,
-      });
-
-      const txHash = await finalizeChallenge(
-        challenge.contract_address as `0x${string}`,
-      );
-
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status === "success") {
-        log("info", "Challenge finalized", { challengeId: challenge.id, txHash });
-      } else {
-        log("warn", "Finalize tx reverted", { challengeId: challenge.id, txHash });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("ChallengeFinalized") || msg.includes("Finalized")) {
+        const txHash = await startChallengeScoring(challengeAddress);
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash,
+        });
+        if (receipt.status !== "success") {
+          throw new Error(`startScoring transaction reverted: ${txHash}`);
+        }
+        log("info", "Scoring window tx submitted", {
+          challengeId: challenge.id,
+          txHash,
+        });
         continue;
       }
-      log("warn", `Auto-finalize failed for challenge ${challenge.id}`, {
+
+      if (lifecycle.status !== CHALLENGE_STATUS.scoring) {
+        continue;
+      }
+
+      const finalizeAfterSeconds =
+        lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
+      if (nowSeconds <= finalizeAfterSeconds) {
+        continue;
+      }
+
+      log("info", "Auto-finalizing challenge", {
         challengeId: challenge.id,
-        error: msg,
+        contract: challengeAddress,
+      });
+
+      const txHash = await finalizeChallenge(challengeAddress);
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+      });
+      if (receipt.status !== "success") {
+        throw new Error(`finalize transaction reverted: ${txHash}`);
+      }
+      log("info", "Finalize tx submitted", {
+        challengeId: challenge.id,
+        txHash,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed/i.test(
+          message,
+        )
+      ) {
+        continue;
+      }
+      log("warn", "Lifecycle sweep failed", {
+        challengeId: challenge.id,
+        contract: challengeAddress,
+        error: message,
       });
     }
   }

@@ -1,16 +1,21 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { ArrowUpDown, ChevronDown, Search as SearchIcon, Sparkles } from "lucide-react";
-import Link from "next/link";
 import { CHALLENGE_STATUS } from "@agora/common";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  Search as SearchIcon,
+  Sparkles,
+} from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { ChallengeCard } from "../components/ChallengeCard";
 import {
   type ChallengeFilterState,
-  SearchBar,
-  FilterToggle,
   FilterPanel,
+  FilterToggle,
+  SearchBar,
 } from "../components/ChallengeFilters";
 import { listChallenges } from "../lib/api";
 import { formatUsdc } from "../lib/format";
@@ -26,7 +31,11 @@ export function HomeClient() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<"deadline" | "reward">("deadline");
 
-  const hasActiveFilters = !!(filters.domain || filters.status || filters.minReward);
+  const hasActiveFilters = !!(
+    filters.domain ||
+    filters.status ||
+    filters.minReward
+  );
 
   function updateFilters(next: Partial<ChallengeFilterState>) {
     setFilters((prev) => ({ ...prev, ...next }));
@@ -46,8 +55,8 @@ export function HomeClient() {
   const challenges = query.data ?? [];
 
   /* Derived stats */
-  const activeChallenges = challenges.filter(
-    (c) => c.status?.toLowerCase() === CHALLENGE_STATUS.active,
+  const openChallenges = challenges.filter(
+    (c) => c.status?.toLowerCase() === CHALLENGE_STATUS.open,
   );
   const totalPool = challenges.reduce(
     (s, c) => s + Number(c.reward_amount || 0),
@@ -103,24 +112,39 @@ export function HomeClient() {
         {/* Stats ticker — modular grid */}
         <div className="grid grid-cols-4 border border-black max-w-2xl mx-auto">
           <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">TVL</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">${formatUsdc(totalPool)}</div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
+              TVL
+            </div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
+              ${formatUsdc(totalPool)}
+            </div>
           </div>
           <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Active</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{activeChallenges.length}</div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
+              Open
+            </div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
+              {openChallenges.length}
+            </div>
           </div>
           <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Total Submissions</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{totalSubs}</div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
+              Total Submissions
+            </div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
+              {totalSubs}
+            </div>
           </div>
           <div className="bg-white px-5 py-5">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Challenges</div>
-            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{challenges.length}</div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">
+              Challenges
+            </div>
+            <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">
+              {challenges.length}
+            </div>
           </div>
         </div>
       </section>
-
 
       {/* ═══════ SEARCH + FILTER ROW ═══════ */}
       <div className="flex items-stretch border border-black rounded-[2px] overflow-hidden">
@@ -185,12 +209,16 @@ export function HomeClient() {
           <div className="font-mono text-sm space-y-1 text-black/70">
             <div className="flex items-center gap-2 mb-3">
               <SearchIcon className="w-4 h-4" />
-              <span className="text-[10px] uppercase tracking-wider font-bold">agora</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold">
+                agora
+              </span>
             </div>
             <p>$ agora query --open</p>
             <p>&gt; No challenges found.</p>
             <p>&gt; Try adjusting filters or post the first bounty.</p>
-            <p className="inline-block animate-[blink_1s_step-end_infinite]">_</p>
+            <p className="inline-block animate-[blink_1s_step-end_infinite]">
+              _
+            </p>
           </div>
         </div>
       ) : null}

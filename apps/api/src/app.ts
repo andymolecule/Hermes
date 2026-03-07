@@ -1,19 +1,19 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
+import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
 import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
+import leaderboardRoutes from "./routes/leaderboard.js";
 import pinSpecRoutes from "./routes/pin-spec.js";
-import scorePreviewRoutes from "./routes/score-preview.js";
 import portfolioRoutes from "./routes/portfolio.js";
-import workerHealthRoutes from "./routes/worker-health.js";
 import statsRoutes from "./routes/stats.js";
 import submissionRoutes from "./routes/submissions.js";
 import verifyRoutes from "./routes/verify.js";
-import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
-import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
+import workerHealthRoutes from "./routes/worker-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
@@ -67,7 +67,6 @@ export function createApp() {
           enabled: sealing.enabled,
           keyId: sealing.keyId,
           publicKeyLoaded: sealing.publicKeyLoaded,
-          privateKeyLoaded: sealing.privateKeyLoaded,
           selfCheck: sealing.selfCheck,
         },
       },
@@ -82,13 +81,13 @@ export function createApp() {
   app.route("/api/auth", authRoutes);
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
+  app.route("/api/leaderboard", leaderboardRoutes);
   app.route("/api/pin-spec", pinSpecRoutes);
   app.route("/api/worker-health", workerHealthRoutes);
   app.route("/api/agent/challenges", agentChallengeRoutes);
   app.route("/api/submissions", submissionRoutes);
   app.route("/api/verify", verifyRoutes);
-  app.route("/api/score-preview", scorePreviewRoutes);
-  app.route("/api/solver", portfolioRoutes);
+  app.route("/api/me/portfolio", portfolioRoutes);
   app.route("/api/stats", statsRoutes);
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));

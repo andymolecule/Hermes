@@ -97,7 +97,9 @@ export function buildSubmitCommand() {
           `${process.env.AGORA_API_URL?.replace(/\/$/, "")}/api/submissions/public-key`,
         );
         if (!publicKeyResponse.ok) {
-          throw new Error(`Failed to fetch submission public key: ${await publicKeyResponse.text()}`);
+          throw new Error(
+            `Failed to fetch submission public key: ${await publicKeyResponse.text()}`,
+          );
         }
         const submissionPublicKey = (await publicKeyResponse.json()) as {
           data?: { kid: string; publicKeyPem: string };
@@ -151,8 +153,8 @@ export function buildSubmitCommand() {
           opts.challenge,
         )) as ChallengeRecord;
 
-        if (challenge.status !== CHALLENGE_STATUS.active) {
-          throw new Error("Challenge not active.");
+        if (challenge.status !== CHALLENGE_STATUS.open) {
+          throw new Error("Challenge not open.");
         }
 
         const deadlineMs = new Date(challenge.deadline).getTime();

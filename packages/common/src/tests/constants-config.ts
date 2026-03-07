@@ -4,11 +4,11 @@ import {
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
   ON_CHAIN_STATUS_ORDER,
+  SCORE_JOB_STATUS,
+  SCORE_JOB_STATUSES,
+  loadConfig,
   readFeaturePolicy,
   readX402RuntimeConfig,
-  SCORE_JOB_STATUSES,
-  SCORE_JOB_STATUS,
-  loadConfig,
   resetConfigCache,
 } from "../index.js";
 
@@ -59,8 +59,8 @@ try {
     AGORA_FACTORY_ADDRESS: "0x0000000000000000000000000000000000000001",
     AGORA_USDC_ADDRESS: "0x0000000000000000000000000000000000000002",
   };
-  delete process.env.AGORA_CHAIN_ID;
-  delete process.env.AGORA_X402_NETWORK;
+  process.env.AGORA_CHAIN_ID = undefined;
+  process.env.AGORA_X402_NETWORK = undefined;
 
   resetConfigCache();
   const config = loadConfig();
@@ -69,7 +69,6 @@ try {
 
   const featurePolicy = readFeaturePolicy();
   assert.equal(featurePolicy.enableNonCoreFeatures, false);
-  assert.equal(featurePolicy.scorePreviewEnabled, false);
   assert.equal(featurePolicy.x402Enabled, false);
   assert.equal(featurePolicy.allowMcpRemotePrivateKeys, false);
 
@@ -77,10 +76,20 @@ try {
   resetConfigCache();
   assert.throws(
     () => loadConfig(),
-    /Submission sealing config must be fully specified/,
-    "partial submission sealing config should be rejected",
+    /Submission sealing public config must include/,
+    "partial submission sealing public config should be rejected",
   );
-  delete process.env.AGORA_SUBMISSION_SEAL_KEY_ID;
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = undefined;
+  resetConfigCache();
+
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM = "private-only";
+  resetConfigCache();
+  assert.throws(
+    () => loadConfig(),
+    /AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM requires/,
+    "private sealing key should require the public sealing config",
+  );
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM = undefined;
   resetConfigCache();
 
   process.env.AGORA_ENABLE_NON_CORE_FEATURES = "true";

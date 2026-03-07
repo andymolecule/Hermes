@@ -1,10 +1,11 @@
 import {
+  type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  parseCsvHeaders,
+  ON_CHAIN_STATUS_ORDER,
   getSubmissionLimitViolation,
+  parseCsvHeaders,
   resolveSubmissionLimits,
-  type AgoraConfig,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
@@ -14,22 +15,25 @@ import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
   createScoreJob,
+  type createSupabaseClient,
   getIndexerCursor,
-  markScoreJobSkipped,
   getSubmissionByChainId,
   isEventIndexed,
   markEventIndexed,
+  markScoreJobSkipped,
   setChallengeFinalized,
   setIndexerCursor,
   updateChallengeStatus,
   upsertChallenge,
   upsertSubmissionOnChain,
-  type createSupabaseClient,
 } from "@agora/db";
 import { getText } from "@agora/ipfs";
-import { type Abi } from "viem";
-import { getPublicClient } from "../client.js";
-import { fetchValidatedChallengeSpec, loadChallengeDefinitionFromChain } from "../challenge-definition.js";
+import type { Abi } from "viem";
+import {
+  fetchValidatedChallengeSpec,
+  loadChallengeDefinitionFromChain,
+} from "../challenge-definition.js";
+import type { getPublicClient } from "../client.js";
 import {
   clearRetryableEvent,
   isRetryableError,
@@ -80,6 +84,18 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
     return value as `0x${string}`;
   }
   throw new Error(`Invalid event arg '${field}': expected address string`);
+}
+
+function parseStatusValue(value: unknown, field: string) {
+  if (typeof value === "bigint") {
+    const status = ON_CHAIN_STATUS_ORDER[Number(value)];
+    if (status) return status;
+  }
+  if (typeof value === "number" && Number.isInteger(value)) {
+    const status = ON_CHAIN_STATUS_ORDER[value];
+    if (status) return status;
+  }
+  throw new Error(`Invalid event arg '${field}': expected challenge status`);
 }
 
 async function fetchChallengeSpec(specCid: string, chainId: number) {
@@ -175,10 +191,13 @@ export async function resolveChallengeInitialFromBlock(
     if (isRetryableError(error)) {
       throw error;
     }
-    console.warn("Failed to resolve challenge creation block; falling back to global cursor", {
-      txHash: challengeTxHash,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    console.warn(
+      "Failed to resolve challenge creation block; falling back to global cursor",
+      {
+        txHash: challengeTxHash,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return fallbackFromBlock;
   }
 }
@@ -223,15 +242,12 @@ export async function processFactoryLog(input: {
         "rewardAmount",
       );
 
-      const {
-        specCid,
-        spec,
-        onChainDeadlineIso,
-      } = await loadChallengeDefinitionFromChain({
-        publicClient,
-        challengeAddress: challengeAddr,
-        chainId: config.AGORA_CHAIN_ID,
-      });
+      const { specCid, spec, onChainDeadlineIso } =
+        await loadChallengeDefinitionFromChain({
+          publicClient,
+          challengeAddress: challengeAddr,
+          chainId: config.AGORA_CHAIN_ID,
+        });
 
       await upsertChallenge(
         db,
@@ -245,7 +261,8 @@ export async function processFactoryLog(input: {
           spec,
           rewardAmountUsdc: Number(reward) / 1_000_000,
           disputeWindowHours:
-            spec.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours,
+            spec.dispute_window_hours ??
+            CHALLENGE_LIMITS.defaultDisputeWindowHours,
           txHash,
           // On-chain deadline is the source of truth — spec deadline is informational.
           onChainDeadline: onChainDeadlineIso,
@@ -265,11 +282,17 @@ export async function processFactoryLog(input: {
               .eq("contract_address", challengeAddr);
           }
         } catch (headerErr) {
-          console.warn("[indexer] Failed to extract expected_columns (non-critical)", {
-            challengeAddr,
-            testCid,
-            error: headerErr instanceof Error ? headerErr.message : String(headerErr),
-          });
+          console.warn(
+            "[indexer] Failed to extract expected_columns (non-critical)",
+            {
+              challengeAddr,
+              testCid,
+              error:
+                headerErr instanceof Error
+                  ? headerErr.message
+                  : String(headerErr),
+            },
+          );
         }
       }
     }
@@ -395,7 +418,7 @@ export async function processChallengeLog(input: {
         tx_hash: txHash,
       });
 
-      if (!submission.scored && challenge.status === CHALLENGE_STATUS.active) {
+      if (!submission.scored && challenge.status === CHALLENGE_STATUS.open) {
         const limits = resolveSubmissionLimits({
           max_submissions_total: challenge.max_submissions_total,
           max_submissions_per_solver: challenge.max_submissions_per_solver,
@@ -482,6 +505,14 @@ export async function processChallengeLog(input: {
       });
     }
 
+    if (log.eventName === "StatusChanged") {
+      const nextStatus = parseStatusValue(
+        eventArg(log.args, 1) ?? eventArg(log.args, "toStatus"),
+        "toStatus",
+      );
+      await updateChallengeStatus(db, challenge.id, nextStatus);
+    }
+
     if (log.eventName === "Finalized") {
       const winnerOnChain = await readWinningSubmissionId(
         challengeAddress,
@@ -505,14 +536,6 @@ export async function processChallengeLog(input: {
       );
     }
 
-    if (log.eventName === "Disputed") {
-      await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.disputed);
-    }
-
-    if (log.eventName === "Cancelled") {
-      await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.cancelled);
-    }
-
     if (log.eventName === "DisputeResolved") {
       const rawWinner =
         eventArg(log.args, 0) ?? eventArg(log.args, "winnerSubId");
@@ -520,11 +543,7 @@ export async function processChallengeLog(input: {
         ? parseRequiredBigInt(rawWinner, "winnerSubId")
         : null;
       const winnerRow = winnerOnChain
-        ? await getSubmissionByChainId(
-            db,
-            challenge.id,
-            Number(winnerOnChain),
-          )
+        ? await getSubmissionByChainId(db, challenge.id, Number(winnerOnChain))
         : null;
       const finalizedAt = await blockTimestampIso(
         publicClient,
@@ -627,8 +646,14 @@ export async function loadChallengeCursor(input: {
   fromBlock: bigint;
   resolvedChallengeKeys: Set<string>;
 }) {
-  const { db, challenge, chainId, publicClient, fromBlock, resolvedChallengeKeys } =
-    input;
+  const {
+    db,
+    challenge,
+    chainId,
+    publicClient,
+    fromBlock,
+    resolvedChallengeKeys,
+  } = input;
   const challengeAddress = challenge.contract_address as `0x${string}`;
   const challengeCursorKey = `challenge:${chainId}:${challengeAddress.toLowerCase()}`;
 
@@ -648,10 +673,13 @@ export async function loadChallengeCursor(input: {
       resolvedChallengeKeys.add(challengeCursorKey);
     } catch {
       challengeFromBlock = fromBlock;
-      console.warn("Skipping cursor persist for challenge with failed bootstrap", {
-        challengeId: challenge.id,
-        challengeAddress,
-      });
+      console.warn(
+        "Skipping cursor persist for challenge with failed bootstrap",
+        {
+          challengeId: challenge.id,
+          challengeAddress,
+        },
+      );
     }
   }
 
@@ -664,9 +692,11 @@ export async function persistChallengeCursors(input: {
   challengePersistTargets: Map<string, bigint>;
   nextBlock: bigint;
 }) {
-  const { db, resolvedChallengeKeys, challengePersistTargets, nextBlock } = input;
+  const { db, resolvedChallengeKeys, challengePersistTargets, nextBlock } =
+    input;
   for (const challengeKey of resolvedChallengeKeys) {
-    const persistTarget = challengePersistTargets.get(challengeKey) ?? nextBlock;
+    const persistTarget =
+      challengePersistTargets.get(challengeKey) ?? nextBlock;
     await setIndexerCursor(db, challengeKey, persistTarget);
   }
 }

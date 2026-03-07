@@ -1,3 +1,4 @@
+import { CHALLENGE_STATUS } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
 export interface PlatformAnalytics {
@@ -51,6 +52,7 @@ export async function getPlatformAnalytics(
     totalSubsResult,
     scoredSubsResult,
     solverAddressesResult,
+    finalizedSolverAddressesResult,
     recentChallengesResult,
     recentSubmissionsResult,
     scoredWithScoresResult,
@@ -58,7 +60,9 @@ export async function getPlatformAnalytics(
     // 1. All challenges — explicit columns for grouping + reward sum
     db
       .from("challenges")
-      .select("id, domain, status, reward_amount, distribution_type, created_at"),
+      .select(
+        "id, domain, status, reward_amount, distribution_type, created_at",
+      ),
 
     // 2. Total submission count
     db
@@ -75,6 +79,11 @@ export async function getPlatformAnalytics(
     db
       .from("submissions")
       .select("solver_address"),
+
+    db
+      .from("submissions")
+      .select("solver_address, challenges!inner(status)")
+      .eq("challenges.status", CHALLENGE_STATUS.finalized),
 
     // 5. Recent challenges (10)
     db
@@ -98,31 +107,51 @@ export async function getPlatformAnalytics(
   ]);
 
   if (challengesResult.error) {
-    throw new Error(`Analytics: failed to fetch challenges: ${challengesResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to fetch challenges: ${challengesResult.error.message}`,
+    );
   }
   if (totalSubsResult.error) {
-    throw new Error(`Analytics: failed to count submissions: ${totalSubsResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to count submissions: ${totalSubsResult.error.message}`,
+    );
   }
   if (scoredSubsResult.error) {
-    throw new Error(`Analytics: failed to count scored submissions: ${scoredSubsResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to count scored submissions: ${scoredSubsResult.error.message}`,
+    );
   }
   if (solverAddressesResult.error) {
-    throw new Error(`Analytics: failed to fetch solver addresses: ${solverAddressesResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to fetch solver addresses: ${solverAddressesResult.error.message}`,
+    );
+  }
+  if (finalizedSolverAddressesResult.error) {
+    throw new Error(
+      `Analytics: failed to fetch finalized solver addresses: ${finalizedSolverAddressesResult.error.message}`,
+    );
   }
   if (recentChallengesResult.error) {
-    throw new Error(`Analytics: failed to fetch recent challenges: ${recentChallengesResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to fetch recent challenges: ${recentChallengesResult.error.message}`,
+    );
   }
   if (recentSubmissionsResult.error) {
-    throw new Error(`Analytics: failed to fetch recent submissions: ${recentSubmissionsResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to fetch recent submissions: ${recentSubmissionsResult.error.message}`,
+    );
   }
   if (scoredWithScoresResult.error) {
-    throw new Error(`Analytics: failed to fetch scored submissions: ${scoredWithScoresResult.error.message}`);
+    throw new Error(
+      `Analytics: failed to fetch scored submissions: ${scoredWithScoresResult.error.message}`,
+    );
   }
 
   const challenges = challengesResult.data ?? [];
   const totalSubmissions = totalSubsResult.count ?? 0;
   const scoredSubmissions = scoredSubsResult.count ?? 0;
   const solverRows = solverAddressesResult.data ?? [];
+  const finalizedSolverRows = finalizedSolverAddressesResult.data ?? [];
   const scoredWithScores = scoredWithScoresResult.data ?? [];
 
   // Total reward (reward_amount is stored as decimal string in DB)
@@ -144,8 +173,13 @@ export async function getPlatformAnalytics(
     const reward = Number(c.reward_amount) || 0;
     const status = c.status ?? "unknown";
 
-    // TVL: active escrows
-    if (status === "active" || status === "scoring") tvlUsdc += reward;
+    // TVL: open or scoring escrows
+    if (
+      status === CHALLENGE_STATUS.open ||
+      status === CHALLENGE_STATUS.scoring
+    ) {
+      tvlUsdc += reward;
+    }
     // Revenue pool: everything except cancelled
     if (status !== "cancelled") nonCancelledReward += reward;
     // Completion: finalized / (finalized + cancelled)
@@ -154,7 +188,8 @@ export async function getPlatformAnalytics(
 
     // Groupings
     challengesByStatus[status] = (challengesByStatus[status] ?? 0) + 1;
-    challengesByDomain[c.domain ?? "unknown"] = (challengesByDomain[c.domain ?? "unknown"] ?? 0) + 1;
+    challengesByDomain[c.domain ?? "unknown"] =
+      (challengesByDomain[c.domain ?? "unknown"] ?? 0) + 1;
     const dist = c.distribution_type ?? "unknown";
     challengesByDistribution[dist] = (challengesByDistribution[dist] ?? 0) + 1;
   }
@@ -162,8 +197,10 @@ export async function getPlatformAnalytics(
   // 5% protocol fee is contractually guaranteed on escrowed USDC
   const distributedUsdc = nonCancelledReward * 0.95;
   const protocolRevenueUsdc = nonCancelledReward * 0.05;
-  const avgBountyUsdc = challenges.length > 0 ? totalRewardUsdc / challenges.length : 0;
-  const completionRate = terminalCount > 0 ? (finalizedCount / terminalCount) * 100 : 0;
+  const avgBountyUsdc =
+    challenges.length > 0 ? totalRewardUsdc / challenges.length : 0;
+  const completionRate =
+    terminalCount > 0 ? (finalizedCount / terminalCount) * 100 : 0;
 
   // Scoring success: % of scored submissions with score > 0 (WAD)
   const successfulScores = scoredWithScores.filter((s) => {
@@ -173,9 +210,8 @@ export async function getPlatformAnalytics(
       return false;
     }
   }).length;
-  const scoringSuccessRate = scoredSubmissions > 0
-    ? (successfulScores / scoredSubmissions) * 100
-    : 0;
+  const scoringSuccessRate =
+    scoredSubmissions > 0 ? (successfulScores / scoredSubmissions) * 100 : 0;
 
   // Unique solvers + top solvers
   const solverCounts = new Map<string, number>();
@@ -184,7 +220,13 @@ export async function getPlatformAnalytics(
     solverCounts.set(addr, (solverCounts.get(addr) ?? 0) + 1);
   }
 
-  const topSolvers = [...solverCounts.entries()]
+  const finalizedSolverCounts = new Map<string, number>();
+  for (const row of finalizedSolverRows) {
+    const addr = row.solver_address;
+    finalizedSolverCounts.set(addr, (finalizedSolverCounts.get(addr) ?? 0) + 1);
+  }
+
+  const topSolvers = [...finalizedSolverCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([address, count]) => ({ address, count }));

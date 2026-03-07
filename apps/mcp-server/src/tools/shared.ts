@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   claimPayout,
   claimPayoutWithPrivateKey,
@@ -8,22 +10,22 @@ import {
   submitChallengeResultWithPrivateKey,
 } from "@agora/chain";
 import {
-  CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
   DEFAULT_IPFS_GATEWAY,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
-  deriveDisplayStatus,
   getSubmissionLimitViolation,
-  isChallengeDbStatus,
   importSubmissionSealPublicKey,
+  isChallengeStatus,
   loadConfig,
   resolveEvalSpec,
   resolveSubmissionLimits,
   sealSubmission,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -45,8 +47,6 @@ import {
 } from "@agora/scorer";
 import { parseEventLogs } from "viem";
 import type { Abi } from "viem";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
@@ -98,9 +98,7 @@ export async function listChallenges(input: {
   const db = createSupabaseClient(false);
   let query = db.from("challenges").select("*");
   const requestedStatus = input.status?.toLowerCase();
-  if (requestedStatus === CHALLENGE_STATUS.scoring) {
-    query = query.eq("status", CHALLENGE_DB_STATUS.active);
-  } else if (requestedStatus && isChallengeDbStatus(requestedStatus)) {
+  if (requestedStatus && isChallengeStatus(requestedStatus)) {
     query = query.eq("status", requestedStatus);
   }
   if (input.domain) query = query.eq("domain", input.domain);
@@ -108,53 +106,41 @@ export async function listChallenges(input: {
   const { data, error } = await query;
   if (error) throw new Error(`Failed to list challenges: ${error.message}`);
   const rows = (data ?? []).map((row: Record<string, unknown>) => {
-    const dbStatus = isChallengeDbStatus(row.status)
-      ? row.status
-      : CHALLENGE_DB_STATUS.active;
-    const status = deriveDisplayStatus({
-      dbStatus,
-      deadline: typeof row.deadline === "string" ? row.deadline : undefined,
-    });
     return {
       ...row,
-      db_status: dbStatus,
-      status,
+      status: isChallengeStatus(row.status)
+        ? row.status
+        : CHALLENGE_STATUS.open,
     };
   });
-  const statusFilteredRows = requestedStatus
-    ? rows.filter(
-        (row: Record<string, unknown>) => row.status === requestedStatus,
-      )
-    : rows;
   const minReward = input.minReward;
   if (minReward === undefined) {
-    return statusFilteredRows;
+    return rows;
   }
-  return statusFilteredRows.filter(
-    (row: Record<string, unknown>) =>
-      Number(row.reward_amount) >= minReward,
+  return rows.filter(
+    (row: Record<string, unknown>) => Number(row.reward_amount) >= minReward,
   );
 }
 
 export async function getChallenge(challengeId: string) {
   const db = createSupabaseClient(true);
   const challenge = await getChallengeById(db, challengeId);
-  const dbStatus = isChallengeDbStatus(challenge.status)
-    ? challenge.status
-    : CHALLENGE_DB_STATUS.active;
   const displayChallenge = {
     ...challenge,
-    db_status: dbStatus,
-    status: deriveDisplayStatus({
-      dbStatus,
-      deadline:
-        typeof challenge.deadline === "string" ? challenge.deadline : undefined,
-    }),
+    status: isChallengeStatus(challenge.status)
+      ? challenge.status
+      : CHALLENGE_STATUS.open,
   };
-  const rawSubmissions = await listSubmissionsForChallenge(db, challengeId);
+  const rawSubmissions =
+    displayChallenge.status === CHALLENGE_STATUS.open
+      ? []
+      : await listSubmissionsForChallenge(db, challengeId);
   const submissions = rawSubmissions.map((row) => toPublicSubmission(row));
   const leaderboard = submissions
-    .filter((row: { score: unknown; scored: boolean }) => row.scored && row.score !== null)
+    .filter(
+      (row: { score: unknown; scored: boolean }) =>
+        row.scored && row.score !== null,
+    )
     .sort((a: { score: unknown }, b: { score: unknown }) => {
       const aScore = BigInt(String(a.score ?? "0"));
       const bScore = BigInt(String(b.score ?? "0"));
@@ -222,7 +208,10 @@ export async function submitSolution(input: {
   }
 
   const normalizedPrivateKey = input.privateKey?.trim();
-  if (normalizedPrivateKey && !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
+  if (
+    normalizedPrivateKey &&
+    !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)
+  ) {
     throw new Error("Invalid privateKey: expected 0x-prefixed 32-byte hex.");
   }
 
@@ -262,7 +251,9 @@ export async function submitSolution(input: {
     publicKeyPayload.data.publicKeyPem,
   );
   const solverAddress = normalizedPrivateKey
-    ? privateKeyToAccount(normalizedPrivateKey as `0x${string}`).address.toLowerCase()
+    ? privateKeyToAccount(
+        normalizedPrivateKey as `0x${string}`,
+      ).address.toLowerCase()
     : getWalletClient().account?.address?.toLowerCase();
   if (!solverAddress) {
     throw new Error(
@@ -289,10 +280,10 @@ export async function submitSolution(input: {
   try {
     txHash = normalizedPrivateKey
       ? await submitChallengeResultWithPrivateKey(
-        challengeAddress,
-        resultHash,
-        normalizedPrivateKey as `0x${string}`,
-      )
+          challengeAddress,
+          resultHash,
+          normalizedPrivateKey as `0x${string}`,
+        )
       : await submitChallengeResult(challengeAddress, resultHash);
   } catch (error) {
     await unpinCid(resultCid).catch(() => {});
@@ -386,7 +377,10 @@ export async function claimChallengePayout(input: {
   const challengeAddress = challenge.contract_address as `0x${string}`;
 
   const normalizedPrivateKey = input.privateKey?.trim();
-  if (normalizedPrivateKey && !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
+  if (
+    normalizedPrivateKey &&
+    !/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)
+  ) {
     throw new Error("Invalid privateKey: expected 0x-prefixed 32-byte hex.");
   }
   if (normalizedPrivateKey && !input.allowRemotePrivateKey) {
@@ -403,9 +397,13 @@ export async function claimChallengePayout(input: {
     : await claimPayout(challengeAddress);
 
   const publicClient = getPublicClient();
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: txHash,
+  });
   if (receipt.status !== "success") {
-    throw new Error(`Claim transaction reverted: ${txHash}. The challenge may not be finalized yet, or you may not be a winner.`);
+    throw new Error(
+      `Claim transaction reverted: ${txHash}. The challenge may not be finalized yet, or you may not be a winner.`,
+    );
   }
 
   return { txHash, challengeId: input.challengeId, status: "claimed" };
@@ -455,7 +453,8 @@ export async function verifySubmission(input: {
     const evalPlan = resolveEvalSpec(challenge);
     if (!evalPlan.evaluationBundleCid)
       throw new Error("Challenge missing evaluation bundle CID.");
-    if (!submission.result_cid) throw new Error("Submission missing result_cid.");
+    if (!submission.result_cid)
+      throw new Error("Submission missing result_cid.");
     if (submission.on_chain_sub_id == null)
       throw new Error("Submission missing on_chain_sub_id.");
 

@@ -46,8 +46,8 @@ pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, 
 
 ### Architecture boundary
 
-- **API** creates `score_jobs` rows when submissions arrive (via indexer events).
-- **Worker** polls the `score_jobs` table, claims jobs atomically (Postgres RPC), runs the Docker scorer container, and posts scores + proof bundles on-chain.
+- **API / indexer** create `score_jobs` rows when submissions arrive.
+- **Worker** polls the `score_jobs` table, but only claims jobs after the challenge enters `Scoring` at deadline. It then runs the Docker scorer container and posts scores + proof bundles on-chain.
 - **Scorer** is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
 
 The worker and API share no runtime state. The only coordination point is the `score_jobs` table.
@@ -83,7 +83,7 @@ Check every 15-30 minutes during first launch window:
 ### Confirming the worker is scoring
 
 1. Check `score_jobs` transitions: jobs should move from `queued` → `running` → `scored`.
-2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll) and the worker picks it up within ~15s (worker poll).
+2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll). It should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
 3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 

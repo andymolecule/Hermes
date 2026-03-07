@@ -1,10 +1,10 @@
+import { randomUUID } from "node:crypto";
 import http from "node:http";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
+import { loadConfig, readFeaturePolicy } from "@agora/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { loadConfig, readFeaturePolicy } from "@agora/common";
 import { z } from "zod";
 import { agoraClaimPayout } from "./tools/claim-payout.js";
 import { agoraGetChallenge } from "./tools/get-challenge.js";
@@ -37,12 +37,28 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     "agora-list-challenges",
     {
       description:
-        "List open science bounties. Filter by status (active, scoring, finalized), domain (longevity, drug_discovery, protein_design, omics, other), minimum USDC reward, or limit. Returns challenge UUID, title, reward, deadline, and current status.",
+        "List open science bounties. Filter by status (open, scoring, finalized), domain (longevity, drug_discovery, protein_design, omics, other), minimum USDC reward, or limit. Returns challenge UUID, title, reward, deadline, and current status.",
       inputSchema: z.object({
-        status: z.string().optional().describe("Filter: active, scoring, finalized, cancelled"),
-        domain: z.string().optional().describe("Filter: longevity, drug_discovery, protein_design, omics, other"),
-        minReward: z.number().optional().describe("Minimum USDC reward (e.g. 10 for $10+)"),
-        limit: z.number().int().positive().optional().describe("Max results to return"),
+        status: z
+          .string()
+          .optional()
+          .describe("Filter: open, scoring, finalized, cancelled"),
+        domain: z
+          .string()
+          .optional()
+          .describe(
+            "Filter: longevity, drug_discovery, protein_design, omics, other",
+          ),
+        minReward: z
+          .number()
+          .optional()
+          .describe("Minimum USDC reward (e.g. 10 for $10+)"),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Max results to return"),
       }),
     },
     async (input) => asToolResult(await agoraListChallenges(input)),
@@ -54,7 +70,10 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
       description:
         "Get full challenge details including description, datasets, submissions, and leaderboard. Response includes 'datasets' object with both canonical IPFS CIDs (train_cid, test_cid, spec_cid) and HTTP gateway download URLs (train_url, test_url, spec_url).",
       inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID from agora-list-challenges"),
+        challengeId: z
+          .string()
+          .uuid()
+          .describe("Challenge UUID from agora-list-challenges"),
       }),
     },
     async (input) => asToolResult(await agoraGetChallenge(input)),
@@ -67,7 +86,10 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         "Dry-run the Docker scorer on your submission file without submitting on-chain. Free and unlimited — use this to test your solution before committing gas. Returns score (0-1), details, and container digest.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
-        filePath: z.string().min(1).describe("Absolute path to your submission file (e.g. results.csv)"),
+        filePath: z
+          .string()
+          .min(1)
+          .describe("Absolute path to your submission file (e.g. results.csv)"),
       }),
     },
     async (input) => asToolResult(await agoraScoreLocal(input)),
@@ -80,8 +102,17 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections — keys are transmitted in plaintext and could be intercepted.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
-        filePath: z.string().min(1).describe("Absolute path to submission file"),
-        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP."),
+        filePath: z
+          .string()
+          .min(1)
+          .describe("Absolute path to submission file"),
+        privateKey: z
+          .string()
+          .regex(/^0x[a-fA-F0-9]{64}$/)
+          .optional()
+          .describe(
+            "0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP.",
+          ),
       }),
     },
     async (input) =>
@@ -99,7 +130,13 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
         "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections.",
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
-        privateKey: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional().describe("0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP."),
+        privateKey: z
+          .string()
+          .regex(/^0x[a-fA-F0-9]{64}$/)
+          .optional()
+          .describe(
+            "0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP.",
+          ),
       }),
     },
     async (input) =>
@@ -128,7 +165,12 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
       description:
         "Check the scoring status of a specific submission. Returns score, proof bundle CID, and whether the submission has been scored on-chain.",
       inputSchema: z.object({
-        submissionId: z.string().uuid().describe("Submission UUID from agora-get-challenge or agora-submit-solution"),
+        submissionId: z
+          .string()
+          .uuid()
+          .describe(
+            "Submission UUID from agora-get-challenge or agora-submit-solution",
+          ),
       }),
     },
     async (input) => asToolResult(await agoraGetSubmissionStatus(input)),
@@ -142,7 +184,10 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
       inputSchema: z.object({
         challengeId: z.string().uuid().describe("Challenge UUID"),
         submissionId: z.string().uuid().describe("Submission UUID"),
-        tolerance: z.number().optional().describe("Score comparison tolerance (default 0.001)"),
+        tolerance: z
+          .number()
+          .optional()
+          .describe("Score comparison tolerance (default 0.001)"),
       }),
     },
     async (input) => asToolResult(await agoraVerifySubmission(input)),
@@ -224,7 +269,9 @@ function startHttpMode() {
     const now = Date.now();
     for (const [sessionId, session] of sessions) {
       if (now - session.lastSeenAt <= MCP_SESSION_TTL_MS) continue;
-      const anyTransport = session.transport as unknown as { close?: () => void };
+      const anyTransport = session.transport as unknown as {
+        close?: () => void;
+      };
       try {
         anyTransport.close?.();
       } catch {

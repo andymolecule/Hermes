@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
   getAgoraRuntimeIdentity,
+  hasSubmissionSealPublicConfig,
+  hasSubmissionSealWorkerConfig,
   loadConfig,
   runSubmissionSealSelfCheck,
 } from "@agora/common";
@@ -11,12 +13,16 @@ import {
   heartbeatScoreJobLease,
 } from "@agora/db";
 import { ensureDockerReady } from "@agora/scorer";
-import { sweepFinalizable } from "./chain.js";
+import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
-import { FINALIZE_SWEEP_INTERVAL_MS, POLL_INTERVAL_MS, sleep } from "./policy.js";
 import {
-  resolveRunnerPolicyForChallenge,
+  FINALIZE_SWEEP_INTERVAL_MS,
+  POLL_INTERVAL_MS,
+  sleep,
+} from "./policy.js";
+import {
   type ResolvedRunnerPolicy,
+  resolveRunnerPolicyForChallenge,
 } from "./scoring.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
@@ -86,17 +92,26 @@ export async function startWorker() {
   }
 
   if (
-    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
-    config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
-    config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM
+    hasSubmissionSealPublicConfig(config) &&
+    !hasSubmissionSealWorkerConfig(config)
   ) {
+    throw new Error(
+      "Submission sealing is enabled, but the worker is missing AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM.",
+    );
+  }
+
+  if (hasSubmissionSealWorkerConfig(config)) {
+    const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID as string;
+    const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string;
+    const privateKeyPem =
+      config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM as string;
     await runSubmissionSealSelfCheck({
-      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
-      publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-      privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+      keyId,
+      publicKeyPem,
+      privateKeyPem,
     });
     log("info", "Submission sealing self-check passed", {
-      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
+      keyId,
     });
   }
 
@@ -104,7 +119,10 @@ export async function startWorker() {
     await ensureDockerReady();
     log("info", "Docker health check passed");
   } catch {
-    log("error", "Docker is not available. Worker cannot start without Docker.");
+    log(
+      "error",
+      "Docker is not available. Worker cannot start without Docker.",
+    );
     process.exit(1);
   }
 
@@ -121,6 +139,12 @@ export async function startWorker() {
   while (true) {
     let claimedJob = false;
     try {
+      const now = Date.now();
+      if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+        await sweepChallengeLifecycle(db, log);
+        lastFinalizeSweepAt = now;
+      }
+
       const job = await claimNextJob(db, WORKER_ID);
 
       if (job) {
@@ -132,18 +156,16 @@ export async function startWorker() {
           maxAttempts: job.max_attempts,
         });
 
-        const stopHeartbeat = startJobLeaseHeartbeat(db, job as ScoreJobRow, log);
+        const stopHeartbeat = startJobLeaseHeartbeat(
+          db,
+          job as ScoreJobRow,
+          log,
+        );
         try {
           await processJob(db, job as ScoreJobRow, log);
         } finally {
           stopHeartbeat();
         }
-      }
-
-      const now = Date.now();
-      if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
-        await sweepFinalizable(db, log);
-        lastFinalizeSweepAt = now;
       }
     } catch (error) {
       log("error", "Worker loop error", {
@@ -158,7 +180,9 @@ export async function startWorker() {
 }
 
 export function maybeRunWorkerCli(importMetaUrl: string, argv1?: string) {
-  const isEntrypoint = argv1 ? pathToFileURL(argv1).href === importMetaUrl : false;
+  const isEntrypoint = argv1
+    ? pathToFileURL(argv1).href === importMetaUrl
+    : false;
   if (!isEntrypoint) return;
 
   startWorker().catch((error) => {

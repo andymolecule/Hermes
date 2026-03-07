@@ -1,16 +1,16 @@
-import type { AgoraDbClient } from "../index";
 import {
+  CHALLENGE_STATUS,
+  type ChallengeSpecOutput,
+  type ChallengeStatus,
+  SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
   findPresetIdsByContainer,
   inferPresetIdByContainer,
-  SUBMISSION_LIMITS,
-  CHALLENGE_STATUS,
   validateChallengeScoreability,
   validatePresetIntegrity,
-  type ChallengeDbStatus,
-  type ChallengeSpecOutput,
 } from "@agora/common";
+import type { AgoraDbClient } from "../index";
 
 export interface ChallengeInsert {
   chain_id: number;
@@ -38,7 +38,7 @@ export interface ChallengeInsert {
   distribution_type: string;
   deadline: string;
   dispute_window_hours: number;
-  status: ChallengeDbStatus;
+  status: ChallengeStatus;
   tx_hash: string;
 }
 
@@ -73,20 +73,30 @@ export async function buildChallengeInsert(
       : null;
   const usesCustomScorer =
     canonicalSpec.type === "custom" || canonicalSpec.type === "optimization";
-  const effectivePresetId = explicitPresetId ?? (usesCustomScorer ? "custom" : null);
+  const effectivePresetId =
+    explicitPresetId ?? (usesCustomScorer ? "custom" : null);
   const inferredPresetId =
-    effectivePresetId ?? inferPresetIdByContainer(canonicalSpec.scoring.container);
+    effectivePresetId ??
+    inferPresetIdByContainer(canonicalSpec.scoring.container);
   const presetIdsForContainer = findPresetIdsByContainer(
     canonicalSpec.scoring.container,
   );
 
-  if (!inferredPresetId && !usesCustomScorer && presetIdsForContainer.length > 1) {
+  if (
+    !inferredPresetId &&
+    !usesCustomScorer &&
+    presetIdsForContainer.length > 1
+  ) {
     throw new Error(
       `Ambiguous scoring preset for container ${canonicalSpec.scoring.container}. Set preset_id explicitly.`,
     );
   }
 
-  if (!inferredPresetId && !usesCustomScorer && presetIdsForContainer.length === 0) {
+  if (
+    !inferredPresetId &&
+    !usesCustomScorer &&
+    presetIdsForContainer.length === 0
+  ) {
     throw new Error(
       `Unknown scorer container for non-custom challenge: ${canonicalSpec.scoring.container}. Use a registered preset container or set type to custom with a pinned digest.`,
     );
@@ -101,7 +111,9 @@ export async function buildChallengeInsert(
       },
     );
     if (integrityError) {
-      throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
+      throw new Error(
+        `Invalid scoring preset configuration: ${integrityError}`,
+      );
     }
   }
 
@@ -156,7 +168,7 @@ export async function buildChallengeInsert(
     distribution_type: canonicalSpec.reward.distribution,
     deadline: input.onChainDeadline ?? canonicalSpec.deadline,
     dispute_window_hours: input.disputeWindowHours,
-    status: CHALLENGE_STATUS.active,
+    status: CHALLENGE_STATUS.open,
     tx_hash: input.txHash,
   };
 }
@@ -203,7 +215,7 @@ export async function listChallenges(db: AgoraDbClient) {
 }
 
 export interface ChallengeListFilters {
-  status?: ChallengeDbStatus;
+  status?: ChallengeStatus;
   domain?: string;
   posterAddress?: string;
   limit?: number;
@@ -244,7 +256,7 @@ export async function listChallengesWithDetails(
 export async function updateChallengeStatus(
   db: AgoraDbClient,
   challengeId: string,
-  status: ChallengeDbStatus,
+  status: ChallengeStatus,
 ) {
   const { data, error } = await db
     .from("challenges")

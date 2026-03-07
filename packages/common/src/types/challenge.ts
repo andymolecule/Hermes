@@ -17,84 +17,29 @@ export const CHALLENGE_TYPES = [
 
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
-export const CHALLENGE_DB_STATUS = {
-  active: "active",
+export const CHALLENGE_STATUS = {
+  open: "open",
+  scoring: "scoring",
   finalized: "finalized",
   disputed: "disputed",
   cancelled: "cancelled",
 } as const;
 
-export type ChallengeDbStatus =
-  (typeof CHALLENGE_DB_STATUS)[keyof typeof CHALLENGE_DB_STATUS];
-
-export const CHALLENGE_STATUS = {
-  ...CHALLENGE_DB_STATUS,
-  scoring: "scoring",
-} as const;
-
-export type ChallengeDisplayStatus =
+export type ChallengeStatus =
   (typeof CHALLENGE_STATUS)[keyof typeof CHALLENGE_STATUS];
 
-/** Backward-compatible alias: ChallengeStatus is a display/on-chain status. */
-export type ChallengeStatus = ChallengeDisplayStatus;
-
-export const ON_CHAIN_STATUS_ORDER: readonly ChallengeDisplayStatus[] = [
-  CHALLENGE_STATUS.active,
+export const ON_CHAIN_STATUS_ORDER: readonly ChallengeStatus[] = [
+  CHALLENGE_STATUS.open,
   CHALLENGE_STATUS.scoring,
   CHALLENGE_STATUS.finalized,
   CHALLENGE_STATUS.disputed,
   CHALLENGE_STATUS.cancelled,
 ];
 
-const CHALLENGE_DB_STATUS_SET = new Set<string>(
-  Object.values(CHALLENGE_DB_STATUS),
-);
-const CHALLENGE_DISPLAY_STATUS_SET = new Set<string>(
-  Object.values(CHALLENGE_STATUS),
-);
+const CHALLENGE_STATUS_SET = new Set<string>(Object.values(CHALLENGE_STATUS));
 
-export function isChallengeDbStatus(value: unknown): value is ChallengeDbStatus {
-  return typeof value === "string" && CHALLENGE_DB_STATUS_SET.has(value);
-}
-
-export function isChallengeDisplayStatus(
-  value: unknown,
-): value is ChallengeDisplayStatus {
-  return typeof value === "string" && CHALLENGE_DISPLAY_STATUS_SET.has(value);
-}
-
-export function deriveDisplayStatus(input: {
-  dbStatus: ChallengeDbStatus;
-  deadline?: string | null;
-  onChainStatus?: number | ChallengeDisplayStatus | null;
-  now?: Date;
-}): ChallengeDisplayStatus {
-  const { dbStatus, deadline, onChainStatus } = input;
-  const now = input.now ?? new Date();
-
-  if (typeof onChainStatus === "number") {
-    const mapped = ON_CHAIN_STATUS_ORDER[onChainStatus];
-    if (mapped) return mapped;
-  } else if (isChallengeDisplayStatus(onChainStatus)) {
-    return onChainStatus;
-  }
-
-  if (dbStatus !== CHALLENGE_DB_STATUS.active) {
-    return dbStatus;
-  }
-
-  if (!deadline) {
-    return CHALLENGE_STATUS.active;
-  }
-
-  const deadlineMs = Date.parse(deadline);
-  if (!Number.isFinite(deadlineMs)) {
-    return CHALLENGE_STATUS.active;
-  }
-
-  return deadlineMs < now.getTime()
-    ? CHALLENGE_STATUS.scoring
-    : CHALLENGE_STATUS.active;
+export function isChallengeStatus(value: unknown): value is ChallengeStatus {
+  return typeof value === "string" && CHALLENGE_STATUS_SET.has(value);
 }
 
 export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";

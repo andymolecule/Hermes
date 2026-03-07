@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { Clock } from "lucide-react";
 import { CHALLENGE_STATUS } from "@agora/common";
+import { Clock } from "lucide-react";
+import Link from "next/link";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
 import type { Challenge } from "../lib/types";
 
@@ -12,7 +12,7 @@ export function ChallengeCard({
   challenge: Challenge;
   index?: number;
 }) {
-  const isActive = challenge.status === CHALLENGE_STATUS.active;
+  const isOpen = challenge.status === CHALLENGE_STATUS.open;
 
   return (
     <Link
@@ -22,12 +22,16 @@ export function ChallengeCard({
       {/* Top row: status + reward */}
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
-          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green-500" : "bg-black"}`} />
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-green-500" : "bg-black"}`}
+          />
           {challenge.status}
         </span>
         <span className="inline-flex items-baseline text-xl font-display font-bold text-black tabular-nums tracking-tight">
           ${formatUsdc(challenge.reward_amount)}
-          <span className="text-[10px] font-mono font-bold text-black/40 ml-1">USDC</span>
+          <span className="text-[10px] font-mono font-bold text-black/40 ml-1">
+            USDC
+          </span>
         </span>
       </div>
 

@@ -1,21 +1,20 @@
 import {
+  CHALLENGE_STATUS,
+  type ChallengeStatus,
+  SUBMISSION_RESULT_FORMAT,
+  isChallengeStatus,
+} from "@agora/common";
+import {
   createSupabaseClient,
   getChallengeById,
   listChallengesWithDetails,
   listSubmissionsForChallenge,
 } from "@agora/db";
-import {
-  CHALLENGE_DB_STATUS,
-  CHALLENGE_STATUS,
-  SUBMISSION_RESULT_FORMAT,
-  deriveDisplayStatus,
-  isChallengeDbStatus,
-  type ChallengeDbStatus,
-  type ChallengeDisplayStatus,
-} from "@agora/common";
 import { z } from "zod";
 
-type SubmissionRow = Awaited<ReturnType<typeof listSubmissionsForChallenge>>[number];
+type SubmissionRow = Awaited<
+  ReturnType<typeof listSubmissionsForChallenge>
+>[number];
 type ProofBundleRow = {
   cid?: string | null;
   input_hash?: string | null;
@@ -23,6 +22,20 @@ type ProofBundleRow = {
   container_image_hash?: string | null;
   reproducible?: boolean;
   verified_count?: number;
+};
+
+type ChallengeSharedDeps = {
+  createSupabaseClient: typeof createSupabaseClient;
+  getChallengeById: typeof getChallengeById;
+  listChallengesWithDetails: typeof listChallengesWithDetails;
+  listSubmissionsForChallenge: typeof listSubmissionsForChallenge;
+};
+
+const defaultDeps: ChallengeSharedDeps = {
+  createSupabaseClient,
+  getChallengeById,
+  listChallengesWithDetails,
+  listSubmissionsForChallenge,
 };
 
 export function toPublicSubmission(row: SubmissionRow) {
@@ -65,7 +78,7 @@ export function toPrivateProofBundle(row: ProofBundleRow | null) {
 export const listChallengesQuerySchema = z.object({
   status: z
     .enum([
-      CHALLENGE_STATUS.active,
+      CHALLENGE_STATUS.open,
       CHALLENGE_STATUS.scoring,
       CHALLENGE_STATUS.finalized,
       CHALLENGE_STATUS.disputed,
@@ -100,60 +113,76 @@ export function sortByScoreDesc<T extends { score: unknown; scored?: unknown }>(
     });
 }
 
-function withDerivedDisplayStatus<T extends Record<string, unknown>>(row: T) {
-  const rawStatus = row.status;
-  const dbStatus = isChallengeDbStatus(rawStatus)
-    ? rawStatus
-    : CHALLENGE_DB_STATUS.active;
-  const deadline =
-    typeof row.deadline === "string" ? row.deadline : undefined;
-  const status = deriveDisplayStatus({
-    dbStatus,
-    deadline,
-  });
-  return {
-    ...row,
-    db_status: dbStatus,
-    status,
-  };
+function normalizeChallengeStatus(value: unknown): ChallengeStatus {
+  return isChallengeStatus(value) ? value : CHALLENGE_STATUS.open;
+}
+
+export function canExposeChallengeResults(status: ChallengeStatus) {
+  return status !== CHALLENGE_STATUS.open;
+}
+
+export function getChallengeLeaderboardData<
+  T extends { score: unknown; scored?: unknown },
+>(data: { challenge: { status: ChallengeStatus }; submissions: T[] }) {
+  if (!canExposeChallengeResults(data.challenge.status)) {
+    return null;
+  }
+  return sortByScoreDesc(data.submissions);
 }
 
 export async function listChallengesFromQuery(
   query: z.output<typeof listChallengesQuerySchema>,
+  deps: ChallengeSharedDeps = defaultDeps,
 ) {
-  const db = createSupabaseClient(false);
-  const dbStatusFilter: ChallengeDbStatus | undefined =
-    query.status === CHALLENGE_STATUS.scoring
-      ? CHALLENGE_DB_STATUS.active
-      : query.status;
-  const rows = await listChallengesWithDetails(db, {
-    status: dbStatusFilter,
+  const db = deps.createSupabaseClient(false);
+  const rows = (await deps.listChallengesWithDetails(db, {
+    status: query.status,
     domain: query.domain,
     posterAddress: query.poster_address,
     limit: query.limit,
-  });
-  const displayRows = rows.map((row) => withDerivedDisplayStatus(row));
-
-  const statusFilteredRows = query.status
-    ? displayRows.filter(
-        (row) =>
-          (row.status as ChallengeDisplayStatus) === query.status,
-      )
-    : displayRows;
+  })) as Array<Record<string, unknown>>;
+  const normalizedRows = rows.map((row) => ({
+    ...row,
+    status: normalizeChallengeStatus(row.status),
+  }));
 
   const minReward = query.min_reward;
   return minReward === undefined
-    ? statusFilteredRows
-    : statusFilteredRows.filter(
-      (row: Record<string, unknown>) => Number(row.reward_amount) >= minReward,
-    );
+    ? normalizedRows
+    : normalizedRows.filter(
+        (row: Record<string, unknown>) =>
+          Number(row.reward_amount) >= minReward,
+      );
 }
 
-export async function getChallengeWithLeaderboard(challengeId: string) {
-  const db = createSupabaseClient(true);
-  const challenge = withDerivedDisplayStatus(await getChallengeById(db, challengeId));
-  const rawSubmissions = await listSubmissionsForChallenge(db, challengeId);
+export async function getChallengeWithLeaderboard(
+  challengeId: string,
+  deps: ChallengeSharedDeps = defaultDeps,
+) {
+  const db = deps.createSupabaseClient(true);
+  const challenge = await deps.getChallengeById(db, challengeId);
+  const normalizedChallenge = {
+    ...challenge,
+    status: normalizeChallengeStatus(challenge.status),
+  };
+
+  if (!canExposeChallengeResults(normalizedChallenge.status)) {
+    return {
+      challenge: normalizedChallenge,
+      submissions: [],
+      leaderboard: [],
+    };
+  }
+
+  const rawSubmissions = await deps.listSubmissionsForChallenge(
+    db,
+    challengeId,
+  );
   const submissions = rawSubmissions.map((row) => toPublicSubmission(row));
-  const leaderboard = sortByScoreDesc(submissions);
-  return { challenge, submissions, leaderboard };
+  const leaderboard =
+    getChallengeLeaderboardData({
+      challenge: normalizedChallenge,
+      submissions,
+    }) ?? [];
+  return { challenge: normalizedChallenge, submissions, leaderboard };
 }

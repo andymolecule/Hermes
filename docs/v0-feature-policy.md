@@ -14,7 +14,6 @@ AGORA_ENABLE_NON_CORE_FEATURES=true
 
 When the gate is enabled, these feature-specific flags apply:
 
-- `AGORA_ENABLE_SCORE_PREVIEW=true` enables `/api/score-preview`.
 - `AGORA_X402_ENABLED=true` enables x402 payment enforcement.
 - `AGORA_X402_REPORT_ONLY=true` enables x402 report-only mode.
 - `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` allows private keys over MCP HTTP (high risk; use only in trusted, TLS-protected environments).

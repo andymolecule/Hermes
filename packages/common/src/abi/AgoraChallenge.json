@@ -433,6 +433,13 @@
   },
   {
     "type": "function",
+    "name": "startScoring",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "status",
     "inputs": [],
     "outputs": [
@@ -632,6 +639,25 @@
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StatusChanged",
+    "inputs": [
+      {
+        "name": "fromStatus",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "uint8"
+      },
+      {
+        "name": "toStatus",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "uint8"
       }
     ],
     "anonymous": false

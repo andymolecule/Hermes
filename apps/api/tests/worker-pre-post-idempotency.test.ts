@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
-import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "../src/worker/types.js";
+import type {
+  ChallengeRow,
+  ScoreJobRow,
+  SubmissionRow,
+  WorkerLogFn,
+} from "../src/worker/types.js";
 
 const challenge: ChallengeRow = {
   id: "challenge-1",
@@ -42,6 +48,11 @@ test("processJob skips repost when submission becomes scored before post", async
   await processJob({} as never, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => submission,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.scoring,
+      deadline: 0n,
+      disputeWindowHours: 0n,
+    }),
     getPublicClient: () => ({}) as never,
     reconcileScoredSubmission: async () => {
       reconcileCalls += 1;
