@@ -10,7 +10,7 @@ import {
   validatePresetIntegrity,
   validateScoringContainer,
 } from "@hermes/common";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { type Abi, parseSignature, parseUnits } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useSignTypedData, useWriteContract } from "wagmi";
 import { useConnectModal, useChainModal } from "@rainbow-me/rainbowkit";
@@ -250,6 +250,12 @@ const WINNER_LABELS: Record<string, string> = {
   proportional: "Reward distributed proportionally by score",
 };
 
+const DISTRIBUTION_SUMMARY_LABELS = {
+  winner_take_all: "Winner Take All",
+  top_3: "Top 3",
+  proportional: "Proportional",
+} as const;
+
 function requirePresetForType(type: string) {
   const id = defaultPresetIdForChallengeType(type as Parameters<typeof defaultPresetIdForChallengeType>[0]);
   if (!id || id === "custom") return undefined;
@@ -338,133 +344,245 @@ const TYPE_OPTIONS = Object.keys(TYPE_CONFIG) as PostChallengeType[];
 // ─── Pipeline diagrams per type ──────────────────────
 
 type PipelineFlow = {
-  posterAction: string;
-  posterFiles: string;
-  solverAction: string;
-  solverFiles: string;
-  scorerAction: string;
-  scorerResult: string;
+  stages: Array<{
+    title: string;
+    action: string;
+    schemaLabel: "IN" | "OUT" | "EVAL";
+    schemaValue: string;
+    tone: "poster" | "solver" | "scorer";
+  }>;
   helper: string;
+  systemNote: string;
 };
 
 const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
   prediction: {
-    posterAction: "Uploads",
-    posterFiles: "train + test + labels",
-    solverAction: "Submits",
-    solverFiles: "predictions",
-    scorerAction: "Compares",
-    scorerResult: "vs. labels \u2192 score",
-    helper: "Solvers train on your data and predict values for the test set. The scorer compares their predictions against your hidden labels.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes dataset",
+        schemaLabel: "IN",
+        schemaValue: "{train, test, hidden_labels}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Computes predictions",
+        schemaLabel: "OUT",
+        schemaValue: "[predictions.csv]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Validates + scores",
+        schemaLabel: "EVAL",
+        schemaValue: "(hidden_labels -> metric)",
+        tone: "scorer",
+      },
+    ],
+    helper: "Source data moves directly from the posted challenge spec into solver outputs and deterministic scoring.",
+    systemNote: "No extra middle actor sits between solver and scorer here. The reference bundle stays attached to the scorer stage, and settlement happens later in Reward & Execution.",
   },
   reproducibility: {
-    posterAction: "Uploads",
-    posterFiles: "inputs + expected",
-    solverAction: "Submits",
-    solverFiles: "reproduced_output",
-    scorerAction: "Compares",
-    scorerResult: "vs. expected \u2192 score",
-    helper: "Solvers reproduce a known result from your input data. The scorer compares their output to yours.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes reference run",
+        schemaLabel: "IN",
+        schemaValue: "{inputs, expected_output}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Recreates output",
+        schemaLabel: "OUT",
+        schemaValue: "[reproduced_output.csv]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Diffs + scores",
+        schemaLabel: "EVAL",
+        schemaValue: "(expected_output -> diff)",
+        tone: "scorer",
+      },
+    ],
+    helper: "This pipeline is a strict reproducibility protocol: published inputs go in, reproduced outputs come back, and the scorer measures exactness.",
+    systemNote: "The expected output is not a separate actor. It is a poster-supplied reference artifact consumed by the scorer stage.",
   },
   optimization: {
-    posterAction: "Uploads",
-    posterFiles: "evaluation_bundle",
-    solverAction: "Submits",
-    solverFiles: "parameters",
-    scorerAction: "Simulates",
-    scorerResult: "with your image \u2192 score",
-    helper: "Solvers submit parameters. Your scorer runs the simulation and returns a score.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes eval bundle",
+        schemaLabel: "IN",
+        schemaValue: "{evaluation_bundle}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Searches parameters",
+        schemaLabel: "OUT",
+        schemaValue: "[parameters.json]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Runs simulation",
+        schemaLabel: "EVAL",
+        schemaValue: "(bundle + params -> score)",
+        tone: "scorer",
+      },
+    ],
+    helper: "The compute-heavy step lives inside the scorer stage, which executes your simulation bundle against solver-supplied parameters.",
+    systemNote: "There is no extra actor between solver and scorer here; the simulation engine is the scorer itself.",
   },
   docking: {
-    posterAction: "Uploads",
-    posterFiles: "target + ligands",
-    solverAction: "Submits",
-    solverFiles: "ranked docking scores",
-    scorerAction: "Compares",
-    scorerResult: "vs. reference \u2192 score",
-    helper: "Solvers dock molecules against your protein target. The scorer ranks their predictions against reference docking scores.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes docking inputs",
+        schemaLabel: "IN",
+        schemaValue: "{target, ligands}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Ranks candidates",
+        schemaLabel: "OUT",
+        schemaValue: "[docking_scores.csv]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Benchmarks ranking",
+        schemaLabel: "EVAL",
+        schemaValue: "(reference_scores -> rank_score)",
+        tone: "scorer",
+      },
+    ],
+    helper: "The docking workflow is a single compute lane: shared inputs in, ranked scores out, then deterministic benchmark scoring.",
+    systemNote: "The reference docking data belongs to the scorer stage. It is the critical function between raw solver output and the final score.",
   },
   red_team: {
-    posterAction: "Uploads",
-    posterFiles: "model + baseline data",
-    solverAction: "Submits",
-    solverFiles: "adversarial inputs",
-    scorerAction: "Measures",
-    scorerResult: "model degradation \u2192 score",
-    helper: "Solvers find inputs that break your model. Your scorer measures how much the model degrades on adversarial cases.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes target model",
+        schemaLabel: "IN",
+        schemaValue: "{model, baseline_data}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Crafts attacks",
+        schemaLabel: "OUT",
+        schemaValue: "[adversarial_inputs]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Measures degradation",
+        schemaLabel: "EVAL",
+        schemaValue: "(baseline -> delta_score)",
+        tone: "scorer",
+      },
+    ],
+    helper: "The red-team path stays linear: target model context in, adversarial examples out, then degradation measured deterministically.",
+    systemNote: "Baseline evaluation is the important hidden function here. It lives inside the scorer stage rather than as a separate actor.",
   },
   custom: {
-    posterAction: "Uploads",
-    posterFiles: "public + private data",
-    solverAction: "Submits",
-    solverFiles: "solution",
-    scorerAction: "Evaluates",
-    scorerResult: "with docker \u2192 score",
-    helper: "Define your own scoring logic via a Docker container.",
+    stages: [
+      {
+        title: "Poster",
+        action: "Publishes protocol",
+        schemaLabel: "IN",
+        schemaValue: "{public_inputs, eval_bundle}",
+        tone: "poster",
+      },
+      {
+        title: "Solver",
+        action: "Submits solution",
+        schemaLabel: "OUT",
+        schemaValue: "[solution_payload]",
+        tone: "solver",
+      },
+      {
+        title: "Scorer",
+        action: "Executes custom logic",
+        schemaLabel: "EVAL",
+        schemaValue: "(custom_eval -> score)",
+        tone: "scorer",
+      },
+    ],
+    helper: "Custom challenges still follow the same three-stage pipeline, but the scoring function is fully defined by your protocol.",
+    systemNote: "The only extra function is your custom evaluation container, which is represented directly in the scorer stage.",
   },
 };
 
 function PipelineVisual({ type }: { type: PostChallengeType }) {
   const flow = PIPELINE_FLOWS[type];
+  const icons = {
+    poster: Upload,
+    solver: Wallet,
+    scorer: CheckCircle,
+  } as const;
 
   return (
     <div className="pipeline-diagram">
       <div className="pipeline-visual">
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="pipeline-node"
-        >
-          <div className="pipeline-icon"><Upload size={18} /></div>
-          <div className="pipeline-title">Poster</div>
-          <div className="pipeline-action">{flow.posterAction}</div>
-          <div className="pipeline-files">{flow.posterFiles}</div>
-        </motion.div>
+        {flow.stages.map((stage, index) => {
+          const Icon = icons[stage.tone];
 
-        <div className="pipeline-track">
-          <motion.div
-            className="pipeline-dot"
-            animate={{ x: ["-100%", "200%"] }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-          />
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="pipeline-node"
-        >
-          <div className="pipeline-icon"><Wallet size={18} /></div>
-          <div className="pipeline-title">Solver</div>
-          <div className="pipeline-action">{flow.solverAction}</div>
-          <div className="pipeline-files">{flow.solverFiles}</div>
-        </motion.div>
-
-        <div className="pipeline-track">
-          <motion.div
-            className="pipeline-dot"
-            animate={{ x: ["-100%", "200%"] }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: "linear", delay: 0.75 }}
-          />
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="pipeline-node pipeline-node-scorer"
-        >
-          <div className="pipeline-icon"><CheckCircle size={18} /></div>
-          <div className="pipeline-title">Scorer</div>
-          <div className="pipeline-action">{flow.scorerAction}</div>
-          <div className="pipeline-files">{flow.scorerResult}</div>
-        </motion.div>
+          return (
+            <Fragment key={stage.title}>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + (index * 0.08) }}
+                className={`pipeline-node pipeline-node-${stage.tone}`}
+              >
+                <div className="pipeline-node-header">
+                  <div className={`pipeline-icon pipeline-icon-${stage.tone}`}><Icon size={18} /></div>
+                  <div className="pipeline-title">{stage.title}</div>
+                </div>
+                <div className="pipeline-divider" />
+                <div className="pipeline-action">{stage.action}</div>
+                <div className="pipeline-schema">
+                  <span className={`pipeline-schema-prefix pipeline-schema-prefix-${stage.tone}`}>{stage.schemaLabel}:</span>
+                  <span className="pipeline-schema-value">{stage.schemaValue}</span>
+                </div>
+              </motion.div>
+              {index < flow.stages.length - 1 ? (
+                <div className="pipeline-arrow" aria-hidden="true">
+                  <div className="pipeline-arrow-line" />
+                  <div className="pipeline-arrow-head" />
+                </div>
+              ) : null}
+            </Fragment>
+          );
+        })}
       </div>
-      <p className="pipeline-diagram-helper">
-        {flow.helper}
-      </p>
+      <div className="pipeline-diagram-copy">
+        <p className="pipeline-diagram-helper">
+          {flow.helper}
+        </p>
+        <p className="pipeline-system-note">
+          {flow.systemNote}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ step, title }: { step: number; title: string }) {
+  return (
+    <div className="form-section-header">
+      <div className="form-section-heading">
+        <span className="form-section-step">{step}</span>
+        <span className="form-section-title">{title}</span>
+      </div>
+      <span className="form-section-meta">Step {step} of 5</span>
     </div>
   );
 }
@@ -478,46 +596,6 @@ function engineDisplayName(container: string): string {
   if (names.length === 1) return `${names[0]} (official)`;
   return `${names[0]} (+${names.length - 1} preset${names.length > 2 ? "s" : ""})`;
 }
-
-// ─── Example templates for "Load Example" ─────────
-const EXAMPLES: Record<string, { label: string; state: Partial<FormState> }> = {
-  prediction: {
-    label: "Gene Expression Prediction",
-    state: {
-      title: "Predict gene expression from promoter sequences",
-      description: "Predict expression levels from promoter sequence inputs.\nProvide your model details and any preprocessing steps.",
-      domain: "omics",
-      type: "prediction",
-      train: "https://example.com/train.csv",
-      test: "https://example.com/test.csv",
-      hiddenLabels: "https://example.com/labels.csv",
-      metric: "r2",
-      reward: "10",
-      distribution: "top_3",
-      submissionType: "csv",
-      submissionFormat: "CSV with columns: id, prediction",
-      idColumn: "id",
-      labelColumn: "prediction",
-      tags: ["prediction", "omics"],
-    },
-  },
-  reproducibility: {
-    label: "Longevity Clock Reproduction",
-    state: {
-      title: "Reproduce a published longevity score",
-      description: "Reproduce the published score for the provided dataset.\nInclude your methodology, preprocessing steps, and any assumptions.",
-      domain: "longevity",
-      type: "reproducibility",
-      train: "https://example.com/input_data.csv",
-      test: "https://example.com/expected_output.csv",
-      reward: "10",
-      distribution: "winner_take_all",
-      reproPresetId: "csv_comparison_v1",
-      tolerance: "1e-4",
-      tags: ["reproducibility", "longevity"],
-    },
-  },
-};
 
 const SUBMISSION_TYPES = [
   { value: "number", label: "🔢 Number", desc: "Solvers submit a numeric answer.", format: '{"answer": <number>}' },
@@ -946,23 +1024,6 @@ export function PostClient() {
     }
   }
 
-  function loadExample(key: string) {
-    const example = EXAMPLES[key];
-    if (!example) return;
-    const t = (example.state.type ?? "reproducibility") as PostChallengeType;
-    const typePreset = TYPE_CONFIG[t];
-    setState({
-      ...initialState,
-      container: typePreset.container,
-      metric: typePreset.metricHint,
-      domain: typePreset.defaultDomain,
-      minimumScore: String(typePreset.defaultMinimumScore),
-      evaluationCriteria: typePreset.scoringTemplate,
-      ...example.state,
-    } as FormState);
-    setStatus("");
-  }
-
   function addTag(tag: string) {
     const trimmed = tag.trim().toLowerCase();
     if (!trimmed || state.tags.includes(trimmed)) return;
@@ -1323,6 +1384,32 @@ export function PostClient() {
   }
 
   const isSuccess = status.startsWith("success:");
+  const postingCtaLabel = !isConnected
+    ? "Connect Wallet to Deploy"
+    : isWrongChain
+      ? "Switch to Base Sepolia"
+      : "Confirm & Publish Challenge";
+  const postingCtaDisabled = isBusy
+    || (!isConnected && !openConnectModal)
+    || (isWrongChain && !openChainModal)
+    || (isConnected && !isWrongChain && !walletReady);
+
+  const handlePrimarySubmitAction = () => {
+    if (!isConnected) {
+      openConnectModal?.();
+      return;
+    }
+    if (isWrongChain) {
+      openChainModal?.();
+      return;
+    }
+    const error = validateInput();
+    if (error) {
+      setStatus(error);
+      return;
+    }
+    setShowPreview(true);
+  };
 
 
   return (
@@ -1334,19 +1421,6 @@ export function PostClient() {
           <p className="page-subtitle">
             Define a computational challenge and fund it with USDC.
           </p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <select
-            className="form-select"
-            style={{ fontSize: "0.75rem", padding: "0.35rem 0.5rem", width: "auto" }}
-            value=""
-            onChange={(e) => { if (e.target.value) loadExample(e.target.value); e.target.value = ""; }}
-          >
-            <option value="">Load Example…</option>
-            {Object.entries(EXAMPLES).map(([key, ex]) => (
-              <option key={key} value={key}>{ex.label}</option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -1378,10 +1452,7 @@ export function PostClient() {
 
       {/* ── Section 1: Problem ── */}
       <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">1</span>
-          <span className="form-section-title">Problem</span>
-        </div>
+        <SectionHeader step={1} title="Problem" />
         <div className="form-section-body">
           <div className="form-grid">
             <FormField label="Title">
@@ -1406,7 +1477,7 @@ export function PostClient() {
             <FormField label="Tags" hint="Press Enter or comma to add" className="span-full">
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", alignItems: "center" }}>
                 {state.tags.map((tag) => (
-                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "var(--surface-inset)", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}>
+                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "#FAFAFA", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid #E5E7EB" }}>
                     <Tag size={10} />
                     {tag}
                     <button type="button" onClick={() => removeTag(tag)}
@@ -1440,10 +1511,7 @@ export function PostClient() {
 
       {/* ── Section 2: Data & Inputs (type-adaptive) ── */}
       <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">2</span>
-          <span className="form-section-title">Data &amp; Inputs</span>
-        </div>
+        <SectionHeader step={2} title="Data & Inputs" />
         <div className="form-section-body">
           <PipelineVisual type={state.type} />
           <div className="form-grid">
@@ -1617,10 +1685,7 @@ export function PostClient() {
 
       {/* ── Section 3: Evaluation ── */}
       <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">3</span>
-          <span className="form-section-title">Evaluation</span>
-        </div>
+        <SectionHeader step={3} title="Evaluation" />
         <div className="form-section-body">
           <div className="form-grid">
             {/* Submission type dropdown — always shown */}
@@ -1684,11 +1749,11 @@ export function PostClient() {
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
                     Solvers submit a CSV file with these columns:
                   </p>
-                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
                     {`${state.idColumn || "id"},${state.labelColumn || "prediction"}\n1,3.42\n2,7.89\n3,1.05\n...`}
                   </pre>
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0.35rem 0 0", lineHeight: 1.4 }}>
-                    <code style={{ fontSize: "0.68rem", background: "var(--surface-inset)", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.idColumn || "id"}</code> must match the IDs in your test set. <code style={{ fontSize: "0.68rem", background: "var(--surface-inset)", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.labelColumn || "prediction"}</code> is the numeric value scored by {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
+                    <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.idColumn || "id"}</code> must match the IDs in your test set. <code style={{ fontSize: "0.68rem", background: "#FAFAFA", border: "1px solid #E5E7EB", padding: "0.1rem 0.3rem", borderRadius: "3px" }}>{state.labelColumn || "prediction"}</code> is the numeric value scored by {METRIC_OPTIONS.find(m => m.value === state.metric)?.label ?? state.metric}.
                   </p>
                 </div>
               </>
@@ -1700,7 +1765,7 @@ export function PostClient() {
                 {/* Locked scoring method badge */}
                 <div className="span-full">
                   <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Scoring method</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-base)", border: "1px solid var(--border-default)", borderRadius: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
                     <Check size={14} style={{ color: "#000" }} />
                     <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV Comparison</span>
                     <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Row-by-row comparison against ground truth</span>
@@ -1726,7 +1791,7 @@ export function PostClient() {
                       <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
                         Solvers submit a CSV matching these columns:
                       </p>
-                      <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+                      <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
                         {state.detectedColumns.join(",")}
                       </pre>
                       <input
@@ -1782,7 +1847,7 @@ export function PostClient() {
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
                     Solvers submit a CSV ranked by docking score:
                   </p>
-                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
+                  <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
                     {`ligand_id,docking_score\nZINC000001,-8.42\nZINC000002,-7.91\nZINC000003,-6.55\n...`}
                   </pre>
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0.35rem 0 0", lineHeight: 1.4 }}>
@@ -1837,7 +1902,7 @@ export function PostClient() {
             {/* Managed scorer badge — for preset types only */}
             {!isCustomType && (
               <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--surface-inset)", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
                   <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Scorer:</span>
                   <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
                 </div>
@@ -1853,10 +1918,7 @@ export function PostClient() {
 
       {/* ── Section 4: Reward & Execution ── */}
       <div className="form-section">
-        <div className="form-section-header">
-          <span className="form-section-step">4</span>
-          <span className="form-section-title">Reward &amp; Execution</span>
-        </div>
+        <SectionHeader step={4} title="Reward & Execution" />
         <div className="form-section-body">
           <div className="form-grid">
             <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
@@ -1934,70 +1996,127 @@ export function PostClient() {
         </>
       )}
 
-      {/* ── Challenge Summary ── */}
-      <div className="cost-card">
-        <h3 className="cost-card-title">
-          <Eye size={14} /> Challenge Summary
-        </h3>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>Type</span>
-          <span className="cost-row-value">{TYPE_CONFIG[state.type].label}</span>
-        </div>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-secondary)" }}>Deposit</span>
-          <span className="cost-row-value accent">{formatUsdc(rewardValue)} USDC</span>
-        </div>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Protocol fee (5%)</span>
-          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>{formatUsdc(protocolFeeValue)} USDC</span>
-        </div>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Net winner payout</span>
-          <span className="cost-row-value" style={{ color: "var(--text-tertiary)" }}>{formatUsdc(winnerPayoutValue)} USDC</span>
-        </div>
-        <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.5rem 0" }} />
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Winner</span>
-          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.78rem" }}>{state.distribution.replace(/_/g, " ")}</span>
-        </div>
-        <div className="cost-row">
-          <span className="cost-row-label" style={{ color: "var(--text-tertiary)" }}>Scorer</span>
-          <span className="cost-row-value" style={{ color: "var(--text-secondary)", fontSize: "0.72rem", fontFamily: "var(--font-mono)" }}>
-            {isCustomType ? (state.container.length > 40 ? state.container.slice(0, 40) + "…" : state.container || "—") : engineDisplayName(state.container)}
-          </span>
-        </div>
-        {/* Challenge Timeline */}
-        <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.5rem 0" }} />
-        <p style={{ fontSize: "0.68rem", fontWeight: 600, color: "var(--text-tertiary)", margin: "0 0 0.35rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-          Challenge Timeline
-        </p>
-        {/* Horizontal timeline with checkpoint marks */}
-        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "0.5rem 0 0" }}>
-          {/* Connecting line */}
-          <div style={{ position: "absolute", top: "0.85rem", left: "0.5rem", right: "0.5rem", height: "2px", background: "var(--border-default)", borderRadius: "1px" }} />
-          {/* Progress fill — from first to second checkpoint */}
-          <div style={{ position: "absolute", top: "0.85rem", left: "0.5rem", width: "20%", height: "2px", background: "#3D2E1F", borderRadius: "1px" }} />
+      {/* ── Section 5: Challenge Summary ── */}
+      <div className="form-section">
+        <SectionHeader step={5} title="Challenge Summary" />
+        <div className="form-section-body">
+          <div className="challenge-summary-layout">
+            <div className="summary-column">
+              <div className="summary-panel summary-receipt">
+                <p className="summary-panel-eyebrow">The Contract</p>
+                <div className="receipt-row">
+                  <span className="receipt-label">Deposit</span>
+                  <span className="receipt-value">
+                    <span>{formatUsdc(rewardValue)}</span>
+                    <span className="receipt-unit">USDC</span>
+                  </span>
+                </div>
+                <div className="receipt-row">
+                  <span className="receipt-label">Protocol fee (5%)</span>
+                  <span className="receipt-value receipt-value-muted">
+                    <span>- {formatUsdc(protocolFeeValue)}</span>
+                    <span className="receipt-unit">USDC</span>
+                  </span>
+                </div>
+                <div className="receipt-divider" />
+                <div className="receipt-row receipt-row-total">
+                  <span className="receipt-label receipt-label-strong">Net payout</span>
+                  <span className="receipt-total">
+                    <span className="receipt-total-amount">{formatUsdc(winnerPayoutValue)}</span>
+                    <span className="receipt-total-unit">USDC</span>
+                  </span>
+                </div>
+              </div>
 
-          {[
-            { label: "Submissions open", sub: state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`, active: true },
-            { label: "Deadline", sub: formatDeadlineDate(state.deadlineDays), active: false },
-            { label: "Scoring", sub: "automatic", active: false },
-            { label: "Dispute window", sub: state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`, active: false },
-            { label: "Payout", sub: formatPayoutDate(state.deadlineDays, state.disputeWindow), active: false },
-          ].map((step, i) => (
-            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1, flex: "1 1 0", minWidth: 0 }}>
-              {/* Checkpoint dot */}
-              <div style={{
-                width: "0.75rem", height: "0.75rem", borderRadius: "50%",
-                background: step.active ? "#3D2E1F" : "var(--surface-default)",
-                border: step.active ? "2px solid #3D2E1F" : "2px solid var(--border-default)",
-                boxShadow: "0 0 0 3px var(--surface-default)",
-                marginBottom: "0.35rem",
-              }} />
-              <span style={{ fontSize: "0.72rem", fontWeight: 600, color: step.active ? "#3D2E1F" : "var(--text-secondary)", lineHeight: 1.3, textAlign: "center" }}>{step.label}</span>
-              <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", lineHeight: 1.3, textAlign: "center", marginTop: "0.1rem", fontFamily: "var(--font-mono)" }}>{step.sub}</span>
+              <div className="summary-panel summary-parameters">
+                <p className="summary-panel-eyebrow">Challenge Parameters</p>
+                <div className="summary-kv-list">
+                  <div className="summary-kv-row">
+                    <span className="summary-kv-label">Type</span>
+                    <span className="summary-kv-value">
+                      <span className="summary-rule-badge">{TYPE_CONFIG[state.type].label}</span>
+                    </span>
+                  </div>
+                  <div className="summary-kv-row">
+                    <span className="summary-kv-label">Winner selection</span>
+                    <span className="summary-kv-value">{DISTRIBUTION_SUMMARY_LABELS[state.distribution]}</span>
+                  </div>
+                  <div className="summary-kv-row">
+                    <span className="summary-kv-label">Scoring</span>
+                    <span className="summary-kv-value">
+                      {state.type === "reproducibility"
+                        ? PRESET_REGISTRY[state.reproPresetId]?.label ?? state.reproPresetId
+                        : isCustomType
+                          ? "Custom scorer"
+                          : engineDisplayName(state.container)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="summary-panel summary-trust">
+                <p className="summary-panel-eyebrow">Trust & Security</p>
+                <div className="summary-trust-copy">
+                  <span className="summary-trust-icon" aria-hidden="true">🔒</span>
+                  <div>
+                    <p className="summary-trust-title">Secure Escrow</p>
+                    <p className="summary-trust-text">
+                      Funds are locked in a verified smart contract until scoring completes and the dispute window clears.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          ))}
+
+            <div className="summary-column">
+              <div className="summary-panel summary-timeline">
+                <p className="summary-panel-eyebrow">The Lifecycle</p>
+                <div className="timeline-list">
+                  {[
+                    {
+                      label: "Submissions open",
+                      detail: state.deadlineDays === "0" ? "Duration: 15 min" : `Duration: ${state.deadlineDays} days`,
+                      note: "Solvers can start submitting as soon as the contract is deployed.",
+                      active: true,
+                    },
+                    {
+                      label: "Deadline",
+                      detail: formatDeadlineDate(state.deadlineDays),
+                      note: "Submissions lock permanently once the deadline passes.",
+                      active: false,
+                    },
+                    {
+                      label: "Scoring",
+                      detail: "Automatic",
+                      note: "Managed scoring runs deterministically against the posted evaluation spec.",
+                      active: false,
+                    },
+                    {
+                      label: "Dispute window",
+                      detail: state.disputeWindow === "0" ? "Duration: none" : `Duration: ${state.disputeWindow}h`,
+                      note: "Anyone can challenge the result before payout is released.",
+                      active: false,
+                    },
+                    {
+                      label: "Payout",
+                      detail: formatPayoutDate(state.deadlineDays, state.disputeWindow),
+                      note: "Escrowed USDC is released automatically after scoring and disputes clear.",
+                      active: false,
+                    },
+                  ].map((step) => (
+                    <div key={step.label} className={`timeline-item ${step.active ? "active" : ""}`}>
+                      <div className="timeline-marker" aria-hidden="true" />
+                      <div className="timeline-copy">
+                        <span className="timeline-label">{step.label}</span>
+                        <span className="timeline-detail">{step.detail}</span>
+                        <span className="timeline-note">{step.note}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2005,26 +2124,19 @@ export function PostClient() {
       <div className="post-submit-row">
         <button
           type="button"
-          disabled={isBusy || !walletReady}
-          onClick={() => {
-            const error = validateInput();
-            if (error) { setStatus(error); return; }
-            setShowPreview(true);
-          }}
+          disabled={postingCtaDisabled}
+          onClick={handlePrimarySubmitAction}
           className="post-submit-btn"
         >
-          {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
-          {isBusy ? "Waiting for wallet…" : "Review Challenge"}
+          {isBusy
+            ? <Loader2 size={16} className="animate-spin" />
+            : !isConnected
+              ? <Wallet size={16} />
+              : isWrongChain
+                ? <AlertCircle size={16} />
+                : <ArrowRight size={16} />}
+          {isBusy ? "Waiting for wallet…" : postingCtaLabel}
         </button>
-        {!isConnected ? (
-          <button type="button" onClick={() => openConnectModal?.()} className="post-submit-hint" style={{ cursor: "pointer", background: "none", border: "none", padding: 0 }}>
-            <Wallet size={13} /> Connect wallet to post
-          </button>
-        ) : isWrongChain ? (
-          <button type="button" onClick={() => openChainModal?.()} className="post-submit-hint" style={{ cursor: "pointer", background: "none", border: "none", padding: 0, color: "#D97706" }}>
-            <AlertCircle size={13} /> Switch to Base Sepolia
-          </button>
-        ) : null}
       </div>
 
       {/* ── Status ── */}
