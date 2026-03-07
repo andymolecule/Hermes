@@ -42,22 +42,43 @@ export function ChallengeActions({
 
     // Fetch on-chain status + claimable amount
     useEffect(() => {
+        const controller = new AbortController();
+        let cancelled = false;
+
+        setInfo(null);
+
         async function fetchInfo() {
             try {
                 const params = new URLSearchParams();
                 if (address) params.set("address", address);
                 const base = API_BASE_URL.replace(/\/$/, "");
+                const query = params.toString();
                 const res = await fetch(
-                    `${base}/api/challenges/${challengeId}/claimable?${params}`,
+                    `${base}/api/challenges/${challengeId}/claimable${query ? `?${query}` : ""}`,
+                    { signal: controller.signal },
                 );
+                if (!res.ok) {
+                    throw new Error(`Claimable request failed (${res.status})`);
+                }
                 const json = (await res.json()) as { data?: ClaimableResponse };
-                if (json.data) setInfo(json.data);
+                if (!cancelled) setInfo(json.data ?? null);
             } catch {
-                // Silently fail — buttons just won't appear
+                if (!cancelled) {
+                    setInfo(null);
+                }
             }
         }
         fetchInfo();
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
     }, [challengeId, address, txHash]);
+
+    useEffect(() => {
+        setActionStatus("");
+        setTxHash("");
+    }, [challengeId, address]);
 
     if (!info) return null;
 
