@@ -1,15 +1,16 @@
+import { getChallengeLifecycleState, getPublicClient } from "@agora/chain";
+import { CHALLENGE_STATUS } from "@agora/common";
 import {
   completeJob,
+  type createSupabaseClient,
   failJob,
   getChallengeById,
-  markScoreJobSkipped,
   getSubmissionById,
+  markScoreJobSkipped,
   requeueJobWithoutAttemptPenalty,
   updateScore,
   upsertProofBundle,
-  type createSupabaseClient,
 } from "@agora/db";
-import { getPublicClient } from "@agora/chain";
 import {
   handlePreviouslyPostedScoreTx,
   postScoreAndWaitForConfirmation,
@@ -18,7 +19,12 @@ import {
 import { runWorkerPhase } from "./phases.js";
 import { isDockerInfrastructureError } from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
-import type { ChallengeRow, ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
+import type {
+  ChallengeRow,
+  ScoreJobRow,
+  SubmissionRow,
+  WorkerLogFn,
+} from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 
@@ -26,6 +32,7 @@ export interface ProcessJobDeps {
   completeJob: typeof completeJob;
   failJob: typeof failJob;
   getChallengeById: typeof getChallengeById;
+  getChallengeLifecycleState: typeof getChallengeLifecycleState;
   getPublicClient: typeof getPublicClient;
   getSubmissionById: typeof getSubmissionById;
   handlePreviouslyPostedScoreTx: typeof handlePreviouslyPostedScoreTx;
@@ -42,6 +49,7 @@ const defaultProcessJobDeps: ProcessJobDeps = {
   completeJob,
   failJob,
   getChallengeById,
+  getChallengeLifecycleState,
   getPublicClient,
   getSubmissionById,
   handlePreviouslyPostedScoreTx,
@@ -90,10 +98,14 @@ export async function processJob(
         job.id,
       )
     ) {
-      log("info", "Submission already scored on-chain; reconciled and completed job", {
-        jobId: job.id,
-        submissionId: submission.id,
-      });
+      log(
+        "info",
+        "Submission already scored on-chain; reconciled and completed job",
+        {
+          jobId: job.id,
+          submissionId: submission.id,
+        },
+      );
       return;
     }
 
@@ -107,6 +119,40 @@ export async function processJob(
         log,
       )
     ) {
+      return;
+    }
+
+    const lifecycle =
+      await resolvedDeps.getChallengeLifecycleState(challengeAddress);
+    if (lifecycle.status !== CHALLENGE_STATUS.scoring) {
+      if (lifecycle.status === CHALLENGE_STATUS.open) {
+        const reason = "challenge_not_in_scoring";
+        log("info", "Challenge is not in scoring yet; requeueing job", {
+          ...phaseMeta,
+          reason,
+        });
+        await resolvedDeps.requeueJobWithoutAttemptPenalty(
+          db,
+          job.id,
+          job.attempts,
+          reason,
+        );
+        return;
+      }
+
+      const reason = `challenge_${lifecycle.status}`;
+      log("warn", "Challenge is no longer scoreable; skipping job", {
+        ...phaseMeta,
+        reason,
+      });
+      await resolvedDeps.markScoreJobSkipped(
+        db,
+        {
+          submission_id: submission.id,
+          challenge_id: challenge.id,
+        },
+        reason,
+      );
       return;
     }
 
@@ -180,10 +226,14 @@ export async function processJob(
         ),
       )
     ) {
-      log("info", "Submission became scored before post; completed job without reposting", {
-        jobId: job.id,
-        submissionId: submission.id,
-      });
+      log(
+        "info",
+        "Submission became scored before post; completed job without reposting",
+        {
+          jobId: job.id,
+          submissionId: submission.id,
+        },
+      );
       return;
     }
 

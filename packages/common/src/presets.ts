@@ -115,6 +115,8 @@ export function getPresetIds(): string[] {
 
 type ParsedGhcrImageRef = {
     imagePath: string;
+    owner: string;
+    repository: string;
     tag?: string;
     digest?: string;
 };
@@ -127,9 +129,25 @@ function parseGhcrImageReference(image: string): ParsedGhcrImageRef | null {
     if (!match) return null;
     return {
         imagePath: match[1]!,
+        owner: match[1]!.split("/")[0]!,
+        repository: match[1]!.split("/")[1]!,
         tag: match[2],
         digest: match[3],
     };
+}
+
+function findOfficialContainerByRepository(container: string): string | null {
+    const parsed = parseGhcrImageReference(container);
+    if (!parsed?.repository) return null;
+
+    for (const officialImage of Object.values(OFFICIAL_IMAGES)) {
+        const officialRef = parseGhcrImageReference(officialImage);
+        if (officialRef?.repository === parsed.repository) {
+            return officialImage;
+        }
+    }
+
+    return null;
 }
 
 function sharesGhcrRepository(left: string, right: string): boolean {
@@ -227,6 +245,11 @@ export function validateScoringContainer(container: string): string | null {
 
     if (!trimmed.includes("/")) {
         return "Scoring container must be a fully qualified OCI image reference (e.g. ghcr.io/org/image:tag).";
+    }
+
+    const officialContainer = findOfficialContainerByRepository(trimmed);
+    if (officialContainer && !sharesGhcrRepository(officialContainer, trimmed)) {
+        return `Official scorer images must use the canonical Agora image reference. Use ${officialContainer}.`;
     }
 
     // Warn about :latest on non-official containers

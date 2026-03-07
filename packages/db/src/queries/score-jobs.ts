@@ -1,8 +1,9 @@
 import {
-  SCORE_JOB_STATUSES,
   SCORE_JOB_STATUS,
+  SCORE_JOB_STATUSES,
   type ScoreJobStatus,
 } from "@agora/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
 export interface ScoreJobInsert {
@@ -158,10 +159,7 @@ export async function markJobPosted(
   }
 }
 
-export async function clearJobPostedTx(
-  db: AgoraDbClient,
-  jobId: string,
-) {
+export async function clearJobPostedTx(db: AgoraDbClient, jobId: string) {
   const { error } = await db
     .from("score_jobs")
     .update({
@@ -254,7 +252,9 @@ export async function requeueJobWithoutAttemptPenalty(
     .eq("id", jobId);
 
   if (error) {
-    throw new Error(`Failed to requeue score job without penalty: ${error.message}`);
+    throw new Error(
+      `Failed to requeue score job without penalty: ${error.message}`,
+    );
   }
 }
 
@@ -296,8 +296,9 @@ export async function getOldestPendingJobTime(
 ): Promise<string | null> {
   const { data, error } = await db
     .from("score_jobs")
-    .select("created_at")
+    .select("created_at, challenges!inner(id, status)")
     .eq("status", SCORE_JOB_STATUS.queued)
+    .eq("challenges.status", CHALLENGE_STATUS.scoring)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -306,6 +307,22 @@ export async function getOldestPendingJobTime(
     throw new Error(`Failed to get oldest pending job: ${error.message}`);
   }
   return data?.created_at ?? null;
+}
+
+export async function getEligibleQueuedJobCount(
+  db: AgoraDbClient,
+): Promise<number> {
+  const { count, error } = await db
+    .from("score_jobs")
+    .select("id, challenges!inner(id, status)", { count: "exact", head: true })
+    .eq("status", SCORE_JOB_STATUS.queued)
+    .eq("challenges.status", CHALLENGE_STATUS.scoring);
+
+  if (error) {
+    throw new Error(`Failed to count eligible queued jobs: ${error.message}`);
+  }
+
+  return count ?? 0;
 }
 
 /**
@@ -342,11 +359,11 @@ export async function getOldestRunningStartedAt(
     .maybeSingle();
 
   if (error) {
-    throw new Error(
-      `Failed to get oldest running score job: ${error.message}`,
-    );
+    throw new Error(`Failed to get oldest running score job: ${error.message}`);
   }
-  return (data as { run_started_at?: string | null } | null)?.run_started_at ?? null;
+  return (
+    (data as { run_started_at?: string | null } | null)?.run_started_at ?? null
+  );
 }
 
 export async function runningOverThresholdCount(

@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx src/tests/challenge-insert-presets.ts && node --import tsx src/tests/submission-write-ownership.ts && node --import tsx src/tests/score-job-heartbeat.ts && node --import tsx src/tests/score-job-observability.ts && node --import tsx src/tests/db-queries.ts"
+    "test": "node --import tsx src/tests/challenge-insert-presets.ts && node --import tsx src/tests/submission-write-ownership.ts && node --import tsx src/tests/score-job-heartbeat.ts && node --import tsx src/tests/score-job-observability.ts && node --import tsx src/tests/db-queries.ts && node --import tsx src/tests/public-leaderboard.ts"
   },
   "dependencies": {
     "@agora/common": "workspace:*",

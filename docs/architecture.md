@@ -70,7 +70,7 @@ flowchart LR
     subgraph OnChain["🔒 ON-CHAIN (Trustless)"]
         direction TB
         C1["USDC Escrow"]
-        C2["Challenge Status<br/>Active → Scoring → Finalized"]
+        C2["Challenge Status<br/>Open → Scoring → Disputed/Finalized"]
         C3["Submission Hashes<br/>(keccak256 of IPFS CID)"]
         C4["Scores (uint256, 1e18 WAD)"]
         C5["Proof Bundle Hashes"]
@@ -174,10 +174,10 @@ classDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Active : createChallenge()
-    Active --> Active : submit()
-    Active --> Scoring : deadline passes
-    Active --> Cancelled : cancel() [0 submissions]
+    [*] --> Open : createChallenge()
+    Open --> Open : submit()
+    Open --> Scoring : startScoring() after deadline
+    Open --> Cancelled : cancel() [0 submissions]
     Scoring --> Scoring : postScore()
     Scoring --> Disputed : dispute()
     Scoring --> Finalized : finalize() [after dispute window]
@@ -186,6 +186,16 @@ stateDiagram-v2
     Finalized --> [*] : claim()
     Cancelled --> [*]
 ```
+
+Fairness boundary:
+- `Open`: submissions allowed, but no public leaderboard, no public verification artifacts, and no score computation.
+- `Scoring`: submissions are closed, the worker may decrypt sealed submissions, compute scores, and publish per-challenge results.
+- Public global reputation surfaces use finalized challenges only.
+
+Effective versus persisted status:
+- The contract `status()` view is the read-side truth. After the deadline, it returns `Scoring` even if the persisted storage slot is still `Open`.
+- Write-side transitions stay strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
+- Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 
 ### USDC Flow
 
@@ -514,13 +524,19 @@ erDiagram
 |--------|------|------|------|-------------|
 | `GET` | `/healthz` | — | — | Health check |
 | `GET` | `/.well-known/x402` | — | — | x402 pricing metadata |
+| `GET` | `/api/auth/nonce` | — | — | SIWE nonce |
+| `POST` | `/api/auth/verify` | — | — | Create SIWE session |
+| `GET` | `/api/auth/session` | — | — | Read SIWE session |
 | `GET` | `/api/challenges` | — | — | List challenges (public) |
-| `GET` | `/api/challenges/:id` | — | — | Challenge details + leaderboard |
+| `GET` | `/api/challenges/:id` | — | — | Challenge details; results unlock in `Scoring` |
+| `GET` | `/api/challenges/:id/leaderboard` | — | — | Per-challenge leaderboard (`403` while `Open`) |
+| `GET` | `/api/leaderboard` | — | — | Finalized-only public leaderboard |
+| `GET` | `/api/me/portfolio` | SIWE | — | Private solver portfolio |
+| `GET` | `/api/submissions/:id/public` | — | — | Public verification data (`403` while `Open`) |
 | `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
-| `POST` | `/api/score-preview` | Rate limit | Paid | Dry-run scoring (Docker) |
 | `GET` | `/api/agent/challenges` | — | Paid | Agent discovery (x402 gated) |
 | `POST` | `/mcp` | x402 | Session fee | MCP session bootstrap |
 

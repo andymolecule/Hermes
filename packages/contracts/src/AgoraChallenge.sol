@@ -23,7 +23,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     uint64 public override disputeWindowHours;
 
     DistributionType public override distributionType;
-    Status public override status;
+    Status private _status;
     uint256 public override minimumScore;
 
     uint64 public disputeStartedAt;
@@ -75,7 +75,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         distributionType = cfg.distributionType;
         maxSubmissions = cfg.maxSubmissions;
         maxSubmissionsPerSolver = cfg.maxSubmissionsPerSolver;
-        status = Status.Active;
+        _status = Status.Open;
     }
 
     modifier onlyOracle() {
@@ -88,9 +88,20 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         _;
     }
 
+    /// @notice Returns the effective lifecycle status for reads.
+    /// @dev Once the deadline passes, this view reports `Scoring` even if the
+    ///      persisted `_status` is still `Open`. Off-chain consumers should
+    ///      treat `status()` as truth for read-side visibility decisions and
+    ///      must not inspect raw storage assumptions.
+    function status() public view override returns (Status) {
+        if (_status == Status.Open && block.timestamp >= deadline) {
+            return Status.Scoring;
+        }
+        return _status;
+    }
+
     function submit(bytes32 resultHash) external override returns (uint256 subId) {
-        _updateStatusAfterDeadline();
-        if (status != Status.Active) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Open) revert AgoraErrors.InvalidStatus();
         if (block.timestamp >= deadline) revert AgoraErrors.DeadlinePassed();
         if (maxSubmissions > 0 && submissions.length >= maxSubmissions) {
             revert AgoraErrors.MaxSubmissionsReached();
@@ -113,9 +124,14 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         emit AgoraEvents.Submitted(subId, msg.sender, resultHash);
     }
 
+    function startScoring() external override {
+        if (_status != Status.Open) revert AgoraErrors.InvalidStatus();
+        if (block.timestamp < deadline) revert AgoraErrors.DeadlineNotPassed();
+        _setStatus(Status.Scoring);
+    }
+
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external override onlyOracle {
-        _updateStatusAfterDeadline();
-        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
         if (subId >= submissions.length) revert AgoraErrors.InvalidSubmission();
         Submission storage submission = submissions[subId];
         if (submission.scored) revert AgoraErrors.AlreadyScored();
@@ -129,11 +145,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     }
 
     function finalize() external override nonReentrant {
-        _updateStatusAfterDeadline();
-        if (status == Status.Disputed) revert AgoraErrors.DisputeActive();
-        if (status == Status.Cancelled) revert AgoraErrors.ChallengeCancelled();
-        if (status == Status.Finalized) revert AgoraErrors.ChallengeFinalized();
-        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
+        if (_status == Status.Disputed) revert AgoraErrors.DisputeActive();
+        if (_status == Status.Cancelled) revert AgoraErrors.ChallengeCancelled();
+        if (_status == Status.Finalized) revert AgoraErrors.ChallengeFinalized();
+        if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
         if (block.timestamp <= deadline + (uint256(disputeWindowHours) * 1 hours)) {
             revert AgoraErrors.DeadlineNotPassed();
         }
@@ -146,7 +161,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
         (uint256[] memory winners, uint256[] memory scores) = _computeWinners();
         if (winners.length == 0) {
-            status = Status.Cancelled;
+            _setStatus(Status.Cancelled);
             if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
             emit AgoraEvents.Cancelled();
             return;
@@ -165,7 +180,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
             revert AgoraErrors.InvalidDistribution();
         }
 
-        status = Status.Finalized;
+        _setStatus(Status.Finalized);
         winnerSet = true;
         winningSubmissionId = winners[0];
 
@@ -177,22 +192,21 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     }
 
     function dispute(string calldata reason) external override {
-        _updateStatusAfterDeadline();
         if (block.timestamp <= deadline) revert AgoraErrors.DisputeWindowNotStarted();
-        if (status == Status.Disputed) revert AgoraErrors.DisputeActive();
-        if (status == Status.Finalized || status == Status.Cancelled) revert AgoraErrors.InvalidStatus();
-        if (status != Status.Scoring) revert AgoraErrors.InvalidStatus();
+        if (_status == Status.Disputed) revert AgoraErrors.DisputeActive();
+        if (_status == Status.Finalized || _status == Status.Cancelled) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
 
         uint256 disputeEnd = deadline + (uint256(disputeWindowHours) * 1 hours);
         if (block.timestamp >= disputeEnd) revert AgoraErrors.DisputeWindowClosed();
 
-        status = Status.Disputed;
+        _setStatus(Status.Disputed);
         disputeStartedAt = uint64(block.timestamp);
         emit AgoraEvents.Disputed(msg.sender, reason);
     }
 
     function resolveDispute(uint256 winnerSubId) external override onlyOracle nonReentrant {
-        if (status != Status.Disputed) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Disputed) revert AgoraErrors.InvalidStatus();
         if (winnerSubId >= submissions.length) revert AgoraErrors.InvalidSubmission();
         if (!submissions[winnerSubId].scored) revert AgoraErrors.InvalidSubmission();
         if (submissions[winnerSubId].score < minimumScore) revert AgoraErrors.MinimumScoreNotMet();
@@ -218,7 +232,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
             revert AgoraErrors.InvalidDistribution();
         }
 
-        status = Status.Finalized;
+        _setStatus(Status.Finalized);
         winnerSet = true;
         winningSubmissionId = winnerSubId;
 
@@ -230,27 +244,26 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     }
 
     function cancel() external override onlyPoster nonReentrant {
-        _updateStatusAfterDeadline();
-        if (status != Status.Active) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Open) revert AgoraErrors.InvalidStatus();
         if (block.timestamp >= deadline) revert AgoraErrors.DeadlinePassed();
         if (submissions.length > 0) revert AgoraErrors.SubmissionsExist();
 
-        status = Status.Cancelled;
+        _setStatus(Status.Cancelled);
         if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
         emit AgoraEvents.Cancelled();
     }
 
     function timeoutRefund() external override nonReentrant {
-        if (status != Status.Disputed) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Disputed) revert AgoraErrors.InvalidStatus();
         if (block.timestamp <= disputeStartedAt + 30 days) revert AgoraErrors.DeadlineNotPassed();
 
-        status = Status.Cancelled;
+        _setStatus(Status.Cancelled);
         if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
         emit AgoraEvents.Cancelled();
     }
 
     function claim() external override nonReentrant {
-        if (status != Status.Finalized) revert AgoraErrors.InvalidStatus();
+        if (_status != Status.Finalized) revert AgoraErrors.InvalidStatus();
         uint256 payout = payoutByAddress[msg.sender];
         if (payout == 0) revert AgoraErrors.NothingToClaim();
         payoutByAddress[msg.sender] = 0;
@@ -275,10 +288,14 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     function submissionCount() external view override returns (uint256) {
         return submissions.length;
     }
-    function _updateStatusAfterDeadline() internal {
-        if (status == Status.Active && block.timestamp >= deadline) {
-            status = Status.Scoring;
+
+    function _setStatus(Status nextStatus) internal {
+        Status previousStatus = _status;
+        if (previousStatus == nextStatus) {
+            return;
         }
+        _status = nextStatus;
+        emit AgoraEvents.StatusChanged(uint8(previousStatus), uint8(nextStatus));
     }
 
     function _setPayout(address solver, uint256 amount) internal {

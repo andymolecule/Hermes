@@ -54,7 +54,7 @@ agora post challenge.yaml --format json
 ## Solve Workflow
 
 ```bash
-agora list --status active --format json
+agora list --status open --format json
 agora get <challenge_uuid> --download ./workspace --format json
 agora score-local <challenge_uuid> --submission ./submission.csv --format json
 agora submit ./submission.csv --challenge <challenge_uuid> --format json
@@ -107,7 +107,7 @@ Provided tools:
 - `Docker is required for scoring`: start Docker Desktop/daemon.
 - `Result file exceeds 100MB`: compress or reduce output.
 - `Submission missing result CID`: re-submit with updated CLI; ensure indexer is running.
-- `Challenge not active` / `Deadline passed`: choose another challenge.
+- `Challenge not open` / `Deadline passed`: choose another challenge.
 
 ## Tips
 

@@ -1,11 +1,9 @@
-import { createSupabaseClient, listChallengesWithDetails } from "@agora/db";
 import {
-  CHALLENGE_DB_STATUS,
   CHALLENGE_STATUS,
-  deriveDisplayStatus,
-  isChallengeDbStatus,
-  type ChallengeDbStatus,
+  type ChallengeStatus,
+  isChallengeStatus,
 } from "@agora/common";
+import { createSupabaseClient, listChallengesWithDetails } from "@agora/db";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
@@ -51,39 +49,32 @@ export function buildListCommand() {
           "supabase_anon_key",
         ]);
 
-        const db = createSupabaseClient();
         const requestedStatus = opts.status?.toLowerCase();
-        const dbStatusFilter: ChallengeDbStatus | undefined =
-          requestedStatus === CHALLENGE_STATUS.scoring
-            ? CHALLENGE_DB_STATUS.active
-            : requestedStatus && isChallengeDbStatus(requestedStatus)
-              ? requestedStatus
-              : undefined;
-        if (requestedStatus && !dbStatusFilter && requestedStatus !== CHALLENGE_STATUS.scoring) {
-          throw new Error(`Invalid status filter: ${opts.status}`);
+        const statusFilter: ChallengeStatus | undefined = requestedStatus
+          ? isChallengeStatus(requestedStatus)
+            ? requestedStatus
+            : undefined
+          : undefined;
+        if (requestedStatus && !statusFilter) {
+          throw new Error(
+            `Invalid status filter: ${opts.status}. Use ${Object.values(CHALLENGE_STATUS).join(", ")}.`,
+          );
         }
 
+        const db = createSupabaseClient();
         const challenges = (await listChallengesWithDetails(db, {
           domain: opts.domain,
-          status: dbStatusFilter,
+          status: statusFilter,
           posterAddress: opts.poster,
           limit: opts.limit ? Number(opts.limit) : undefined,
         })) as ChallengeRecord[];
 
-        let filtered = challenges.map((challenge: ChallengeRecord) => {
-          const dbStatus = isChallengeDbStatus(challenge.status)
+        let filtered = challenges.map((challenge) => ({
+          ...challenge,
+          status: isChallengeStatus(challenge.status)
             ? challenge.status
-            : CHALLENGE_DB_STATUS.active;
-          const status = deriveDisplayStatus({
-            dbStatus,
-            deadline: challenge.deadline,
-          });
-          return { ...challenge, db_status: dbStatus, status };
-        });
-
-        if (requestedStatus) {
-          filtered = filtered.filter((challenge: { status: string }) => challenge.status === requestedStatus);
-        }
+            : CHALLENGE_STATUS.open,
+        }));
 
         if (opts.minReward) {
           const min = Number(opts.minReward);
@@ -91,13 +82,12 @@ export function buildListCommand() {
             throw new Error(`Invalid min reward: ${opts.minReward}`);
           }
           filtered = filtered.filter(
-            (challenge: ChallengeRecord) =>
-              Number(challenge.reward_amount) >= min,
+            (challenge) => Number(challenge.reward_amount) >= min,
           );
         }
 
         const rows = await Promise.all(
-          filtered.map(async (challenge: ChallengeRecord) => {
+          filtered.map(async (challenge) => {
             const { count } = await db
               .from("submissions")
               .select("id", { count: "exact", head: true })

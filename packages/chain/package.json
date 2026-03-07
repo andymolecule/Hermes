@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx src/tests/chain-integration.ts",
+    "test": "node --import tsx --test src/tests/indexer-status-projection.ts && node --import tsx src/tests/chain-integration.ts",
     "indexer": "node ../../scripts/run-node-with-root-env.mjs dist/indexer.js",
     "indexer:local": "node dist/indexer.js"
   },

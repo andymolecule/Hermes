@@ -7,7 +7,7 @@
     "dev": "node scripts/run-next.mjs dev -p 3100",
     "build": "node scripts/run-next.mjs build",
     "start": "node scripts/run-next.mjs start -p 3100",
-    "test": "echo 'no tests'"
+    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
   },
   "dependencies": {
     "@agora/common": "workspace:*",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "@types/react": "19.2.14"
+    "@types/react": "19.2.14",
+    "tsx": "^4.19.2"
   }
 }

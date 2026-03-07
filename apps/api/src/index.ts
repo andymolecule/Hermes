@@ -1,17 +1,9 @@
-import { serve } from "@hono/node-server";
 import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
-import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 
 async function start() {
   const config = loadConfig();
-  const sealHealth = await readSubmissionSealHealth();
-  if (sealHealth.enabled && sealHealth.selfCheck !== "ok") {
-    throw new Error(
-      `Submission sealing startup self-check failed for kid ${sealHealth.keyId}: ${sealHealth.error ?? "unknown error"}`,
-    );
-  }
-
   const port = Number(process.env.AGORA_API_PORT ?? 3000);
   const app = createApp();
   const runtimeIdentity = getAgoraRuntimeIdentity(config);

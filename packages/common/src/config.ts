@@ -59,9 +59,6 @@ const configSchema = z.object({
   AGORA_ENABLE_NON_CORE_FEATURES: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
-  AGORA_ENABLE_SCORE_PREVIEW: z
-    .preprocess(parseBooleanLike, z.boolean())
-    .default(false),
   AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
@@ -87,6 +84,21 @@ export interface AgoraRuntimeIdentity {
   rpcUrl: string;
 }
 
+export function hasSubmissionSealPublicConfig(config: AgoraConfig): boolean {
+  return Boolean(
+    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
+      config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+  );
+}
+
+export function hasSubmissionSealWorkerConfig(config: AgoraConfig): boolean {
+  return Boolean(
+    config.AGORA_SUBMISSION_SEAL_KEY_ID &&
+      config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM &&
+      config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
+  );
+}
+
 function formatZodError(error: z.ZodError): string {
   const lines = error.issues.map((issue) => {
     const path = issue.path.join(".") || "(root)";
@@ -105,17 +117,21 @@ export function loadConfig(): AgoraConfig {
   }
   const config = result.data;
 
-  const sealingConfigValues = [
-    config.AGORA_SUBMISSION_SEAL_KEY_ID,
-    config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+  const hasSealKeyId = Boolean(config.AGORA_SUBMISSION_SEAL_KEY_ID);
+  const hasSealPublicKey = Boolean(config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM);
+  const hasSealPrivateKey = Boolean(
     config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
-  ];
-  const configuredSealingValues = sealingConfigValues.filter(
-    (value) => typeof value === "string" && value.length > 0,
-  ).length;
-  if (configuredSealingValues > 0 && configuredSealingValues < sealingConfigValues.length) {
+  );
+
+  if (hasSealKeyId !== hasSealPublicKey) {
     throw new Error(
-      "Submission sealing config must be fully specified. Provide AGORA_SUBMISSION_SEAL_KEY_ID, AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM, and AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM together.",
+      "Submission sealing public config must include AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM together.",
+    );
+  }
+
+  if (hasSealPrivateKey && !hasSubmissionSealPublicConfig(config)) {
+    throw new Error(
+      "AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM.",
     );
   }
 

@@ -1,13 +1,23 @@
-import { getPublicClient, loadChallengeDefinitionFromChain } from "@agora/chain";
+import {
+  getChallengeLifecycleState,
+  getPublicClient,
+  loadChallengeDefinitionFromChain,
+} from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
-  ON_CHAIN_STATUS_ORDER,
+  CHALLENGE_STATUS,
+  type ChallengeSpecOutput,
   loadConfig,
   validateScoringContainer,
 } from "@agora/common";
-import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with { type: "json" };
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with { type: "json" };
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
+  type: "json",
+};
 import {
+  type ChallengeInsert,
   buildChallengeInsert,
   createSupabaseClient,
   upsertChallenge,
@@ -16,14 +26,15 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
 import { z } from "zod";
+import { requireWriteQuota } from "../middleware/rate-limit.js";
+import type { ApiEnv } from "../types.js";
 import {
+  canExposeChallengeResults,
+  getChallengeLeaderboardData,
   getChallengeWithLeaderboard,
   listChallengesFromQuery,
   listChallengesQuerySchema,
-  sortByScoreDesc,
 } from "./challenges-shared.js";
-import { requireWriteQuota } from "../middleware/rate-limit.js";
-import type { ApiEnv } from "../types.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
@@ -108,18 +119,15 @@ router.post(
 
     // Source of truth: read specCid from challenge contract, not client payload.
     let specCid: string;
-    let spec;
+    let spec: ChallengeSpecOutput;
     let onChainDeadlineIso: string;
     try {
-      ({
-        specCid,
-        spec,
-        onChainDeadlineIso,
-      } = await loadChallengeDefinitionFromChain({
-        publicClient,
-        challengeAddress: challengeAddress as `0x${string}`,
-        chainId: config.AGORA_CHAIN_ID,
-      }));
+      ({ specCid, spec, onChainDeadlineIso } =
+        await loadChallengeDefinitionFromChain({
+          publicClient,
+          challengeAddress: challengeAddress as `0x${string}`,
+          chainId: config.AGORA_CHAIN_ID,
+        }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: message }, 400);
@@ -128,10 +136,13 @@ router.post(
     // P0: Reject unscorable bounties — container must be valid
     const containerError = validateScoringContainer(spec.scoring.container);
     if (containerError) {
-      return c.json({ error: `Invalid scoring container: ${containerError}` }, 400);
+      return c.json(
+        { error: `Invalid scoring container: ${containerError}` },
+        400,
+      );
     }
 
-    let challengeInsert;
+    let challengeInsert: ChallengeInsert;
     try {
       const factoryAddress =
         normalizeAddress(receipt.to) ?? config.AGORA_FACTORY_ADDRESS;
@@ -170,8 +181,16 @@ router.get("/:id", async (c) => {
 router.get("/:id/leaderboard", async (c) => {
   const challengeId = c.req.param("id");
   const data = await getChallengeWithLeaderboard(challengeId);
+  if (!canExposeChallengeResults(data.challenge.status)) {
+    return c.json(
+      { error: "Leaderboard is unavailable while the challenge is open." },
+      403,
+    );
+  }
 
-  return c.json({ data: sortByScoreDesc(data.submissions) });
+  return c.json({
+    data: getChallengeLeaderboardData(data) ?? [],
+  });
 });
 router.get("/:id/claimable", async (c) => {
   const challengeId = c.req.param("id");
@@ -187,36 +206,14 @@ router.get("/:id/claimable", async (c) => {
   if (!challenge) return c.json({ error: "Challenge not found" }, 404);
 
   const contractAddress = challenge.contract_address as `0x${string}`;
-  const publicClient = getPublicClient();
-
-  // Read on-chain status and timing values (source of truth)
-  const [onChainStatusRaw, onChainDeadline, onChainDisputeWindowHours] =
-    await Promise.all([
-      publicClient.readContract({
-        address: contractAddress,
-        abi: AgoraChallengeAbi,
-        functionName: "status",
-      }),
-      publicClient.readContract({
-        address: contractAddress,
-        abi: AgoraChallengeAbi,
-        functionName: "deadline",
-      }) as Promise<bigint>,
-      publicClient.readContract({
-        address: contractAddress,
-        abi: AgoraChallengeAbi,
-        functionName: "disputeWindowHours",
-      }) as Promise<bigint>,
-    ]);
-  const onChainStatus = Number(onChainStatusRaw);
-  if (!Number.isFinite(onChainStatus)) {
-    return c.json({ error: "Invalid on-chain status value." }, 500);
-  }
+  const lifecycle = await getChallengeLifecycleState(contractAddress);
 
   // Compute finalization timestamp from on-chain fields.
   const finalizableAfterSeconds =
-    onChainDeadline + (onChainDisputeWindowHours * 3600n);
-  if (finalizableAfterSeconds > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000))) {
+    lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
+  if (
+    finalizableAfterSeconds > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000))
+  ) {
     return c.json({ error: "Finalization timestamp out of range." }, 500);
   }
   const finalizableAfter = new Date(
@@ -225,14 +222,15 @@ router.get("/:id/claimable", async (c) => {
 
   // Read claimable amount for address (if provided)
   let claimable = "0";
-  if (address && onChainStatus === 2) {
+  if (address && lifecycle.status === CHALLENGE_STATUS.finalized) {
+    const publicClient = getPublicClient();
     try {
-      const payout = await publicClient.readContract({
+      const payout = (await publicClient.readContract({
         address: contractAddress,
         abi: AgoraChallengeAbi,
         functionName: "payoutByAddress",
         args: [address as `0x${string}`],
-      }) as bigint;
+      })) as bigint;
       claimable = payout.toString();
     } catch {
       claimable = "0";
@@ -241,7 +239,7 @@ router.get("/:id/claimable", async (c) => {
 
   return c.json({
     data: {
-      onChainStatus: ON_CHAIN_STATUS_ORDER[onChainStatus] ?? "unknown",
+      onChainStatus: lifecycle.status,
       finalizableAfter,
       claimable,
     },

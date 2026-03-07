@@ -1,5 +1,7 @@
 "use client";
 
+import { CHALLENGE_STATUS, DEFAULT_IPFS_GATEWAY } from "@agora/common";
+import type { ChallengeSpecOutput } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -14,16 +16,23 @@ import {
   Target,
   Trophy,
 } from "lucide-react";
-import { CHALLENGE_STATUS, DEFAULT_IPFS_GATEWAY } from "@agora/common";
 import Link from "next/link";
+import { ChallengeActions } from "../../../components/ChallengeActions";
 import { LeaderboardTable } from "../../../components/LeaderboardTable";
 import { SubmitSolution } from "../../../components/SubmitSolution";
 import { TimelineStatus } from "../../../components/TimelineStatus";
-import { ChallengeActions } from "../../../components/ChallengeActions";
-import { getChallenge, getChallengeSpec, getPublicSubmissionVerification } from "../../../lib/api";
+import {
+  getChallenge,
+  getChallengeSpec,
+  getPublicSubmissionVerification,
+} from "../../../lib/api";
 import { formatUsdc } from "../../../lib/format";
-import type { ChallengeSpecOutput } from "@agora/common";
 import type { SubmissionVerification } from "../../../lib/types";
+import {
+  canShowChallengeResults,
+  getChallengeLeaderboardEntries,
+  shouldFetchPublicVerification,
+} from "./detail-visibility";
 
 function InfoRow({
   label,
@@ -34,15 +43,19 @@ function InfoRow({
   label: string;
   value: React.ReactNode;
   mono?: boolean;
-  icon?: React.ComponentType<{ className?: string, strokeWidth?: number }>;
+  icon?: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }) {
   return (
     <div className="flex flex-col gap-2 border-b border-black/10 py-4 last:border-b-0 sm:flex-row sm:items-center">
       <div className="flex items-center gap-2 w-48 shrink-0">
         {Icon && <Icon className="h-4 w-4 text-black/60" strokeWidth={1.5} />}
-        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60">{label}</div>
+        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60">
+          {label}
+        </div>
       </div>
-      <div className={`flex-1 break-all text-sm text-black ${mono ? "font-mono text-xs font-bold" : "font-medium"}`}>
+      <div
+        className={`flex-1 break-all text-sm text-black ${mono ? "font-mono text-xs font-bold" : "font-medium"}`}
+      >
         {value}
       </div>
     </div>
@@ -96,7 +109,10 @@ function WarningCallout({
   return (
     <div className="rounded-[2px] border border-black bg-[#fff3e8] p-4">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-black" strokeWidth={2} />
+        <AlertTriangle
+          className="mt-0.5 h-4 w-4 shrink-0 text-black"
+          strokeWidth={2}
+        />
         <div className="space-y-1">
           <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60">
             {title}
@@ -178,10 +194,14 @@ function SubmissionColumnsTable({
           {expectedColumns.map((column) => {
             let role = "Required";
             if (idColumn && column === idColumn) role = "Identifier";
-            if (labelColumn && column === labelColumn) role = "Prediction target";
+            if (labelColumn && column === labelColumn)
+              role = "Prediction target";
 
             return (
-              <tr key={column} className="border-b last:border-b-0 border-black/10">
+              <tr
+                key={column}
+                className="border-b last:border-b-0 border-black/10"
+              >
                 <td className="px-4 py-3 font-mono text-xs font-bold text-black">
                   {column}
                 </td>
@@ -205,7 +225,10 @@ function cidHref(value: string | null | undefined) {
 function containerHref(value: string | null | undefined) {
   if (!value) return null;
   if (value.startsWith("ghcr.io/")) {
-    const clean = value.replace(/^ghcr\.io\//, "").split("@")[0]?.split(":")[0];
+    const clean = value
+      .replace(/^ghcr\.io\//, "")
+      .split("@")[0]
+      ?.split(":")[0];
     return clean ? `https://github.com/${clean}` : null;
   }
   return null;
@@ -252,9 +275,14 @@ function TechnicalDetailsSection({
         <InfoRow
           label="Dataset (train)"
           value={
-            challenge.dataset_train_cid
-              ? <LinkedValue href={cidHref(challenge.dataset_train_cid)} value={challenge.dataset_train_cid} />
-              : "—"
+            challenge.dataset_train_cid ? (
+              <LinkedValue
+                href={cidHref(challenge.dataset_train_cid)}
+                value={challenge.dataset_train_cid}
+              />
+            ) : (
+              "—"
+            )
           }
           mono
           icon={Database}
@@ -262,9 +290,14 @@ function TechnicalDetailsSection({
         <InfoRow
           label="Dataset (test)"
           value={
-            challenge.dataset_test_cid
-              ? <LinkedValue href={cidHref(challenge.dataset_test_cid)} value={challenge.dataset_test_cid} />
-              : "—"
+            challenge.dataset_test_cid ? (
+              <LinkedValue
+                href={cidHref(challenge.dataset_test_cid)}
+                value={challenge.dataset_test_cid}
+              />
+            ) : (
+              "—"
+            )
           }
           mono
           icon={Database}
@@ -272,9 +305,14 @@ function TechnicalDetailsSection({
         <InfoRow
           label="Scoring container"
           value={
-            challenge.scoring_container
-              ? <LinkedValue href={containerHref(challenge.scoring_container)} value={challenge.scoring_container} />
-              : "—"
+            challenge.scoring_container ? (
+              <LinkedValue
+                href={containerHref(challenge.scoring_container)}
+                value={challenge.scoring_container}
+              />
+            ) : (
+              "—"
+            )
           }
           mono
           icon={Container}
@@ -291,34 +329,40 @@ export function DetailClient({ id }: { id: string }) {
   });
   const specQuery = useQuery({
     queryKey: ["challenge-spec", detailQuery.data?.challenge.spec_cid],
-    queryFn: () => getChallengeSpec(detailQuery.data?.challenge.spec_cid as string),
+    queryFn: () =>
+      getChallengeSpec(detailQuery.data?.challenge.spec_cid as string),
     enabled: Boolean(detailQuery.data?.challenge.spec_cid),
     staleTime: 5 * 60 * 1000,
   });
-  const leaderboardEntries = detailQuery.data
-    ? (detailQuery.data.leaderboard.length > 0
-      ? detailQuery.data.leaderboard
-      : detailQuery.data.submissions)
-    : [];
+  const resultsVisible = detailQuery.data
+    ? canShowChallengeResults(detailQuery.data.challenge.status)
+    : false;
+  const leaderboardEntries = getChallengeLeaderboardEntries(detailQuery.data);
   const firstScoredSubmission = leaderboardEntries.find(
     (entry) => entry.scored && entry.score !== null,
   );
   const verificationQuery = useQuery<SubmissionVerification>({
     queryKey: ["submission-verification", firstScoredSubmission?.id],
-    queryFn: () => getPublicSubmissionVerification(firstScoredSubmission?.id as string),
-    enabled: Boolean(firstScoredSubmission?.id),
+    queryFn: () =>
+      getPublicSubmissionVerification(firstScoredSubmission?.id as string),
+    enabled: detailQuery.data
+      ? shouldFetchPublicVerification(
+          detailQuery.data.challenge.status,
+          firstScoredSubmission?.id,
+        )
+      : false,
     staleTime: 5 * 60 * 1000,
   });
   const technicalSpecsErrorMessage =
     detailQuery.data?.challenge.spec_cid && specQuery.isError
-      ? (specQuery.error instanceof Error
+      ? specQuery.error instanceof Error
         ? specQuery.error.message
-        : "Failed to load the challenge specification.")
+        : "Failed to load the challenge specification."
       : null;
   const verificationErrorMessage = verificationQuery.isError
-    ? (verificationQuery.error instanceof Error
+    ? verificationQuery.error instanceof Error
       ? verificationQuery.error.message
-      : "Failed to load verification artifacts.")
+      : "Failed to load verification artifacts."
     : null;
 
   if (detailQuery.isLoading) {
@@ -344,22 +388,25 @@ export function DetailClient({ id }: { id: string }) {
   const submissionArtifact = inferSubmissionArtifact(spec);
   const expectedColumns = [
     ...(challenge.expected_columns ?? []),
-    ...[
-      spec?.evaluation?.id_column,
-      spec?.evaluation?.label_column,
-    ].filter((value): value is string => Boolean(value)),
+    ...[spec?.evaluation?.id_column, spec?.evaluation?.label_column].filter(
+      (value): value is string => Boolean(value),
+    ),
   ].filter((value, index, array) => array.indexOf(value) === index);
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);
-  const rewardDistribution = titleCase(challenge.distribution_type ?? "winner_take_all");
+  const rewardDistribution = titleCase(
+    challenge.distribution_type ?? "winner_take_all",
+  );
   const successDefinition =
-    spec?.evaluation?.success_definition
-    ?? "Submissions are ranked by score after the evaluation pipeline runs on the hidden test bundle.";
+    spec?.evaluation?.success_definition ??
+    "Submissions are ranked by score after the evaluation pipeline runs on the hidden test bundle.";
   const evaluationCriteria =
-    spec?.evaluation?.criteria
-    ?? "Submit a valid solution in the expected format. Higher-ranked valid scores receive the reward distribution for this challenge.";
-  const technicalSpecsLoading = Boolean(challenge.spec_cid) && specQuery.isLoading;
+    spec?.evaluation?.criteria ??
+    "Submit a valid solution in the expected format. Higher-ranked valid scores receive the reward distribution for this challenge.";
+  const technicalSpecsLoading =
+    Boolean(challenge.spec_cid) && specQuery.isLoading;
   const verification = verificationQuery.data;
-  const verifyCommand = verification
+  const hasPublicVerificationArtifacts = Boolean(verification?.proofBundleCid);
+  const verifyCommand = hasPublicVerificationArtifacts && verification
     ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
     : null;
 
@@ -371,8 +418,13 @@ export function DetailClient({ id }: { id: string }) {
           href="/"
           className="group inline-flex items-center gap-2 border border-black bg-white px-4 py-2 text-sm font-bold font-mono uppercase tracking-wider text-black transition-colors duration-200 hover:bg-black hover:text-white"
         >
-          <ArrowLeft className="h-4 w-4 text-black transition-colors group-hover:text-white" strokeWidth={2} />
-          <span className="text-black transition-colors group-hover:text-white">Back</span>
+          <ArrowLeft
+            className="h-4 w-4 text-black transition-colors group-hover:text-white"
+            strokeWidth={2}
+          />
+          <span className="text-black transition-colors group-hover:text-white">
+            Back
+          </span>
         </Link>
       </div>
 
@@ -386,7 +438,9 @@ export function DetailClient({ id }: { id: string }) {
                   {challenge.title}
                 </h1>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black shrink-0">
-                  <span className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.active ? 'bg-green-500' : 'bg-black'}`} />
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.open ? "bg-green-500" : "bg-black"}`}
+                  />
                   {challenge.status}
                 </span>
               </div>
@@ -425,9 +479,20 @@ export function DetailClient({ id }: { id: string }) {
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="space-y-4">
                       <p className="text-sm leading-relaxed text-black/75">
-                        Submit <span className="font-semibold text-black">{submissionArtifact}</span>.
+                        Submit{" "}
+                        <span className="font-semibold text-black">
+                          {submissionArtifact}
+                        </span>
+                        .
                         {spec?.evaluation?.submission_format && (
-                          <> Expected format: <span className="font-semibold text-black">{spec.evaluation.submission_format}</span>.</>
+                          <>
+                            {" "}
+                            Expected format:{" "}
+                            <span className="font-semibold text-black">
+                              {spec.evaluation.submission_format}
+                            </span>
+                            .
+                          </>
                         )}
                       </p>
                       <p className="text-sm leading-relaxed text-black/75">
@@ -469,11 +534,15 @@ export function DetailClient({ id }: { id: string }) {
                           Evaluation Notes
                         </div>
                         <p className="text-sm leading-relaxed text-black/75">
-                          {spec?.evaluation?.criteria ?? "Final scores are produced by the configured evaluation bundle and scorer container."}
+                          {spec?.evaluation?.criteria ??
+                            "Final scores are produced by the configured evaluation bundle and scorer container."}
                         </p>
                         {spec?.evaluation?.tolerance && (
                           <p className="mt-3 text-sm font-medium text-black/70">
-                            Comparison tolerance: <span className="font-mono font-bold text-black">{spec.evaluation.tolerance}</span>
+                            Comparison tolerance:{" "}
+                            <span className="font-mono font-bold text-black">
+                              {spec.evaluation.tolerance}
+                            </span>
                           </p>
                         )}
                       </div>
@@ -483,7 +552,9 @@ export function DetailClient({ id }: { id: string }) {
                             Metric
                           </div>
                           <div className="mt-2 text-2xl font-display font-bold text-black">
-                            {challenge.scoring_metric ? titleCase(challenge.scoring_metric) : "Custom"}
+                            {challenge.scoring_metric
+                              ? titleCase(challenge.scoring_metric)
+                              : "Custom"}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-4 rounded-[2px] border border-black/15 bg-[#f7f7f3] px-4 py-3">
@@ -508,7 +579,7 @@ export function DetailClient({ id }: { id: string }) {
 
             <TechnicalDetailsSection challenge={challenge} />
 
-            {firstScoredSubmission && (
+            {resultsVisible && firstScoredSubmission && (
               <Section title="Public Verification" icon={ShieldCheck}>
                 {verificationQuery.isLoading ? (
                   <div className="space-y-3">
@@ -521,10 +592,12 @@ export function DetailClient({ id }: { id: string }) {
                     title="Verification Unavailable"
                     message={`Verification artifacts could not be loaded right now. ${verificationErrorMessage}`}
                   />
-                ) : verification ? (
+                ) : verification && hasPublicVerificationArtifacts ? (
                   <div className="space-y-5">
                     <p className="text-sm leading-relaxed text-black/75">
-                      Agora currently operates scoring, but this submission exposes the public artifacts needed to replay the scorer and check the published result independently.
+                      Agora currently operates scoring, but this submission
+                      exposes the public artifacts needed to replay the scorer
+                      and check the published result independently.
                     </p>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -586,7 +659,7 @@ export function DetailClient({ id }: { id: string }) {
                         <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-white/60">
                           One-command replay
                         </div>
-                        <pre className="mt-2 overflow-x-auto font-mono text-xs font-bold text-white">
+                        <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-xs font-bold leading-relaxed text-white">
                           {verifyCommand}
                         </pre>
                       </div>
@@ -594,7 +667,8 @@ export function DetailClient({ id }: { id: string }) {
                   </div>
                 ) : (
                   <p className="text-sm leading-relaxed text-black/60">
-                    Verification artifacts are not available for this submission yet.
+                    Verification artifacts are not available for this submission
+                    yet.
                   </p>
                 )}
               </Section>
@@ -629,7 +703,10 @@ export function DetailClient({ id }: { id: string }) {
                     Deadline
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-sm font-medium text-black">
-                    <CalendarClock className="h-4 w-4 text-black/50" strokeWidth={1.75} />
+                    <CalendarClock
+                      className="h-4 w-4 text-black/50"
+                      strokeWidth={1.75}
+                    />
                     {formatDateTime(challenge.deadline)}
                   </div>
                 </div>
@@ -638,7 +715,9 @@ export function DetailClient({ id }: { id: string }) {
                     Review Period
                   </div>
                   <div className="mt-1 text-sm font-medium text-black">
-                    {challenge.dispute_window_hours != null ? `${challenge.dispute_window_hours} hours` : "—"}
+                    {challenge.dispute_window_hours != null
+                      ? `${challenge.dispute_window_hours} hours`
+                      : "—"}
                   </div>
                 </div>
               </div>
@@ -660,10 +739,7 @@ export function DetailClient({ id }: { id: string }) {
               disputeWindowHours={challenge.dispute_window_hours ?? 168}
             />
 
-            <TimelineStatus
-              challenge={challenge}
-              submissions={submissions}
-            />
+            <TimelineStatus challenge={challenge} submissions={submissions} />
           </div>
         </div>
 
@@ -673,7 +749,14 @@ export function DetailClient({ id }: { id: string }) {
             <Trophy className="w-5 h-5" strokeWidth={2.5} />
             Leaderboard
           </h3>
-          <LeaderboardTable rows={leaderboardEntries} />
+          {resultsVisible ? (
+            <LeaderboardTable rows={leaderboardEntries} />
+          ) : (
+            <p className="text-sm leading-relaxed text-black/60 font-medium">
+              Leaderboard and verification artifacts unlock when the challenge
+              enters scoring.
+            </p>
+          )}
         </div>
       </div>
     </div>

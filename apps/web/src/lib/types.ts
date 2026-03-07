@@ -7,7 +7,6 @@ export type Challenge = {
   spec_cid?: string | null;
   domain: string;
   status: ChallengeStatus;
-  db_status?: string;
   reward_amount: number | string;
   deadline: string;
   challenge_type: string;
@@ -74,6 +73,24 @@ export type SolverPortfolio = {
   submissions: SolverSubmission[];
 };
 
+export type PublicLeaderboardEntry = {
+  address: string;
+  totalSubmissions: number;
+  challengesParticipated: number;
+  scoredSubmissions: number;
+  wins: number;
+  winRate: number;
+  totalEarnedUsdc: number;
+  challenges: Array<{
+    challengeId: string;
+    title: string;
+    domain: string;
+    rewardAmount: number;
+    submittedAt: string;
+    bestScore: string | null;
+  }>;
+};
+
 export type AnalyticsData = {
   totalChallenges: number;
   totalSubmissions: number;
@@ -114,6 +131,7 @@ export type WorkerHealth = {
   status: "ok" | "warning" | "idle" | "error";
   jobs?: {
     queued: number;
+    eligibleQueued: number;
     running: number;
     scored: number;
     failed: number;
@@ -132,6 +150,12 @@ export type WorkerHealth = {
   };
   checkedAt: string;
   error?: string;
+};
+
+export type AuthSession = {
+  authenticated: boolean;
+  address?: string;
+  expiresAt?: string;
 };
 
 export type SubmissionVerification = {

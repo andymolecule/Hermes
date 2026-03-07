@@ -1,11 +1,11 @@
-import * as x402Core from "@x402/core/server";
-import * as x402Evm from "@x402/evm/exact/server";
-import * as x402Hono from "@x402/hono";
 import {
   extractX402PaymentHeader,
   readX402RuntimeConfig,
   verifyAndSettleX402Payment,
 } from "@agora/common";
+import * as x402Core from "@x402/core/server";
+import * as x402Evm from "@x402/evm/exact/server";
+import * as x402Hono from "@x402/hono";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -50,14 +50,6 @@ const API_PAID_ROUTES: PaidRoute[] = [
     pattern: /^\/api\/verify$/,
     priceUsd: 0.02,
     description: "Verification write endpoint",
-  },
-  {
-    id: "score-preview",
-    method: "POST",
-    path: "/api/score-preview",
-    pattern: /^\/api\/score-preview$/,
-    priceUsd: 0.1,
-    description: "Dry-run scorer compute endpoint",
   },
 ];
 let x402ResolutionLogged = false;
@@ -105,7 +97,9 @@ function resolveNamedExport(
   return { value: undefined, name: null };
 }
 
-function loadX402Middleware(enforce: boolean): MiddlewareHandler<ApiEnv> | null {
+function loadX402Middleware(
+  enforce: boolean,
+): MiddlewareHandler<ApiEnv> | null {
   if (!enforce) return null;
 
   const config = readX402RuntimeConfig();
@@ -130,13 +124,19 @@ function loadX402Middleware(enforce: boolean): MiddlewareHandler<ApiEnv> | null 
     | ((...args: unknown[]) => unknown)
     | undefined;
   const x402ResourceServer = serverResolved.value as
-    | (new (...args: unknown[]) => unknown)
+    | (new (
+        ...args: unknown[]
+      ) => unknown)
     | undefined;
   const facilitatorClient = facilitatorResolved.value as
-    | (new (...args: unknown[]) => unknown)
+    | (new (
+        ...args: unknown[]
+      ) => unknown)
     | undefined;
   const exactEvmScheme = schemeResolved.value as
-    | (new (...args: unknown[]) => unknown)
+    | (new (
+        ...args: unknown[]
+      ) => unknown)
     | undefined;
 
   if (
@@ -228,7 +228,9 @@ export function createX402Middleware(): MiddlewareHandler<ApiEnv> {
       return;
     }
 
-    const paymentHeader = extractX402PaymentHeader((name) => c.req.header(name));
+    const paymentHeader = extractX402PaymentHeader((name) =>
+      c.req.header(name),
+    );
     if (!paymentHeader) {
       return c.json(
         {

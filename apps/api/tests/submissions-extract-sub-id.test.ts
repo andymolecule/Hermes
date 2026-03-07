@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractSubmissionIdFromSubmittedEvent } from "../src/routes/submissions.js";
+import {
+  canReadPublicSubmissionVerification,
+  extractSubmissionIdFromSubmittedEvent,
+} from "../src/routes/submissions.js";
+import { CHALLENGE_STATUS } from "@agora/common";
 
 test("extracts submissionId from named event args", () => {
   const subId = extractSubmissionIdFromSubmittedEvent({
@@ -28,4 +32,23 @@ test("accepts numeric string ids", () => {
 test("returns undefined for invalid payload", () => {
   const subId = extractSubmissionIdFromSubmittedEvent({ submissionId: "bad" });
   assert.equal(subId, undefined);
+});
+
+test("public submission verification stays locked while challenge is open", () => {
+  assert.equal(
+    canReadPublicSubmissionVerification(CHALLENGE_STATUS.open),
+    false,
+  );
+  assert.equal(
+    canReadPublicSubmissionVerification(CHALLENGE_STATUS.scoring),
+    true,
+  );
+  assert.equal(
+    canReadPublicSubmissionVerification(CHALLENGE_STATUS.disputed),
+    true,
+  );
+  assert.equal(
+    canReadPublicSubmissionVerification(CHALLENGE_STATUS.finalized),
+    true,
+  );
 });

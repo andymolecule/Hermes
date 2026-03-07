@@ -1,7 +1,7 @@
 import {
   getSubmissionSealHealth,
+  hasSubmissionSealPublicConfig,
   loadConfig,
-  runSubmissionSealSelfCheck,
 } from "@agora/common";
 
 export async function readSubmissionSealHealth() {
@@ -9,31 +9,17 @@ export async function readSubmissionSealHealth() {
   const health = await getSubmissionSealHealth({
     keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
     publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-    privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
   });
 
-  if (!health.enabled) {
+  if (!hasSubmissionSealPublicConfig(config) || !health.enabled) {
     return {
       ...health,
       selfCheck: "disabled" as const,
     };
   }
 
-  try {
-    await runSubmissionSealSelfCheck({
-      keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID as string,
-      publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string,
-      privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM as string,
-    });
-    return {
-      ...health,
-      selfCheck: "ok" as const,
-    };
-  } catch (error) {
-    return {
-      ...health,
-      selfCheck: "failed" as const,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return {
+    ...health,
+    selfCheck: "ok" as const,
+  };
 }

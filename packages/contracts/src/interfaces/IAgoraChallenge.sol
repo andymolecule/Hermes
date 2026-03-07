@@ -5,7 +5,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 interface IAgoraChallenge {
     enum Status {
-        Active,
+        Open,
         Scoring,
         Finalized,
         Disputed,
@@ -42,6 +42,8 @@ interface IAgoraChallenge {
         bool scored;
     }
 
+    /// @notice Read-side lifecycle truth. After deadline this may report
+    ///         `Scoring` before the persisted `startScoring()` transition lands.
     function status() external view returns (Status);
     function rewardAmount() external view returns (uint256);
     function deadline() external view returns (uint64);
@@ -53,6 +55,8 @@ interface IAgoraChallenge {
     function solverSubmissionCount(address solver) external view returns (uint256);
 
     function submit(bytes32 resultHash) external returns (uint256 subId);
+    /// @notice Persists the `Open -> Scoring` transition after the deadline.
+    function startScoring() external;
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external;
     function finalize() external;
     function dispute(string calldata reason) external;

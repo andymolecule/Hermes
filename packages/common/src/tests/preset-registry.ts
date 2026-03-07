@@ -6,6 +6,7 @@ import {
   getUnpinnedOfficialImages,
   inferPresetIdByContainer,
   lookupPreset,
+  validateScoringContainer,
   validatePresetIntegrity,
 } from "../presets";
 
@@ -67,6 +68,14 @@ const mismatchError = validatePresetIntegrity("regression_v1", csvPreset.contain
 assert.ok(
   mismatchError?.includes("Container mismatch"),
   "mismatched preset/container should be rejected",
+);
+
+const nonCanonicalOfficialError = validateScoringContainer(
+  "ghcr.io/example/repro-scorer:latest",
+);
+assert.ok(
+  nonCanonicalOfficialError?.includes("canonical Agora image reference"),
+  "official scorer repository names should reject alternate GHCR owners",
 );
 
 const officialDigestIntegrity = validatePresetIntegrity(

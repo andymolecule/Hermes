@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildWorkerHealthResponse,
-  deriveWorkerHealthStatus,
   QUEUE_STALE_THRESHOLD_MS,
   RUNNING_STALE_THRESHOLD_MS,
+  buildWorkerHealthResponse,
+  deriveWorkerHealthStatus,
 } from "../src/routes/worker-health.js";
 
 test("worker health warns when queued jobs exceed threshold", () => {
@@ -12,12 +12,15 @@ test("worker health warns when queued jobs exceed threshold", () => {
   const status = deriveWorkerHealthStatus({
     jobs: {
       queued: 1,
+      eligibleQueued: 1,
       running: 0,
       scored: 0,
       failed: 0,
       skipped: 0,
     },
-    oldestPendingAt: new Date(nowMs - QUEUE_STALE_THRESHOLD_MS - 1).toISOString(),
+    oldestPendingAt: new Date(
+      nowMs - QUEUE_STALE_THRESHOLD_MS - 1,
+    ).toISOString(),
     lastScoredAt: null,
     oldestRunningStartedAt: null,
     runningOverThresholdCount: 0,
@@ -32,6 +35,7 @@ test("worker health warns when running jobs exceed threshold", () => {
   const payload = buildWorkerHealthResponse({
     jobs: {
       queued: 0,
+      eligibleQueued: 0,
       running: 1,
       scored: 0,
       failed: 0,
@@ -55,6 +59,7 @@ test("worker health stays idle when there is no queued, running, or failed work"
   const payload = buildWorkerHealthResponse({
     jobs: {
       queued: 0,
+      eligibleQueued: 0,
       running: 0,
       scored: 10,
       failed: 0,

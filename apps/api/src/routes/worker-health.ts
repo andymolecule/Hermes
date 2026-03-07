@@ -1,12 +1,17 @@
 import {
+  getSubmissionSealHealth,
+  hasSubmissionSealPublicConfig,
+  loadConfig,
+} from "@agora/common";
+import {
   createSupabaseClient,
-  getScoreJobCounts,
-  getOldestPendingJobTime,
+  getEligibleQueuedJobCount,
   getLastScoredJobTime,
+  getOldestPendingJobTime,
   getOldestRunningStartedAt,
+  getScoreJobCounts,
   runningOverThresholdCount,
 } from "@agora/db";
-import { getSubmissionSealHealth, loadConfig } from "@agora/common";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
 
@@ -18,6 +23,7 @@ export const RUNNING_STALE_THRESHOLD_MS = 20 * 60 * 1000;
 export interface WorkerHealthSnapshotInput {
   jobs: {
     queued: number;
+    eligibleQueued: number;
     running: number;
     scored: number;
     failed: number;
@@ -39,7 +45,7 @@ export function deriveWorkerHealthStatus(
     : null;
 
   if (
-    input.jobs.queued === 0 &&
+    input.jobs.eligibleQueued === 0 &&
     input.jobs.running === 0 &&
     input.jobs.failed === 0
   ) {
@@ -94,6 +100,7 @@ router.get("/", async (c) => {
 
     const [
       jobs,
+      eligibleQueued,
       oldestPendingAt,
       lastScoredAt,
       oldestRunningStartedAt,
@@ -101,6 +108,7 @@ router.get("/", async (c) => {
       sealing,
     ] = await Promise.all([
       getScoreJobCounts(db),
+      getEligibleQueuedJobCount(db),
       getOldestPendingJobTime(db),
       getLastScoredJobTime(db),
       getOldestRunningStartedAt(db),
@@ -108,23 +116,24 @@ router.get("/", async (c) => {
       getSubmissionSealHealth({
         keyId: config.AGORA_SUBMISSION_SEAL_KEY_ID,
         publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
-        privateKeyPem: config.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
       }),
     ]);
 
     return c.json({
       ...buildWorkerHealthResponse({
-        jobs,
+        jobs: {
+          ...jobs,
+          eligibleQueued,
+        },
         oldestPendingAt,
         lastScoredAt,
         oldestRunningStartedAt,
         runningOverThresholdCount: runningOverThreshold,
       }),
       sealing: {
-        enabled: sealing.enabled,
+        enabled: hasSubmissionSealPublicConfig(config) && sealing.enabled,
         keyId: sealing.keyId,
         publicKeyLoaded: sealing.publicKeyLoaded,
-        privateKeyLoaded: sealing.privateKeyLoaded,
       },
     });
   } catch (error) {
@@ -133,7 +142,9 @@ router.get("/", async (c) => {
         ok: false,
         status: "error",
         error:
-          error instanceof Error ? error.message : "Failed to read worker health",
+          error instanceof Error
+            ? error.message
+            : "Failed to read worker health",
         checkedAt: new Date().toISOString(),
       },
       503,
