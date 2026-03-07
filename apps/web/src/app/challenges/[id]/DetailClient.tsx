@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarClock,
   Clock,
@@ -82,6 +83,28 @@ function SpecSectionSkeleton({ title }: { title: string }) {
       </div>
       <span className="sr-only">{title}</span>
     </section>
+  );
+}
+
+function WarningCallout({
+  title,
+  message,
+}: {
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="rounded-[2px] border border-black bg-[#fff3e8] p-4">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-black" strokeWidth={2} />
+        <div className="space-y-1">
+          <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/60">
+            {title}
+          </div>
+          <p className="text-sm leading-relaxed text-black/75">{message}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -272,6 +295,31 @@ export function DetailClient({ id }: { id: string }) {
     enabled: Boolean(detailQuery.data?.challenge.spec_cid),
     staleTime: 5 * 60 * 1000,
   });
+  const leaderboardEntries = detailQuery.data
+    ? (detailQuery.data.leaderboard.length > 0
+      ? detailQuery.data.leaderboard
+      : detailQuery.data.submissions)
+    : [];
+  const firstScoredSubmission = leaderboardEntries.find(
+    (entry) => entry.scored && entry.score !== null,
+  );
+  const verificationQuery = useQuery<SubmissionVerification>({
+    queryKey: ["submission-verification", firstScoredSubmission?.id],
+    queryFn: () => getPublicSubmissionVerification(firstScoredSubmission?.id as string),
+    enabled: Boolean(firstScoredSubmission?.id),
+    staleTime: 5 * 60 * 1000,
+  });
+  const technicalSpecsErrorMessage =
+    detailQuery.data?.challenge.spec_cid && specQuery.isError
+      ? (specQuery.error instanceof Error
+        ? specQuery.error.message
+        : "Failed to load the challenge specification.")
+      : null;
+  const verificationErrorMessage = verificationQuery.isError
+    ? (verificationQuery.error instanceof Error
+      ? verificationQuery.error.message
+      : "Failed to load verification artifacts.")
+    : null;
 
   if (detailQuery.isLoading) {
     return (
@@ -291,16 +339,8 @@ export function DetailClient({ id }: { id: string }) {
     );
   }
 
-  const { challenge, submissions, leaderboard } = detailQuery.data;
-  const allEntries = leaderboard.length > 0 ? leaderboard : submissions;
+  const { challenge, submissions } = detailQuery.data;
   const spec = specQuery.data;
-  const firstScoredSubmission = allEntries.find((entry) => entry.scored && entry.score !== null);
-  const verificationQuery = useQuery<SubmissionVerification>({
-    queryKey: ["submission-verification", firstScoredSubmission?.id],
-    queryFn: () => getPublicSubmissionVerification(firstScoredSubmission?.id as string),
-    enabled: Boolean(firstScoredSubmission?.id),
-    staleTime: 5 * 60 * 1000,
-  });
   const submissionArtifact = inferSubmissionArtifact(spec);
   const expectedColumns = [
     ...(challenge.expected_columns ?? []),
@@ -375,6 +415,12 @@ export function DetailClient({ id }: { id: string }) {
               </>
             ) : (
               <>
+                {technicalSpecsErrorMessage && (
+                  <WarningCallout
+                    title="Challenge Spec Unavailable"
+                    message={`Detailed IPFS-backed spec data could not be loaded, so this page is showing fallback contract and database metadata. ${technicalSpecsErrorMessage}`}
+                  />
+                )}
                 <Section title="What To Submit" icon={FileText}>
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="space-y-4">
@@ -470,6 +516,11 @@ export function DetailClient({ id }: { id: string }) {
                     <div className="skeleton h-4 w-5/6" />
                     <div className="skeleton h-16 w-full" />
                   </div>
+                ) : verificationErrorMessage ? (
+                  <WarningCallout
+                    title="Verification Unavailable"
+                    message={`Verification artifacts could not be loaded right now. ${verificationErrorMessage}`}
+                  />
                 ) : verification ? (
                   <div className="space-y-5">
                     <p className="text-sm leading-relaxed text-black/75">
@@ -611,7 +662,7 @@ export function DetailClient({ id }: { id: string }) {
 
             <TimelineStatus
               challenge={challenge}
-              submissions={allEntries}
+              submissions={submissions}
             />
           </div>
         </div>
@@ -622,7 +673,7 @@ export function DetailClient({ id }: { id: string }) {
             <Trophy className="w-5 h-5" strokeWidth={2.5} />
             Leaderboard
           </h3>
-          <LeaderboardTable rows={allEntries} />
+          <LeaderboardTable rows={leaderboardEntries} />
         </div>
       </div>
     </div>
