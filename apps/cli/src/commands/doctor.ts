@@ -15,6 +15,8 @@ interface DoctorCheck {
   detail: string;
 }
 
+const ACTIVE_FACTORY_CURSOR_WINDOW_MS = 15 * 60 * 1000;
+
 function isHexAddress(value: string | undefined) {
   return !!value && /^0x[a-fA-F0-9]{40}$/.test(value);
 }
@@ -59,6 +61,14 @@ export function buildDoctorCommand() {
         detail: isHexAddress(config.usdc_address)
           ? "valid address"
           : "HERMES_USDC_ADDRESS missing or invalid",
+      });
+      checks.push({
+        name: "Runtime identity",
+        status:
+          config.chain_id && isHexAddress(config.factory_address) && isHexAddress(config.usdc_address)
+            ? "ok"
+            : "warn",
+        detail: `chainId=${config.chain_id ?? "?"} factory=${config.factory_address ?? "missing"} usdc=${config.usdc_address ?? "missing"}`,
       });
       checks.push({
         name: "Supabase",
@@ -205,6 +215,115 @@ export function buildDoctorCommand() {
           name: "Supabase connectivity",
           status: "skip",
           detail: "Supabase config missing",
+        });
+      }
+
+      if (
+        config.supabase_url &&
+        config.supabase_service_key &&
+        config.chain_id &&
+        isHexAddress(config.factory_address)
+      ) {
+        try {
+          const db = createSupabaseClient(
+            config.supabase_url,
+            config.supabase_service_key,
+            {
+              auth: { persistSession: false },
+            },
+          );
+          const cursorPrefix = `factory:${config.chain_id}:`;
+          const configuredCursorKey =
+            `${cursorPrefix}${config.factory_address.toLowerCase()}`;
+          const { data: cursorRows, error } = await db
+            .from("indexer_cursors")
+            .select("cursor_key, block_number, updated_at")
+            .like("cursor_key", `${cursorPrefix}%`)
+            .order("updated_at", { ascending: false });
+          if (error) {
+            throw new Error(error.message);
+          }
+
+          const configuredCursor = (cursorRows ?? []).find(
+            (row) => row.cursor_key === configuredCursorKey,
+          );
+          const activeAlternates = (cursorRows ?? [])
+            .filter((row) => row.cursor_key !== configuredCursorKey)
+            .filter((row) => {
+              const updatedAtMs = Date.parse(String(row.updated_at ?? ""));
+              return (
+                Number.isFinite(updatedAtMs) &&
+                Date.now() - updatedAtMs <= ACTIVE_FACTORY_CURSOR_WINDOW_MS
+              );
+            });
+          const status =
+            activeAlternates.length > 0
+              ? "warn"
+              : configuredCursor
+                ? "ok"
+                : "warn";
+          checks.push({
+            name: "Indexer cursor alignment",
+            status,
+            detail: configuredCursor
+              ? `configuredBlock=${configuredCursor.block_number} alternateActiveFactories=${activeAlternates.length}`
+              : `configured cursor missing; alternateActiveFactories=${activeAlternates.length}`,
+          });
+        } catch (error) {
+          checks.push({
+            name: "Indexer cursor alignment",
+            status: "error",
+            detail:
+              error instanceof Error ? error.message : "Indexer cursor query failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "Indexer cursor alignment",
+          status: "skip",
+          detail:
+            "Supabase service key, chain id, or factory address missing",
+        });
+      }
+
+      if (config.supabase_url && config.supabase_service_key) {
+        try {
+          const db = createSupabaseClient(
+            config.supabase_url,
+            config.supabase_service_key,
+            {
+              auth: { persistSession: false },
+            },
+          );
+          const { count, error } = await db
+            .from("challenges")
+            .select("id", { count: "exact", head: true })
+            .is("factory_address", null);
+          if (error) {
+            throw new Error(error.message);
+          }
+          const missingCount = count ?? 0;
+          checks.push({
+            name: "Challenge factory backfill",
+            status: missingCount === 0 ? "ok" : "warn",
+            detail:
+              missingCount === 0
+                ? "all challenge rows have factory_address"
+                : `${missingCount} challenge rows are missing factory_address`,
+          });
+        } catch (error) {
+          checks.push({
+            name: "Challenge factory backfill",
+            status: "error",
+            detail:
+              error instanceof Error ? error.message : "Challenge backfill query failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "Challenge factory backfill",
+          status: "skip",
+          detail: "Supabase service key missing",
         });
       }
 

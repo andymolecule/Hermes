@@ -1,4 +1,4 @@
-import { loadConfig } from "@hermes/common";
+import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
 import HermesChallengeAbiJson from "@hermes/common/abi/HermesChallenge.json" with {
   type: "json",
 };
@@ -67,6 +67,8 @@ export async function runIndexer() {
         : envStartBlock);
 
   let pollCount = 0;
+
+  console.log("[indexer] runtime identity", getHermesRuntimeIdentity(config));
 
   while (true) {
     try {

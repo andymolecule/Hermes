@@ -4,7 +4,7 @@ module.exports = {
       name: "hermes-api",
       cwd: process.cwd(),
       script: "node",
-      args: "apps/api/dist/index.js",
+      args: "scripts/run-node-with-root-env.mjs apps/api/dist/index.js",
       env: {
         NODE_ENV: "production",
       },
@@ -18,7 +18,7 @@ module.exports = {
       name: "hermes-indexer",
       cwd: process.cwd(),
       script: "node",
-      args: "packages/chain/dist/indexer.js",
+      args: "scripts/run-node-with-root-env.mjs packages/chain/dist/indexer.js",
       env: {
         NODE_ENV: "production",
       },
@@ -32,7 +32,7 @@ module.exports = {
       name: "hermes-worker",
       cwd: process.cwd(),
       script: "node",
-      args: "apps/api/dist/worker.js",
+      args: "scripts/run-node-with-root-env.mjs apps/api/dist/worker.js",
       env: {
         NODE_ENV: "production",
       },
@@ -46,7 +46,7 @@ module.exports = {
       name: "hermes-mcp",
       cwd: process.cwd(),
       script: "node",
-      args: "apps/mcp-server/dist/index.js",
+      args: "scripts/run-node-with-root-env.mjs apps/mcp-server/dist/index.js",
       env: {
         NODE_ENV: "production",
       },

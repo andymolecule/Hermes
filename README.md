@@ -104,6 +104,11 @@ Required environment variables:
 | `HERMES_SUPABASE_ANON_KEY` | Supabase anon key |
 | `HERMES_SUPABASE_SERVICE_KEY` | Supabase service key (indexer) |
 
+Environment rule:
+- Each environment must use exactly one canonical `(chain id, factory address, USDC address)` tuple.
+- Align `HERMES_*` and `NEXT_PUBLIC_HERMES_*` values to the same tuple.
+- Do not keep app-local `.env.local` contract overrides checked into git.
+
 ## Local Development
 
 ```bash
@@ -115,9 +120,9 @@ pnpm turbo test
 Run services:
 
 ```bash
-node apps/api/dist/index.js          # API on :3000
-node apps/mcp-server/dist/index.js   # MCP on :3001
-node packages/chain/dist/indexer.js  # Chain indexer
+pnpm --filter @hermes/api start      # API on :3000 (loads root .env)
+pnpm --filter @hermes/mcp-server start # MCP on :3001 (loads root .env)
+pnpm --filter @hermes/chain indexer  # Chain indexer (loads root .env)
 ```
 
 Run web frontend:

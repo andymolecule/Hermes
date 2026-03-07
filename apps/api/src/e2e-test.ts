@@ -84,9 +84,10 @@ async function main() {
     // Register in DB directly (skip buildChallengeInsert which expects full parsed spec)
     const chalRow = {
         chain_id: config.HERMES_CHAIN_ID,
-        contract_address: challengeAddress,
+        contract_address: challengeAddress.toLowerCase(),
+        factory_address: config.HERMES_FACTORY_ADDRESS,
         factory_challenge_id: Number(createdEvent?.args?.id ?? 0),
-        poster_address: account.address,
+        poster_address: account.address.toLowerCase(),
         title: spec.title,
         description: spec.description,
         domain: spec.domain,

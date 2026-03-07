@@ -1,9 +1,7 @@
-import { getPublicClient } from "@hermes/chain";
+import { getPublicClient, loadChallengeDefinitionFromChain } from "@hermes/chain";
 import {
   CHALLENGE_LIMITS,
   ON_CHAIN_STATUS_ORDER,
-  validateChallengeSpec,
-  isValidPinnedSpecCid,
   loadConfig,
   validateScoringContainer,
 } from "@hermes/common";
@@ -14,11 +12,9 @@ import {
   createSupabaseClient,
   upsertChallenge,
 } from "@hermes/db";
-import { getText } from "@hermes/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { type Abi, parseEventLogs } from "viem";
-import yaml from "yaml";
 import { z } from "zod";
 import {
   getChallengeWithLeaderboard,
@@ -35,6 +31,12 @@ const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 const createChallengeBodySchema = z.object({
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
+
+function normalizeAddress(value: string | null | undefined) {
+  return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
+    ? (value.toLowerCase() as `0x${string}`)
+    : undefined;
+}
 
 function getLogArg(
   args: readonly unknown[] | Record<string, unknown> | undefined,
@@ -74,14 +76,9 @@ router.post(
       return c.json({ error: "Transaction failed." }, 400);
     }
 
-    const factoryAddress = config.HERMES_FACTORY_ADDRESS.toLowerCase();
-    const factoryLogs = receipt.logs.filter(
-      (log) => log.address.toLowerCase() === factoryAddress,
-    );
-
     const logs = parseEventLogs({
       abi: HermesFactoryAbi,
-      logs: factoryLogs,
+      logs: receipt.logs,
       strict: false,
     });
 
@@ -110,28 +107,23 @@ router.post(
     }
 
     // Source of truth: read specCid from challenge contract, not client payload.
-    const specCid = await publicClient.readContract({
-      address: challengeAddress as `0x${string}`,
-      abi: HermesChallengeAbi,
-      functionName: "specCid",
-    }) as string;
-    if (!isValidPinnedSpecCid(specCid)) {
-      return c.json({ error: "Challenge spec CID is invalid or placeholder." }, 400);
+    let specCid: string;
+    let spec;
+    let onChainDeadlineIso: string;
+    try {
+      ({
+        specCid,
+        spec,
+        onChainDeadlineIso,
+      } = await loadChallengeDefinitionFromChain({
+        publicClient,
+        challengeAddress: challengeAddress as `0x${string}`,
+        chainId: config.HERMES_CHAIN_ID,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: message }, 400);
     }
-
-    const rawSpec = await getText(specCid);
-    const parsedSpec = yaml.parse(rawSpec) as Record<string, unknown>;
-    if (parsedSpec.deadline instanceof Date) {
-      parsedSpec.deadline = parsedSpec.deadline.toISOString();
-    }
-    const specResult = validateChallengeSpec(parsedSpec, config.HERMES_CHAIN_ID);
-    if (!specResult.success) {
-      return c.json(
-        { error: "Invalid challenge spec", issues: specResult.error.issues },
-        400,
-      );
-    }
-    const spec = specResult.data;
 
     // P0: Reject unscorable bounties — container must be valid
     const containerError = validateScoringContainer(spec.scoring.container);
@@ -141,9 +133,12 @@ router.post(
 
     let challengeInsert;
     try {
+      const factoryAddress =
+        normalizeAddress(receipt.to) ?? config.HERMES_FACTORY_ADDRESS;
       challengeInsert = await buildChallengeInsert({
         chainId: config.HERMES_CHAIN_ID,
         contractAddress: challengeAddress,
+        factoryAddress,
         factoryChallengeId: Number(challengeId),
         posterAddress,
         specCid,
@@ -153,6 +148,7 @@ router.post(
           spec.dispute_window_hours ??
           CHALLENGE_LIMITS.defaultDisputeWindowHours,
         txHash,
+        onChainDeadline: onChainDeadlineIso,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -192,7 +188,6 @@ router.get("/:id/claimable", async (c) => {
 
   const contractAddress = challenge.contract_address as `0x${string}`;
   const publicClient = getPublicClient();
-  const HermesChallengeAbi = HermesChallengeAbiJson as unknown as Abi;
 
   // Read on-chain status and timing values (source of truth)
   const [onChainStatusRaw, onChainDeadline, onChainDisputeWindowHours] =

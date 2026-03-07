@@ -7,7 +7,7 @@ This runbook is for Base Sepolia operations before opening Hermes to real users.
 1. Merge latest `main` and deploy from `main` only.
 2. Ensure all required environment variables are set in your host platform.
 3. Apply Supabase migrations in `packages/db/supabase/migrations`.
-4. Confirm contract addresses are correct in API, indexer, CLI, and web env.
+4. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 5. Set API CORS allowlist via `HERMES_CORS_ORIGINS` (comma-separated exact origins).
 6. Build and run preflight:
 
@@ -31,9 +31,9 @@ Four processes run in production: **API**, **Indexer**, **Worker** (scoring auto
 ### Option A: Manual
 
 ```bash
-node apps/api/dist/index.js
-node packages/chain/dist/indexer.js
-node apps/api/dist/worker.js
+pnpm --filter @hermes/api start
+pnpm --filter @hermes/chain indexer
+pnpm --filter @hermes/api worker
 ```
 
 ### Option B: PM2 (recommended)
@@ -78,6 +78,7 @@ Check every 15-30 minutes during first launch window:
 4. `hm doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true`.
 6. Tail worker logs: `pm2 logs hermes-worker --lines 50`.
+7. Indexer health: `curl <API_URL>/api/indexer-health` should report the intended factory address and no active alternate factories.
 
 ### Confirming the worker is scoring
 
@@ -109,6 +110,7 @@ hm reindex --from-block <block_number>
 
 6. If a deep replay is required, include `--purge-indexed-events`.
 7. Ensure `HERMES_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
+8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then rewind the new factory cursor.
 
 ### Bad deploy / regression
 

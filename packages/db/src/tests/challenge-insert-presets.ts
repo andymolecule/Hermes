@@ -9,6 +9,7 @@ import { buildChallengeInsert } from "../queries/challenges";
 const baseInput = {
   chainId: DEFAULT_CHAIN_ID,
   contractAddress: "0x0000000000000000000000000000000000000001",
+  factoryAddress: "0x000000000000000000000000000000000000000f",
   factoryChallengeId: 1,
   posterAddress: "0x0000000000000000000000000000000000000002",
   specCid: "ipfs://bafybeigdyrztz4x",
@@ -44,6 +45,10 @@ const insertWithPreset = await buildChallengeInsert({
   spec: regressionSpec,
 });
 assert.equal(insertWithPreset.scoring_preset_id, "regression_v1");
+assert.equal(
+  insertWithPreset.factory_address,
+  "0x000000000000000000000000000000000000000f",
+);
 assert.equal(
   insertWithPreset.max_submissions_total,
   SUBMISSION_LIMITS.maxPerChallenge,
@@ -85,6 +90,14 @@ const insertInferred = await buildChallengeInsert({
 assert.equal(insertInferred.scoring_preset_id, "regression_v1");
 assert.equal(insertInferred.eval_engine_id, "regression_v1");
 assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
+
+const insertWithOnChainDeadline = await buildChallengeInsert({
+  ...baseInput,
+  factoryChallengeId: 15,
+  spec: inferredSpec,
+  onChainDeadline: "2027-01-01T00:00:00Z",
+});
+assert.equal(insertWithOnChainDeadline.deadline, "2027-01-01T00:00:00Z");
 
 const mismatchSpec = challengeSpecSchema.parse({
   ...regressionSpec,

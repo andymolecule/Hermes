@@ -1,10 +1,10 @@
 import { serve } from "@hono/node-server";
-import { loadConfig } from "@hermes/common";
+import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
 import { createApp } from "./app.js";
 import { readSubmissionSealHealth } from "./lib/submission-seal-health.js";
 
 async function start() {
-  loadConfig();
+  const config = loadConfig();
   const sealHealth = await readSubmissionSealHealth();
   if (sealHealth.enabled && sealHealth.selfCheck !== "ok") {
     throw new Error(
@@ -14,9 +14,11 @@ async function start() {
 
   const port = Number(process.env.HERMES_API_PORT ?? 3000);
   const app = createApp();
+  const runtimeIdentity = getHermesRuntimeIdentity(config);
 
   serve({ fetch: app.fetch, port });
 
+  console.log("Hermes API runtime identity", runtimeIdentity);
   console.log(`Hermes API listening on http://localhost:${port}`);
 }
 

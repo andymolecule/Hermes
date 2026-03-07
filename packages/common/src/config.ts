@@ -80,6 +80,13 @@ const configSchema = z.object({
 
 export type HermesConfig = z.infer<typeof configSchema>;
 
+export interface HermesRuntimeIdentity {
+  chainId: number;
+  factoryAddress: `0x${string}`;
+  usdcAddress: `0x${string}`;
+  rpcUrl: string;
+}
+
 function formatZodError(error: z.ZodError): string {
   const lines = error.issues.map((issue) => {
     const path = issue.path.join(".") || "(root)";
@@ -125,6 +132,17 @@ export function loadConfig(): HermesConfig {
 
   cachedConfig = config;
   return cachedConfig;
+}
+
+export function getHermesRuntimeIdentity(
+  config: HermesConfig = loadConfig(),
+): HermesRuntimeIdentity {
+  return {
+    chainId: config.HERMES_CHAIN_ID,
+    factoryAddress: config.HERMES_FACTORY_ADDRESS,
+    usdcAddress: config.HERMES_USDC_ADDRESS,
+    rpcUrl: config.HERMES_RPC_URL,
+  };
 }
 
 export function resetConfigCache() {

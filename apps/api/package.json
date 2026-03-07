@@ -7,9 +7,10 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "worker": "node --env-file=../../.env dist/worker.js",
-    "worker:dev": "node --import tsx --env-file=../../.env src/worker.ts",
+    "start": "node ../../scripts/run-node-with-root-env.mjs dist/index.js",
+    "dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/index.ts",
+    "worker": "node ../../scripts/run-node-with-root-env.mjs dist/worker.js",
+    "worker:dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/worker.ts",
     "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
   },
   "dependencies": {

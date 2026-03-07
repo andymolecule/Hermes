@@ -1,5 +1,5 @@
 import { getPublicClient } from "@hermes/chain";
-import { loadConfig } from "@hermes/common";
+import { getHermesRuntimeIdentity, loadConfig } from "@hermes/common";
 import { createSupabaseClient } from "@hermes/db";
 import { Hono } from "hono";
 import type { ApiEnv } from "../types.js";
@@ -13,6 +13,9 @@ const INDEXER_CONFIRMATION_DEPTH = (() => {
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.floor(parsed);
 })();
+const ACTIVE_FACTORY_CURSOR_WINDOW_MS = Number(
+  process.env.HERMES_INDEXER_ACTIVE_CURSOR_WINDOW_MS ?? 15 * 60 * 1000,
+);
 
 type LagStatus = "ok" | "warning" | "critical" | "empty" | "error";
 
@@ -28,28 +31,44 @@ const router = new Hono<ApiEnv>();
 router.get("/", async (c) => {
   try {
     const config = loadConfig();
+    const runtimeIdentity = getHermesRuntimeIdentity(config);
     const db = createSupabaseClient(true);
     const publicClient = getPublicClient();
 
     // Build the cursor key the indexer uses
-    const factoryAddress = config.HERMES_FACTORY_ADDRESS.toLowerCase();
-    const chainId = config.HERMES_CHAIN_ID;
+    const factoryAddress = runtimeIdentity.factoryAddress.toLowerCase();
+    const chainId = runtimeIdentity.chainId;
     const cursorKey = `factory:${chainId}:${factoryAddress}`;
+    const factoryCursorPrefix = `factory:${chainId}:`;
 
     // Source of truth: read from indexer_cursors only.
-    const [{ data: cursorRow, error: cursorError }, chainHead] =
+    const [
+      { data: cursorRow, error: cursorError },
+      { data: factoryCursorRows, error: factoryCursorError },
+      chainHead,
+    ] =
       await Promise.all([
         db
           .from("indexer_cursors")
           .select("block_number")
           .eq("cursor_key", cursorKey)
           .maybeSingle(),
+        db
+          .from("indexer_cursors")
+          .select("cursor_key, block_number, updated_at")
+          .like("cursor_key", `${factoryCursorPrefix}%`)
+          .order("updated_at", { ascending: false }),
         publicClient.getBlockNumber(),
       ]);
 
     if (cursorError) {
       throw new Error(
         `Failed to read indexer cursor: ${cursorError.message}`,
+      );
+    }
+    if (factoryCursorError) {
+      throw new Error(
+        `Failed to read factory cursors: ${factoryCursorError.message}`,
       );
     }
 
@@ -65,7 +84,32 @@ router.get("/", async (c) => {
       indexedHead === null
         ? finalizedHead
         : Math.max(finalizedHead - Number(indexedHead), 0);
-    const status = toLagStatus(lagBlocks, indexedHead !== null);
+    const nowMs = Date.now();
+    const activeAlternateFactories = (factoryCursorRows ?? [])
+      .filter((row) => row.cursor_key !== cursorKey)
+      .map((row) => {
+        const parts = row.cursor_key.split(":");
+        return {
+          factoryAddress: parts[2] ?? row.cursor_key,
+          blockNumber: Number(row.block_number ?? 0),
+          updatedAt: String(row.updated_at ?? ""),
+        };
+      })
+      .filter((row) => {
+        const updatedAtMs = Date.parse(row.updatedAt);
+        return (
+          Number.isFinite(updatedAtMs) &&
+          nowMs - updatedAtMs <= ACTIVE_FACTORY_CURSOR_WINDOW_MS
+        );
+      });
+    const hasAlternateActiveFactory = activeAlternateFactories.length > 0;
+    const mismatchMessage = hasAlternateActiveFactory
+      ? "Configured factory cursor is not the only active factory cursor on this chain. Check deployment env alignment."
+      : null;
+    let status = toLagStatus(lagBlocks, indexedHead !== null);
+    if (status === "ok" && hasAlternateActiveFactory) {
+      status = "warning";
+    }
 
     const body = {
       ok: status === "ok" || status === "warning" || status === "empty",
@@ -75,6 +119,16 @@ router.get("/", async (c) => {
       indexedHead,
       lagBlocks,
       confirmationDepth: INDEXER_CONFIRMATION_DEPTH,
+      configured: {
+        chainId: runtimeIdentity.chainId,
+        factoryAddress: runtimeIdentity.factoryAddress,
+        usdcAddress: runtimeIdentity.usdcAddress,
+      },
+      activeAlternateFactories,
+      mismatch: {
+        hasAlternateActiveFactory,
+        message: mismatchMessage,
+      },
       thresholds: {
         warning: WARN_LAG_BLOCKS,
         critical: CRITICAL_LAG_BLOCKS,

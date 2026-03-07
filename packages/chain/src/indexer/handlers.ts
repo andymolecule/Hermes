@@ -1,10 +1,8 @@
 import {
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  validateChallengeSpec,
   parseCsvHeaders,
   getSubmissionLimitViolation,
-  isValidPinnedSpecCid,
   resolveSubmissionLimits,
   type HermesConfig,
 } from "@hermes/common";
@@ -30,8 +28,8 @@ import {
 } from "@hermes/db";
 import { getText } from "@hermes/ipfs";
 import { type Abi } from "viem";
-import yaml from "yaml";
 import { getPublicClient } from "../client.js";
+import { fetchValidatedChallengeSpec, loadChallengeDefinitionFromChain } from "../challenge-definition.js";
 import {
   clearRetryableEvent,
   isRetryableError,
@@ -57,6 +55,7 @@ export interface ParsedLog {
 export interface ChallengeListRow {
   id: string;
   contract_address: string;
+  factory_address?: string | null;
   tx_hash: string;
   status: string;
   max_submissions_total?: number | null;
@@ -84,26 +83,11 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
 }
 
 async function fetchChallengeSpec(specCid: string, chainId: number) {
-  if (!isValidPinnedSpecCid(specCid)) {
-    throw new Error(`Invalid or placeholder spec CID: ${specCid}`);
-  }
-
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= SPEC_FETCH_MAX_RETRIES; attempt++) {
     try {
-      const raw = await getText(specCid);
-      const parsed = yaml.parse(raw) as Record<string, unknown>;
-      if (parsed.deadline instanceof Date) {
-        parsed.deadline = parsed.deadline.toISOString();
-      }
-      const result = validateChallengeSpec(parsed, chainId);
-      if (!result.success) {
-        throw new Error(
-          `Invalid challenge spec: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-        );
-      }
-      return result.data;
+      return await fetchValidatedChallengeSpec(specCid, chainId);
     } catch (error) {
       lastError = error;
 
@@ -239,26 +223,22 @@ export async function processFactoryLog(input: {
         "rewardAmount",
       );
 
-      const [specCid, onChainDeadline] = await Promise.all([
-        publicClient.readContract({
-          address: challengeAddr,
-          abi: HermesChallengeAbi,
-          functionName: "specCid",
-        }) as Promise<string>,
-        publicClient.readContract({
-          address: challengeAddr,
-          abi: HermesChallengeAbi,
-          functionName: "deadline",
-        }) as Promise<bigint>,
-      ]);
-
-      const spec = await fetchChallengeSpec(specCid, config.HERMES_CHAIN_ID);
+      const {
+        specCid,
+        spec,
+        onChainDeadlineIso,
+      } = await loadChallengeDefinitionFromChain({
+        publicClient,
+        challengeAddress: challengeAddr,
+        chainId: config.HERMES_CHAIN_ID,
+      });
 
       await upsertChallenge(
         db,
         await buildChallengeInsert({
           chainId: config.HERMES_CHAIN_ID,
           contractAddress: challengeAddr,
+          factoryAddress: config.HERMES_FACTORY_ADDRESS,
           factoryChallengeId: Number(id),
           posterAddress: poster,
           specCid,
@@ -267,8 +247,8 @@ export async function processFactoryLog(input: {
           disputeWindowHours:
             spec.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours,
           txHash,
-          // On-chain deadline is the source of truth — spec deadline is informational
-          onChainDeadline: new Date(Number(onChainDeadline) * 1000).toISOString(),
+          // On-chain deadline is the source of truth — spec deadline is informational.
+          onChainDeadline: onChainDeadlineIso,
         }),
       );
 

@@ -111,7 +111,7 @@ export function HomeClient() {
             <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{activeChallenges.length}</div>
           </div>
           <div className="bg-white px-5 py-5 border-r border-black">
-            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Submissions</div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-[0.15em] text-black/40 text-left">Total Submissions</div>
             <div className="text-2xl font-display font-bold text-black tabular-nums text-left mt-2">{totalSubs}</div>
           </div>
           <div className="bg-white px-5 py-5">
@@ -200,7 +200,7 @@ export function HomeClient() {
         <>
           <div className="flex items-center justify-between">
             <span className="text-sm font-mono font-bold text-black/60 tabular-nums">
-              {rows.length} {rows.length === 1 ? "result" : "results"}
+              {rows.length} {rows.length === 1 ? "challenge" : "challenges"}
             </span>
           </div>
           <div className="bg-plus-pattern border border-black p-4 sm:p-8 rounded-[2px]">

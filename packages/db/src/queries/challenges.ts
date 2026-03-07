@@ -15,6 +15,7 @@ import {
 export interface ChallengeInsert {
   chain_id: number;
   contract_address: string;
+  factory_address: string;
   factory_challenge_id: number;
   poster_address: string;
   title: string;
@@ -44,6 +45,7 @@ export interface ChallengeInsert {
 export interface BuildChallengeInsertInput {
   chainId: number;
   contractAddress: string;
+  factoryAddress: string;
   factoryChallengeId: number;
   posterAddress: string;
   specCid: string;
@@ -282,9 +284,10 @@ export async function buildChallengeInsert(
 
   return {
     chain_id: input.chainId,
-    contract_address: input.contractAddress,
+    contract_address: input.contractAddress.toLowerCase(),
+    factory_address: input.factoryAddress.toLowerCase(),
     factory_challenge_id: input.factoryChallengeId,
-    poster_address: input.posterAddress,
+    poster_address: input.posterAddress.toLowerCase(),
     title: input.spec.title,
     description: input.spec.description,
     domain: input.spec.domain,
@@ -323,7 +326,7 @@ export async function upsertChallenge(
   const { data, error } = await db
     .from("challenges")
     .upsert(payload, {
-      onConflict: "chain_id,factory_challenge_id",
+      onConflict: "chain_id,contract_address",
     })
     .select("*")
     .single();
@@ -349,7 +352,7 @@ export async function listChallenges(db: HermesDbClient) {
   const { data, error } = await db
     .from("challenges")
     .select(
-      "id, contract_address, tx_hash, status, max_submissions_total, max_submissions_per_solver",
+      "id, contract_address, factory_address, tx_hash, status, max_submissions_total, max_submissions_per_solver",
     );
   if (error) {
     throw new Error(`Failed to list challenges: ${error.message}`);

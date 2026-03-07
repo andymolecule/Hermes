@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { loadConfig, runSubmissionSealSelfCheck } from "@hermes/common";
+import {
+  getHermesRuntimeIdentity,
+  loadConfig,
+  runSubmissionSealSelfCheck,
+} from "@hermes/common";
 import {
   claimNextJob,
   createSupabaseClient,
@@ -110,6 +114,7 @@ export async function startWorker() {
     pollIntervalMs: POLL_INTERVAL_MS,
     finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
     workerId: WORKER_ID,
+    runtimeIdentity: getHermesRuntimeIdentity(config),
   });
 
   let lastFinalizeSweepAt = 0;

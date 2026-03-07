@@ -12,6 +12,7 @@ export type Challenge = {
   deadline: string;
   challenge_type: string;
   contract_address: string;
+  factory_address?: string | null;
   submissions_count?: number;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
@@ -127,6 +128,32 @@ export type WorkerHealth = {
   };
   metrics?: {
     oldestQueuedAgeMs: number | null;
+  };
+  checkedAt: string;
+  error?: string;
+};
+
+export type IndexerHealth = {
+  ok: boolean;
+  status: "ok" | "warning" | "critical" | "empty" | "error";
+  chainHead?: number;
+  finalizedHead?: number;
+  indexedHead?: number | null;
+  lagBlocks?: number;
+  confirmationDepth?: number;
+  configured?: {
+    chainId: number;
+    factoryAddress: string;
+    usdcAddress: string;
+  };
+  activeAlternateFactories?: Array<{
+    factoryAddress: string;
+    blockNumber: number;
+    updatedAt: string;
+  }>;
+  mismatch?: {
+    hasAlternateActiveFactory: boolean;
+    message: string | null;
   };
   checkedAt: string;
   error?: string;
