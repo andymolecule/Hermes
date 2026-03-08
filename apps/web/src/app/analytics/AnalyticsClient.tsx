@@ -1,5 +1,6 @@
 "use client";
 
+import { PROTOCOL_FEE_PERCENT } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -501,7 +502,7 @@ export function AnalyticsClient() {
                 <HeroMetric
                   label="Protocol Revenue"
                   value={`$${formatUsdc(d.protocolRevenueUsdc ?? 0)}`}
-                  sub="5% fee"
+                  sub={`${PROTOCOL_FEE_PERCENT}% fee`}
                 />
               </div>
               <div className="p-5 text-center">

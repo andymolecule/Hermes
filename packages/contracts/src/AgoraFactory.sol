@@ -33,12 +33,16 @@ contract AgoraFactory is Ownable {
 
     function setOracle(address newOracle) external onlyOwner {
         if (newOracle == address(0)) revert AgoraErrors.InvalidAddress();
+        address previousOracle = oracle;
         oracle = newOracle;
+        emit AgoraEvents.FactoryOracleUpdated(previousOracle, newOracle);
     }
 
     function setTreasury(address newTreasury) external onlyOwner {
         if (newTreasury == address(0)) revert AgoraErrors.InvalidAddress();
+        address previousTreasury = treasury;
         treasury = newTreasury;
+        emit AgoraEvents.FactoryTreasuryUpdated(previousTreasury, newTreasury);
     }
 
     function createChallenge(

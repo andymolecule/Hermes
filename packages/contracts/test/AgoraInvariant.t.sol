@@ -48,7 +48,7 @@ contract AgoraInvariantHandler is Test {
         vm.prank(poster);
         usdc.transfer(address(challenge), rewardAmount);
 
-        fee = (rewardAmount * 500) / 10_000;
+        fee = (rewardAmount * challenge.PROTOCOL_FEE_BPS()) / 10_000;
     }
 
     function submitA() public {
@@ -71,6 +71,7 @@ contract AgoraInvariantHandler is Test {
         if (block.timestamp <= challenge.deadline()) {
             vm.warp(uint256(challenge.deadline()) + 1);
         }
+        try challenge.startScoring() {} catch {}
         vm.prank(oracle);
         challenge.postScore(subA, score, keccak256("p1"));
     }
@@ -83,6 +84,7 @@ contract AgoraInvariantHandler is Test {
         if (block.timestamp <= challenge.deadline()) {
             vm.warp(uint256(challenge.deadline()) + 1);
         }
+        try challenge.startScoring() {} catch {}
         vm.prank(oracle);
         challenge.postScore(subB, score, keccak256("p2"));
     }

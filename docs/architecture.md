@@ -107,7 +107,7 @@ flowchart LR
         C4["Scores (uint256, 1e18 WAD)"]
         C5["Proof Bundle Hashes"]
         C6["Payout Distribution"]
-        C7["5% Protocol Fee"]
+        C7["10% Protocol Fee"]
     end
 
     subgraph OffChain["☁️ OFF-CHAIN (Scalable)"]
@@ -250,8 +250,8 @@ sequenceDiagram
 
     rect rgb(40, 40, 60)
         Note over Escrow: Finalization
-        Escrow->>USDC: transfer(Treasury, 5% fee)
-        Escrow->>Escrow: setPayout(winner, 95%)
+        Escrow->>USDC: transfer(Treasury, 10% fee)
+        Escrow->>Escrow: setPayout(winner, 90%)
     end
 
     Winner->>Escrow: claim()
@@ -341,7 +341,7 @@ sequenceDiagram
     Note over Chain: After deadline + dispute window...
 
     Chain->>Chain: finalize()
-    Chain->>Chain: 5% → treasury, 95% → winner payout
+    Chain->>Chain: 10% → treasury, 90% → winner payout
     Chain-->>Chain: emit PayoutAllocated + SettlementFinalized
 
     Note over Chain: Winner calls claim()

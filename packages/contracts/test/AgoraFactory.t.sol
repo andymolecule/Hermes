@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import {AgoraFactory} from "../src/AgoraFactory.sol";
+import {AgoraChallenge} from "../src/AgoraChallenge.sol";
 import {IAgoraChallenge} from "../src/interfaces/IAgoraChallenge.sol";
 import {AgoraErrors} from "../src/libraries/AgoraErrors.sol";
 import {MockUSDC} from "./MockUSDC.sol";
@@ -10,6 +11,9 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 contract AgoraFactoryTest is Test {
+    event FactoryOracleUpdated(address indexed previousOracle, address indexed newOracle);
+    event FactoryTreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+
     MockUSDC private usdc;
     AgoraFactory private factory;
 
@@ -68,6 +72,8 @@ contract AgoraFactoryTest is Test {
 
     function testSetOracleAsOwner() public {
         address newOracle = address(0xDEAD);
+        vm.expectEmit(true, true, false, false, address(factory));
+        emit FactoryOracleUpdated(oracle, newOracle);
         factory.setOracle(newOracle);
         assertEq(factory.oracle(), newOracle);
     }
@@ -85,8 +91,35 @@ contract AgoraFactoryTest is Test {
 
     function testSetTreasuryAsOwner() public {
         address newTreasury = address(0xBEEF);
+        vm.expectEmit(true, true, false, false, address(factory));
+        emit FactoryTreasuryUpdated(treasury, newTreasury);
         factory.setTreasury(newTreasury);
         assertEq(factory.treasury(), newTreasury);
+    }
+
+    function testOracleAndTreasuryUpdatesOnlyAffectFutureChallenges() public {
+        vm.prank(poster);
+        (, address firstChallengeAddr) = factory.createChallenge(
+            "cid-1", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0), 0, 0
+        );
+
+        address newOracle = address(0xDEAD);
+        address newTreasury = address(0xBEEF);
+        factory.setOracle(newOracle);
+        factory.setTreasury(newTreasury);
+
+        vm.prank(poster);
+        (, address secondChallengeAddr) = factory.createChallenge(
+            "cid-2", 10e6, uint64(block.timestamp + 1 days), 168, 0, 0, address(0), 0, 0
+        );
+
+        AgoraChallenge firstChallenge = AgoraChallenge(firstChallengeAddr);
+        AgoraChallenge secondChallenge = AgoraChallenge(secondChallengeAddr);
+
+        assertEq(firstChallenge.oracle(), oracle);
+        assertEq(firstChallenge.treasury(), treasury);
+        assertEq(secondChallenge.oracle(), newOracle);
+        assertEq(secondChallenge.treasury(), newTreasury);
     }
 
     function testSetTreasuryRevertsZeroAddress() public {

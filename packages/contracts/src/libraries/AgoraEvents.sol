@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 library AgoraEvents {
     event ChallengeCreated(uint256 indexed id, address indexed challenge, address indexed poster, uint256 reward);
     event ChallengeLinkedToLab(uint256 indexed id, address indexed labTBA);
+    event FactoryOracleUpdated(address indexed previousOracle, address indexed newOracle);
+    event FactoryTreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
 
     event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus);
     event Submitted(uint256 indexed submissionId, address indexed solver, bytes32 resultHash);

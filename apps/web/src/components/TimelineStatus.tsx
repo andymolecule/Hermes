@@ -1,6 +1,6 @@
 "use client";
 
-import { CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
+import { CHALLENGE_LIMITS, CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
 import { shortAddress } from "../lib/format";
 import type { Challenge, Submission } from "../lib/types";
@@ -131,7 +131,7 @@ export function TimelineStatus({
           <Clock className="w-4 h-4 text-black" strokeWidth={1.5} />
           <span className="text-black/70 font-medium">Review period</span>
           <span className="ml-auto font-mono font-bold text-black uppercase tracking-wider text-xs">
-            {challenge.dispute_window_hours ?? 168}h
+            {challenge.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours}h
           </span>
         </div>
       </div>

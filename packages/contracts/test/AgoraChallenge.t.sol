@@ -79,6 +79,10 @@ contract AgoraChallengeTest is Test {
         target.postScore(subId, score, proofBundleHash);
     }
 
+    function _protocolFee(AgoraChallenge target, uint256 reward) internal view returns (uint256) {
+        return (reward * target.PROTOCOL_FEE_BPS()) / 10_000;
+    }
+
     function testSubmitAndScore() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
@@ -182,7 +186,7 @@ contract AgoraChallengeTest is Test {
         uint256 treasuryBefore = usdc.balanceOf(treasury);
         challenge.finalize();
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         assertEq(usdc.balanceOf(treasury), treasuryBefore + fee);
     }
 
@@ -194,7 +198,7 @@ contract AgoraChallengeTest is Test {
 
         vm.warp(block.timestamp + 9 days);
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         uint256 payout = 10e6 - fee;
 
         vm.expectEmit(true, true, true, true, address(challenge));
@@ -243,13 +247,13 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (30e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(top3, 30e6);
         uint256 remaining = 30e6 - fee;
-        assertEq(top3.payoutByAddress(address(0x1)), (remaining * 70) / 100);
-        assertEq(top3.payoutByAddress(address(0x2)), (remaining * 20) / 100);
+        assertEq(top3.payoutByAddress(address(0x1)), (remaining * 60) / 100);
+        assertEq(top3.payoutByAddress(address(0x2)), (remaining * 25) / 100);
         assertEq(
             top3.payoutByAddress(address(0x3)),
-            remaining - ((remaining * 70) / 100) - ((remaining * 20) / 100)
+            remaining - ((remaining * 60) / 100) - ((remaining * 25) / 100)
         );
     }
 
@@ -278,10 +282,10 @@ contract AgoraChallengeTest is Test {
 
         vm.warp(block.timestamp + 9 days);
 
-        uint256 fee = (30e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(top3, 30e6);
         uint256 remaining = 30e6 - fee;
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
 
         vm.expectEmit(true, true, true, true, address(top3));
@@ -313,7 +317,7 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         proportional.finalize();
 
-        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(proportional, 20e6);
         uint256 remaining = 20e6 - fee;
         uint256 payoutA = proportional.payoutByAddress(address(0x1));
         uint256 payoutB = proportional.payoutByAddress(address(0x2));
@@ -336,7 +340,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(oracle);
         challenge.resolveDispute(subId);
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         uint256 remaining = 10e6 - fee;
         assertEq(challenge.payoutByAddress(solver), remaining);
     }
@@ -350,7 +354,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(address(0x999));
         challenge.dispute("bad score");
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         uint256 payout = 10e6 - fee;
 
         vm.expectEmit(true, true, true, true, address(challenge));
@@ -395,7 +399,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(oracle);
         proportional.resolveDispute(subA);
 
-        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(proportional, 20e6);
         uint256 remaining = 20e6 - fee;
         uint256 baseA = (remaining * 10) / 40;
         uint256 baseB = (remaining * 30) / 40;
@@ -439,7 +443,7 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         uint256 payout = 10e6 - fee;
         uint256 solverBefore = usdc.balanceOf(solver);
         vm.prank(solver);
@@ -735,7 +739,7 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(top3, 20e6);
         uint256 remaining = 20e6 - fee;
         // All payouts go to the single solver
         assertEq(top3.payoutByAddress(address(0x1)), remaining);
@@ -759,10 +763,10 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         top3.finalize();
 
-        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(top3, 20e6);
         uint256 remaining = 20e6 - fee;
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
         // First solver gets 1st + 3rd (third fallback)
         assertEq(top3.payoutByAddress(address(0x1)), first + third);
@@ -793,7 +797,7 @@ contract AgoraChallengeTest is Test {
         vm.warp(block.timestamp + 9 days);
         challenge.finalize();
 
-        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(challenge, 10e6);
         uint256 remaining = 10e6 - fee;
         assertEq(challenge.payoutByAddress(address(0x2)), remaining); // Higher scorer wins all
         assertEq(challenge.payoutByAddress(address(0x1)), 0);
@@ -822,11 +826,11 @@ contract AgoraChallengeTest is Test {
         vm.prank(oracle);
         top3.resolveDispute(subB);
 
-        uint256 fee = (20e6 * 500) / 10_000;
+        uint256 fee = _protocolFee(top3, 20e6);
         uint256 remaining = 20e6 - fee;
         // subB is forced first by _ensureWinnerFirst, so gets 1st + 3rd share
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
         assertEq(top3.payoutByAddress(address(0x2)), first + third);
         assertEq(top3.payoutByAddress(address(0x1)), second);

@@ -57,7 +57,7 @@ flowchart TB
         Solver["🤖 Solver<br/>Submits solutions<br/>Competes for reward"]
         Oracle["⚙️ Oracle<br/>Runs scoring<br/>Posts scores on-chain"]
         Verifier["🔍 Verifier<br/>Re-runs scoring<br/>Checks honesty"]
-        Treasury["🏦 Treasury<br/>Collects 5% protocol fee"]
+        Treasury["🏦 Treasury<br/>Collects 10% protocol fee"]
     end
 ```
 
@@ -67,7 +67,7 @@ flowchart TB
 | **Solver** | Downloads the data, builds a solution, tests locally, submits on-chain. | Trustless — can only submit hashes |
 | **Oracle** | Runs the Docker scorer, posts scores and proof bundles on-chain. | Semi-trusted (single key in MVP) |
 | **Verifier** | Re-runs the scorer independently to check the oracle was honest. | Anyone can be a verifier |
-| **Treasury** | Receives 5% protocol fee on finalization. | Controlled by contract owner |
+| **Treasury** | Receives 10% protocol fee on finalization. | Controlled by contract owner |
 
 ---
 
@@ -133,7 +133,7 @@ flowchart TB
     B -->|No| C["Anyone can call<br/>finalize()"]
     B -->|Yes| D["Oracle resolves<br/>the dispute"]
     D --> C
-    C --> E["Contract calculates:<br/>5% → Treasury<br/>95% → Winners"]
+    C --> E["Contract calculates:<br/>10% → Treasury<br/>90% → Winners"]
     E --> F["Winner calls<br/>claim()"]
     F --> G["💰 USDC transferred<br/>to winner's wallet"]
 ```
@@ -144,8 +144,8 @@ flowchart TB
 
 ```mermaid
 pie title "500 USDC Bounty Distribution"
-    "Winner Payout (95%)" : 475
-    "Protocol Fee (5%)" : 25
+    "Winner Payout (90%)" : 450
+    "Protocol Fee (10%)" : 50
 ```
 
 ### Distribution Options
@@ -185,7 +185,7 @@ flowchart TB
     subgraph System["System Safety"]
         SY1["USDC in contract escrow<br/>(nobody can steal it)"]
         SY2["Oracle is immutable per challenge<br/>(fixed at creation, cannot be rotated mid-challenge)"]
-        SY3["5% fee only on<br/>successful finalization"]
+        SY3["10% fee only on<br/>successful finalization"]
     end
 ```
 
@@ -293,7 +293,7 @@ flowchart TB
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Protocol fee | 5% | Only on successful finalization |
+| Protocol fee | 10% | Only on successful finalization |
 | Dispute window | 0–2160 hours on testnet | Production policy targets 168–2160 hours (7–90 days) |
 | Official preset timeout | 1–20 minutes | Base runner fallback is 30 minutes when no preset override applies |
 | Container memory | 128 MB – 4 GB | Preset-dependent; base runner fallback is 256 MB |

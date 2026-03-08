@@ -21,7 +21,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 
 - AgoraFactory deploys per-bounty AgoraChallenge contracts with USDC escrow.
 - Challenges follow a strict state machine: Open → Scoring → Finalized (or Disputed → Finalized, or Cancelled).
-- 5% protocol fee (hardcoded, 500 bps) flows to treasury on finalization.
+- 10% protocol fee (hardcoded, 1000 bps) flows to treasury on finalization.
 - Scoring is deterministic Docker execution; proof bundles are pinned to IPFS with hashes stored on-chain.
 - Dispute window is poster-configurable (0–2160 hours on testnet; 168–2160 hours (7–90 days) before mainnet).
 - Anyone can independently verify scores by re-running the scorer container.
@@ -36,7 +36,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 | **Poster** | Any wallet | Creates a challenge, deposits USDC, cancels (if 0 submissions before deadline), disputes scores | Trustless — USDC locked in smart contract escrow |
 | **Solver** | Any wallet | Submits result hashes on-chain during the Open phase, claims payouts after finalization | Trustless — can only submit hashes |
 | **Oracle** | Designated address (set at challenge creation) | Calls `startScoring()`, `postScore()`, `resolveDispute()` | Semi-trusted (single key in MVP); immutable per challenge |
-| **Treasury** | Designated address (set on factory) | Receives 5% protocol fee on finalization | Controlled by factory owner |
+| **Treasury** | Designated address (set on factory) | Receives 10% protocol fee on finalization | Controlled by factory owner; updates affect future challenges only |
 | **Verifier** | Anyone | Re-runs the Docker scorer locally to check that posted scores are honest | Fully trustless — no on-chain role required |
 
 ### Actor Permission Matrix
@@ -108,8 +108,8 @@ sequenceDiagram
 
     rect rgb(40, 40, 60)
         Note over Escrow: Finalization
-        Escrow->>USDC: transfer(Treasury, 5% fee)
-        Escrow->>Escrow: setPayout(winner, 95%)
+        Escrow->>USDC: transfer(Treasury, 10% fee)
+        Escrow->>Escrow: setPayout(winner, 90%)
     end
 
     Winner->>Escrow: claim()
@@ -129,7 +129,7 @@ sequenceDiagram
     Note over Challenge: All submissions scored, dispute window elapsed
 
     Oracle->>Challenge: finalize()
-    Challenge->>Challenge: Calculate 5% protocol fee
+    Challenge->>Challenge: Calculate 10% protocol fee
     Challenge->>USDC: transfer(Treasury, fee)
     Challenge->>Challenge: Allocate payouts per distribution type
     Challenge-->>Challenge: emit SettlementFinalized
@@ -147,10 +147,10 @@ sequenceDiagram
 | Type | Allocation | Description |
 |------|-----------|-------------|
 | **WinnerTakeAll** | 1st place: 100% | Single highest-scoring solver receives the entire reward (after fee). |
-| **TopThree** | 1st: 70%, 2nd: 20%, 3rd: 10% | Top three scorers split the reward. If fewer than three qualifying submissions, remaining share rolls up to the top scorer(s). |
+| **TopThree** | 1st: 60%, 2nd: 25%, 3rd: 15% | Top three scorers split the reward. If fewer than three qualifying submissions, remaining share rolls up to the top scorer(s). |
 | **Proportional** | Score-weighted | All qualifying solvers (those meeting `minimum_score`, if set) share the reward proportional to their scores. |
 
-All distributions apply after the 5% protocol fee is deducted.
+All distributions apply after the 10% protocol fee is deducted.
 
 ---
 
@@ -159,6 +159,8 @@ All distributions apply after the 5% protocol fee is deducted.
 | Event | Description |
 |-------|-------------|
 | `ChallengeCreated` | Factory deployed a new AgoraChallenge contract with USDC escrowed. |
+| `FactoryOracleUpdated` | Factory owner rotated the oracle used for future challenges. |
+| `FactoryTreasuryUpdated` | Factory owner rotated the treasury used for future challenges. |
 | `Submitted` | A solver submitted a result hash to an open challenge. Includes `subId` and `solver` address. |
 | `StatusChanged` | Challenge transitioned between lifecycle states (e.g., Open → Scoring). |
 | `Scored` | Oracle posted a score and proof bundle hash for a submission. |
@@ -275,7 +277,7 @@ deadline: "2026-03-04T23:59:59Z"
 
 1. **Escrow integrity:** USDC is locked at challenge creation and released only via `finalize()` + `claim()`, `cancel()`, or `timeoutRefund()`. No other code path can move escrowed funds.
 2. **Oracle immutability:** The oracle address is set at challenge creation and cannot be changed for the lifetime of that challenge.
-3. **Hardcoded fee:** The 5% protocol fee (500 bps) is hardcoded in the contract. It is not configurable per challenge.
+3. **Hardcoded fee:** The 10% protocol fee (1000 bps) is hardcoded in the contract. It is not configurable per challenge.
 4. **Tamper-proof scoring:** Scores and proof bundle hashes stored on-chain are immutable once posted. Anyone can verify them by re-running the Docker scorer.
 5. **USDC decimals:** USDC has 6 decimals. Always use `parseUnits(amount, 6)`, never `parseEther`.
 6. **Single generation:** One active contract generation (v2) at a time. Runtime environments must not mix multiple factory generations.

@@ -1,5 +1,6 @@
 "use client";
 
+import { CHALLENGE_LIMITS, PROTOCOL_FEE_PERCENT } from "@agora/common";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   Activity,
@@ -304,15 +305,15 @@ export function ActivityPanel() {
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Protocol Fee</span>
-          <span className="activity-stat-value">5%</span>
+          <span className="activity-stat-value">{PROTOCOL_FEE_PERCENT}%</span>
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Min Dispute</span>
-          <span className="activity-stat-value">168h</span>
+          <span className="activity-stat-value">{CHALLENGE_LIMITS.defaultDisputeWindowHours}h</span>
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Max Reward</span>
-          <span className="activity-stat-value">30 USDC</span>
+          <span className="activity-stat-value">{CHALLENGE_LIMITS.rewardMaxUsdc} USDC</span>
         </div>
       </div>
     </aside>

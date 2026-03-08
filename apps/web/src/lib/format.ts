@@ -1,7 +1,9 @@
+import { PROTOCOL_FEE_BPS } from "@agora/common";
+
 /** Compute protocol fee using the same integer math as AgoraChallenge.sol */
 export function computeProtocolFee(rewardUsdc: number) {
   const units = BigInt(Math.round(rewardUsdc * 1e6)); // USDC 6 decimals
-  const fee = (units * 500n) / 10_000n;
+  const fee = (units * BigInt(PROTOCOL_FEE_BPS)) / 10_000n;
   const payout = units - fee;
   return {
     feeUsdc: Number(fee) / 1e6,

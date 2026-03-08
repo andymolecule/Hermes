@@ -194,9 +194,9 @@ export async function getPlatformAnalytics(
     challengesByDistribution[dist] = (challengesByDistribution[dist] ?? 0) + 1;
   }
 
-  // 5% protocol fee is contractually guaranteed on escrowed USDC
-  const distributedUsdc = nonCancelledReward * 0.95;
-  const protocolRevenueUsdc = nonCancelledReward * 0.05;
+  const protocolFeeShare = PROTOCOL_FEE_BPS / 10_000;
+  const distributedUsdc = nonCancelledReward * (1 - protocolFeeShare);
+  const protocolRevenueUsdc = nonCancelledReward * protocolFeeShare;
   const avgBountyUsdc =
     challenges.length > 0 ? totalRewardUsdc / challenges.length : 0;
   const completionRate =
@@ -266,3 +266,4 @@ export async function getPlatformAnalytics(
     topSolvers,
   };
 }
+import { PROTOCOL_FEE_BPS } from "@agora/common";

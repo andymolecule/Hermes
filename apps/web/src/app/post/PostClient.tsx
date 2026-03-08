@@ -3,6 +3,8 @@
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
 import {
   ACTIVE_CONTRACT_VERSION,
+  CHALLENGE_LIMITS,
+  PROTOCOL_FEE_PERCENT,
   computeSpecHash,
   defaultPresetIdForChallengeType,
   getPinSpecAuthorizationTypedData,
@@ -656,7 +658,7 @@ const initialState: FormState = {
   distribution: "winner_take_all",
   deadlineDays: "7",
   minimumScore: String(defaultPreset.defaultMinimumScore),
-  disputeWindow: "168",
+  disputeWindow: String(CHALLENGE_LIMITS.defaultDisputeWindowHours),
   submissionType: "number",
   submissionFormat: '{"answer": <number>}',
   evaluationCriteria: "",
@@ -1074,8 +1076,11 @@ export function PostClient() {
       return "Title and description are required.";
     if (!Number.isFinite(rewardValue) || rewardValue <= 0)
       return "Reward must be a positive number.";
-    if (rewardValue < 1 || rewardValue > 30)
-      return "Reward must be between 1 and 30 USDC.";
+    if (
+      rewardValue < CHALLENGE_LIMITS.rewardMinUsdc ||
+      rewardValue > CHALLENGE_LIMITS.rewardMaxUsdc
+    )
+      return `Reward must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC.`;
 
     // Per-type required uploads
     if (state.type === "prediction") {
@@ -1116,8 +1121,12 @@ export function PostClient() {
 
     if (state.disputeWindow.trim()) {
       const disputeWindow = Number(state.disputeWindow);
-      if (!Number.isFinite(disputeWindow) || disputeWindow < 0 || disputeWindow > 2160)
-        return "Dispute window must be between 0 and 2160 hours.";
+      if (
+        !Number.isFinite(disputeWindow) ||
+        disputeWindow < 0 ||
+        disputeWindow > CHALLENGE_LIMITS.disputeWindowMaxHours
+      )
+        return `Dispute window must be between 0 and ${CHALLENGE_LIMITS.disputeWindowMaxHours} hours.`;
     }
 
     const specResult = validateChallengeSpec(buildSpec(state), CHAIN_ID);
@@ -1196,7 +1205,9 @@ export function PostClient() {
       specCid,
       rewardUnits: parseUnits(String(spec.reward.total), 6),
       deadlineSeconds: BigInt(Math.floor(new Date(spec.deadline).getTime() / 1000)),
-      disputeWindowHours: BigInt(spec.dispute_window_hours ?? 168),
+      disputeWindowHours: BigInt(
+        spec.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours,
+      ),
       minimumScoreWad: parseUnits(String(spec.minimum_score ?? 0), 18),
       distributionType:
         DISTRIBUTION_TO_ENUM[spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM] ?? 0,
@@ -1954,8 +1965,11 @@ export function PostClient() {
         <SectionHeader step={4} title="Reward & Execution" />
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Reward (USDC)" hint="Between 1 and 30 USDC">
-              <input className="form-input form-input-mono" type="number" min={1} max={30}
+            <FormField
+              label="Reward (USDC)"
+              hint={`Between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`}
+            >
+              <input className="form-input form-input-mono" type="number" min={CHALLENGE_LIMITS.rewardMinUsdc} max={CHALLENGE_LIMITS.rewardMaxUsdc}
                 value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
             </FormField>
             <FormField label="Winner selection" hint={WINNER_LABELS[state.distribution] ?? ""}>
@@ -1982,11 +1996,11 @@ export function PostClient() {
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
                 {isTestnetChain(CHAIN_ID) && <option value="0">No dispute window (testnet only)</option>}
                 {isTestnetChain(CHAIN_ID) && <option value="1">1 hour — Testing</option>}
-                <option value="168">7 days — Standard</option>
+                <option value={String(CHALLENGE_LIMITS.defaultDisputeWindowHours)}>7 days — Standard</option>
                 <option value="336">14 days</option>
                 <option value="720">30 days</option>
                 <option value="1440">60 days</option>
-                <option value="2160">90 days — Maximum</option>
+                <option value={String(CHALLENGE_LIMITS.disputeWindowMaxHours)}>90 days — Maximum</option>
               </select>
             </FormField>
             {state.disputeWindow === "0" && (
@@ -2045,7 +2059,7 @@ export function PostClient() {
                   </span>
                 </div>
                 <div className="receipt-row">
-                  <span className="receipt-label">Protocol fee (5%)</span>
+                  <span className="receipt-label">{`Protocol fee (${PROTOCOL_FEE_PERCENT}%)`}</span>
                   <span className="receipt-value receipt-value-muted">
                     <span>- {formatUsdc(protocolFeeValue)}</span>
                     <span className="receipt-unit">USDC</span>
