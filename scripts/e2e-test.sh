@@ -6,6 +6,8 @@ cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
 E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-agora/repro-scorer:latest}"
+E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
+E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-0}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
 E2E_ENABLE_TIME_TRAVEL="${AGORA_E2E_ENABLE_TIME_TRAVEL:-1}"
 
@@ -97,9 +99,11 @@ CSV
 cp "$TMP_DIR/ground_truth.csv" "$TMP_DIR/submission.csv"
 
 E2E_TITLE="Agora E2E $(date +%s)"
-E2E_DEADLINE="$(date -u -v+10M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || python3 - <<'PY'
+E2E_DEADLINE="$(date -u -v+"${E2E_DEADLINE_MINUTES}"M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || python3 - "$E2E_DEADLINE_MINUTES" <<'PY'
 from datetime import datetime, timedelta, timezone
-print((datetime.now(timezone.utc) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+import sys
+minutes = int(sys.argv[1])
+print((datetime.now(timezone.utc) + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ"))
 PY
 )"
 
@@ -121,7 +125,7 @@ reward:
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]
 minimum_score: 0.0
-dispute_window_hours: 168
+dispute_window_hours: ${E2E_DISPUTE_WINDOW_HOURS}
 lab_tba: "0x0000000000000000000000000000000000000000"
 YAML
 

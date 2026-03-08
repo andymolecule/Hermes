@@ -15,6 +15,8 @@ import type { AgoraDbClient } from "../index";
 
 export interface ChallengeInsert {
   chain_id: number;
+  contract_version: number;
+  spec_schema_version: number;
   contract_address: string;
   factory_address: string;
   poster_address: string;
@@ -42,6 +44,7 @@ export interface ChallengeInsert {
 
 export interface BuildChallengeInsertInput {
   chainId: number;
+  contractVersion: number;
   contractAddress: string;
   factoryAddress: string;
   posterAddress: string;
@@ -121,6 +124,8 @@ export async function buildChallengeInsert(
 
   return {
     chain_id: input.chainId,
+    contract_version: input.contractVersion,
+    spec_schema_version: canonicalSpec.schema_version,
     contract_address: input.contractAddress.toLowerCase(),
     factory_address: input.factoryAddress.toLowerCase(),
     poster_address: input.posterAddress.toLowerCase(),

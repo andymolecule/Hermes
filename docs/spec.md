@@ -95,6 +95,7 @@ Production upgrades (pre-mainnet):
 ## 5. Challenge Spec (YAML)
 
 ```yaml
+schema_version: 2
 id: ch-001
 title: "Reproduce Figure 3 from Gladyshev 2024 longevity clock"
 domain: longevity
@@ -105,6 +106,7 @@ dataset:
   test: ipfs://Qm...
 scoring:
   container: ghcr.io/agora-science/repro-scorer:v1
+  metric: custom
 reward:
   total: 500 USDC
   distribution: winner_take_all
@@ -112,7 +114,7 @@ deadline: "2026-03-04T23:59:59Z"
 ```
 
 **Challenge YAML schema (authoritative)**
-- Required top-level fields: `id`, `title`, `domain`, `type`, `description`, `dataset`, `scoring`, `reward`, `deadline`
+- Required top-level fields: `schema_version`, `id`, `title`, `domain`, `type`, `description`, `dataset`, `scoring`, `reward`, `deadline`
 - Optional top-level fields: `tags`, `minimum_score`, `dispute_window_hours`, `lab_tba`
 - `domain` enum: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`
 - `type` enum: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`
@@ -122,6 +124,7 @@ deadline: "2026-03-04T23:59:59Z"
 - `reward.total` is a decimal in USDC units, up to 6 decimals
 - `reward.distribution` enum: `winner_take_all`, `top_3`, `proportional`
 - `deadline` must be RFC3339 UTC (example shown above)
+- `schema_version` must be `2` for the active contract generation
 
 ## 6. Workflows
 

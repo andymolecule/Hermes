@@ -2,6 +2,7 @@ import {
   getChallengeLifecycleState,
   getOnChainSubmission,
   getPublicClient,
+  parseSubmittedReceipt,
 } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
@@ -13,9 +14,6 @@ import {
   resolveEvalSpec,
   resolveSubmissionLimits,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
-  type: "json",
-};
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -31,7 +29,6 @@ import {
 import { getJSON } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { type Abi, parseEventLogs } from "viem";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
@@ -41,8 +38,6 @@ import {
   toPrivateSubmission,
 } from "./challenges-shared.js";
 
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
-
 const createSubmissionBodySchema = z.object({
   challengeId: z.string().uuid(),
   resultCid: z.string().min(1),
@@ -51,19 +46,6 @@ const createSubmissionBodySchema = z.object({
     .enum([SUBMISSION_RESULT_FORMAT.plainV0, SUBMISSION_RESULT_FORMAT.sealedV1])
     .optional(),
 });
-
-function getLogArg(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-  index: number,
-  key: string,
-) {
-  if (!args) return undefined;
-  if (Array.isArray(args)) return args[index];
-  if (typeof args === "object" && args !== null && key in args) {
-    return (args as Record<string, unknown>)[key];
-  }
-  return undefined;
-}
 
 type PublicSubmissionVerification = {
   challengeId: string;
@@ -97,25 +79,6 @@ type PublicProofBundle = {
 
 export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
   return status !== CHALLENGE_STATUS.open;
-}
-
-export function extractSubmissionIdFromSubmittedEvent(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-): bigint | undefined {
-  const rawSubId =
-    getLogArg(args, 0, "submissionId") ?? getLogArg(args, 0, "subId");
-  if (typeof rawSubId === "bigint") return rawSubId;
-  if (
-    typeof rawSubId === "number" &&
-    Number.isSafeInteger(rawSubId) &&
-    rawSubId >= 0
-  ) {
-    return BigInt(rawSubId);
-  }
-  if (typeof rawSubId === "string" && /^[0-9]+$/.test(rawSubId)) {
-    return BigInt(rawSubId);
-  }
-  return undefined;
 }
 
 const router = new Hono<ApiEnv>();
@@ -242,29 +205,15 @@ router.post(
     const challengeAddress = (
       challenge.contract_address as `0x${string}`
     ).toLowerCase();
-    const challengeLogs = receipt.logs.filter(
-      (log) => log.address.toLowerCase() === challengeAddress,
-    );
-
-    const logs = parseEventLogs({
-      abi: AgoraChallengeAbi,
-      logs: challengeLogs,
-      strict: false,
-    });
-
-    const event = logs.find(
-      (log: { eventName?: string }) => log.eventName === "Submitted",
-    );
-    if (!event) {
-      return c.json({ error: "Submitted event not found." }, 400);
-    }
-
-    const args = event.args as unknown as
-      | readonly unknown[]
-      | Record<string, unknown>;
-    const subId = extractSubmissionIdFromSubmittedEvent(args);
-    if (subId === undefined) {
-      return c.json({ error: "Invalid Submitted event payload." }, 400);
+    let subId: bigint;
+    try {
+      ({ submissionId: subId } = parseSubmittedReceipt(
+        { logs: receipt.logs },
+        challengeAddress as `0x${string}`,
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: message }, 400);
     }
 
     const onChain = await getOnChainSubmission(

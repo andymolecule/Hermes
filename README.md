@@ -100,6 +100,7 @@ Required environment variables:
 | `AGORA_USDC_ADDRESS` | USDC token address |
 | `AGORA_PRIVATE_KEY` | Wallet key for CLI/MCP |
 | `AGORA_ORACLE_KEY` | Oracle wallet for scoring |
+| `AGORA_ORACLE_ADDRESS` | Explicit oracle address for `scripts/deploy.sh` cutovers |
 | `AGORA_PINATA_JWT` | Pinata API token for IPFS |
 | `AGORA_SUPABASE_URL` | Supabase project URL |
 | `AGORA_SUPABASE_ANON_KEY` | Supabase anon key |
@@ -140,12 +141,25 @@ pnpm --filter @agora/web dev
 
 Exercises the full lifecycle: `post → indexer pickup → list → get → score-local → submit → score → finalize → claim`.
 
+Fast testnet override example:
+
+```bash
+AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=0 ./scripts/e2e-test.sh
+```
+
 ## Deployment
 
 ```bash
 ./scripts/deploy.sh                  # Contracts to Base Sepolia
 ./scripts/preflight-testnet.sh       # Pre-launch validation
 ```
+
+Clean `v2` cutover rule:
+- run one active factory generation at a time
+- reset Supabase and apply only [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql)
+- deploy a fresh `v2` factory
+- update the canonical `(chain id, factory address, USDC address)` tuple everywhere
+- reindex from zero
 
 ## CI
 

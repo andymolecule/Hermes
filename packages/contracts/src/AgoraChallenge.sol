@@ -9,6 +9,7 @@ import {AgoraConstants} from "./libraries/AgoraConstants.sol";
 import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
 
 contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
+    uint16 public constant CONTRACT_VERSION = 2;
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
 
@@ -76,6 +77,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         maxSubmissions = cfg.maxSubmissions;
         maxSubmissionsPerSolver = cfg.maxSubmissionsPerSolver;
         _status = Status.Open;
+    }
+
+    function contractVersion() external pure override returns (uint16) {
+        return CONTRACT_VERSION;
     }
 
     modifier onlyOracle() {
@@ -169,9 +174,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
         uint256 protocolFee = (rewardAmount * PROTOCOL_FEE_BPS) / 10_000;
         uint256 remaining = rewardAmount - protocolFee;
+        address winnerSolver = submissions[winners[0]].solver;
 
         if (distributionType == DistributionType.WinnerTakeAll) {
-            _setPayout(submissions[winners[0]].solver, remaining);
+            _allocatePayout(winnerSolver, winners[0], remaining, 1);
         } else if (distributionType == DistributionType.TopThree) {
             _setTopThreePayouts(winners, remaining);
         } else if (distributionType == DistributionType.Proportional) {
@@ -188,7 +194,13 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
             if (!usdc.transfer(treasury, protocolFee)) revert AgoraErrors.TransferFailed();
         }
 
-        emit AgoraEvents.Finalized(protocolFee, remaining);
+        emit AgoraEvents.SettlementFinalized(
+            winners[0],
+            winnerSolver,
+            protocolFee,
+            remaining,
+            uint8(distributionType)
+        );
     }
 
     function dispute(string calldata reason) external override {
@@ -213,9 +225,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
         uint256 protocolFee = (rewardAmount * PROTOCOL_FEE_BPS) / 10_000;
         uint256 remaining = rewardAmount - protocolFee;
+        address winnerSolver = submissions[winnerSubId].solver;
 
         if (distributionType == DistributionType.WinnerTakeAll) {
-            _setPayout(submissions[winnerSubId].solver, remaining);
+            _allocatePayout(winnerSolver, winnerSubId, remaining, 1);
         } else if (distributionType == DistributionType.TopThree) {
             (uint256[] memory winners, ) = _rankedSubmissions();
             uint256[] memory ranked = _ensureWinnerFirst(winners, winnerSubId, 3);
@@ -241,6 +254,13 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         }
 
         emit AgoraEvents.DisputeResolved(winnerSubId);
+        emit AgoraEvents.SettlementFinalized(
+            winnerSubId,
+            winnerSolver,
+            protocolFee,
+            remaining,
+            uint8(distributionType)
+        );
     }
 
     function cancel() external override onlyPoster nonReentrant {
@@ -298,8 +318,9 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         emit AgoraEvents.StatusChanged(uint8(previousStatus), uint8(nextStatus));
     }
 
-    function _setPayout(address solver, uint256 amount) internal {
+    function _allocatePayout(address solver, uint256 submissionId, uint256 amount, uint8 rank) internal {
         payoutByAddress[solver] += amount;
+        emit AgoraEvents.PayoutAllocated(solver, submissionId, rank, amount);
     }
 
     /// @dev Split 70/20/10 among up to 3 winners. When fewer than 3 qualified
@@ -310,16 +331,16 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         uint256 second = (remaining * 20) / 100;
         uint256 third = remaining - first - second;
 
-        _setPayout(submissions[winners[0]].solver, first);
+        _allocatePayout(submissions[winners[0]].solver, winners[0], first, 1);
         if (winners.length > 1) {
-            _setPayout(submissions[winners[1]].solver, second);
+            _allocatePayout(submissions[winners[1]].solver, winners[1], second, 2);
         } else {
-            _setPayout(submissions[winners[0]].solver, second);
+            _allocatePayout(submissions[winners[0]].solver, winners[0], second, 2);
         }
         if (winners.length > 2) {
-            _setPayout(submissions[winners[2]].solver, third);
+            _allocatePayout(submissions[winners[2]].solver, winners[2], third, 3);
         } else {
-            _setPayout(submissions[winners[0]].solver, third);
+            _allocatePayout(submissions[winners[0]].solver, winners[0], third, 3);
         }
     }
 
@@ -333,18 +354,18 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
             sumScores += scores[i];
         }
         if (sumScores == 0) {
-            _setPayout(submissions[winners[0]].solver, remaining);
+            _allocatePayout(submissions[winners[0]].solver, winners[0], remaining, 1);
             return;
         }
         uint256 totalPaid = 0;
         for (uint256 i = 0; i < winners.length; i++) {
             uint256 payout = (remaining * scores[i]) / sumScores;
             totalPaid += payout;
-            _setPayout(submissions[winners[i]].solver, payout);
+            _allocatePayout(submissions[winners[i]].solver, winners[i], payout, uint8(i + 1));
         }
         if (totalPaid < remaining) {
             uint256 dust = remaining - totalPaid;
-            _setPayout(submissions[winners[0]].solver, dust);
+            _allocatePayout(submissions[winners[0]].solver, winners[0], dust, 1);
         }
     }
 

@@ -2,11 +2,13 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  ON_CHAIN_STATUS_ORDER,
   getSubmissionLimitViolation,
   parseCsvHeaders,
   resolveSubmissionLimits,
 } from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
 import {
   clearChallengeSettlement,
   buildChallengeInsert,
@@ -25,16 +27,16 @@ import {
   setChallengeFinalized,
   setIndexerCursor,
   syncExistingSubmissionOnChainState,
+  upsertChallengePayoutAllocation,
   updateChallengeStatus,
   upsertChallenge,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getText } from "@agora/ipfs";
 import {
+  decodeChallengeStatusValue,
   getChallengeLifecycleState,
-  getChallengePayoutByAddress,
   getChallengeSubmissionCount,
-  getChallengeWinningSubmissionId,
   getOnChainSubmission,
 } from "../challenge.js";
 import {
@@ -43,6 +45,7 @@ import {
 } from "../challenge-definition.js";
 import type { getPublicClient } from "../client.js";
 import {
+  chunkedGetLogs,
   type IndexerPollingConfig,
   clearRetryableEvent,
   isRetryableError,
@@ -50,9 +53,11 @@ import {
   retryKey,
   sleep,
 } from "./polling.js";
+import { type Abi, parseEventLogs } from "viem";
 
 const SPEC_FETCH_MAX_RETRIES = 4;
 const SPEC_FETCH_RETRY_BASE_MS = 500;
+const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
 
@@ -97,12 +102,10 @@ function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
 
 function parseStatusValue(value: unknown, field: string) {
   if (typeof value === "bigint") {
-    const status = ON_CHAIN_STATUS_ORDER[Number(value)];
-    if (status) return status;
+    return decodeChallengeStatusValue(value);
   }
   if (typeof value === "number" && Number.isInteger(value)) {
-    const status = ON_CHAIN_STATUS_ORDER[value];
-    if (status) return status;
+    return decodeChallengeStatusValue(value);
   }
   throw new Error(`Invalid event arg '${field}': expected challenge status`);
 }
@@ -147,67 +150,267 @@ function payoutAmountUsdc(amount: bigint) {
   return Number(amount) / 1_000_000;
 }
 
-async function projectChallengeSettlement(input: {
+function payoutAmountMicros(amount: string | number) {
+  return BigInt(Math.round(Number(amount) * 1_000_000));
+}
+
+type CanonicalChallengePayoutRow = {
+  challenge_id: string;
+  solver_address: string;
+  winning_on_chain_sub_id: number;
+  rank: number;
+  amount: number;
+  claimed_at: string | null;
+  claim_tx_hash: string | null;
+};
+
+async function listExistingChallengePayoutRows(
+  db: DbClient,
+  challengeId: string,
+) {
+  const { data, error } = await db
+    .from("challenge_payouts")
+    .select("*")
+    .eq("challenge_id", challengeId)
+    .order("solver_address", { ascending: true })
+    .order("rank", { ascending: true });
+
+  if (error) {
+    throw new Error(
+      `Failed to load challenge payouts during reconcile: ${error.message}`,
+    );
+  }
+
+  return (data ?? []) as CanonicalChallengePayoutRow[];
+}
+
+async function loadCurrentChallengeSettlement(
+  db: DbClient,
+  challengeId: string,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .select("winning_on_chain_sub_id, winner_solver_address")
+    .eq("id", challengeId)
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Failed to load challenge settlement during reconcile: ${error.message}`,
+    );
+  }
+
+  return data as {
+    winning_on_chain_sub_id: number | null;
+    winner_solver_address: string | null;
+  };
+}
+
+function payoutRowsMatch(
+  left: CanonicalChallengePayoutRow[],
+  right: CanonicalChallengePayoutRow[],
+) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index++) {
+    const current = left[index];
+    const next = right[index];
+    if (!current || !next) {
+      return false;
+    }
+    if (current.challenge_id !== next.challenge_id) return false;
+    if (current.solver_address !== next.solver_address) return false;
+    if (current.winning_on_chain_sub_id !== next.winning_on_chain_sub_id) {
+      return false;
+    }
+    if (current.rank !== next.rank) return false;
+    if (payoutAmountMicros(current.amount) !== payoutAmountMicros(next.amount)) {
+      return false;
+    }
+    if ((current.claimed_at ?? null) !== (next.claimed_at ?? null)) {
+      return false;
+    }
+    if ((current.claim_tx_hash ?? null) !== (next.claim_tx_hash ?? null)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function buildCanonicalChallengeSettlement(input: {
+  publicClient: ReturnType<typeof getPublicClient>;
+  challenge: ChallengeListRow;
+  challengeFromBlock: bigint;
+  blockNumber: bigint | null;
+}) {
+  const { publicClient, challenge, challengeFromBlock, blockNumber } = input;
+  const challengeAddress = challenge.contract_address as `0x${string}`;
+  const settlementBlock = blockNumber ?? (await publicClient.getBlockNumber());
+  const challengeLogs = await chunkedGetLogs(
+    publicClient,
+    challengeAddress,
+    challengeFromBlock,
+    settlementBlock,
+  );
+  const parsedChallengeLogs = parseEventLogs({
+    abi: AgoraChallengeAbi,
+    logs: challengeLogs,
+    strict: false,
+  }) as unknown as ParsedLog[];
+
+  let winnerSubmissionId: number | null = null;
+  let winnerSolverAddress: string | null = null;
+  const claimStateBySolver = new Map<
+    string,
+    { claimed_at: string; claim_tx_hash: string }
+  >();
+  const payoutRows: CanonicalChallengePayoutRow[] = [];
+
+  for (const log of parsedChallengeLogs) {
+    if (log.eventName === "SettlementFinalized") {
+      winnerSubmissionId = Number(
+        parseRequiredBigInt(
+          eventArg(log.args, 0) ?? eventArg(log.args, "winningSubmissionId"),
+          "winningSubmissionId",
+        ),
+      );
+      winnerSolverAddress = parseRequiredAddress(
+        eventArg(log.args, 1) ?? eventArg(log.args, "winnerSolver"),
+        "winnerSolver",
+      ).toLowerCase();
+      continue;
+    }
+
+    if (log.eventName === "Claimed" && log.transactionHash) {
+      const claimant = parseRequiredAddress(
+        eventArg(log.args, 0) ?? eventArg(log.args, "claimant"),
+        "claimant",
+      ).toLowerCase();
+      claimStateBySolver.set(claimant, {
+        claimed_at: await blockTimestampIso(publicClient, log.blockNumber ?? null),
+        claim_tx_hash: log.transactionHash,
+      });
+      continue;
+    }
+
+    if (log.eventName === "PayoutAllocated") {
+      const solver = parseRequiredAddress(
+        eventArg(log.args, 0) ?? eventArg(log.args, "solver"),
+        "solver",
+      ).toLowerCase();
+      const submissionId = Number(
+        parseRequiredBigInt(
+          eventArg(log.args, 1) ?? eventArg(log.args, "submissionId"),
+          "submissionId",
+        ),
+      );
+      const rank = Number(
+        parseRequiredBigInt(
+          eventArg(log.args, 2) ?? eventArg(log.args, "rank"),
+          "rank",
+        ),
+      );
+      const amount = payoutAmountUsdc(
+        parseRequiredBigInt(
+          eventArg(log.args, 3) ?? eventArg(log.args, "amount"),
+          "amount",
+        ),
+      );
+      payoutRows.push({
+        challenge_id: challenge.id,
+        solver_address: solver,
+        winning_on_chain_sub_id: submissionId,
+        rank,
+        amount,
+        claimed_at: null,
+        claim_tx_hash: null,
+      });
+    }
+  }
+
+  if (winnerSubmissionId === null || winnerSolverAddress === null) {
+    throw new Error(
+      `Finalized challenge ${challenge.contract_address} is missing canonical settlement logs.`,
+    );
+  }
+
+  const canonicalRows = payoutRows
+    .map((row) => {
+      const claim = claimStateBySolver.get(row.solver_address);
+      return {
+        ...row,
+        claimed_at: claim?.claimed_at ?? null,
+        claim_tx_hash: claim?.claim_tx_hash ?? null,
+      };
+    })
+    .sort((left, right) => {
+      if (left.solver_address !== right.solver_address) {
+        return left.solver_address.localeCompare(right.solver_address);
+      }
+      return left.rank - right.rank;
+    });
+
+  return {
+    winnerSubmissionId,
+    winnerSolverAddress,
+    payoutRows: canonicalRows,
+  };
+}
+
+async function repairChallengeSettlementFromLogs(input: {
   db: DbClient;
   publicClient: ReturnType<typeof getPublicClient>;
   challenge: ChallengeListRow;
-  blockNumber: bigint | null;
+  challengeFromBlock: bigint;
+  blockNumber: bigint;
 }) {
-  const { db, publicClient, challenge, blockNumber } = input;
-  const challengeAddress = challenge.contract_address as `0x${string}`;
-  const settlementBlock = blockNumber ?? (await publicClient.getBlockNumber());
-  const [winnerOnChainSubId, submissionCount] = await Promise.all([
-    getChallengeWinningSubmissionId(challengeAddress, settlementBlock),
-    getChallengeSubmissionCount(challengeAddress, settlementBlock),
-  ]);
+  const { db, challenge } = input;
+  const [currentSettlement, existingPayoutRows, canonicalSettlement] =
+    await Promise.all([
+      loadCurrentChallengeSettlement(db, challenge.id),
+      listExistingChallengePayoutRows(db, challenge.id),
+      buildCanonicalChallengeSettlement(input),
+    ]);
 
-  const onChainSubmissions = await Promise.all(
-    Array.from({ length: Number(submissionCount) }, (_, index) =>
-      getOnChainSubmission(challengeAddress, BigInt(index), settlementBlock),
-    ),
+  const settlementNeedsRepair =
+    currentSettlement.winning_on_chain_sub_id !==
+      canonicalSettlement.winnerSubmissionId ||
+    (currentSettlement.winner_solver_address ?? null) !==
+      canonicalSettlement.winnerSolverAddress;
+  const payoutsNeedRepair = !payoutRowsMatch(
+    existingPayoutRows,
+    canonicalSettlement.payoutRows,
   );
 
-  const winnerSolverAddress =
-    onChainSubmissions[Number(winnerOnChainSubId)]?.solver?.toLowerCase() ??
-    null;
+  if (settlementNeedsRepair) {
+    await setChallengeFinalized(
+      db,
+      challenge.id,
+      canonicalSettlement.winnerSubmissionId,
+      canonicalSettlement.winnerSolverAddress,
+    );
+  }
 
-  const uniqueSolvers = [...new Set(onChainSubmissions.map((s) => s.solver))];
-  const payoutRows = (
-    await Promise.all(
-      uniqueSolvers.map(async (solverAddress) => {
-        const amount = await getChallengePayoutByAddress(
-          challengeAddress,
-          solverAddress,
-          settlementBlock,
-        );
-        if (amount === 0n) {
-          return null;
-        }
-        return {
-          challenge_id: challenge.id,
-          solver_address: solverAddress.toLowerCase(),
-          amount: payoutAmountUsdc(amount),
-        };
-      }),
-    )
-  ).filter((row) => row !== null);
-
-  await setChallengeFinalized(
-    db,
-    challenge.id,
-    winnerSolverAddress !== null ? Number(winnerOnChainSubId) : null,
-    winnerSolverAddress,
-  );
-  await replaceChallengePayouts(db, challenge.id, payoutRows);
+  if (payoutsNeedRepair) {
+    await replaceChallengePayouts(
+      db,
+      challenge.id,
+      canonicalSettlement.payoutRows,
+    );
+  }
 }
 
 export async function reconcileChallengeProjection(input: {
   db: DbClient;
   publicClient: ReturnType<typeof getPublicClient>;
   challenge: ChallengeListRow;
+  challengeFromBlock: bigint;
   blockNumber: bigint;
 }) {
-  const { db, publicClient, challenge, blockNumber } = input;
+  const { db, publicClient, challenge, challengeFromBlock, blockNumber } = input;
   const challengeAddress = challenge.contract_address as `0x${string}`;
   const code = await publicClient.getCode({
     address: challengeAddress,
@@ -273,10 +476,12 @@ export async function reconcileChallengeProjection(input: {
   }
 
   if (lifecycle.status === CHALLENGE_STATUS.finalized) {
-    await projectChallengeSettlement({
+    await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.finalized);
+    await repairChallengeSettlementFromLogs({
       db,
       publicClient,
       challenge,
+      challengeFromBlock,
       blockNumber,
     });
     return { deleted: false as const };
@@ -371,7 +576,7 @@ export async function processFactoryLog(input: {
         "rewardAmount",
       );
 
-      const { specCid, spec, onChainDeadlineIso } =
+      const { specCid, spec, contractVersion, onChainDeadlineIso } =
         await loadChallengeDefinitionFromChain({
           publicClient,
           challengeAddress: challengeAddr,
@@ -382,6 +587,7 @@ export async function processFactoryLog(input: {
         db,
         await buildChallengeInsert({
           chainId: config.AGORA_CHAIN_ID,
+          contractVersion,
           contractAddress: challengeAddr,
           factoryAddress: config.AGORA_FACTORY_ADDRESS,
           posterAddress: poster,
@@ -654,21 +860,50 @@ export async function processChallengeLog(input: {
       }
     }
 
-    if (log.eventName === "Finalized") {
-      await projectChallengeSettlement({
-        db,
-        publicClient,
-        challenge,
-        blockNumber: log.blockNumber ?? null,
-      });
+    if (log.eventName === "DisputeResolved") {
+      await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.finalized);
     }
 
-    if (log.eventName === "DisputeResolved") {
-      await projectChallengeSettlement({
+    if (log.eventName === "SettlementFinalized") {
+      const winningSubmissionId = parseRequiredBigInt(
+        eventArg(log.args, 0) ?? eventArg(log.args, "winningSubmissionId"),
+        "winningSubmissionId",
+      );
+      const winnerSolver = parseRequiredAddress(
+        eventArg(log.args, 1) ?? eventArg(log.args, "winnerSolver"),
+        "winnerSolver",
+      );
+      await setChallengeFinalized(
         db,
-        publicClient,
-        challenge,
-        blockNumber: log.blockNumber ?? null,
+        challenge.id,
+        Number(winningSubmissionId),
+        winnerSolver,
+      );
+    }
+
+    if (log.eventName === "PayoutAllocated") {
+      const solver = parseRequiredAddress(
+        eventArg(log.args, 0) ?? eventArg(log.args, "solver"),
+        "solver",
+      );
+      const submissionId = parseRequiredBigInt(
+        eventArg(log.args, 1) ?? eventArg(log.args, "submissionId"),
+        "submissionId",
+      );
+      const rank = parseRequiredBigInt(
+        eventArg(log.args, 2) ?? eventArg(log.args, "rank"),
+        "rank",
+      );
+      const amount = parseRequiredBigInt(
+        eventArg(log.args, 3) ?? eventArg(log.args, "amount"),
+        "amount",
+      );
+      await upsertChallengePayoutAllocation(db, {
+        challenge_id: challenge.id,
+        solver_address: solver,
+        winning_on_chain_sub_id: Number(submissionId),
+        rank: Number(rank),
+        amount: payoutAmountUsdc(amount),
       });
     }
 

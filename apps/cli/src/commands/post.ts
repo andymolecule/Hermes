@@ -6,6 +6,7 @@ import {
   approve,
   balanceOf,
   createChallenge,
+  parseChallengeCreatedReceipt,
   getPublicClient,
   getWalletClient,
 } from "@agora/chain";
@@ -18,10 +19,9 @@ import {
   type ChallengeSpecOutput,
   validateChallengeSpec,
 } from "@agora/common";
-import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
 import { pinFile } from "@agora/ipfs";
 import { Command } from "commander";
-import { formatUnits, parseEventLogs, parseUnits } from "viem";
+import { formatUnits, parseUnits } from "viem";
 import yaml from "yaml";
 import type { z } from "zod";
 import {
@@ -33,26 +33,11 @@ import { printJson, printSuccess, printWarning } from "../lib/output";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
-const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as readonly unknown[];
-
 const distributionMap: Record<string, number> = {
   winner_take_all: 0,
   top_3: 1,
   proportional: 2,
 };
-
-function getLogArg(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-  index: number,
-  key: string,
-) {
-  if (!args) return undefined;
-  if (Array.isArray(args)) return args[index];
-  if (typeof args === "object" && args !== null && key in args) {
-    return (args as Record<string, unknown>)[key];
-  }
-  return undefined;
-}
 
 function formatZodError(error: z.ZodError) {
   return error.issues
@@ -286,21 +271,11 @@ export function buildPostCommand() {
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: txHash,
         });
-        const parsedLogs = parseEventLogs({
-          abi: AgoraFactoryAbi,
-          logs: receipt.logs,
-          strict: false,
-        }) as Array<{ eventName?: string; args?: readonly unknown[] }>;
-
-        const created = parsedLogs.find(
-          (log: { eventName?: string }) => log.eventName === "ChallengeCreated",
-        );
-        const challengeId = getLogArg(created?.args, 0, "id");
-        const challengeAddress = getLogArg(created?.args, 1, "challenge");
+        const { challengeId, challengeAddress } =
+          parseChallengeCreatedReceipt(receipt);
 
         const output = {
-          id:
-            typeof challengeId === "bigint" ? Number(challengeId) : challengeId,
+          id: Number(challengeId),
           address: challengeAddress,
           specCid,
           rewardAmount,

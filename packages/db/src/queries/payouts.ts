@@ -3,6 +3,8 @@ import type { AgoraDbClient } from "../index";
 export interface ChallengePayoutWrite {
   challenge_id: string;
   solver_address: string;
+  winning_on_chain_sub_id: number;
+  rank: number;
   amount: number;
   claimed_at?: string | null;
   claim_tx_hash?: string | null;
@@ -47,6 +49,49 @@ export async function replaceChallengePayouts(
   return data ?? [];
 }
 
+export async function upsertChallengePayoutAllocation(
+  db: AgoraDbClient,
+  payout: ChallengePayoutWrite,
+) {
+  const normalizedSolver = payout.solver_address.toLowerCase();
+  const { data: existing, error: existingError } = await db
+    .from("challenge_payouts")
+    .select("*")
+    .eq("challenge_id", payout.challenge_id)
+    .eq("solver_address", normalizedSolver)
+    .eq("rank", payout.rank)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(`Failed to load challenge payout: ${existingError.message}`);
+  }
+
+  const payload = {
+    challenge_id: payout.challenge_id,
+    solver_address: normalizedSolver,
+    winning_on_chain_sub_id: payout.winning_on_chain_sub_id,
+    rank: payout.rank,
+    amount: payout.amount,
+    claimed_at: existing?.claimed_at ?? payout.claimed_at ?? null,
+    claim_tx_hash: existing?.claim_tx_hash ?? payout.claim_tx_hash ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await db
+    .from("challenge_payouts")
+    .upsert(payload, {
+      onConflict: "challenge_id,solver_address,rank",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to upsert challenge payout: ${error.message}`);
+  }
+
+  return data;
+}
+
 export async function markChallengePayoutClaimed(
   db: AgoraDbClient,
   challengeId: string,
@@ -54,7 +99,7 @@ export async function markChallengePayoutClaimed(
   claimedAt: string,
   claimTxHash: string,
 ) {
-  const { data, error } = await db
+  const { error } = await db
     .from("challenge_payouts")
     .update({
       claimed_at: claimedAt,
@@ -62,15 +107,11 @@ export async function markChallengePayoutClaimed(
       updated_at: new Date().toISOString(),
     })
     .eq("challenge_id", challengeId)
-    .eq("solver_address", solverAddress.toLowerCase())
-    .select("*")
-    .maybeSingle();
+    .eq("solver_address", solverAddress.toLowerCase());
 
   if (error) {
     throw new Error(`Failed to mark payout claimed: ${error.message}`);
   }
-
-  return data ?? null;
 }
 
 export async function listChallengePayoutsBySolver(
@@ -80,7 +121,9 @@ export async function listChallengePayoutsBySolver(
   const { data, error } = await db
     .from("challenge_payouts")
     .select("*")
-    .eq("solver_address", solverAddress.toLowerCase());
+    .eq("solver_address", solverAddress.toLowerCase())
+    .order("challenge_id", { ascending: true })
+    .order("rank", { ascending: true });
 
   if (error) {
     throw new Error(`Failed to list challenge payouts: ${error.message}`);

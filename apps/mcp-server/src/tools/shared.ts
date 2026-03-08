@@ -6,6 +6,7 @@ import {
   getOnChainSubmission,
   getPublicClient,
   getWalletClient,
+  parseSubmittedReceipt,
   submitChallengeResult,
   submitChallengeResultWithPrivateKey,
 } from "@agora/chain";
@@ -23,9 +24,6 @@ import {
   resolveSubmissionLimits,
   sealSubmission,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
-  type: "json",
-};
 import {
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
@@ -45,11 +43,7 @@ import {
   resolveSubmissionSource,
   wadToScore,
 } from "@agora/scorer";
-import { parseEventLogs } from "viem";
-import type { Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 /**
  * Simple semaphore to limit concurrent Docker scorer runs.
@@ -293,23 +287,12 @@ export async function submitSolution(input: {
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
   });
-  const parsed = parseEventLogs({
-    abi: AgoraChallengeAbi,
-    logs: receipt.logs,
-    strict: false,
-  });
-  const submitted = parsed.find(
-    (log: { eventName?: string }) => log.eventName === "Submitted",
-  );
-  if (!submitted) throw new Error("Submitted event not found.");
-  const args = submitted.args as unknown as { subId?: bigint };
-  if (args.subId === undefined)
-    throw new Error("Invalid Submitted event payload.");
+  const { submissionId } = parseSubmittedReceipt(receipt, challengeAddress);
 
-  const onChain = await getOnChainSubmission(challengeAddress, args.subId);
+  const onChain = await getOnChainSubmission(challengeAddress, submissionId);
   await upsertSubmissionOnChain(db, {
     challenge_id: input.challengeId,
-    on_chain_sub_id: Number(args.subId),
+    on_chain_sub_id: Number(submissionId),
     solver_address: onChain.solver,
     result_hash: onChain.resultHash,
     proof_bundle_hash: onChain.proofBundleHash,
@@ -321,7 +304,7 @@ export async function submitSolution(input: {
   const row = await setSubmissionResultCid(
     db,
     input.challengeId,
-    Number(args.subId),
+    Number(submissionId),
     resultCid,
     SUBMISSION_RESULT_FORMAT.sealedV1,
   );

@@ -126,6 +126,7 @@ export async function getPublicLeaderboard(
   const rows = (submissionsData ?? []) as unknown as FinalizedSubmissionRow[];
   const payouts = (payoutsData ?? []) as unknown as FinalizedPayoutRow[];
   const grouped = new Map<string, PublicLeaderboardEntry>();
+  const winCredits = new Map<string, Set<string>>();
 
   for (const row of rows) {
     const challengeMeta = Array.isArray(row.challenges)
@@ -195,10 +196,13 @@ export async function getPublicLeaderboard(
     };
 
     existing.totalEarnedUsdc += Number(payout.amount);
-    if (
-      challengeMeta?.winner_solver_address?.toLowerCase() === address
-    ) {
-      existing.wins += 1;
+    if (challengeMeta?.winner_solver_address?.toLowerCase() === address) {
+      const creditedChallenges = winCredits.get(address) ?? new Set<string>();
+      if (!creditedChallenges.has(payout.challenge_id)) {
+        existing.wins += 1;
+        creditedChallenges.add(payout.challenge_id);
+        winCredits.set(address, creditedChallenges);
+      }
     }
     grouped.set(address, existing);
   }

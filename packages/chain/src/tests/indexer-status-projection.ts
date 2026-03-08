@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
+import {
+  encodeAbiParameters,
+  encodeEventTopics,
+  parseAbiItem,
+  type TransactionReceipt,
+} from "viem";
+import { parseSubmittedReceipt } from "../challenge.js";
+import { parseChallengeCreatedReceipt } from "../factory.js";
 import { processChallengeLog } from "../indexer/handlers.js";
 
 type FakeIndexedEvent = {
@@ -109,6 +117,37 @@ function createFakeDb() {
   };
 }
 
+function buildReceiptLog(input: {
+  address: `0x${string}`;
+  topics: [] | [`0x${string}`, ...`0x${string}`[]];
+  data: `0x${string}`;
+}) {
+  return {
+    address: input.address,
+    blockHash: `0x${"c".repeat(64)}` as `0x${string}`,
+    blockNumber: 1n,
+    logIndex: 0,
+    transactionHash: `0x${"d".repeat(64)}` as `0x${string}`,
+    transactionIndex: 0,
+    removed: false,
+    topics: input.topics,
+    data: input.data,
+  } as TransactionReceipt["logs"][number];
+}
+
+function encodeTopics(
+  topics: ReturnType<typeof encodeEventTopics>,
+): [] | [`0x${string}`, ...`0x${string}`[]] {
+  const flattened = (Array.isArray(topics) ? topics : [topics]).flat();
+  const normalized = flattened.filter(
+    (topic): topic is `0x${string}` => typeof topic === "string",
+  );
+  if (normalized.length === 0) {
+    throw new Error("Event topics unexpectedly encoded to null.");
+  }
+  return normalized as [`0x${string}`, ...`0x${string}`[]];
+}
+
 test("StatusChanged projects scoring status and marks the event indexed", async () => {
   const db = createFakeDb();
   const txHash = `0x${"a".repeat(64)}` as `0x${string}`;
@@ -151,5 +190,79 @@ test("StatusChanged projects scoring status and marks the event indexed", async 
     event_name: "StatusChanged",
     block_number: 123,
     block_hash: `0x${"b".repeat(64)}`,
+  });
+});
+
+test("parseChallengeCreatedReceipt decodes the canonical factory event", () => {
+  const challengeAddress =
+    "0x0000000000000000000000000000000000000002" as `0x${string}`;
+  const posterAddress =
+    "0x0000000000000000000000000000000000000003" as `0x${string}`;
+  const reward = 10_000_000n;
+
+  const challengeCreatedEvent = parseAbiItem(
+    "event ChallengeCreated(uint256 indexed id, address indexed challenge, address indexed poster, uint256 reward)",
+  );
+  const receipt: Pick<TransactionReceipt, "logs"> = {
+    logs: [
+      buildReceiptLog({
+        address: "0x0000000000000000000000000000000000000001",
+        topics: encodeTopics(encodeEventTopics({
+          abi: [challengeCreatedEvent],
+          eventName: "ChallengeCreated",
+          args: {
+            id: 7n,
+            challenge: challengeAddress,
+            poster: posterAddress,
+          },
+        })),
+        data: encodeAbiParameters(
+          [{ name: "reward", type: "uint256" }],
+          [reward],
+        ),
+      }),
+    ],
+  };
+
+  assert.deepEqual(parseChallengeCreatedReceipt(receipt), {
+    challengeId: 7n,
+    challengeAddress,
+    posterAddress,
+    reward,
+  });
+});
+
+test("parseSubmittedReceipt decodes the canonical challenge event", () => {
+  const challengeAddress =
+    "0x0000000000000000000000000000000000000009" as `0x${string}`;
+  const solver =
+    "0x0000000000000000000000000000000000000004" as `0x${string}`;
+  const resultHash = `0x${"ab".repeat(32)}` as `0x${string}`;
+
+  const submittedEvent = parseAbiItem(
+    "event Submitted(uint256 indexed submissionId, address indexed solver, bytes32 resultHash)",
+  );
+  const receipt: Pick<TransactionReceipt, "logs"> = {
+    logs: [
+      buildReceiptLog({
+        address: challengeAddress,
+        topics: encodeTopics(encodeEventTopics({
+          abi: [submittedEvent],
+          eventName: "Submitted",
+          args: {
+            submissionId: 3n,
+            solver,
+          },
+        })),
+        data: encodeAbiParameters(
+          [{ name: "resultHash", type: "bytes32" }],
+          [resultHash],
+        ),
+      }),
+    ],
+  };
+
+  assert.deepEqual(parseSubmittedReceipt(receipt, challengeAddress), {
+    submissionId: 3n,
   });
 });

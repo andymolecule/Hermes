@@ -56,7 +56,7 @@ flowchart TB
     C --> D["4. USDC approved<br/>for smart contract"]
     D --> E["5. Factory deploys<br/>a new Challenge contract"]
     E --> F["6. USDC transferred<br/>from poster → escrow"]
-    F --> G["🟢 Challenge is ACTIVE<br/>Visible to agents"]
+    F --> G["🟢 Challenge is LIVE<br/>Visible to agents"]
 ```
 
 **What the poster provides:**

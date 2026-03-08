@@ -21,6 +21,12 @@ type PortfolioDbClient = ReturnType<typeof createSupabaseClient>;
 type SolverSubmissionRow = Awaited<
   ReturnType<typeof listSubmissionsBySolver>
 >[number];
+type SolverPayoutRow = {
+  challenge_id: string;
+  amount: string | number;
+  claimed_at?: string | null;
+  claim_tx_hash?: string | null;
+};
 
 function challengeContractAddress(
   submission: SolverSubmissionRow,
@@ -29,6 +35,36 @@ function challengeContractAddress(
     ? submission.challenges[0]
     : submission.challenges;
   return challengeMeta?.contract_address as `0x${string}` | undefined;
+}
+
+function aggregatePayoutRowsByChallenge(payoutRows: SolverPayoutRow[]) {
+  const aggregated = new Map<
+    string,
+    {
+      challenge_id: string;
+      amount: string;
+      claimed_at: string | null;
+      claim_tx_hash: string | null;
+    }
+  >();
+
+  for (const payout of payoutRows) {
+    const key = payout.challenge_id;
+    const current = aggregated.get(key) ?? {
+      challenge_id: key,
+      amount: "0",
+      claimed_at: null,
+      claim_tx_hash: null,
+    };
+    current.amount = (
+      Number(current.amount) + Number(payout.amount ?? 0)
+    ).toString();
+    current.claimed_at = current.claimed_at ?? payout.claimed_at ?? null;
+    current.claim_tx_hash = current.claim_tx_hash ?? payout.claim_tx_hash ?? null;
+    aggregated.set(key, current);
+  }
+
+  return aggregated;
 }
 
 const defaultDeps: PortfolioRouteDeps = {
@@ -42,20 +78,13 @@ const defaultDeps: PortfolioRouteDeps = {
 export function buildPortfolioResponse(
   address: string,
   submissions: SolverSubmissionRow[],
-  payoutRows: Array<{
-    challenge_id: string;
-    amount: string | number;
-    claimed_at?: string | null;
-    claim_tx_hash?: string | null;
-  }>,
+  payoutRows: SolverPayoutRow[],
   claimableAmounts: Record<string, string>,
 ) {
   const challengeIds = new Set(
     submissions.map((submission) => submission.challenge_id),
   );
-  const payoutsByChallenge = new Map(
-    payoutRows.map((payout) => [payout.challenge_id, payout]),
-  );
+  const payoutsByChallenge = aggregatePayoutRowsByChallenge(payoutRows);
 
   return {
     data: {

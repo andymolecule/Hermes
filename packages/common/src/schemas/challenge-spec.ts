@@ -95,6 +95,7 @@ function resolveSpecEvaluationBundle(
 // Shared challenge spec shape. dispute_window_hours is range-validated only;
 // callers decide which UI options to offer.
 const _baseSpecShape = z.object({
+  schema_version: z.literal(2),
   id: z.string().min(1),
   preset_id: z.string().min(1).optional(),
   title: z.string().min(1),
@@ -109,7 +110,8 @@ const _baseSpecShape = z.object({
       hidden_labels: datasetSource.optional(),
     })
     .optional(),
-  // Legacy scoring section — still accepted for backward compatibility
+  // Author-facing scoring section. When eval_spec is omitted, the runtime
+  // resolves the canonical evaluation plan from this block plus dataset.test.
   scoring: z.object({
     container: z.string().min(1),
     metric: scoringMetricEnum,

@@ -8,7 +8,19 @@ library AgoraEvents {
     event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus);
     event Submitted(uint256 indexed submissionId, address indexed solver, bytes32 resultHash);
     event Scored(uint256 indexed submissionId, uint256 score, bytes32 proofBundleHash);
-    event Finalized(uint256 protocolFee, uint256 totalPayout);
+    event SettlementFinalized(
+        uint256 indexed winningSubmissionId,
+        address indexed winnerSolver,
+        uint256 protocolFee,
+        uint256 totalPayout,
+        uint8 distributionType
+    );
+    event PayoutAllocated(
+        address indexed solver,
+        uint256 indexed submissionId,
+        uint8 indexed rank,
+        uint256 amount
+    );
     event Disputed(address indexed disputer, string reason);
     event DisputeResolved(uint256 indexed winningSubmissionId);
     event Cancelled();

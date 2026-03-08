@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ACTIVE_CONTRACT_VERSION,
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
@@ -191,6 +192,16 @@ export function SubmitSolution({
       }
 
       const resultHash = computeSubmissionResultHash(cid);
+      const contractVersion = await publicClient.readContract({
+        address: challengeAddress as `0x${string}`,
+        abi: AgoraChallengeAbi,
+        functionName: "contractVersion",
+      }) as bigint;
+      if (Number(contractVersion) !== ACTIVE_CONTRACT_VERSION) {
+        throw new Error(
+          `Unsupported challenge contract version ${contractVersion}. Refresh against the active v${ACTIVE_CONTRACT_VERSION} deployment and retry.`,
+        );
+      }
 
       setStatus("Submitting on-chain — confirm in your wallet...");
       const tx = await writeContractAsync({

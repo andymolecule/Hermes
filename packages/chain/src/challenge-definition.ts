@@ -1,4 +1,5 @@
 import {
+  ACTIVE_CONTRACT_VERSION,
   isValidPinnedSpecCid,
   validateChallengeSpec,
   type ChallengeSpecOutput,
@@ -10,6 +11,7 @@ import { getText } from "@agora/ipfs";
 import { type Abi } from "viem";
 import yaml from "yaml";
 import { getPublicClient } from "./client.js";
+import { getChallengeContractVersion } from "./challenge.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
@@ -44,7 +46,7 @@ export async function loadChallengeDefinitionFromChain(input: {
 }) {
   const publicClient = input.publicClient ?? getPublicClient();
 
-  const [specCid, onChainDeadline] = await Promise.all([
+  const [specCid, onChainDeadline, contractVersion] = await Promise.all([
     publicClient.readContract({
       address: input.challengeAddress,
       abi: AgoraChallengeAbi,
@@ -55,13 +57,20 @@ export async function loadChallengeDefinitionFromChain(input: {
       abi: AgoraChallengeAbi,
       functionName: "deadline",
     }) as Promise<bigint>,
+    getChallengeContractVersion(input.challengeAddress),
   ]);
 
   const spec = await fetchValidatedChallengeSpec(specCid, input.chainId);
+  if (contractVersion !== ACTIVE_CONTRACT_VERSION) {
+    throw new Error(
+      `Unsupported challenge contract version ${contractVersion}. Point the runtime at the active v${ACTIVE_CONTRACT_VERSION} deployment and retry.`,
+    );
+  }
 
   return {
     specCid,
     spec,
+    contractVersion,
     onChainDeadline,
     onChainDeadlineIso: new Date(Number(onChainDeadline) * 1000).toISOString(),
   };

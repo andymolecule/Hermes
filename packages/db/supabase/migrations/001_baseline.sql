@@ -6,6 +6,8 @@ create extension if not exists "pgcrypto";
 create table challenges (
   id uuid primary key default gen_random_uuid(),
   chain_id integer not null,
+  contract_version integer not null,
+  spec_schema_version integer not null,
   contract_address text not null,
   factory_address text not null,
   poster_address text not null,
@@ -50,6 +52,10 @@ create table challenges (
     check (distribution_type in ('winner_take_all', 'top_3', 'proportional')),
   constraint challenges_contract_address_lowercase_check
     check (contract_address = lower(contract_address)),
+  constraint challenges_contract_version_check
+    check (contract_version > 0),
+  constraint challenges_spec_schema_version_check
+    check (spec_schema_version > 0),
   constraint challenges_factory_address_lowercase_check
     check (factory_address = lower(factory_address)),
   constraint challenges_poster_address_lowercase_check
@@ -154,14 +160,18 @@ create table verifications (
 create table challenge_payouts (
   challenge_id uuid not null references challenges(id) on delete cascade,
   solver_address text not null,
+  winning_on_chain_sub_id bigint not null,
+  rank integer not null,
   amount numeric(20, 6) not null,
   claimed_at timestamptz,
   claim_tx_hash text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  primary key (challenge_id, solver_address),
+  primary key (challenge_id, solver_address, rank),
   constraint challenge_payouts_solver_address_lowercase_check
     check (solver_address = lower(solver_address)),
+  constraint challenge_payouts_rank_check
+    check (rank > 0),
   constraint challenge_payouts_amount_check
     check (amount >= 0)
 );

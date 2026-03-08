@@ -14,6 +14,13 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 - Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
 - Ops: Testnet deployment and runbook (`scripts/*`, `docs/testnet-ops-runbook.md`)
 
+### Active Generation Boundary
+
+- Agora runs one active contract generation at a time.
+- `AgoraFactory` and `AgoraChallenge` expose `contractVersion()` for diagnostics, projection traceability, and future cutovers.
+- `@agora/chain` is the only layer that understands raw ABI/event/status details for the active generation.
+- API, worker, CLI, MCP, and web should consume canonical domain reads instead of duplicating raw contract decoding.
+
 ```mermaid
 flowchart TB
     subgraph Clients["Client Layer"]
@@ -312,7 +319,7 @@ sequenceDiagram
 
     Chain->>Chain: finalize()
     Chain->>Chain: 5% → treasury, 95% → winner payout
-    Chain-->>Chain: emit Finalized
+    Chain-->>Chain: emit PayoutAllocated + SettlementFinalized
 
     Note over Chain: Winner calls claim()
 ```
@@ -586,12 +593,12 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph Chain["Base (on-chain)"]
-        Events["Contract Events<br/>ChallengeCreated<br/>Submitted<br/>Scored<br/>Finalized<br/>Disputed<br/>Cancelled"]
+        Events["Contract Events<br/>ChallengeCreated<br/>Submitted<br/>Scored<br/>PayoutAllocated<br/>SettlementFinalized<br/>Disputed<br/>Cancelled"]
     end
 
     subgraph Indexer["Chain Indexer (always-on)"]
         Poller["getLogs() every 30s"]
-        Parser["Parse event data"]
+        Parser["Parse active-generation event data<br/>through @agora/chain"]
         Dedup["Dedup via indexed_events table"]
         Replay["Replay recent confirmed block window"]
         Reconcile["Reconcile DB projection against chain"]

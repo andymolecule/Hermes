@@ -2,6 +2,7 @@
 
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
 import {
+  ACTIVE_CONTRACT_VERSION,
   computeSpecHash,
   defaultPresetIdForChallengeType,
   getPinSpecAuthorizationTypedData,
@@ -691,6 +692,7 @@ function buildSpec(state: FormState) {
   const disputeWindow = state.disputeWindow.trim();
 
   return {
+    schema_version: 2 as const,
     id: `web-${Date.now()}`,
     preset_id: presetId,
     title: state.title,
@@ -722,9 +724,9 @@ function buildSpec(state: FormState) {
 // ─── Deadline Helpers ────────────────────────────────
 
 /** Compute a fresh deadline ISO from days. Always computed live, never stored stale.
- *  Quick-test (0 days) adds a 2-min buffer beyond the displayed 15 min to
+ *  Quick-test (0 days) adds a 2-min buffer beyond the displayed 30 min to
  *  absorb IPFS pinning, wallet confirmations, and slow RPC round-trips. */
-const QUICK_TEST_MINUTES = 15;
+const QUICK_TEST_MINUTES = 30;
 const QUICK_TEST_BUFFER_MINUTES = 2;
 
 function computeDeadlineIso(days: string): string {
@@ -1272,6 +1274,17 @@ export function PostClient() {
       const latestFunding = await refreshPostingFundingState(rewardUnits);
       if (latestFunding.balance < rewardUnits) {
         throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
+      }
+
+      const factoryVersion = await publicClient.readContract({
+        address: FACTORY_ADDRESS,
+        abi: AgoraFactoryAbi,
+        functionName: "contractVersion",
+      }) as bigint;
+      if (Number(factoryVersion) !== ACTIVE_CONTRACT_VERSION) {
+        throw new Error(
+          `Unsupported factory contract version ${factoryVersion}. Update NEXT_PUBLIC_AGORA_FACTORY_ADDRESS to the active v${ACTIVE_CONTRACT_VERSION} factory and retry.`,
+        );
       }
 
       if (latestFunding.method === "permit" && latestFunding.allowance < rewardUnits) {
@@ -1956,7 +1969,7 @@ export function PostClient() {
             <FormField label="Submission deadline" hint="How long solvers have to submit">
               <select className="form-select" value={state.deadlineDays}
                 onChange={(e) => setState((s) => ({ ...s, deadlineDays: e.target.value }))}>
-                {isTestnetChain(CHAIN_ID) && <option value="0">Quick test (15 min)</option>}
+                {isTestnetChain(CHAIN_ID) && <option value="0">Quick test (30 min)</option>}
                 <option value="7">7 days</option>
                 <option value="14">14 days</option>
                 <option value="30">30 days</option>
@@ -2095,7 +2108,7 @@ export function PostClient() {
                   {[
                     {
                       label: "Submissions open",
-                      detail: state.deadlineDays === "0" ? "Duration: 15 min" : `Duration: ${state.deadlineDays} days`,
+                      detail: state.deadlineDays === "0" ? "Duration: 30 min" : `Duration: ${state.deadlineDays} days`,
                       note: "Solvers can start submitting as soon as the contract is deployed.",
                       active: true,
                     },
@@ -2206,7 +2219,7 @@ export function PostClient() {
               <div className="preview-divider" />
               <div className="preview-row"><span className="preview-label">Reward</span><span className="preview-value">{state.reward} USDC</span></div>
               <div className="preview-row"><span className="preview-label">Distribution</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
-              <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "15 min" : `${state.deadlineDays} days`}</span></div>
+              <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "30 min" : `${state.deadlineDays} days`}</span></div>
               <div className="preview-row"><span className="preview-label">Dispute window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
               <div className="preview-row"><span className="preview-label">Payout released</span><span className="preview-value">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span></div>
               <div className="preview-divider" />

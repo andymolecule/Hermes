@@ -10,6 +10,8 @@ import {AgoraErrors} from "./libraries/AgoraErrors.sol";
 import {AgoraEvents} from "./libraries/AgoraEvents.sol";
 
 contract AgoraFactory is Ownable {
+    uint16 public constant CONTRACT_VERSION = 2;
+
     IERC20 public immutable usdc;
     address public oracle;
     address public treasury;
@@ -23,6 +25,10 @@ contract AgoraFactory is Ownable {
         usdc = usdc_;
         oracle = oracle_;
         treasury = treasury_;
+    }
+
+    function contractVersion() external pure returns (uint16) {
+        return CONTRACT_VERSION;
     }
 
     function setOracle(address newOracle) external onlyOwner {

@@ -176,6 +176,7 @@ export async function runIndexer() {
             db,
             publicClient,
             challenge,
+            challengeFromBlock,
             blockNumber: toBlock,
           });
           if (reconcileResult.deleted) {

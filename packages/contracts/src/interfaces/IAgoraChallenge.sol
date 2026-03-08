@@ -44,6 +44,7 @@ interface IAgoraChallenge {
 
     /// @notice Read-side lifecycle truth. After deadline this may report
     ///         `Scoring` before the persisted `startScoring()` transition lands.
+    function contractVersion() external pure returns (uint16);
     function status() external view returns (Status);
     function rewardAmount() external view returns (uint256);
     function deadline() external view returns (uint64);

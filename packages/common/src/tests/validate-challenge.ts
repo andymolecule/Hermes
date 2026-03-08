@@ -10,6 +10,7 @@ import {
 import { CHALLENGE_TYPES } from "../types/challenge.js";
 
 const sample = {
+  schema_version: 2,
   id: "ch-001",
   preset_id: "csv_comparison_v1",
   title: "Reproduce Figure 3 from Gladyshev 2024 longevity clock",
@@ -107,17 +108,17 @@ if (resolvedNew.metric !== "custom") {
   process.exit(1);
 }
 
-const resolvedLegacy = resolveEvalSpec(result.data);
-if (resolvedLegacy.evaluationBundleCid !== "ipfs://QmTest") {
+const resolvedScoringOnly = resolveEvalSpec(result.data);
+if (resolvedScoringOnly.evaluationBundleCid !== "ipfs://QmTest") {
   console.error("resolveEvalSpec should fall back to dataset.test");
   process.exit(1);
 }
-if (resolvedLegacy.image !== "ghcr.io/agora-science/repro-scorer:v1") {
+if (resolvedScoringOnly.image !== "ghcr.io/agora-science/repro-scorer:v1") {
   console.error("resolveEvalSpec should use scoring.container");
   process.exit(1);
 }
-if (resolvedLegacy.metric !== "custom") {
-  console.error("resolveEvalSpec should preserve metric on legacy input");
+if (resolvedScoringOnly.metric !== "custom") {
+  console.error("resolveEvalSpec should preserve metric on scoring-only input");
   process.exit(1);
 }
 
@@ -140,6 +141,7 @@ if (resolvedRow.metric !== "custom") {
 }
 
 const predictionHiddenLabelsOnly = challengeSpecSchema.safeParse({
+  schema_version: 2,
   id: "ch-004",
   title: "Prediction hidden labels only",
   domain: "omics",
@@ -191,6 +193,7 @@ if (!predictionScoreability.ok) {
 }
 
 const predictionTestOnly = challengeSpecSchema.safeParse({
+  schema_version: 2,
   id: "ch-004b",
   title: "Prediction test dataset only",
   domain: "omics",
@@ -228,6 +231,7 @@ if (
 }
 
 const predictionMissingEvalBundle = challengeSpecSchema.safeParse({
+  schema_version: 2,
   id: "ch-005",
   title: "Prediction missing eval bundle",
   domain: "omics",
@@ -252,6 +256,7 @@ if (predictionMissingEvalBundle.success) {
 }
 
 const predictionMatchingEvalBundle = challengeSpecSchema.safeParse({
+  schema_version: 2,
   id: "ch-006",
   title: "Prediction matching hidden labels and eval bundle",
   domain: "omics",
@@ -292,6 +297,7 @@ if (resolvedPredictionEvalBundle.evaluationBundleCid !== "ipfs://QmSharedBundle"
 }
 
 const predictionMismatchedEvalBundle = challengeSpecSchema.safeParse({
+  schema_version: 2,
   id: "ch-007",
   title: "Prediction mismatched hidden labels and eval bundle",
   domain: "omics",
@@ -323,6 +329,7 @@ if (predictionMismatchedEvalBundle.success) {
 }
 
 const reproducibilityMissingBundle = challengeSpecSchema.parse({
+  schema_version: 2,
   id: "ch-008",
   title: "Reproducibility missing bundle",
   domain: "longevity",
@@ -361,6 +368,7 @@ if (
 
 const customPinnedScoreability = validateChallengeScoreability(
   challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-009",
     title: "Custom pinned scorer",
     domain: "other",
@@ -388,6 +396,7 @@ if (!customPinnedScoreability.ok) {
 
 const optimizationScoreability = validateChallengeScoreability(
   challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-010",
     title: "Optimization scoreable",
     domain: "drug_discovery",
@@ -418,6 +427,7 @@ if (!optimizationScoreability.ok) {
 
 const dockingMissingBundle = validateChallengeScoreability(
   challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-011",
     title: "Docking missing bundle",
     domain: "drug_discovery",
@@ -454,6 +464,7 @@ if (
 
 {
   const invalidMetricSpec = {
+    schema_version: 2,
     id: "ch-012",
     title: "Docking blank metric",
     domain: "drug_discovery",
@@ -501,6 +512,7 @@ if (
 
 const redTeamScoreability = validateChallengeScoreability(
   challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-013",
     title: "Red team scoreable",
     domain: "other",
@@ -531,6 +543,7 @@ if (!redTeamScoreability.ok) {
 
 {
   const parsedRedTeam = challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-014",
     title: "Red team missing image",
     domain: "other",
@@ -585,6 +598,7 @@ for (const challengeType of CHALLENGE_TYPES) {
 {
   const canonicalized = await canonicalizeChallengeSpec(
     challengeSpecSchema.parse({
+  schema_version: 2,
       id: "ch-015",
       preset_id: "regression_v1",
       title: "Canonicalize official scorer",

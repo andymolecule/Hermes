@@ -53,20 +53,23 @@ Relevant files:
 
 ## 4. Contract And Chain Cutover
 
-- [ ] Deploy the Agora contracts for the active environment.
+- [ ] Reset the active testnet Supabase DB and apply only [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
+- [ ] Deploy a fresh `v2` factory for the active environment.
 - [ ] Verify the deployments on the chain explorer under the Agora contract names.
 - [ ] Update all runtime addresses together:
   - `AGORA_FACTORY_ADDRESS`
   - `AGORA_USDC_ADDRESS`
   - `AGORA_CHAIN_ID`
   - `AGORA_RPC_URL`
+  - `AGORA_ORACLE_ADDRESS`
+  - `AGORA_TREASURY_ADDRESS`
   - `NEXT_PUBLIC_AGORA_FACTORY_ADDRESS`
   - `NEXT_PUBLIC_AGORA_USDC_ADDRESS`
   - `NEXT_PUBLIC_AGORA_CHAIN_ID`
   - `NEXT_PUBLIC_AGORA_RPC_URL`
 - [ ] Set or update the indexer start block for the new deployment generation.
-- [ ] Reindex from the Agora factory only.
-- [ ] Keep prior-generation onchain records queryable as legacy history.
+- [ ] Reindex from the fresh `v2` factory only.
+- [ ] Do not mix prior-generation factory addresses into active runtime envs.
 
 Relevant files:
 

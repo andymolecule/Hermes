@@ -10,6 +10,19 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
 contract AgoraChallengeTest is Test {
     event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus);
+    event SettlementFinalized(
+        uint256 indexed winningSubmissionId,
+        address indexed winnerSolver,
+        uint256 protocolFee,
+        uint256 totalPayout,
+        uint8 distributionType
+    );
+    event PayoutAllocated(
+        address indexed solver,
+        uint256 indexed submissionId,
+        uint8 indexed rank,
+        uint256 amount
+    );
 
     MockUSDC private usdc;
     AgoraChallenge private challenge;
@@ -75,6 +88,10 @@ contract AgoraChallengeTest is Test {
         AgoraChallenge.Submission memory submission = challenge.getSubmission(subId);
         assertEq(submission.scored, true);
         assertEq(submission.score, 100e18);
+    }
+
+    function testContractVersionIsV2() public view {
+        assertEq(challenge.contractVersion(), 2);
     }
 
     function testSubmitMultipleFromSameWallet() public {
@@ -169,6 +186,31 @@ contract AgoraChallengeTest is Test {
         assertEq(usdc.balanceOf(treasury), treasuryBefore + fee);
     }
 
+    function testFinalizeEmitsCanonicalSettlementEvents() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
+
+        vm.warp(block.timestamp + 9 days);
+
+        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 payout = 10e6 - fee;
+
+        vm.expectEmit(true, true, true, true, address(challenge));
+        emit PayoutAllocated(solver, subId, 1, payout);
+        vm.expectEmit(true, true, false, true, address(challenge));
+        emit SettlementFinalized(
+            subId,
+            solver,
+            fee,
+            payout,
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll)
+        );
+
+        challenge.finalize();
+    }
+
     function testFinalizeRequiresDisputeWindowElapsed() public {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
@@ -209,6 +251,47 @@ contract AgoraChallengeTest is Test {
             top3.payoutByAddress(address(0x3)),
             remaining - ((remaining * 70) / 100) - ((remaining * 20) / 100)
         );
+    }
+
+    function testTopThreeEmitsRankedPayoutAllocations() public {
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.rewardAmount = 30e6;
+        cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
+        AgoraChallenge top3 = new AgoraChallenge(cfg);
+        vm.prank(poster);
+        usdc.transfer(address(top3), 30e6);
+
+        address solverA = address(0x1);
+        address solverB = address(0x2);
+        address solverC = address(0x3);
+
+        vm.prank(solverA);
+        uint256 subA = top3.submit(keccak256("a"));
+        vm.prank(solverB);
+        uint256 subB = top3.submit(keccak256("b"));
+        vm.prank(solverC);
+        uint256 subC = top3.submit(keccak256("c"));
+
+        _postScore(top3, subA, 30, keccak256("p1"));
+        _postScore(top3, subB, 20, keccak256("p2"));
+        _postScore(top3, subC, 10, keccak256("p3"));
+
+        vm.warp(block.timestamp + 9 days);
+
+        uint256 fee = (30e6 * 500) / 10_000;
+        uint256 remaining = 30e6 - fee;
+        uint256 first = (remaining * 70) / 100;
+        uint256 second = (remaining * 20) / 100;
+        uint256 third = remaining - first - second;
+
+        vm.expectEmit(true, true, true, true, address(top3));
+        emit PayoutAllocated(solverA, subA, 1, first);
+        vm.expectEmit(true, true, true, true, address(top3));
+        emit PayoutAllocated(solverB, subB, 2, second);
+        vm.expectEmit(true, true, true, true, address(top3));
+        emit PayoutAllocated(solverC, subC, 3, third);
+
+        top3.finalize();
     }
 
     function testProportionalDistribution() public {
@@ -256,6 +339,33 @@ contract AgoraChallengeTest is Test {
         uint256 fee = (10e6 * 500) / 10_000;
         uint256 remaining = 10e6 - fee;
         assertEq(challenge.payoutByAddress(solver), remaining);
+    }
+
+    function testResolveDisputeEmitsCanonicalSettlementEvents() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
+
+        vm.warp(block.timestamp + 1 days + 1 hours);
+        vm.prank(address(0x999));
+        challenge.dispute("bad score");
+
+        uint256 fee = (10e6 * 500) / 10_000;
+        uint256 payout = 10e6 - fee;
+
+        vm.expectEmit(true, true, true, true, address(challenge));
+        emit PayoutAllocated(solver, subId, 1, payout);
+        vm.expectEmit(true, true, false, true, address(challenge));
+        emit SettlementFinalized(
+            subId,
+            solver,
+            fee,
+            payout,
+            uint8(IAgoraChallenge.DistributionType.WinnerTakeAll)
+        );
+
+        vm.prank(oracle);
+        challenge.resolveDispute(subId);
     }
 
     function testDisputeResolveProportionalHonorsWinnerDust() public {

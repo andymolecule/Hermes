@@ -6,10 +6,12 @@ This runbook is for Base Sepolia operations before opening Agora to real users.
 
 1. Merge latest `main` and deploy from `main` only.
 2. Ensure all required environment variables are set in your host platform.
-3. Reset the testnet Supabase schema if it still has pre-baseline data, then apply the baseline migration in `packages/db/supabase/migrations`.
-4. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
-5. Set API CORS allowlist via `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-6. Build and run preflight:
+3. For a clean contract generation cut, reset the testnet Supabase schema and apply only [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql).
+4. Deploy a fresh `v2` factory. `scripts/deploy.sh` requires explicit `AGORA_ORACLE_ADDRESS` and `AGORA_TREASURY_ADDRESS`.
+5. Set `AGORA_INDEXER_START_BLOCK` to the new factory deployment block before restarting the indexer.
+6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
+7. Set API CORS allowlist via `AGORA_CORS_ORIGINS` (comma-separated exact origins).
+8. Build and run preflight:
 
 ```bash
 pnpm install
@@ -49,6 +51,7 @@ pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, 
 - **API / indexer** create `score_jobs` rows when submissions arrive.
 - **Worker** polls the `score_jobs` table, but only claims jobs after the challenge enters `Scoring` at deadline. It then runs the Docker scorer container and posts scores + proof bundles on-chain.
 - **Scorer** is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- **Contract generation** is one active `v2` factory at a time. Runtime envs should never mix multiple factory generations.
 
 The worker and API share no runtime state. The only coordination point is the `score_jobs` table.
 
@@ -60,13 +63,21 @@ Run one partial loop on Base Sepolia:
 ./scripts/e2e-test.sh
 ```
 
+Useful overrides for faster or more debuggable sessions:
+
+```bash
+AGORA_E2E_DEADLINE_MINUTES=30 \
+AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
+./scripts/e2e-test.sh
+```
+
 Expected flow (same-session):
 - `agora post` succeeds
 - challenge appears via indexer/API
 - `agora submit` succeeds
 - `agora score` + `agora verify` succeed
 
-> **Note:** `agora finalize` and `agora claim` require the dispute window (168–2160 hours) to elapse after deadline. These cannot be tested in the same session on live Base Sepolia. To test the full lifecycle including finalization, use a local Anvil RPC with `evm_increaseTime` for time travel.
+> **Note:** `agora finalize` and `agora claim` require the selected dispute window to elapse after deadline. For same-session Base Sepolia testing, use `AGORA_E2E_DISPUTE_WINDOW_HOURS=0` or `1`. For full time-travel lifecycle testing, use a local Anvil RPC with `evm_increaseTime`.
 
 ## 4. Monitoring
 
@@ -110,7 +121,7 @@ agora reindex --from-block <block_number>
 
 6. If a deep replay is required, include `--purge-indexed-events`.
 7. Ensure `AGORA_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
-8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then rewind the new factory cursor.
+8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then reindex the fresh `v2` deployment from its deploy block.
 
 ### Bad deploy / regression
 

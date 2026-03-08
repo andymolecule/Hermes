@@ -8,6 +8,7 @@ import { buildChallengeInsert } from "../queries/challenges";
 
 const baseInput = {
   chainId: DEFAULT_CHAIN_ID,
+  contractVersion: 2,
   contractAddress: "0x0000000000000000000000000000000000000001",
   factoryAddress: "0x000000000000000000000000000000000000000f",
   posterAddress: "0x0000000000000000000000000000000000000002",
@@ -18,6 +19,7 @@ const baseInput = {
 };
 
 const regressionSpec = challengeSpecSchema.parse({
+  schema_version: 2,
   id: "ch-1",
   preset_id: "regression_v1",
   title: "Regression challenge",
@@ -61,6 +63,7 @@ assert.equal(insertWithPreset.eval_bundle_cid, "ipfs://QmHiddenLabelsOnly");
 assert.equal(insertWithPreset.dataset_test_cid, null);
 
 const inferredSpec = challengeSpecSchema.parse({
+  schema_version: 2,
   id: "ch-2",
   title: "Regression challenge 2",
   domain: "omics",
@@ -115,6 +118,7 @@ await assert.rejects(
 );
 
 const customUnpinnedSpec = challengeSpecSchema.parse({
+  schema_version: 2,
   id: "ch-4",
   title: "Custom challenge",
   domain: "other",
@@ -170,6 +174,7 @@ assert.equal(customLimitsInsert.max_submissions_total, 25);
 assert.equal(customLimitsInsert.max_submissions_per_solver, 2);
 
 const reproMissingBundleSpec = challengeSpecSchema.parse({
+  schema_version: 2,
   id: "ch-7",
   preset_id: "csv_comparison_v1",
   title: "Repro missing bundle",
@@ -236,6 +241,7 @@ try {
   Date.now = () => originalDateNow() + 10 * 60 * 1000;
 
   const reproOfficialSpec = challengeSpecSchema.parse({
+  schema_version: 2,
     id: "ch-8",
     preset_id: "csv_comparison_v1",
     title: "Repro official digest resolution",

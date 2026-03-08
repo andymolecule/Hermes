@@ -9,9 +9,15 @@ const nextBin = require.resolve("next/dist/bin/next");
 const args = process.argv.slice(2);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootEnvPath = path.join(scriptDir, "..", "..", "..", ".env");
+const appRoot = path.join(scriptDir, "..");
+const nextOutputDir = path.join(appRoot, ".next");
 
 if (typeof process.loadEnvFile === "function" && fs.existsSync(rootEnvPath)) {
   process.loadEnvFile(rootEnvPath);
+}
+
+if (args[0] === "build" && fs.existsSync(nextOutputDir)) {
+  fs.rmSync(nextOutputDir, { recursive: true, force: true });
 }
 
 const child = spawn(process.execPath, [nextBin, ...args], {

@@ -735,9 +735,6 @@ export function DetailClient({ id }: { id: string }) {
             <ChallengeActions
               challengeId={challenge.id}
               contractAddress={challenge.contract_address}
-              challengeStatus={challenge.status}
-              deadline={challenge.deadline}
-              disputeWindowHours={challenge.dispute_window_hours ?? 168}
             />
 
             <TimelineStatus challenge={challenge} submissions={submissions} />

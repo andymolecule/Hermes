@@ -1,7 +1,7 @@
 "use client";
 
 import { SlidersHorizontal, X } from "lucide-react";
-import { ON_CHAIN_STATUS_ORDER } from "@agora/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 
 export type ChallengeFilterState = {
   domain: string;
@@ -11,7 +11,7 @@ export type ChallengeFilterState = {
 };
 
 const DOMAINS = ["longevity", "drug_discovery", "omics", "protein_design", "neuroscience", "other"];
-const STATUSES = [...ON_CHAIN_STATUS_ORDER];
+const STATUSES = Object.values(CHALLENGE_STATUS);
 
 function Pill({
   label,

@@ -4,7 +4,6 @@ import {
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
   getEffectiveChallengeStatus,
-  ON_CHAIN_STATUS_ORDER,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   loadConfig,
@@ -14,22 +13,7 @@ import {
 } from "../index.js";
 
 const statusValues = Object.values(CHALLENGE_STATUS);
-assert.equal(
-  ON_CHAIN_STATUS_ORDER.length,
-  statusValues.length,
-  "on-chain status order should contain all statuses exactly once",
-);
-assert.deepEqual(
-  [...new Set(ON_CHAIN_STATUS_ORDER)],
-  ON_CHAIN_STATUS_ORDER,
-  "on-chain status order should not contain duplicates",
-);
-for (const status of statusValues) {
-  assert.ok(
-    ON_CHAIN_STATUS_ORDER.includes(status),
-    `missing status in ON_CHAIN_STATUS_ORDER: ${status}`,
-  );
-}
+assert.equal(statusValues.length, 5, "challenge status registry should stay explicit");
 
 assert.equal(
   SCORE_JOB_STATUSES.length,

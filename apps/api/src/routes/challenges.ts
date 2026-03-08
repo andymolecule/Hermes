@@ -1,7 +1,9 @@
 import {
   getChallengeLifecycleState,
+  getChallengePayoutByAddress,
   getPublicClient,
   loadChallengeDefinitionFromChain,
+  parseChallengeCreatedReceipt,
 } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
@@ -10,12 +12,6 @@ import {
   loadConfig,
   validateScoringContainer,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
-  type: "json",
-};
-import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
-  type: "json",
-};
 import {
   type ChallengeInsert,
   buildChallengeInsert,
@@ -24,7 +20,6 @@ import {
 } from "@agora/db";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { type Abi, parseEventLogs } from "viem";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -36,9 +31,6 @@ import {
   listChallengesQuerySchema,
 } from "./challenges-shared.js";
 
-const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
-
 const createChallengeBodySchema = z.object({
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
@@ -47,19 +39,6 @@ function normalizeAddress(value: string | null | undefined) {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
     ? (value.toLowerCase() as `0x${string}`)
     : undefined;
-}
-
-function getLogArg(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-  index: number,
-  key: string,
-) {
-  if (!args) return undefined;
-  if (Array.isArray(args)) return args[index];
-  if (typeof args === "object" && args !== null && key in args) {
-    return (args as Record<string, unknown>)[key];
-  }
-  return undefined;
 }
 
 const router = new Hono<ApiEnv>();
@@ -86,43 +65,38 @@ router.post(
     if (receipt.status !== "success") {
       return c.json({ error: "Transaction failed." }, 400);
     }
-
-    const logs = parseEventLogs({
-      abi: AgoraFactoryAbi,
-      logs: receipt.logs,
-      strict: false,
-    });
-
-    const event = logs.find(
-      (log: { eventName?: string }) => log.eventName === "ChallengeCreated",
-    );
-    if (!event) {
-      return c.json({ error: "ChallengeCreated event not found." }, 400);
+    const receiptFactoryAddress = normalizeAddress(receipt.to);
+    if (
+      receiptFactoryAddress &&
+      receiptFactoryAddress !== config.AGORA_FACTORY_ADDRESS.toLowerCase()
+    ) {
+      return c.json(
+        {
+          error:
+            "Challenge transaction was sent to a different factory. Point the runtime at the active v2 factory and retry.",
+        },
+        400,
+      );
     }
 
-    const args = event.args as unknown as
-      | readonly unknown[]
-      | Record<string, unknown>;
-    const challengeId = getLogArg(args, 0, "id");
-    const challengeAddress = getLogArg(args, 1, "challenge");
-    const posterAddress = getLogArg(args, 2, "poster");
-    const reward = getLogArg(args, 3, "reward");
-
-    if (
-      challengeId === undefined ||
-      typeof challengeAddress !== "string" ||
-      reward === undefined ||
-      typeof posterAddress !== "string"
-    ) {
-      return c.json({ error: "Invalid ChallengeCreated event payload." }, 400);
+    let challengeAddress: `0x${string}`;
+    let posterAddress: `0x${string}`;
+    let reward: bigint;
+    try {
+      ({ challengeAddress, posterAddress, reward } =
+        parseChallengeCreatedReceipt(receipt));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json({ error: message }, 400);
     }
 
     // Source of truth: read specCid from challenge contract, not client payload.
     let specCid: string;
     let spec: ChallengeSpecOutput;
+    let contractVersion: number;
     let onChainDeadlineIso: string;
     try {
-      ({ specCid, spec, onChainDeadlineIso } =
+      ({ specCid, spec, contractVersion, onChainDeadlineIso } =
         await loadChallengeDefinitionFromChain({
           publicClient,
           challengeAddress: challengeAddress as `0x${string}`,
@@ -145,9 +119,10 @@ router.post(
     let challengeInsert: ChallengeInsert;
     try {
       const factoryAddress =
-        normalizeAddress(receipt.to) ?? config.AGORA_FACTORY_ADDRESS;
+        receiptFactoryAddress ?? config.AGORA_FACTORY_ADDRESS;
       challengeInsert = await buildChallengeInsert({
         chainId: config.AGORA_CHAIN_ID,
+        contractVersion,
         contractAddress: challengeAddress,
         factoryAddress,
         posterAddress,
@@ -224,14 +199,11 @@ router.get("/:id/claimable", async (c) => {
   // Read claimable amount for address (if provided)
   let claimable = "0";
   if (address && lifecycle.status === CHALLENGE_STATUS.finalized) {
-    const publicClient = getPublicClient();
     try {
-      const payout = (await publicClient.readContract({
-        address: contractAddress,
-        abi: AgoraChallengeAbi,
-        functionName: "payoutByAddress",
-        args: [address as `0x${string}`],
-      })) as bigint;
+      const payout = await getChallengePayoutByAddress(
+        contractAddress,
+        address as `0x${string}`,
+      );
       claimable = payout.toString();
     } catch {
       claimable = "0";

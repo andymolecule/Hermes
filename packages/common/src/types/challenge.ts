@@ -25,16 +25,10 @@ export const CHALLENGE_STATUS = {
   cancelled: "cancelled",
 } as const;
 
+export const ACTIVE_CONTRACT_VERSION = 2 as const;
+
 export type ChallengeStatus =
   (typeof CHALLENGE_STATUS)[keyof typeof CHALLENGE_STATUS];
-
-export const ON_CHAIN_STATUS_ORDER: readonly ChallengeStatus[] = [
-  CHALLENGE_STATUS.open,
-  CHALLENGE_STATUS.scoring,
-  CHALLENGE_STATUS.finalized,
-  CHALLENGE_STATUS.disputed,
-  CHALLENGE_STATUS.cancelled,
-];
 
 const CHALLENGE_STATUS_SET = new Set<string>(Object.values(CHALLENGE_STATUS));
 
@@ -84,6 +78,7 @@ export interface ChallengeEvalSpec {
 }
 
 export interface ChallengeSpec {
+  schema_version: 2;
   id: string;
   title: string;
   domain: ChallengeDomain;

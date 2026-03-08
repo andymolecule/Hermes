@@ -1,70 +1,81 @@
-import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  approve,
   claimPayout,
+  createChallenge,
   disputeChallenge,
+  getChallengePayoutByAddress,
   getPublicClient,
   getWalletClient,
+  parseChallengeCreatedReceipt,
+  parseChallengeLogs,
+  parseFactoryLogs,
+  processChallengeLog,
+  processFactoryLog,
+  reconcileChallengeProjection,
   resolveDispute,
   startChallengeScoring,
+  submitChallengeResult,
+  type ChallengeListRow,
 } from "@agora/chain";
-import { CHALLENGE_STATUS, SUBMISSION_LIMITS, loadConfig } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
-  type: "json",
-};
-import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
-  type: "json",
-};
 import {
+  SUBMISSION_RESULT_FORMAT,
+  computeSubmissionResultHash,
+  loadConfig,
+  resetConfigCache,
+} from "@agora/common";
+import {
+  claimNextJob,
   createSupabaseClient,
-  setChallengeFinalized,
-  updateChallengeStatus,
-  updateScore,
-  upsertProofBundle,
+  getSubmissionById,
 } from "@agora/db";
 import { pinFile, pinJSON } from "@agora/ipfs";
+import { processJob } from "./worker/jobs.js";
 import { createApp } from "./app.js";
-import {
-  type Abi,
-  keccak256,
-  parseEventLogs,
-  parseUnits,
-  toBytes,
-} from "viem";
 
-const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+const E2E_REWARD_USDC = 1;
+const E2E_DISPUTE_WINDOW_HOURS = 1;
+const E2E_DEADLINE_SECONDS = 60;
+const E2E_POLL_INTERVAL_MS = 1_000;
+const E2E_POLL_TIMEOUT_MS = 60_000;
 
-function getLogArg(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-  index: number,
-  key: string,
-) {
-  if (!args) return undefined;
-  if (Array.isArray(args)) return args[index];
-  if (typeof args === "object" && args !== null && key in args) {
-    return (args as Record<string, unknown>)[key];
-  }
-  return undefined;
+function repoPath(...segments: string[]) {
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "..",
+    ...segments,
+  );
 }
 
 function isLocalRpcUrl(value: string | undefined) {
   return Boolean(value && /localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(value));
 }
 
+function requiredConfigPresent() {
+  try {
+    const config = loadConfig();
+    return Boolean(
+      config.AGORA_SUPABASE_URL &&
+        config.AGORA_SUPABASE_SERVICE_KEY &&
+        config.AGORA_PINATA_JWT &&
+        (config.AGORA_PRIVATE_KEY ?? config.AGORA_ORACLE_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function canRunLifecycleE2E() {
-  const requiredEnv = [
-    process.env.AGORA_RPC_URL,
-    process.env.AGORA_FACTORY_ADDRESS,
-    process.env.AGORA_USDC_ADDRESS,
-    process.env.AGORA_SUPABASE_URL,
-    process.env.AGORA_SUPABASE_SERVICE_KEY,
-    process.env.AGORA_PINATA_JWT,
-    process.env.AGORA_PRIVATE_KEY ?? process.env.AGORA_ORACLE_KEY,
-  ];
-  return requiredEnv.every(Boolean) && isLocalRpcUrl(process.env.AGORA_RPC_URL);
+  try {
+    const config = loadConfig();
+    return requiredConfigPresent() && isLocalRpcUrl(config.AGORA_RPC_URL);
+  } catch {
+    return false;
+  }
 }
 
 async function advanceTimeTo(
@@ -114,7 +125,15 @@ async function ensureWalletMatchesOracle(
 ) {
   const oracle = (await publicClient.readContract({
     address: factoryAddress,
-    abi: AgoraFactoryAbi,
+    abi: [
+      {
+        type: "function",
+        name: "oracle",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ type: "address" }],
+      },
+    ],
     functionName: "oracle",
   })) as `0x${string}`;
 
@@ -125,12 +144,150 @@ async function ensureWalletMatchesOracle(
   }
 }
 
+function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
+  return {
+    schema_version: 2 as const,
+    id: `e2e-${Date.now()}`,
+    preset_id: "csv_comparison_v1",
+    title: `E2E Reproducibility ${Date.now()}`,
+    description:
+      "End-to-end reproducibility flow using canonical worker scoring and settlement projection.",
+    domain: "other" as const,
+    type: "reproducibility" as const,
+    dataset: {
+      train: input.trainCid,
+      test: input.expectedCid,
+    },
+    scoring: {
+      container: "ghcr.io/agora-science/repro-scorer:latest",
+      metric: "custom" as const,
+    },
+    reward: {
+      total: E2E_REWARD_USDC,
+      distribution: "top_3" as const,
+    },
+    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    evaluation: {
+      submission_format: "CSV file",
+      success_definition: "Row-by-row CSV match against expected output",
+      tolerance: "0.001",
+    },
+    lab_tba: ZERO_ADDRESS,
+  };
+}
+
+async function waitFor<T>(
+  description: string,
+  task: () => Promise<T | null>,
+  timeoutMs = E2E_POLL_TIMEOUT_MS,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await task();
+    if (value !== null) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, E2E_POLL_INTERVAL_MS));
+  }
+  throw new Error(`Timed out waiting for ${description}.`);
+}
+
+async function getTrackedChallengeRow(
+  db: ReturnType<typeof createSupabaseClient>,
+  challengeAddress: `0x${string}`,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .select(
+      "id, contract_address, factory_address, tx_hash, status, max_submissions_total, max_submissions_per_solver",
+    )
+    .eq("contract_address", challengeAddress.toLowerCase())
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to load projected challenge row: ${error.message}`);
+  }
+
+  return data as ChallengeListRow;
+}
+
+async function projectFactoryReceipt(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+}) {
+  const { db, publicClient, txHash, blockNumber } = input;
+  const config = loadConfig();
+  const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+  const logs = parseFactoryLogs(receipt.logs);
+  for (const log of logs) {
+    await processFactoryLog({
+      db,
+      publicClient,
+      config,
+      log,
+      fromBlock: blockNumber,
+    });
+  }
+}
+
+async function projectChallengeReceipt(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  challenge: ChallengeListRow;
+  challengeFromBlock: bigint;
+  txHash: `0x${string}`;
+}) {
+  const { db, publicClient, challenge, challengeFromBlock, txHash } = input;
+  const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+  const logs = parseChallengeLogs(
+    receipt.logs,
+    challenge.contract_address as `0x${string}`,
+  );
+  const challengePersistTargets = new Map<string, bigint>();
+  const challengeCursorKey = `challenge:e2e:${challenge.id}`;
+
+  for (const log of logs) {
+    await processChallengeLog({
+      db,
+      publicClient,
+      challenge,
+      log,
+      fromBlock: challengeFromBlock,
+      challengeFromBlock,
+      challengeCursorKey,
+      challengePersistTargets,
+    });
+  }
+
+  await reconcileChallengeProjection({
+    db,
+    publicClient,
+    challenge,
+    challengeFromBlock,
+    blockNumber: receipt.blockNumber,
+  });
+}
+
 export async function runLifecycleE2E() {
   if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
     process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
+    resetConfigCache();
   }
 
   const config = loadConfig();
+  if (!config.AGORA_SUPABASE_SERVICE_KEY) {
+    throw new Error(
+      "Lifecycle E2E requires AGORA_SUPABASE_SERVICE_KEY. Provide it and retry.",
+    );
+  }
+  if (!config.AGORA_PINATA_JWT) {
+    throw new Error(
+      "Lifecycle E2E requires AGORA_PINATA_JWT. Provide it and retry.",
+    );
+  }
+
   const publicClient = getPublicClient();
   const walletClient = getWalletClient();
   const account = walletClient.account;
@@ -149,177 +306,101 @@ export async function runLifecycleE2E() {
   const db = createSupabaseClient(true);
   const app = createApp();
 
-  console.log("\n=== E2E TEST: Open -> Scoring -> Verify -> Dispute -> Claim ===\n");
-
-  const spec = {
-    id: `e2e-${Date.now()}`,
-    title: "E2E Lifecycle Test – Quick Arithmetic",
-    description: "Answer with a number. Score = 100 when answer = 42",
-    domain: "other",
-    type: "custom",
-    scoring: {
-      container: "ghcr.io/agora-science/toy-arithmetic-scorer@sha256:" +
-        "a".repeat(64),
-      metric: "custom",
-    },
-    reward: {
-      total: 1,
-      distribution: "winner_take_all",
-    },
-    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    evaluation: {
-      submission_format: "JSON with {answer: number}",
-      success_definition: "answer = 42",
-    },
-  };
-  const specCid = await pinJSON(
-    "e2e-lifecycle-spec.json",
-    spec as Record<string, unknown>,
+  console.log(
+    "\n=== E2E TEST: Open -> startScoring -> worker score -> verify -> dispute -> resolve -> claim ===\n",
   );
-  console.log("1. Spec pinned:", specCid);
 
-  const rewardAmount = parseUnits("1", 6);
-  const usdcAbi = [
-    {
-      type: "function",
-      name: "approve",
-      inputs: [
-        { name: "spender", type: "address" },
-        { name: "amount", type: "uint256" },
-      ],
-      outputs: [{ type: "bool" }],
-    },
-  ] as const;
-  await walletClient.writeContract({
-    address: config.AGORA_USDC_ADDRESS,
-    abi: usdcAbi,
-    functionName: "approve",
-    args: [config.AGORA_FACTORY_ADDRESS, rewardAmount],
-  });
+  const reproducibilityDir = repoPath(
+    "challenges",
+    "test-data",
+    "reproducibility",
+  );
+  const trainCid = await pinFile(
+    path.join(reproducibilityDir, "input_dataset.csv"),
+    "e2e-input-dataset.csv",
+  );
+  const expectedCid = await pinFile(
+    path.join(reproducibilityDir, "expected_output.csv"),
+    "e2e-expected-output.csv",
+  );
+  const submissionCid = await pinFile(
+    path.join(reproducibilityDir, "sample_submission.csv"),
+    "e2e-sample-submission.csv",
+  );
+  const specCid = await pinJSON(
+    "e2e-reproducibility-spec.json",
+    buildE2ESpec({ trainCid, expectedCid }),
+  );
+  console.log("1. Fixtures pinned");
+
+  const approveTxHash = await approve(
+    config.AGORA_FACTORY_ADDRESS,
+    E2E_REWARD_USDC,
+  );
+  await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
 
   const latestBlock = await publicClient.getBlock();
-  const deadlineSeconds = latestBlock.timestamp + 60n;
-  const specCidClean = specCid.replace("ipfs://", "");
-
-  const createTxHash = await walletClient.writeContract({
-    address: config.AGORA_FACTORY_ADDRESS,
-    abi: AgoraFactoryAbi,
-    functionName: "createChallenge",
-    args: [
-      specCidClean,
-      rewardAmount,
-      deadlineSeconds,
-      1n,
-      0n,
-      0,
-      "0x0000000000000000000000000000000000000000",
-      BigInt(SUBMISSION_LIMITS.maxPerChallenge),
-      BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
-    ],
+  const createTxHash = await createChallenge({
+    specCid,
+    rewardAmount: E2E_REWARD_USDC,
+    deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
+    disputeWindowHours: E2E_DISPUTE_WINDOW_HOURS,
+    minimumScore: 0n,
+    distributionType: 1,
+    labTba: ZERO_ADDRESS,
   });
-
   const createReceipt = await publicClient.waitForTransactionReceipt({
     hash: createTxHash,
   });
-  const createLogs = parseEventLogs({
-    abi: AgoraFactoryAbi,
-    logs: createReceipt.logs,
-    strict: false,
+  const { challengeAddress } = parseChallengeCreatedReceipt(createReceipt);
+  console.log("2. Challenge created:", challengeAddress);
+
+  await projectFactoryReceipt({
+    db,
+    publicClient,
+    txHash: createTxHash,
+    blockNumber: createReceipt.blockNumber,
   });
-  const createdEvent = createLogs.find(
-    (log: { eventName?: string }) => log.eventName === "ChallengeCreated",
-  );
-  if (!createdEvent) {
-    throw new Error(
-      "ChallengeCreated event not found in createChallenge receipt.",
-    );
-  }
 
-  const createEventArgs = createdEvent.args as
-    | readonly unknown[]
-    | Record<string, unknown>
-    | undefined;
-  const challengeAddress = getLogArg(createEventArgs, 1, "challenge");
-  const createdChallengeId = getLogArg(createEventArgs, 0, "id");
-  if (
-    typeof challengeAddress !== "string" ||
-    !/^0x[a-fA-F0-9]{40}$/.test(challengeAddress)
-  ) {
-    throw new Error("ChallengeCreated event is missing challenge address.");
-  }
-  const normalizedChallengeAddress =
-    challengeAddress.toLowerCase() as `0x${string}`;
-  console.log("2. Challenge created:", normalizedChallengeAddress);
-
-  const chalRow = {
-    chain_id: config.AGORA_CHAIN_ID,
-    contract_address: normalizedChallengeAddress,
-    factory_address: config.AGORA_FACTORY_ADDRESS.toLowerCase(),
-    poster_address: account.address.toLowerCase(),
-    title: spec.title,
-    description: spec.description,
-    domain: spec.domain,
-    challenge_type: spec.type,
-    spec_cid: specCidClean,
-    eval_image: spec.scoring.container,
-    eval_metric: spec.scoring.metric,
-    runner_preset_id: "custom",
-    eval_bundle_cid: null,
-    minimum_score: 0,
-    reward_amount: 1,
-    distribution_type: spec.reward.distribution,
-    deadline: new Date(Number(deadlineSeconds) * 1000).toISOString(),
-    dispute_window_hours: 1,
-    status: CHALLENGE_STATUS.open,
-    tx_hash: createTxHash,
-  };
-  const { data: dbChallenge, error: challengeInsertError } = await db
-    .from("challenges")
-    .insert(chalRow)
-    .select("*")
-    .single();
-  if (challengeInsertError) {
-    throw new Error(`Challenge insert failed: ${challengeInsertError.message}`);
-  }
-
-  const resultJson = JSON.stringify({ answer: 42 });
-  const tmpFile = path.join(os.tmpdir(), `e2e-answer-${Date.now()}.json`);
-  await fs.writeFile(tmpFile, resultJson, "utf8");
-  const resultCid = await pinFile(tmpFile, "e2e-answer.json");
-  const resultHash = keccak256(toBytes(resultCid.replace("ipfs://", "")));
-
-  const submitTxHash = await walletClient.writeContract({
-    address: normalizedChallengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "submit",
-    args: [resultHash],
+  const challenge = await waitFor("projected challenge row", async () => {
+    try {
+      return await getTrackedChallengeRow(db, challengeAddress);
+    } catch {
+      return null;
+    }
   });
+
+  const resultHash = computeSubmissionResultHash(submissionCid);
+  const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
   console.log("3. Submission posted:", submitTxHash);
 
-  const { data: dbSubmission, error: submissionInsertError } = await db
-    .from("submissions")
-    .insert({
-      challenge_id: dbChallenge.id,
-      solver_address: account.address.toLowerCase(),
-      on_chain_sub_id: 0,
-      result_cid: resultCid.replace("ipfs://", ""),
-      result_hash: resultHash,
-      tx_hash: submitTxHash,
-      submitted_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (submissionInsertError) {
+  const submissionResponse = await app.request(
+    new Request("http://localhost/api/submissions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.id,
+        resultCid: submissionCid,
+        txHash: submitTxHash,
+        resultFormat: SUBMISSION_RESULT_FORMAT.plainV0,
+      }),
+    }),
+  );
+  if (submissionResponse.status !== 200) {
     throw new Error(
-      `Submission insert failed: ${submissionInsertError.message}`,
+      `Submission projection failed (${submissionResponse.status}): ${await submissionResponse.text()}`,
     );
   }
-  if (!dbSubmission?.id) {
-    throw new Error("Submission insert succeeded without an id.");
+  const submissionBody = (await submissionResponse.json()) as {
+    submission?: { id?: string };
+    ok?: boolean;
+  };
+  const submissionId = submissionBody.submission?.id;
+  if (!submissionId) {
+    throw new Error("Submission route succeeded without a submission id.");
   }
 
-  const submissionId = dbSubmission.id;
   const lockedResponse = await app.request(
     new Request(`http://localhost/api/submissions/${submissionId}/public`),
   );
@@ -330,51 +411,34 @@ export async function runLifecycleE2E() {
   }
   console.log("4. Open gate confirmed on public verification");
 
-  await advanceTimeTo(publicClient, deadlineSeconds + 1n);
-  const startTxHash = await startChallengeScoring(normalizedChallengeAddress);
+  const deadlineSeconds =
+    latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS) + 1n;
+  await advanceTimeTo(publicClient, deadlineSeconds);
+
+  const startTxHash = await startChallengeScoring(challengeAddress);
   await publicClient.waitForTransactionReceipt({ hash: startTxHash });
-  await updateChallengeStatus(db, dbChallenge.id, CHALLENGE_STATUS.scoring);
-  console.log("5. startScoring persisted:", startTxHash);
+  await projectChallengeReceipt({
+    db,
+    publicClient,
+    challenge,
+    challengeFromBlock: createReceipt.blockNumber,
+    txHash: startTxHash,
+  });
+  console.log("5. startScoring projected:", startTxHash);
 
-  const proofBundle = {
-    inputHash: keccak256(toBytes("e2e-input")),
-    outputHash: keccak256(toBytes("e2e-output")),
-    containerImageDigest: "agora/toy-arithmetic-scorer@sha256:e2e",
-    challengeSpecCid: specCidClean,
-    evaluationBundleCid: specCidClean,
-    replaySubmissionCid: resultCid.replace("ipfs://", ""),
-  };
-  const proofBundleCid = await pinJSON("e2e-proof-bundle.json", proofBundle);
-  const proofBundleHash = keccak256(
-    toBytes(proofBundleCid.replace("ipfs://", "")),
+  const scoreJob = await waitFor("score job", async () =>
+    claimNextJob(db, "lifecycle-e2e"),
   );
-  const score = 100n * 10n ** 18n;
-
-  const scoreTxHash = await walletClient.writeContract({
-    address: normalizedChallengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "postScore",
-    args: [0n, score, proofBundleHash],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: scoreTxHash });
-
-  await updateScore(db, {
-    submission_id: submissionId,
-    score: score.toString(),
-    proof_bundle_cid: proofBundleCid.replace("ipfs://", ""),
-    proof_bundle_hash: proofBundleHash,
-    scored_at: new Date().toISOString(),
-  });
-  await upsertProofBundle(db, {
-    submission_id: submissionId,
-    cid: proofBundleCid.replace("ipfs://", ""),
-    input_hash: proofBundle.inputHash,
-    output_hash: proofBundle.outputHash,
-    container_image_hash: proofBundle.containerImageDigest,
-    scorer_log: null,
-    reproducible: true,
-  });
-  console.log("6. Score posted and proof bundle stored:", scoreTxHash);
+  await processJob(
+    db,
+    scoreJob,
+    (_level, message) => console.log(`[worker] ${message}`),
+  );
+  const scoredSubmission = await getSubmissionById(db, submissionId);
+  if (!scoredSubmission.scored || !scoredSubmission.proof_bundle_cid) {
+    throw new Error("Worker scoring did not persist score and proof bundle.");
+  }
+  console.log("6. Worker scoring completed:", scoredSubmission.proof_bundle_cid);
 
   const verifyResponse = await app.request(
     new Request(`http://localhost/api/submissions/${submissionId}/public`),
@@ -384,51 +448,90 @@ export async function runLifecycleE2E() {
       `Expected scored challenge public verification to be readable, got ${verifyResponse.status}.`,
     );
   }
-  const verifyBody = (await verifyResponse.json()) as {
-    data?: { proofBundleCid?: string | null };
-  };
-  if (verifyBody.data?.proofBundleCid !== proofBundleCid.replace("ipfs://", "")) {
-    throw new Error("Public verification did not expose the stored proof bundle.");
-  }
   console.log("7. Public verification unlocked after scoring");
 
-  const disputeTxHash = await disputeChallenge(
-    normalizedChallengeAddress,
-    "e2e dispute",
-  );
+  const disputeTxHash = await disputeChallenge(challengeAddress, "e2e dispute");
   await publicClient.waitForTransactionReceipt({ hash: disputeTxHash });
-  await updateChallengeStatus(db, dbChallenge.id, CHALLENGE_STATUS.disputed);
+  await projectChallengeReceipt({
+    db,
+    publicClient,
+    challenge,
+    challengeFromBlock: createReceipt.blockNumber,
+    txHash: disputeTxHash,
+  });
   console.log("8. Dispute opened:", disputeTxHash);
 
-  const resolveTxHash = await resolveDispute(normalizedChallengeAddress, 0n);
+  const resolveTxHash = await resolveDispute(challengeAddress, 0n);
   await publicClient.waitForTransactionReceipt({ hash: resolveTxHash });
-  await setChallengeFinalized(db, dbChallenge.id, 0, account.address);
-  console.log("9. Dispute resolved:", resolveTxHash);
+  await projectChallengeReceipt({
+    db,
+    publicClient,
+    challenge,
+    challengeFromBlock: createReceipt.blockNumber,
+    txHash: resolveTxHash,
+  });
 
-  const payoutBeforeClaim = (await publicClient.readContract({
-    address: normalizedChallengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "payoutByAddress",
-    args: [account.address],
-  })) as bigint;
+  const { data: projectedPayouts, error: payoutError } = await db
+    .from("challenge_payouts")
+    .select("*")
+    .eq("challenge_id", challenge.id)
+    .order("rank", { ascending: true });
+  if (payoutError) {
+    throw new Error(`Failed to load projected payouts: ${payoutError.message}`);
+  }
+  if ((projectedPayouts ?? []).length !== 3) {
+    throw new Error(
+      `Expected 3 payout allocation rows after top_3 settlement, got ${(projectedPayouts ?? []).length}.`,
+    );
+  }
+  console.log("9. Canonical top_3 payout rows projected");
+
+  const payoutBeforeClaim = await getChallengePayoutByAddress(
+    challengeAddress,
+    account.address,
+  );
   if (payoutBeforeClaim === 0n) {
     throw new Error("Expected a claimable payout after dispute resolution.");
   }
 
-  const claimTxHash = await claimPayout(normalizedChallengeAddress);
+  const claimTxHash = await claimPayout(challengeAddress);
   await publicClient.waitForTransactionReceipt({ hash: claimTxHash });
-  const payoutAfterClaim = (await publicClient.readContract({
-    address: normalizedChallengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "payoutByAddress",
-    args: [account.address],
-  })) as bigint;
+  await projectChallengeReceipt({
+    db,
+    publicClient,
+    challenge,
+    challengeFromBlock: createReceipt.blockNumber,
+    txHash: claimTxHash,
+  });
+
+  const payoutAfterClaim = await getChallengePayoutByAddress(
+    challengeAddress,
+    account.address,
+  );
   if (payoutAfterClaim !== 0n) {
     throw new Error("Expected payout to be zero after claim.");
   }
-  console.log("10. Claim succeeded:", claimTxHash);
 
-  await fs.unlink(tmpFile).catch(() => {});
+  const { data: claimedRows, error: claimedRowsError } = await db
+    .from("challenge_payouts")
+    .select("rank, claimed_at, claim_tx_hash")
+    .eq("challenge_id", challenge.id)
+    .eq("solver_address", account.address.toLowerCase())
+    .order("rank", { ascending: true });
+  if (claimedRowsError) {
+    throw new Error(
+      `Failed to load claimed payout rows: ${claimedRowsError.message}`,
+    );
+  }
+  if ((claimedRows ?? []).length !== 3) {
+    throw new Error("Expected claim projection to preserve all three payout rows.");
+  }
+  for (const row of claimedRows ?? []) {
+    if (!row.claimed_at || row.claim_tx_hash !== claimTxHash) {
+      throw new Error("Claim projection did not repair all payout claim rows.");
+    }
+  }
+  console.log("10. Claim succeeded and all allocation rows were marked claimed");
 }
 
 function maybeRunLifecycleE2ECli(importMetaUrl: string, argv1?: string) {

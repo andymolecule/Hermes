@@ -13,9 +13,6 @@ const abi = AgoraChallengeAbi as unknown as Abi;
 interface Props {
   challengeId: string;
   contractAddress: string;
-  challengeStatus: string;
-  deadline: string;
-  disputeWindowHours: number;
 }
 
 interface ClaimableResponse {
@@ -27,9 +24,6 @@ interface ClaimableResponse {
 export function ChallengeActions({
   challengeId,
   contractAddress,
-  challengeStatus,
-  deadline,
-  disputeWindowHours,
 }: Props) {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();

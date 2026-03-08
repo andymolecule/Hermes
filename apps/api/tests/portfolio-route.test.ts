@@ -37,7 +37,13 @@ test("portfolio route returns only the session wallet portfolio", async () => {
     listChallengePayoutsBySolver: async () => [
       {
         challenge_id: "challenge-1",
-        amount: "5",
+        amount: "4.5",
+        claimed_at: null,
+        claim_tx_hash: null,
+      },
+      {
+        challenge_id: "challenge-1",
+        amount: "0.5",
         claimed_at: null,
         claim_tx_hash: null,
       },

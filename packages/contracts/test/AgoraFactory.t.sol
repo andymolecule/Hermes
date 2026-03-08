@@ -25,6 +25,10 @@ contract AgoraFactoryTest is Test {
         usdc.approve(address(factory), 1_000_000e6);
     }
 
+    function testContractVersionIsV2() public view {
+        assertEq(factory.contractVersion(), 2);
+    }
+
     function testCreateChallengeTransfersFunds() public {
         vm.prank(poster);
         (uint256 id, address challengeAddr) = factory.createChallenge(

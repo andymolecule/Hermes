@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   getPublicClient,
   getWalletClient,
+  parseSubmittedReceipt,
   submitChallengeResult,
 } from "@agora/chain";
 import {
@@ -12,7 +13,6 @@ import {
   importSubmissionSealPublicKey,
   sealSubmission,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
 import {
   createSupabaseClient,
   getChallengeById,
@@ -20,7 +20,6 @@ import {
 } from "@agora/db";
 import { pinJSON } from "@agora/ipfs";
 import { Command } from "commander";
-import { parseEventLogs } from "viem";
 import {
   applyConfigToEnv,
   loadCliConfig,
@@ -30,8 +29,6 @@ import { printJson, printSuccess, printWarning } from "../lib/output";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
-const AgoraChallengeAbi =
-  AgoraChallengeAbiJson as unknown as readonly unknown[];
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 
 type ChallengeRecord = {
@@ -40,19 +37,6 @@ type ChallengeRecord = {
   deadline: string;
   status: string;
 };
-
-function getLogArg(
-  args: readonly unknown[] | Record<string, unknown> | undefined,
-  index: number,
-  key: string,
-) {
-  if (!args) return undefined;
-  if (Array.isArray(args)) return args[index];
-  if (typeof args === "object" && args !== null && key in args) {
-    return (args as Record<string, unknown>)[key];
-  }
-  return undefined;
-}
 
 export function buildSubmitCommand() {
   const cmd = new Command("submit")
@@ -178,55 +162,43 @@ export function buildSubmitCommand() {
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: txHash,
         });
-        const parsedLogs = parseEventLogs({
-          abi: AgoraChallengeAbi,
-          logs: receipt.logs,
-          strict: false,
-        }) as Array<{ eventName?: string; args?: readonly unknown[] }>;
-        const submitted = parsedLogs.find(
-          (log: { eventName?: string }) => log.eventName === "Submitted",
+        const { submissionId } = parseSubmittedReceipt(
+          receipt,
+          challenge.contract_address as `0x${string}`,
         );
-        const submissionId =
-          getLogArg(submitted?.args, 0, "subId") ??
-          getLogArg(submitted?.args, 0, "submissionId");
         let cidUpdateWarning: string | null = null;
 
-        if (typeof submissionId === "bigint") {
-          // Retry: the indexer may not have created the submission row yet
-          let cidUpdated = false;
-          for (let attempt = 0; attempt < 3 && !cidUpdated; attempt++) {
-            try {
-              if (attempt > 0) {
-                await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
-              }
-              await setSubmissionResultCid(
-                db,
-                challenge.id,
-                Number(submissionId),
-                resultCid,
-                SUBMISSION_RESULT_FORMAT.sealedV1,
-              );
-              cidUpdated = true;
-            } catch {
-              // submission row may not exist yet
+        // Retry: the indexer may not have created the submission row yet
+        let cidUpdated = false;
+        for (let attempt = 0; attempt < 3 && !cidUpdated; attempt++) {
+          try {
+            if (attempt > 0) {
+              await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
             }
+            await setSubmissionResultCid(
+              db,
+              challenge.id,
+              Number(submissionId),
+              resultCid,
+              SUBMISSION_RESULT_FORMAT.sealedV1,
+            );
+            cidUpdated = true;
+          } catch {
+            // submission row may not exist yet
           }
-          if (!cidUpdated) {
-            cidUpdateWarning =
-              "Failed to update result CID (indexer may not have processed the submission yet).";
-            if (opts.format !== "json") {
-              printWarning(
-                `${cidUpdateWarning} Retry 'agora submit' in a few seconds if scoring cannot find the CID.`,
-              );
-            }
+        }
+        if (!cidUpdated) {
+          cidUpdateWarning =
+            "Failed to update result CID (indexer may not have processed the submission yet).";
+          if (opts.format !== "json") {
+            printWarning(
+              `${cidUpdateWarning} Retry 'agora submit' in a few seconds if scoring cannot find the CID.`,
+            );
           }
         }
 
         const output = {
-          submissionId:
-            typeof submissionId === "bigint"
-              ? Number(submissionId)
-              : submissionId,
+          submissionId: Number(submissionId),
           resultCid,
           txHash,
           warning: cidUpdateWarning,
