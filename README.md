@@ -48,15 +48,17 @@ flowchart TB
 
 ## Docs
 
-Start with [`docs/README.md`](docs/README.md) for the complete documentation map.
+Start with [`docs/README.md`](docs/README.md) for the full index and reading order.
 
-### Core
-- [Product Guide](docs/product.md) — plain-language product walkthrough.
-- [Technical Architecture](docs/architecture.md) — frontend/backend/chain architecture.
-- [Specification](docs/spec.md) — MVP scope and schema requirements.
-- [Testnet Ops Runbook](docs/testnet-ops-runbook.md) — launch and incident handling.
-- [External Cutover Checklist](docs/external-cutover-checklist.md) — hosted-system and deployment follow-through.
-- [Zero Legacy-Brand Policy](docs/legacy-brand-policy.md) — enforcement rules for a strict zero-former-brand repo state.
+| # | Document | What it answers |
+|---|----------|----------------|
+| 1 | [Product Guide](docs/product.md) | What is Agora and why? |
+| 2 | [Architecture](docs/architecture.md) | How does the system fit together? |
+| 3 | [Protocol](docs/protocol.md) | What are the on-chain rules? |
+| 4 | [Data and Indexing](docs/data-and-indexing.md) | Where does truth live? |
+| 5 | [Operations](docs/operations.md) | How do I run and deploy it? |
+
+Support: [Agent Guide](docs/contributing/agent-guide.md) · [Design System](docs/design/design-system/DESIGN-SYSTEM.md)
 
 ## Quickstart
 
@@ -122,15 +124,16 @@ pnpm turbo test
 Run services:
 
 ```bash
-pnpm --filter @agora/api start      # API on :3000 (loads root .env)
+pnpm --filter @agora/api start        # API on :3000 (loads root .env)
+pnpm --filter @agora/api worker       # Scoring worker (loads root .env)
 pnpm --filter @agora/mcp-server start # MCP on :3001 (loads root .env)
-pnpm --filter @agora/chain indexer  # Chain indexer (loads root .env)
+pnpm --filter @agora/chain indexer    # Chain indexer (loads root .env)
 ```
 
 Run web frontend:
 
 ```bash
-pnpm --filter @agora/web dev
+pnpm --filter @agora/web dev -- --port 3100
 ```
 
 ## End-to-End Validation

@@ -1,14 +1,14 @@
-# Agora Visual Identity — Molecule Brand Reference
+# Agora Visual Identity
 
-**Platform:** Agora by Molecule · **Themes:** Light (default), Dark
+**Platform:** Agora · **Themes:** Light (default), Dark
 
-> A soft reference guide to the Molecule visual identity used across Agora. Use this for quick colour lookups and font choices — not as a rulebook.
+> A soft reference guide to the Agora visual identity used across the product. Use this for quick colour lookups and font choices — not as a rulebook.
 
 ---
 
 ## Colour Palette
 
-The palette derives from **Molecule Blue** — a single spectral hue expressed across three ranges.
+The palette derives from the platform blue family — a single spectral hue expressed across three ranges.
 
 ### A-range: Greys (Neutral Infrastructure)
 
@@ -72,7 +72,7 @@ The palette derives from **Molecule Blue** — a single spectral hue expressed a
 
 ## Gradients
 
-Guidelines for gradients derived from Molecule colour chips:
+Guidelines for gradients derived from the Agora colour chips:
 
 - Keep within the same hue, adjusting saturation/brightness
 - Two colours only — never three+
@@ -154,4 +154,4 @@ Defined in `globals.css` to bridge CSS custom properties with class-based stylin
 
 ---
 
-*Agora Visual Identity · Molecule · Last updated February 2026*
+*Agora Visual Identity · Last updated February 2026*

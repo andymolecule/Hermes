@@ -19,11 +19,13 @@ These apply to every line of code and every design decision:
 
 ## Key Documents
 
-- @docs/spec.md — Product specification (the "what")
+- @docs/product.md — Product guide (the "what and why")
 - @docs/architecture.md — System architecture with diagrams (the "how")
-- @docs/product.md — Layman-friendly product guide
-- @docs/design-system/DESIGN-SYSTEM.md — Canonical frontend visual identity
-- @docs/testnet-ops-runbook.md — Operational procedures for testnet
+- @docs/protocol.md — On-chain protocol, lifecycle, settlement (the "rules")
+- @docs/data-and-indexing.md — DB schema, projections, source-of-truth boundaries
+- @docs/operations.md — Running, deploying, monitoring, incident response
+- @docs/design/design-system/DESIGN-SYSTEM.md — Canonical frontend visual identity
+- @docs/contributing/agent-guide.md — Agent getting-started guide
 - @.agent/skills/frontend-design/SKILL.md — Frontend component skill
 
 ## Tech Stack
@@ -108,7 +110,7 @@ See @.env.example for the full documented list.
 
 - **AgoraFactory** — creates challenges, manages oracle/treasury, 5% fee (500 bps)
 - **AgoraChallenge** — submissions, scoring, dispute flow, payouts
-- Status flow: Active → Scoring → Finalized | Disputed → Finalized | Cancelled
+- Status flow: Open → Scoring → Finalized | Disputed → Finalized | Cancelled
 - Distribution types: WinnerTakeAll, TopThree (70/20/10), Proportional
 - Dispute window: poster-configurable, 168–2160 hours (7–90 days)
 - See @docs/architecture.md for full contract diagrams

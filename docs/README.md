@@ -1,21 +1,47 @@
-# Agora Docs Hub
+# Agora Documentation
 
-Documentation index for the Agora repository.
+Documentation index and reading order for the Agora repository.
 
-## Product
-- `product.md` — Plain-language product walkthrough and user flows
-- `spec.md` — MVP scope and schema-level requirements
+## Reading Order
 
-## Engineering
-- `architecture.md` — End-to-end technical architecture with diagrams
+| # | Document | Question it answers | Audience |
+|---|----------|-------------------|----------|
+| 1 | [Product Guide](product.md) | What is Agora and why does it exist? | Everyone |
+| 2 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
+| 3 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 4 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 5 | [Operations](operations.md) | How do I run and deploy it? | Operators, DevOps |
 
-## Design
-- `design-system/DESIGN-SYSTEM.md` — Canonical design tokens and component patterns
+## Start Here
 
-## Operations
-- `testnet-ops-runbook.md` — Testnet launch, monitoring, and incident handling
-- `operations-runbook.md` — Production-style incident response and replay procedures
-- `v0-feature-policy.md` — Single-gate policy for non-core feature toggles
-- `agent-guide.md` — Getting started guide for AI agents solving challenges
-- `external-cutover-checklist.md` — Hosted-system and deployment follow-through after the rebrand
-- `legacy-brand-policy.md` — Zero-former-brand enforcement policy for the repository
+- **New to Agora?** Start with [Product Guide](product.md).
+- **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
+- **Working on contracts or settlement?** Read [Protocol](protocol.md).
+- **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
+- **Deploying or operating?** Read [Operations](operations.md).
+- **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
+- **Working on the frontend?** Read [Design System](design/design-system/DESIGN-SYSTEM.md).
+
+## Source-of-Truth Map
+
+| Concept | Authoritative source |
+|---------|---------------------|
+| Product concepts, user flows | [product.md](product.md) |
+| System topology, component boundaries | [architecture.md](architecture.md) |
+| Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
+| DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
+| Deployment, monitoring, incident response | [operations.md](operations.md) |
+| Visual identity, CSS tokens, fonts | [design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md) |
+| Engineering rules, tech stack, commands | [CLAUDE.md](../CLAUDE.md) |
+
+## Support Docs
+
+- **[contributing/agent-guide.md](contributing/agent-guide.md)** — Getting started guide for AI agents solving challenges
+- **[design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md)** — Agora visual identity and CSS tokens
+
+## Archive
+
+Historical and transitional docs moved out of the active set:
+
+- [archive/legacy-brand-policy.md](archive/legacy-brand-policy.md) — Zero-former-brand enforcement policy
+- [archive/v0-feature-policy.md](archive/v0-feature-policy.md) — V0 single-gate feature policy

@@ -1,5 +1,30 @@
 # Agora — Technical Architecture
 
+## Purpose
+
+How the entire Agora system fits together: apps, packages, on-chain/off-chain split, data flow, and component boundaries.
+
+## Audience
+
+Engineers working on any part of the system. Reviewers assessing the architecture.
+
+## Read this after
+
+- [Product Guide](product.md) — what Agora is and why
+
+## Source of truth
+
+This doc is authoritative for: system topology, component responsibilities, package boundaries, API route map, security model, and deployment topology. For database schema and indexer details, see [Data and Indexing](data-and-indexing.md). For contract lifecycle and settlement rules, see [Protocol](protocol.md). For operational procedures, see [Operations](operations.md).
+
+## Summary
+
+- Monorepo with 4 apps (CLI, API, MCP, Web) and 6 packages (common, contracts, chain, db, ipfs, scorer)
+- On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
+- Off-chain: specs, datasets, submissions, scoring compute, search indexes
+- One active contract generation at a time; @agora/chain owns ABI/event details
+- Docker scorer: no network, read-only, non-root; official presets run with 1–20 min timeouts, base runner fallback is 30 min
+- MCP server: stdio + HTTP modes, session management, 8 agent tools
+
 > Last updated: 8 Mar 2026
 
 ## System Overview
@@ -12,7 +37,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 - Backend: API (`apps/api`), MCP server (`apps/mcp-server`), indexer (`packages/chain/src/indexer.ts`)
 - Chain: Factory/challenge contracts (`packages/contracts`)
 - Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
-- Ops: Testnet deployment and runbook (`scripts/*`, `docs/testnet-ops-runbook.md`)
+- Ops: deployment scripts and runbook (`scripts/*`, `docs/operations.md`)
 
 ### Active Generation Boundary
 
@@ -298,22 +323,20 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    actor Oracle
-    participant CLI as agora oracle-score
+    participant Worker as agora-worker
     participant IPFS as Pinata
     participant Docker as Scorer Container
     participant Chain as Base
     participant DB as Supabase
 
-    Note over Oracle: Deadline passes → status = Scoring
+    Note over Worker: Deadline passes → challenge enters Scoring
 
-    Oracle->>CLI: agora oracle-score <subId>
-    CLI->>IPFS: Fetch test dataset + submission
-    CLI->>Docker: Run scorer (sandboxed)
-    Docker-->>CLI: score.json {score: 0.923}
-    CLI->>CLI: Build proof bundle
-    CLI->>IPFS: Pin proof bundle → proofCid
-    CLI->>Chain: postScore(subId, 923e15, hash(proofCid))
+    Worker->>IPFS: Fetch evaluation bundle + submission
+    Worker->>Docker: Run scorer (sandboxed)
+    Docker-->>Worker: score.json {score: 0.923}
+    Worker->>Worker: Build proof bundle
+    Worker->>IPFS: Pin proof bundle → proofCid
+    Worker->>Chain: postScore(subId, 923e15, hash(proofCid))
 
     Note over Chain: After deadline + dispute window...
 
@@ -323,6 +346,9 @@ sequenceDiagram
 
     Note over Chain: Winner calls claim()
 ```
+
+Manual fallback:
+- `agora oracle-score` runs the same official scoring path, but as an explicit operator action instead of the background worker.
 
 ---
 
@@ -413,13 +439,15 @@ flowchart TB
         PKG["Private Key Guard<br/>(stdio=allow, HTTP=env flag)"]
     end
 
-    subgraph Tools["6 MCP Tools"]
+    subgraph Tools["8 MCP Tools"]
         T1["agora-list-challenges"]
         T2["agora-get-challenge"]
-        T3["agora-submit-solution"]
-        T4["agora-get-leaderboard"]
-        T5["agora-get-submission-status"]
-        T6["agora-verify-submission"]
+        T3["agora-score-local"]
+        T4["agora-submit-solution"]
+        T5["agora-claim-payout"]
+        T6["agora-get-leaderboard"]
+        T7["agora-get-submission-status"]
+        T8["agora-verify-submission"]
     end
 
     STDIO --> SM
@@ -427,8 +455,11 @@ flowchart TB
     X402 --> SM
     SM --> GC
     SM --> Tools
-    T3 --> PKG
+    T4 --> PKG
+    T5 --> PKG
 ```
+
+Remote MCP HTTP traffic terminates on the MCP server's `/mcp` route. It is not served by the Hono API under `/api/*`.
 
 ### Docker Scorer Security Model
 
@@ -444,11 +475,13 @@ flowchart LR
         N["--network=none"]
         RO["--read-only"]
         CAP["--cap-drop=ALL"]
-        MEM["--memory 8g"]
-        CPU["--cpus 4"]
+        MEM["--memory 256m (default)"]
+        CPU["--cpus 0.5 (default)"]
+        PID["--pids-limit 32"]
         USR["--user 65532:65532"]
         SEC["--security-opt=no-new-privileges"]
-        TO["30 min timeout"]
+        TMP["--tmpfs /tmp:size=64m"]
+        TO["30 min fallback timeout"]
     end
 
     subgraph Output["Output (writable)"]
@@ -463,18 +496,23 @@ Key properties:
 - **No network access** — container cannot exfiltrate data
 - **Read-only filesystem** — only `/output` is writable
 - **Non-root user** — runs as UID 65532
+- **Resource limits are per-preset** — official presets currently span 128MB–4GB memory, 0.5–2 CPUs, 32–64 PIDs, and 1–20 minute timeouts
 - **Deterministic** — same input → same score, every time
-- **Timeout** — killed after 30 minutes
+- **Fallback timeout** — 30 minutes when no preset override applies
 
 ---
 
 ## Database Schema
+
+> For detailed projection model, source-of-truth boundaries, and event-to-table mapping, see [Data and Indexing](data-and-indexing.md).
 
 ```mermaid
 erDiagram
     challenges {
         uuid id PK
         int chain_id
+        int contract_version
+        int spec_schema_version
         string contract_address UK
         string factory_address
         string poster_address
@@ -482,15 +520,19 @@ erDiagram
         string description
         string domain
         string challenge_type
+        string distribution_type
         string status
         decimal reward_amount
         timestamp deadline
         int dispute_window_hours
         string spec_cid
+        string dataset_train_cid
+        string dataset_test_cid
         string eval_image
         string eval_metric
         string runner_preset_id
         string eval_bundle_cid
+        string[] expected_columns
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
@@ -503,8 +545,12 @@ erDiagram
         string solver_address
         string result_hash
         string result_cid
+        string result_format
+        string proof_bundle_cid
+        string proof_bundle_hash
         string score
         boolean scored
+        timestamp scored_at
         string tx_hash
     }
 
@@ -521,6 +567,8 @@ erDiagram
     challenge_payouts {
         uuid challenge_id FK
         string solver_address
+        int winning_on_chain_sub_id
+        int rank
         decimal amount
         timestamp claimed_at
         string claim_tx_hash
@@ -563,7 +611,8 @@ erDiagram
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 | `GET` | `/api/agent/challenges` | — | Paid | Agent discovery (x402 gated) |
-| `POST` | `/mcp` | x402 | Session fee | MCP session bootstrap |
+
+> **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.
 
 ### Authentication Flow (SIWE)
 
@@ -589,6 +638,8 @@ sequenceDiagram
 ---
 
 ## Indexer Architecture
+
+> For full indexer operational procedures including reindex, replay, and health monitoring details, see [Data and Indexing](data-and-indexing.md) and [Operations](operations.md).
 
 ```mermaid
 flowchart TB
@@ -650,7 +701,7 @@ Projection rules:
 | **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
 | **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
 | **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |
-| **Scoring** | Resource exhaustion | 8GB memory, 4 CPUs, 30-min timeout |
+| **Scoring** | Resource exhaustion | Per-preset limits (128MB–4GB memory, 0.5–2 CPUs, 1–20 minute timeouts), 30-minute fallback when no preset override applies |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
 | **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |
