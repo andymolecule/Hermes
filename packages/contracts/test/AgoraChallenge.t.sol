@@ -249,11 +249,11 @@ contract AgoraChallengeTest is Test {
 
         uint256 fee = _protocolFee(top3, 30e6);
         uint256 remaining = 30e6 - fee;
-        assertEq(top3.payoutByAddress(address(0x1)), (remaining * 70) / 100);
-        assertEq(top3.payoutByAddress(address(0x2)), (remaining * 20) / 100);
+        assertEq(top3.payoutByAddress(address(0x1)), (remaining * 60) / 100);
+        assertEq(top3.payoutByAddress(address(0x2)), (remaining * 25) / 100);
         assertEq(
             top3.payoutByAddress(address(0x3)),
-            remaining - ((remaining * 70) / 100) - ((remaining * 20) / 100)
+            remaining - ((remaining * 60) / 100) - ((remaining * 25) / 100)
         );
     }
 
@@ -284,8 +284,8 @@ contract AgoraChallengeTest is Test {
 
         uint256 fee = _protocolFee(top3, 30e6);
         uint256 remaining = 30e6 - fee;
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
 
         vm.expectEmit(true, true, true, true, address(top3));
@@ -765,8 +765,8 @@ contract AgoraChallengeTest is Test {
 
         uint256 fee = _protocolFee(top3, 20e6);
         uint256 remaining = 20e6 - fee;
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
         // First solver gets 1st + 3rd (third fallback)
         assertEq(top3.payoutByAddress(address(0x1)), first + third);
@@ -829,8 +829,8 @@ contract AgoraChallengeTest is Test {
         uint256 fee = _protocolFee(top3, 20e6);
         uint256 remaining = 20e6 - fee;
         // subB is forced first by _ensureWinnerFirst, so gets 1st + 3rd share
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
         assertEq(top3.payoutByAddress(address(0x2)), first + third);
         assertEq(top3.payoutByAddress(address(0x1)), second);

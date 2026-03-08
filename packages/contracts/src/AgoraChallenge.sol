@@ -323,12 +323,12 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         emit AgoraEvents.PayoutAllocated(solver, submissionId, rank, amount);
     }
 
-    /// @dev Split 70/20/10 among up to 3 winners. When fewer than 3 qualified
+    /// @dev Split 60/25/15 among up to 3 winners. When fewer than 3 qualified
     ///      submissions exist, unclaimed shares consolidate on the top scorer.
-    ///      E.g. 1 winner receives 100%; 2 winners receive 90%/10%.
+    ///      E.g. 1 winner receives 100%; 2 winners receive 75%/25%.
     function _setTopThreePayouts(uint256[] memory winners, uint256 remaining) internal {
-        uint256 first = (remaining * 70) / 100;
-        uint256 second = (remaining * 20) / 100;
+        uint256 first = (remaining * 60) / 100;
+        uint256 second = (remaining * 25) / 100;
         uint256 third = remaining - first - second;
 
         _allocatePayout(submissions[winners[0]].solver, winners[0], first, 1);

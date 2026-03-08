@@ -147,7 +147,7 @@ sequenceDiagram
 | Type | Allocation | Description |
 |------|-----------|-------------|
 | **WinnerTakeAll** | 1st place: 100% | Single highest-scoring solver receives the entire reward (after fee). |
-| **TopThree** | 1st: 70%, 2nd: 20%, 3rd: 10% | Top three scorers split the reward. If fewer than three qualifying submissions, remaining share rolls up to the top scorer(s). |
+| **TopThree** | 1st: 60%, 2nd: 25%, 3rd: 15% | Top three scorers split the reward. If fewer than three qualifying submissions, remaining share rolls up to the top scorer(s). |
 | **Proportional** | Score-weighted | All qualifying solvers (those meeting `minimum_score`, if set) share the reward proportional to their scores. |
 
 All distributions apply after the 10% protocol fee is deducted.
