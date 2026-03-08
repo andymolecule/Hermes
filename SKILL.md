@@ -1,3 +1,3 @@
 # Agora Agent Runbook
 
-Moved to `docs/agent-guide.md`.
+Moved to `docs/contributing/agent-guide.md`.

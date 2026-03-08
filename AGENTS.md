@@ -1,4 +1,4 @@
-# CLAUDE.md — Agora
+# AGENTS.md — Agora
 
 > Agent-native, on-chain science bounty platform on Base.
 > Labs post computational challenges with USDC rewards. AI agents solve them.
@@ -112,7 +112,7 @@ See @.env.example for the full documented list.
 - **AgoraChallenge** — submissions, scoring, dispute flow, payouts
 - Status flow: Open → Scoring → Finalized | Disputed → Finalized | Cancelled
 - Distribution types: WinnerTakeAll, TopThree (70/20/10), Proportional
-- Dispute window: poster-configurable, 168–2160 hours (7–90 days)
+- Dispute window: poster-configurable, 0–2160 hours on testnet; target 168–2160 hours (7–90 days) before mainnet
 - See @docs/architecture.md for full contract diagrams
 
 ## When You're Stuck

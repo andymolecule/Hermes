@@ -26,7 +26,7 @@ required_env=(
   AGORA_CORS_ORIGINS
 )
 
-required_cmds=(node pnpm docker forge)
+required_cmds=(node pnpm docker forge cast curl)
 
 failures=0
 
@@ -50,6 +50,15 @@ check_env() {
   fi
 }
 
+check_docker_daemon() {
+  if docker info >/dev/null 2>&1; then
+    echo "[OK] Docker daemon reachable"
+  else
+    echo "[FAIL] Docker daemon is not reachable"
+    failures=$((failures + 1))
+  fi
+}
+
 echo "== Agora Testnet Preflight =="
 
 for cmd in "${required_cmds[@]}"; do
@@ -59,6 +68,8 @@ done
 for key in "${required_env[@]}"; do
   check_env "$key"
 done
+
+check_docker_daemon
 
 if [[ "$failures" -gt 0 ]]; then
   echo
@@ -84,6 +95,165 @@ if [[ "$http_status" != "200" ]]; then
   exit 1
 fi
 echo "[OK] API health check passed ($API_HEALTH_URL)"
+
+echo
+
+echo "[STEP] Verifying on-chain factory identity"
+chain_id_on_rpc="$(cast chain-id --rpc-url "$AGORA_RPC_URL")"
+if [[ "$chain_id_on_rpc" != "$AGORA_CHAIN_ID" ]]; then
+  echo "[FAIL] RPC chain mismatch: expected $AGORA_CHAIN_ID, got $chain_id_on_rpc"
+  exit 1
+fi
+
+factory_version="$(cast call "$AGORA_FACTORY_ADDRESS" "contractVersion()(uint16)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+if [[ "$factory_version" != "2" ]]; then
+  echo "[FAIL] Factory contractVersion mismatch: expected 2, got $factory_version"
+  exit 1
+fi
+
+factory_usdc="$(cast call "$AGORA_FACTORY_ADDRESS" "usdc()(address)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+if [[ "${factory_usdc,,}" != "${AGORA_USDC_ADDRESS,,}" ]]; then
+  echo "[FAIL] Factory usdc() mismatch: env=${AGORA_USDC_ADDRESS,,} chain=${factory_usdc,,}"
+  exit 1
+fi
+
+factory_oracle="$(cast call "$AGORA_FACTORY_ADDRESS" "oracle()(address)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+expected_oracle="$(cast wallet address --private-key "$AGORA_ORACLE_KEY" | tr -d '[:space:]')"
+if [[ "${factory_oracle,,}" != "${expected_oracle,,}" ]]; then
+  echo "[FAIL] Factory oracle() mismatch: key=${expected_oracle,,} chain=${factory_oracle,,}"
+  exit 1
+fi
+
+echo "[OK] Factory identity verified: version=2 usdc=$factory_usdc oracle=$factory_oracle"
+
+echo
+
+echo "[STEP] Checking Supabase schema reachability"
+tables=(
+  challenges
+  submissions
+  challenge_payouts
+  score_jobs
+  indexer_cursors
+)
+
+for table in "${tables[@]}"; do
+  table_status="$(curl -s -o "/tmp/agora_preflight_${table}.json" -w "%{http_code}" \
+    "${AGORA_SUPABASE_URL%/}/rest/v1/${table}?select=*&limit=1" \
+    -H "apikey: ${AGORA_SUPABASE_SERVICE_KEY}" \
+    -H "Authorization: Bearer ${AGORA_SUPABASE_SERVICE_KEY}" || true)"
+  if [[ "$table_status" != "200" ]]; then
+    echo "[FAIL] Supabase table check failed for ${table} (HTTP ${table_status})"
+    cat "/tmp/agora_preflight_${table}.json" || true
+    exit 1
+  fi
+done
+
+echo "[OK] Supabase schema reachable: ${tables[*]}"
+
+echo
+
+check_api_json() {
+  local name="$1"
+  local url="$2"
+  local outfile="$3"
+  local http_status
+  http_status=$(curl -s -o "$outfile" -w "%{http_code}" "$url" || true)
+  if [[ "$http_status" != "200" ]]; then
+    echo "[FAIL] ${name} check failed ($url => HTTP $http_status)"
+    echo "Response:"
+    cat "$outfile" || true
+    exit 1
+  fi
+  echo "[OK] ${name} endpoint responded ($url)"
+}
+
+INDEXER_HEALTH_URL="${AGORA_API_URL%/}/api/indexer-health"
+WORKER_HEALTH_URL="${AGORA_API_URL%/}/api/worker-health"
+
+echo "[STEP] Checking indexer health endpoint"
+check_api_json "Indexer health" "$INDEXER_HEALTH_URL" /tmp/agora_preflight_indexer.json
+
+EXPECTED_FACTORY="$AGORA_FACTORY_ADDRESS" \
+EXPECTED_USDC="$AGORA_USDC_ADDRESS" \
+EXPECTED_CHAIN_ID="$AGORA_CHAIN_ID" \
+node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const payload = JSON.parse(
+  fs.readFileSync("/tmp/agora_preflight_indexer.json", "utf8"),
+);
+const expectedFactory = process.env.EXPECTED_FACTORY?.toLowerCase();
+const expectedUsdc = process.env.EXPECTED_USDC?.toLowerCase();
+const expectedChainId = Number(process.env.EXPECTED_CHAIN_ID);
+
+if (payload.status === "critical" || payload.ok === false) {
+  console.error(
+    `[FAIL] Indexer health is not ready: status=${payload.status ?? "unknown"}`,
+  );
+  process.exit(1);
+}
+
+if (
+  String(payload?.configured?.factoryAddress ?? "").toLowerCase() !== expectedFactory
+) {
+  console.error(
+    `[FAIL] Indexer factory mismatch: expected ${expectedFactory}, got ${payload?.configured?.factoryAddress}`,
+  );
+  process.exit(1);
+}
+
+if (
+  String(payload?.configured?.usdcAddress ?? "").toLowerCase() !== expectedUsdc
+) {
+  console.error(
+    `[FAIL] Indexer USDC mismatch: expected ${expectedUsdc}, got ${payload?.configured?.usdcAddress}`,
+  );
+  process.exit(1);
+}
+
+if (Number(payload?.configured?.chainId) !== expectedChainId) {
+  console.error(
+    `[FAIL] Indexer chain mismatch: expected ${expectedChainId}, got ${payload?.configured?.chainId}`,
+  );
+  process.exit(1);
+}
+
+if (payload?.mismatch?.hasAlternateActiveFactory) {
+  console.error(
+    `[FAIL] Indexer sees alternate active factories: ${payload?.mismatch?.message ?? "unknown mismatch"}`,
+  );
+  process.exit(1);
+}
+
+console.log(
+  `[OK] Indexer health verified: status=${payload.status} lagBlocks=${payload.lagBlocks}`,
+);
+EOF
+
+echo
+
+echo "[STEP] Checking worker health endpoint"
+check_api_json "Worker health" "$WORKER_HEALTH_URL" /tmp/agora_preflight_worker.json
+
+node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const payload = JSON.parse(
+  fs.readFileSync("/tmp/agora_preflight_worker.json", "utf8"),
+);
+
+if (payload.status === "warning" || payload.status === "error" || payload.ok === false) {
+  console.error(
+    `[FAIL] Worker health is not ready: status=${payload.status ?? "unknown"}`,
+  );
+  process.exit(1);
+}
+
+console.log(
+  `[OK] Worker health verified: status=${payload.status} eligibleQueued=${payload?.jobs?.eligibleQueued ?? "?"} running=${payload?.jobs?.running ?? "?"}`,
+);
+EOF
 
 echo
 

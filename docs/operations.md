@@ -1,0 +1,490 @@
+# Operations
+
+## Purpose
+
+How to set up, run, deploy, monitor, troubleshoot, and cut over Agora services.
+
+## Audience
+
+Operators and engineers responsible for running Agora in testnet or production environments.
+
+## Read this after
+
+- [Architecture](architecture.md) — system overview
+- [Protocol](protocol.md) — contract lifecycle and settlement rules
+- [Data and Indexing](data-and-indexing.md) — DB schema and indexer behavior
+
+## Source of truth
+
+This doc is authoritative for: service startup, deployment procedures, monitoring, incident response, and cutover checklists. It is NOT authoritative for: smart contract logic, database schema, or frontend behavior.
+
+## Summary
+
+- Four processes: API, Indexer, Worker, MCP
+- Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
+- Indexer polls every 30s; Worker polls score_jobs after challenges enter Scoring
+- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
+- Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
+
+---
+
+## Local Development
+
+```mermaid
+flowchart TB
+    subgraph Local["Local Development Stack"]
+        Web["Next.js Dev Server<br/>pnpm --filter @agora/web dev -- --port 3100<br/>:3100 (frontend)"]
+        API["Hono API<br/>pnpm --filter @agora/api start<br/>:3000 (backend)"]
+        MCP["MCP Server<br/>pnpm --filter @agora/mcp-server start<br/>:3001"]
+        Indexer["Chain Indexer<br/>pnpm --filter @agora/chain indexer"]
+        Worker["Scoring Worker<br/>pnpm --filter @agora/api worker"]
+    end
+
+    subgraph External["External Services"]
+        RPC["Base Sepolia RPC<br/>(Alchemy)"]
+        Supa["Supabase<br/>(Postgres)"]
+        Pin["Pinata<br/>(IPFS)"]
+    end
+
+    API --> Supa
+    API --> Pin
+    API --> RPC
+    Indexer --> RPC
+    Indexer --> Supa
+    MCP --> Supa
+    MCP --> RPC
+    Worker --> Supa
+    Worker --> Pin
+    Worker --> RPC
+    Web --> API
+```
+
+```bash
+pnpm install
+pnpm turbo build
+pnpm turbo test
+```
+
+Run services:
+
+```bash
+pnpm --filter @agora/api start        # API on :3000
+pnpm --filter @agora/api worker       # Worker
+pnpm --filter @agora/mcp-server start # MCP on :3001
+pnpm --filter @agora/chain indexer    # Chain indexer
+```
+
+Web frontend:
+
+```bash
+pnpm --filter @agora/web dev -- --port 3100
+```
+
+---
+
+## Pre-Launch Checklist
+
+1. Merge latest `main` and deploy from `main` only.
+2. Set all required environment variables in your host platform.
+3. For a clean contract generation: reset the testnet Supabase schema and apply only `001_baseline.sql`.
+4. Deploy a fresh `v2` factory. `scripts/deploy.sh` requires explicit `AGORA_ORACLE_ADDRESS` and `AGORA_TREASURY_ADDRESS`.
+5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
+6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
+7. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
+8. Build and run preflight:
+
+```bash
+pnpm install
+pnpm turbo build
+./scripts/preflight-testnet.sh
+```
+
+---
+
+## Service Architecture
+
+```mermaid
+flowchart LR
+    subgraph Processes["4 Always-On Processes"]
+        API["agora-api<br/>REST API + web backend<br/>:3000"]
+        Idx["agora-indexer<br/>Chain → Supabase<br/>poll every 30s"]
+        Worker["agora-worker<br/>Polls score_jobs<br/>Runs Docker scorer"]
+        MCP["agora-mcp<br/>MCP server<br/>:3001"]
+    end
+
+    subgraph Shared["Shared State"]
+        DB["Supabase<br/>(score_jobs table)"]
+    end
+
+    API -->|"creates score_jobs"| DB
+    Idx -->|"creates score_jobs"| DB
+    Worker -->|"claims + updates"| DB
+    MCP -->|"reads"| DB
+
+    Worker -->|"postScore()"| Chain["Base"]
+    Idx -->|"getLogs()"| Chain
+```
+
+| Process | Entrypoint | Role |
+|---------|-----------|------|
+| `agora-api` | `apps/api/dist/index.js` | REST API + web backend |
+| `agora-indexer` | `packages/chain/dist/indexer.js` | Chain event poller -> Supabase |
+| `agora-worker` | `apps/api/dist/worker.js` | Polls score_jobs, runs Docker scorer, posts scores on-chain |
+| `agora-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agents |
+
+Architecture boundary:
+
+- API/indexer create `score_jobs` rows when submissions arrive.
+- Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
+- Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- One active contract generation at a time. Runtime envs should never mix multiple factory generations.
+- Worker and API share no runtime state. The only coordination point is the `score_jobs` table.
+
+---
+
+## Starting Services
+
+### Manual
+
+```bash
+pnpm --filter @agora/api start
+pnpm --filter @agora/chain indexer
+pnpm --filter @agora/api worker
+```
+
+### PM2 (recommended)
+
+```bash
+pm2 start scripts/ops/ecosystem.config.cjs
+pm2 save
+pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp
+```
+
+---
+
+## Smoke Test
+
+```bash
+./scripts/e2e-test.sh
+```
+
+Fast overrides for shorter sessions:
+
+```bash
+AGORA_E2E_DEADLINE_MINUTES=30 \
+AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
+./scripts/e2e-test.sh
+```
+
+Expected flow: post -> indexer pickup -> list -> get -> score-local -> submit -> worker scoring -> verify-public -> finalize -> claim.
+
+Note: `agora finalize` and `agora claim` require the dispute window to elapse after deadline. Use `AGORA_E2E_DISPUTE_WINDOW_HOURS=0` for same-session Base Sepolia testing, or a local Anvil RPC with `evm_increaseTime` for full lifecycle testing.
+
+---
+
+## Health Monitoring
+
+Check every 15-30 minutes during first launch window:
+
+1. API `/healthz` returns 200.
+2. Indexer logs show new blocks processed.
+3. `indexed_events` block number continues advancing.
+4. `agora doctor` passes all required checks.
+5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true`.
+6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
+
+Health commands:
+
+```bash
+curl -sS http://localhost:3000/healthz
+curl -sS http://localhost:3000/api/indexer-health
+curl -sS http://localhost:3000/api/worker-health
+agora doctor
+```
+
+Expected results:
+
+- API health returns `{"ok":true}`.
+- Indexer health is `ok` or `warning`, not `critical`.
+- `agora doctor` passes RPC/Supabase/factory checks.
+
+---
+
+## Scoring Safety Limits
+
+Default scoring limits:
+
+- Max submissions per challenge: `100`
+- Max submissions per solver per challenge: `3`
+- Max upload size: `50MB`
+
+Behavior:
+
+- Extra submissions are still recorded on-chain and in DB.
+- Scoring jobs are marked skipped and not executed by the worker.
+
+Per-challenge overrides can be set in the challenge spec:
+
+- `max_submissions_total`
+- `max_submissions_per_solver`
+
+---
+
+## Confirming Worker Scoring
+
+1. Check `score_jobs` transitions: jobs should move from `queued` -> `running` -> `scored`.
+2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll). It should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
+3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
+4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
+
+---
+
+## Indexer Operations
+
+Reorg safety: `AGORA_INDEXER_CONFIRMATION_DEPTH` (default: `3`).
+
+If the indexer falls behind:
+
+1. Restart indexer.
+2. Check RPC health and `/api/indexer-health`.
+3. If state replay is needed, run reindex.
+
+Reindex procedures:
+
+```bash
+# Preview (dry run)
+agora reindex --from-block <block> --dry-run
+
+# Apply cursor rewind
+agora reindex --from-block <block>
+
+# Deep replay (also purge dedupe markers from that block onward)
+agora reindex --from-block <block> --purge-indexed-events
+```
+
+Notes:
+
+- Reindex rewinds factory + challenge cursors for the active chain.
+- Purging indexed events forces event handlers to run again from the specified block.
+
+```mermaid
+sequenceDiagram
+    participant Op as Operator
+    participant DB as Supabase
+    participant Idx as Indexer
+    participant Chain as Base Sepolia
+
+    Op->>DB: Reset schema (001_baseline.sql)
+    Op->>Op: Set AGORA_INDEXER_START_BLOCK
+    Op->>Op: Set AGORA_FACTORY_ADDRESS (new v2)
+    Op->>Idx: Restart indexer process
+    Idx->>Chain: getLogs(startBlock → head)
+    Idx->>Idx: Parse events via @agora/chain
+    Idx->>DB: Upsert challenges, submissions
+    Idx->>DB: Write indexed_events (dedup)
+
+    loop Every 30 seconds
+        Idx->>Chain: getLogs(cursor → head)
+        Idx->>DB: Process new events
+    end
+
+    Op->>Op: curl /api/indexer-health
+    Note over Op: Confirm status=ok, correct factory
+```
+
+---
+
+## Key Management
+
+Rules:
+
+- Never log private key env values.
+- Rotate oracle keys on suspected compromise.
+- Keep `AGORA_PRIVATE_KEY` and `AGORA_ORACLE_KEY` scoped to required services only.
+
+Rotation sequence:
+
+1. Pause worker scoring.
+2. Decide whether this affects only future challenges or requires a clean factory cutover:
+   - future challenges only: factory owner can call `setOracle()` and update worker env
+   - active challenge oracle compromised: cut over to a fresh factory; existing challenge oracles are immutable
+3. Update service env.
+4. Resume worker after `agora doctor` + smoke validation.
+
+---
+
+## Incident Playbook
+
+### API Down
+
+1. Restart API process.
+2. Verify `AGORA_*` env vars in host.
+3. Verify Supabase connectivity.
+
+### Indexer Stalled
+
+1. Restart indexer process.
+2. Verify RPC reachability.
+3. Check last row in `indexed_events` and compare with chain head.
+4. Check `GET /api/indexer-health` and alert if status is `critical`.
+5. Rewind cursors with CLI (dry-run first):
+
+```bash
+agora reindex --from-block <block_number> --dry-run
+agora reindex --from-block <block_number>
+```
+
+6. If a deep replay is required, include `--purge-indexed-events`.
+7. Ensure `AGORA_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
+8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then reindex the fresh `v2` deployment from its deploy block.
+
+### Worker Stalled
+
+1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
+2. Tail logs: `pm2 logs agora-worker --lines 100`.
+3. Common causes:
+   - Docker daemon not running or unreachable -> restart Docker, then `pm2 restart agora-worker`.
+   - RPC errors -> check `AGORA_RPC_URL` reachability.
+   - All jobs stuck in `failed` -> inspect `last_error` column, then retry: `agora retry-failed-jobs` (dry-run first), `agora retry-failed-jobs --yes` to execute.
+4. If the worker process itself crashed: `pm2 restart agora-worker`. PM2 uses exponential backoff (3s base).
+
+### Oracle Key Issue
+
+1. Stop scoring operations immediately.
+2. Rotate oracle key and reconfigure env.
+3. Resume scoring only after `agora doctor` and one dry-run check.
+
+### IPFS Gateway Instability
+
+1. Retry affected submissions/challenges.
+2. Keep indexer running; retry logic will back off.
+3. If failures persist, switch gateway and rerun scoring/verification.
+
+### RPC Instability
+
+1. Fail over RPC endpoint.
+2. Restart indexer/worker.
+3. Confirm lag recovers via `/api/indexer-health`.
+
+### DB Restoration
+
+1. Restore DB snapshot.
+2. Re-apply migrations.
+3. Rewind indexer (`agora reindex --from-block <known-good-block>`).
+4. Monitor event replay and challenge/submission consistency.
+
+---
+
+## Rollback Criteria
+
+Rollback if any of these occur:
+
+- API health fails for more than 5 minutes.
+- Indexer lag exceeds 200 blocks for more than 10 minutes.
+- Incorrect challenge/submission writes observed in Supabase.
+- Scoring or verification mismatches between on-chain and local outputs.
+
+---
+
+## Deployment and Cutover
+
+```mermaid
+flowchart TB
+    A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
+    B --> C["3. Reset Supabase schema<br/>(apply 001_baseline.sql)"]
+    C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
+    D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
+    E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
+    F --> G["7. Restart all services<br/>(API, Indexer, Worker, MCP)"]
+    G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
+    H --> I["9. Smoke test<br/>(scripts/e2e-test.sh)"]
+    I --> J{"All checks pass?"}
+    J -->|Yes| K["✓ Live"]
+    J -->|No| L["Rollback:<br/>restore DB snapshot,<br/>redeploy previous release"]
+```
+
+### Contract Deployment
+
+```bash
+./scripts/deploy.sh             # Contracts to Base Sepolia
+./scripts/preflight-testnet.sh  # Pre-launch validation
+```
+
+Clean v2 cutover:
+
+1. Run one active factory generation at a time.
+2. Reset Supabase, apply `001_baseline.sql`.
+3. Deploy fresh `v2` factory.
+4. Update canonical `(chain id, factory address, USDC address)` tuple everywhere.
+5. Set `AGORA_INDEXER_START_BLOCK` and reindex from zero.
+
+MCP route note:
+- remote MCP traffic is served by the MCP server at `/mcp` on port `3001`
+- it is not part of the Hono API route map under `/api/*`
+
+### External Cutover Checklist
+
+This section covers non-code work for deployment across hosted systems.
+
+#### GitHub
+
+- Confirm repo slug, settings, secrets use `AGORA_*` naming.
+- Review branch protection rules, required status checks, environments, and deployment rules.
+- Review GHCR visibility, package ownership, and README metadata.
+- Review release names, milestones, and any pinned issue/PR templates.
+
+#### Vercel
+
+- Set production and preview env vars (`NEXT_PUBLIC_AGORA_*` and server-side `AGORA_*`).
+- Update the production domain and any preview aliases.
+- Validate that Open Graph metadata, title, and favicon render as Agora.
+- Verify explorer links in the UI point to current deployments.
+
+#### API Runtime
+
+- Set the API environment to `AGORA_*` names only.
+- `AGORA_CORS_ORIGINS` matches frontend origins.
+- SIWE origin and domain checks pass against production API and web domains.
+- `agora_session` cookie is issued with correct `secure` behavior in production.
+- Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
+
+#### Chain Cutover
+
+- Reset testnet DB, apply baseline migration.
+- Deploy fresh `v2` factory.
+- Update all runtime addresses together:
+  - `AGORA_FACTORY_ADDRESS`, `AGORA_USDC_ADDRESS`, `AGORA_CHAIN_ID`, `AGORA_RPC_URL`
+  - `AGORA_ORACLE_ADDRESS`, `AGORA_TREASURY_ADDRESS`
+  - `NEXT_PUBLIC_AGORA_FACTORY_ADDRESS`, `NEXT_PUBLIC_AGORA_USDC_ADDRESS`, `NEXT_PUBLIC_AGORA_CHAIN_ID`, `NEXT_PUBLIC_AGORA_RPC_URL`
+- Set indexer start block for the new deployment generation.
+- Reindex from the fresh `v2` factory only.
+- Never mix prior-generation factory addresses into active runtime envs.
+
+#### Image Registry
+
+- Publish scorer images under the Agora namespace (`ghcr.io/agora-science/*`).
+- Verify tags/digests referenced by presets are available.
+- Keep legacy images frozen if historical replay requires them.
+
+#### DNS and Domains
+
+- Point the production web domain to the frontend deployment.
+- Point the production API domain to the API deployment.
+- Update CORS allowlists, reverse-proxy configs, and TLS cert coverage for final domains.
+
+#### Operator Machines
+
+- Replace local `.env` files with current `AGORA_*` naming.
+- Update Claude/MCP client configs to Agora server and tool ids.
+- Confirm CLI config directories and aliases use `agora`.
+- Confirm cron jobs, shell aliases, launch agents, or systemd units do not reference retired names.
+
+#### Final Verification
+
+- `git remote -v` shows the Agora repo URL.
+- Hosted web app title and metadata display Agora.
+- API auth flow sets `agora_session`.
+- MCP server registers as `agora-mcp`.
+- CLI help text shows `agora`.
+- Runtime envs contain only `AGORA_*` and `NEXT_PUBLIC_AGORA_*` keys for first-party settings.
+- All externally referenced scorer images resolve under the Agora registry namespace.
