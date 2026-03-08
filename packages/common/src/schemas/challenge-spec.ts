@@ -102,6 +102,7 @@ const _baseSpecShape = z.object({
   domain: domainEnum,
   type: typeEnum,
   description: z.string().min(1),
+  reference_url: z.string().url().optional(),
   dataset: z
     .object({
       train: datasetSource.optional(),
@@ -428,6 +429,19 @@ export function resolveEvalSpec(
     evaluationBundleCid: spec.eval_bundle_cid ?? undefined,
     metric: spec.eval_metric,
   };
+}
+
+export function resolveScoringEnvironmentFromSpec(
+  spec:
+    | { evaluation?: { tolerance?: string | null } | null }
+    | null
+    | undefined,
+): Record<string, string> | undefined {
+  const tolerance = spec?.evaluation?.tolerance?.trim();
+  if (!tolerance) {
+    return undefined;
+  }
+  return { AGORA_TOLERANCE: tolerance };
 }
 
 export function validateChallengeScoreability(

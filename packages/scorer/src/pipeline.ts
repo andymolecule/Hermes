@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveScoringEnvironmentFromSpec } from "@agora/common";
 import { downloadToPath } from "@agora/ipfs";
+import { getJSON } from "@agora/ipfs";
 import {
   runScorer,
   type RunScorerInput,
@@ -34,6 +36,7 @@ export interface ExecuteScoringPipelineInput {
   image: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
+  env?: Record<string, string>;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
   keepWorkspace?: boolean;
@@ -50,6 +53,25 @@ export interface ScoringPipelineResult {
   submissionPath: string;
   inputPaths: string[];
   cleanup: () => Promise<void>;
+}
+
+export async function resolveScoringEnvironmentFromSpecCid(
+  specCid?: string | null,
+): Promise<Record<string, string> | undefined> {
+  if (!specCid) {
+    return undefined;
+  }
+  try {
+    const spec = await getJSON<{ evaluation?: { tolerance?: string | null } }>(
+      specCid,
+    );
+    return resolveScoringEnvironmentFromSpec(spec);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load challenge spec ${specCid} for scorer configuration. Next step: confirm the spec CID is pinned and reachable. ${message}`,
+    );
+  }
 }
 
 async function stageSourceToPath(
@@ -146,6 +168,7 @@ export async function executeScoringPipeline(
         runScorer({
           image: input.image,
           inputDir: workspace.inputDir,
+          env: input.env,
           timeoutMs: input.timeoutMs,
           limits: input.limits,
           strictPull: input.strictPull,

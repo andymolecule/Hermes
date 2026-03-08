@@ -4,6 +4,7 @@ import {
   getChallengeTypeScoreabilityProfile,
   challengeSpecSchema,
   resolveEvalSpec,
+  resolveScoringEnvironmentFromSpec,
   validateChallengeScoreability,
   validateChallengeSpec,
 } from "../schemas/challenge-spec";
@@ -119,6 +120,23 @@ if (resolvedScoringOnly.image !== "ghcr.io/agora-science/repro-scorer:v1") {
 }
 if (resolvedScoringOnly.metric !== "custom") {
   console.error("resolveEvalSpec should preserve metric on scoring-only input");
+  process.exit(1);
+}
+
+const scoringEnv = resolveScoringEnvironmentFromSpec({
+  evaluation: { tolerance: "0.001" },
+});
+if (scoringEnv?.AGORA_TOLERANCE !== "0.001") {
+  console.error(
+    "resolveScoringEnvironmentFromSpec should expose tolerance as AGORA_TOLERANCE",
+  );
+  process.exit(1);
+}
+
+if (resolveScoringEnvironmentFromSpec({ evaluation: {} }) !== undefined) {
+  console.error(
+    "resolveScoringEnvironmentFromSpec should return undefined when no tolerance is set",
+  );
   process.exit(1);
 }
 

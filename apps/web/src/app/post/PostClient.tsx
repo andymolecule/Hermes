@@ -285,7 +285,7 @@ const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
 const TYPE_CONFIG = {
   prediction: {
     label: "Prediction",
-    description: "Solvers predict outcomes on held-out test data (Kaggle-style)",
+    description: "Solvers predict held-out outcomes from a labeled training dataset",
     defaultDomain: "omics",
     metricHint: "r2",
     container: predictionPreset.container,
@@ -305,7 +305,7 @@ const TYPE_CONFIG = {
   },
   reproducibility: {
     label: "Reproducibility",
-    description: "Solvers reproduce a known result from a published pipeline",
+    description: "Solvers reproduce a posted reference artifact from shared source data",
     defaultDomain: "other",
     metricHint: "custom",
     container: reproducibilityPreset.container,
@@ -345,7 +345,56 @@ const TYPE_CONFIG = {
   },
 } as const;
 
-const TYPE_OPTIONS = Object.keys(TYPE_CONFIG) as PostChallengeType[];
+const AVAILABLE_TYPE_OPTIONS: PostChallengeType[] = ["reproducibility", "prediction"];
+const COMING_SOON_TYPE_OPTIONS: PostChallengeType[] = ["optimization", "docking", "red_team"];
+
+const TYPE_FORM_COPY: Record<"reproducibility" | "prediction", {
+  titlePlaceholder: string;
+  descriptionPlaceholder: string;
+  tagPlaceholder: string;
+}> = {
+  reproducibility: {
+    titlePlaceholder: "e.g. Reproduce normalized assay summary statistics from the Lee et al. pipeline",
+    descriptionPlaceholder: "Describe the reference artifact solvers should reproduce, what source data they should work from, and any constraints on ordering, preprocessing, or rounding.",
+    tagPlaceholder: "e.g. reproducibility, assay, csv",
+  },
+  prediction: {
+    titlePlaceholder: "e.g. Predict assay response from tabular feature measurements",
+    descriptionPlaceholder: "Describe the target outcome, what the training and evaluation rows represent, and any scientific context solvers need to build a credible model.",
+    tagPlaceholder: "e.g. prediction, tabular, assay",
+  },
+};
+
+const MARKETPLACE_CATEGORY_OPTIONS = [
+  { value: "longevity", label: "Longevity" },
+  { value: "drug_discovery", label: "Drug Discovery" },
+  { value: "protein_design", label: "Protein Design" },
+  { value: "omics", label: "Omics" },
+  { value: "neuroscience", label: "Neuroscience" },
+  { value: "other", label: "Other" },
+] as const;
+
+const PAYOUT_RULE_OPTIONS: Array<{
+  value: FormState["distribution"];
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "winner_take_all",
+    label: "Winner takes all",
+    hint: "Best when the reward pool is small or you care most about the single top result.",
+  },
+  {
+    value: "top_3",
+    label: "Top 3",
+    hint: "Rewards multiple strong submissions and encourages broader participation.",
+  },
+  {
+    value: "proportional",
+    label: "Proportional",
+    hint: "Distributes payout by score when you want many valid submissions to earn something.",
+  },
+];
 
 // ─── Pipeline diagrams per type ──────────────────────
 
@@ -358,7 +407,7 @@ type PipelineFlow = {
     tone: "poster" | "solver" | "scorer";
   }>;
   helper: string;
-  systemNote: string;
+  systemNote?: string;
 };
 
 const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
@@ -413,8 +462,7 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
         tone: "scorer",
       },
     ],
-    helper: "This pipeline is a strict reproducibility protocol: published inputs go in, reproduced outputs come back, and the scorer measures exactness.",
-    systemNote: "The expected output is not a separate actor. It is a poster-supplied reference artifact consumed by the scorer stage.",
+    helper: "Public benchmark workflow: source data in, reproduced CSV out, deterministic comparison against the posted reference.",
   },
   optimization: {
     stages: [
@@ -568,14 +616,16 @@ function PipelineVisual({ type }: { type: PostChallengeType }) {
             </Fragment>
           );
         })}
+        <div className="pipeline-visual-summary">
+          {flow.helper}
+        </div>
       </div>
       <div className="pipeline-diagram-copy">
-        <p className="pipeline-diagram-helper">
-          {flow.helper}
-        </p>
-        <p className="pipeline-system-note">
-          {flow.systemNote}
-        </p>
+        {flow.systemNote ? (
+          <p className="pipeline-system-note">
+            {flow.systemNote}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -603,6 +653,15 @@ function engineDisplayName(container: string): string {
   return `${names[0]} (+${names.length - 1} preset${names.length > 2 ? "s" : ""})`;
 }
 
+function scoringRuleLabel(state: FormState): string {
+  if (state.type === "reproducibility") return "Deterministic CSV comparison";
+  if (state.type === "prediction") {
+    const metricLabel = METRIC_OPTIONS.find((metric) => metric.value === state.metric)?.label ?? state.metric;
+    return `${metricLabel} on hidden labels`;
+  }
+  return engineDisplayName(state.container);
+}
+
 const SUBMISSION_TYPES = [
   { value: "number", label: "🔢 Number", desc: "Solvers submit a numeric answer.", format: '{"answer": <number>}' },
   { value: "text", label: "📝 Text", desc: "Solvers submit a text response.", format: '{"answer": <string>}' },
@@ -617,6 +676,7 @@ const SUBMISSION_TYPES = [
 type FormState = {
   title: string;
   description: string;
+  referenceLink: string;
   domain: string;
   type: PostChallengeType;
   train: string;
@@ -639,7 +699,6 @@ type FormState = {
   tolerance: string;
   tags: string[];
   detectedColumns: string[];
-  expectedSubmissionColumns: string[];
 };
 
 const defaultPreset = TYPE_CONFIG.reproducibility;
@@ -647,6 +706,7 @@ const defaultPreset = TYPE_CONFIG.reproducibility;
 const initialState: FormState = {
   title: "",
   description: "",
+  referenceLink: "",
   domain: defaultPreset.defaultDomain,
   type: "reproducibility",
   train: "",
@@ -659,17 +719,16 @@ const initialState: FormState = {
   deadlineDays: "7",
   minimumScore: String(defaultPreset.defaultMinimumScore),
   disputeWindow: String(CHALLENGE_LIMITS.defaultDisputeWindowHours),
-  submissionType: "number",
-  submissionFormat: '{"answer": <number>}',
-  evaluationCriteria: "",
+  submissionType: "csv",
+  submissionFormat: "CSV matching the expected output columns and row order",
+  evaluationCriteria: defaultPreset.scoringTemplate,
   successDefinition: "",
   idColumn: "id",
   labelColumn: "prediction",
   reproPresetId: "csv_comparison_v1",
-  tolerance: "",
+  tolerance: "0.001",
   tags: [],
   detectedColumns: [],
-  expectedSubmissionColumns: [],
 };
 
 function buildSpec(state: FormState) {
@@ -692,6 +751,7 @@ function buildSpec(state: FormState) {
 
   const minimumScore = state.minimumScore.trim();
   const disputeWindow = state.disputeWindow.trim();
+  const referenceLink = state.referenceLink.trim();
 
   return {
     schema_version: 2 as const,
@@ -701,6 +761,7 @@ function buildSpec(state: FormState) {
     domain: state.domain,
     type: state.type,
     description: state.description,
+    ...(referenceLink ? { reference_url: referenceLink } : {}),
     dataset,
     scoring: { container: state.container, metric: state.metric },
     reward: {
@@ -814,6 +875,47 @@ function FormField({
   );
 }
 
+function ChoiceField<T extends string>({
+  label,
+  hint,
+  value,
+  options,
+  onChange,
+  className,
+  variant = "default",
+}: {
+  label: string;
+  hint?: string;
+  value: T;
+  options: ReadonlyArray<{ value: T; label: string; hint?: string }>;
+  onChange: (next: T) => void;
+  className?: string;
+  variant?: "default" | "compact";
+}) {
+  return (
+    <div className={`form-field ${className ?? ""}`}>
+      <label className="form-label">{label}</label>
+      <div className={`choice-grid ${variant === "compact" ? "compact" : ""}`}>
+        {options.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={`choice-card ${variant === "compact" ? "compact" : ""} ${active ? "active" : ""}`}
+              onClick={() => onChange(option.value)}
+            >
+              <span className="choice-card-title">{option.label}</span>
+              {option.hint ? <span className="choice-card-hint">{option.hint}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      {hint ? <span className="form-hint">{hint}</span> : null}
+    </div>
+  );
+}
+
 // ─── Data Upload Field ──────────────────────────────
 
 function DataUploadField({
@@ -877,15 +979,18 @@ function DataUploadField({
         tabIndex={-1}
       />
       {uploading ? (
-        <>
+        <div className="drop-zone-copy">
           <Loader2 size={20} className="animate-spin drop-zone-area-icon" />
-          <span className="drop-zone-area-label">Uploading &amp; pinning to IPFS…</span>
-        </>
+          <span className="drop-zone-area-label">Uploading and pinning to IPFS</span>
+          <span className="drop-zone-area-sub">This usually completes in a few seconds.</span>
+        </div>
       ) : (
         <>
-          <Upload size={20} className="drop-zone-area-icon" />
-          <span className="drop-zone-area-label">Click to browse or drag a file</span>
-          <span className="drop-zone-area-sub">or paste an IPFS / HTTPS link below</span>
+          <div className="drop-zone-copy">
+            <Upload size={20} className="drop-zone-area-icon" />
+            <span className="drop-zone-area-label">Drop a file or click to upload</span>
+            <span className="drop-zone-area-sub">CSV works best here. You can also paste an IPFS or HTTPS link below.</span>
+          </div>
           <input
             className="drop-zone-url-input"
             placeholder={placeholder}
@@ -1011,13 +1116,9 @@ export function PostClient() {
       setState((s) => ({
         ...s,
         [field]: pinResult.cid,
-        // Auto-fill columns only if user hasn't edited them yet
         ...(shouldDetectColumns && detectedCols.length > 0
           ? {
               detectedColumns: detectedCols,
-              ...(s.expectedSubmissionColumns.length === 0
-                ? { expectedSubmissionColumns: detectedCols }
-                : {}),
             }
           : {}),
       }));
@@ -1042,6 +1143,7 @@ export function PostClient() {
   }
 
   function selectType(t: PostChallengeType) {
+    if (!AVAILABLE_TYPE_OPTIONS.includes(t)) return;
     const preset = TYPE_CONFIG[t];
     setState((s) => ({
       ...s,
@@ -1053,11 +1155,18 @@ export function PostClient() {
       evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
       // Clear type-specific fields when switching
       hiddenLabels: "",
-      tolerance: "",
+      tolerance: t === "reproducibility" ? "0.001" : "",
       train: "",
       test: "",
       // Reset repro sub-preset to default when switching to reproducibility
-      ...(t === "reproducibility" ? { reproPresetId: "csv_comparison_v1", submissionType: "csv", submissionFormat: "CSV file" } : {}),
+      ...(t === "reproducibility"
+        ? {
+          reproPresetId: "csv_comparison_v1",
+          submissionType: "csv",
+          submissionFormat:
+            "CSV matching the expected output columns and row order",
+        }
+        : {}),
       // Prediction: default to CSV submission with id + prediction columns
       ...(t === "prediction" ? {
         submissionType: "csv",
@@ -1074,6 +1183,13 @@ export function PostClient() {
   function validateInput() {
     if (!state.title.trim() || !state.description.trim())
       return "Title and description are required.";
+    if (state.referenceLink.trim()) {
+      try {
+        new URL(state.referenceLink.trim());
+      } catch {
+        return "Reference paper or protocol link must be a valid URL.";
+      }
+    }
     if (!Number.isFinite(rewardValue) || rewardValue <= 0)
       return "Reward must be a positive number.";
     if (
@@ -1088,8 +1204,8 @@ export function PostClient() {
       if (!state.test.trim()) return "Test dataset is required for prediction challenges.";
       if (!state.hiddenLabels.trim()) return "Hidden labels are required for prediction challenges. Upload the ground truth used for scoring.";
     } else if (state.type === "reproducibility") {
-      if (!state.train.trim()) return "Input bundle is required for reproducibility challenges.";
-      if (!state.test.trim()) return "Expected artifact is required for reproducibility challenges. Upload the reference output the scorer compares against.";
+      if (!state.train.trim()) return "Input dataset is required for reproducibility challenges.";
+      if (!state.test.trim()) return "Reference output is required for reproducibility challenges. Upload the CSV the scorer compares submissions against.";
     } else if (state.type === "optimization") {
       if (!state.train.trim()) return "Evaluation bundle is required for optimization challenges.";
     } else if (state.type === "docking") {
@@ -1118,6 +1234,8 @@ export function PostClient() {
 
     if (state.tolerance.trim() && !Number.isFinite(Number(state.tolerance)))
       return "Tolerance must be a valid number (e.g. 1e-4 or 0.001).";
+    if (state.tolerance.trim() && Number(state.tolerance) < 0)
+      return "Tolerance must be zero or greater.";
 
     if (state.disputeWindow.trim()) {
       const disputeWindow = Number(state.disputeWindow);
@@ -1451,6 +1569,42 @@ export function PostClient() {
     setShowPreview(true);
   };
 
+  const renderTypeCard = (key: PostChallengeType, { disabled = false }: { disabled?: boolean } = {}) => {
+    const preset = TYPE_CONFIG[key];
+    const Icon = TYPE_ICONS[key];
+    const active = !disabled && state.type === key;
+
+    return (
+      <button
+        key={key}
+        type="button"
+        className={`type-card ${active ? "active" : ""} ${disabled ? "disabled" : ""}`}
+        onClick={() => {
+          if (!disabled) selectType(key);
+        }}
+        disabled={disabled}
+      >
+        <div className="type-card-check">
+          {active && <Check size={10} strokeWidth={3} />}
+        </div>
+        <div className="type-card-icon">
+          <Icon size={18} />
+        </div>
+        <div className="type-card-title-row">
+          <div className="type-card-title">{preset.label}</div>
+          {disabled ? <span className="type-card-status">Coming soon</span> : <span className="type-card-status available">Available now</span>}
+        </div>
+        <div className="type-card-desc">
+          {preset.description}
+          {disabled && " Self-serve posting is not open for this workflow yet."}
+        </div>
+      </button>
+    );
+  };
+
+  const scientistCopy = TYPE_FORM_COPY[state.type as "reproducibility" | "prediction"] ?? TYPE_FORM_COPY.reproducibility;
+  const usesNumericDrift = state.type === "reproducibility" && Number(state.tolerance || "0") > 0;
+
 
   return (
     <div className="post-form">
@@ -1459,62 +1613,67 @@ export function PostClient() {
         <div className="post-header-left">
           <h1 className="page-title">Post Bounty</h1>
           <p className="page-subtitle">
-            Define a computational challenge and fund it with USDC.
+            Post a reproducibility benchmark or prediction challenge and fund it with USDC.
           </p>
         </div>
       </div>
 
       {/* ── Challenge Type Selector ── */}
-      <div className="type-selector">
-        {TYPE_OPTIONS.map((key) => {
-          const preset = TYPE_CONFIG[key];
-          const Icon = TYPE_ICONS[key];
-          const active = state.type === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              className={`type-card ${active ? "active" : ""}`}
-              onClick={() => selectType(key)}
-            >
-              <div className="type-card-check">
-                {active && <Check size={10} strokeWidth={3} />}
-              </div>
-              <div className="type-card-icon">
-                <Icon size={18} />
-              </div>
-              <div className="type-card-title">{preset.label}</div>
-              <div className="type-card-desc">{preset.description}</div>
-            </button>
-          );
-        })}
+      <div className="type-group">
+        <div className="type-group-header">
+          <div className="type-group-title">Available now</div>
+          <p className="type-group-copy">
+            Start with the workflows that are fully self-serve and ready for real poster and solver use today.
+          </p>
+        </div>
+        <div className="type-selector type-selector-primary">
+          {AVAILABLE_TYPE_OPTIONS.map((key) => renderTypeCard(key))}
+        </div>
+      </div>
+
+      <div className="type-group type-group-muted">
+        <div className="type-group-header">
+          <div className="type-group-title">Coming soon</div>
+          <p className="type-group-copy">
+            These workflows still need additional scorer and product work before self-serve posting opens.
+          </p>
+        </div>
+        <div className="type-selector type-selector-muted">
+          {COMING_SOON_TYPE_OPTIONS.map((key) => renderTypeCard(key, { disabled: true }))}
+        </div>
       </div>
 
       {/* ── Section 1: Problem ── */}
       <div className="form-section">
-        <SectionHeader step={1} title="Problem" />
+        <SectionHeader step={1} title="Scientific Brief" />
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Title">
-              <input className="form-input" placeholder="e.g. Find the optimal protein fold"
+            <FormField label="Bounty title" className="span-full measure-medium">
+              <input className="form-input" placeholder={scientistCopy.titlePlaceholder}
                 value={state.title} onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))} />
             </FormField>
-            <FormField label="Domain">
-              <select className="form-select" value={state.domain}
-                onChange={(e) => setState((s) => ({ ...s, domain: e.target.value }))}>
-                <option value="longevity">Longevity</option>
-                <option value="drug_discovery">Drug Discovery</option>
-                <option value="protein_design">Protein Design</option>
-                <option value="omics">Omics</option>
-                <option value="neuroscience">Neuroscience</option>
-                <option value="other">Other</option>
-              </select>
-            </FormField>
-            <FormField label="Description" className="span-full">
-              <textarea className="form-textarea" placeholder="What problem are you trying to solve? What should solvers achieve?"
+            <FormField label="Challenge brief" className="span-full">
+              <textarea className="form-textarea" placeholder={scientistCopy.descriptionPlaceholder}
                 value={state.description} onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))} />
             </FormField>
-            <FormField label="Tags" hint="Press Enter or comma to add" className="span-full">
+            <FormField
+              label="Reference paper or protocol link (optional)"
+              hint="Link the publication, methods page, notebook, or protocol that defines the target artifact."
+              className="span-full measure-medium"
+            >
+              <input className="form-input" placeholder="https://..."
+                value={state.referenceLink} onChange={(e) => setState((s) => ({ ...s, referenceLink: e.target.value }))} />
+            </FormField>
+            <ChoiceField
+              label="Marketplace category"
+              hint="Used for discovery on Agora. Does not affect scoring or payout."
+              value={state.domain}
+              options={MARKETPLACE_CATEGORY_OPTIONS}
+              onChange={(next) => setState((s) => ({ ...s, domain: next }))}
+              className="span-full"
+              variant="compact"
+            />
+            <FormField label="Keywords (optional)" hint="Optional search keywords — press Enter or comma to add" className="span-full">
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", alignItems: "center" }}>
                 {state.tags.map((tag) => (
                   <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.2rem 0.5rem", borderRadius: "12px", background: "#FAFAFA", fontSize: "0.72rem", color: "var(--text-secondary)", border: "1px solid #E5E7EB" }}>
@@ -1529,7 +1688,7 @@ export function PostClient() {
                 <input
                   className="form-input"
                   style={{ flex: 1, minWidth: "120px", border: "none", padding: "0.25rem 0", fontSize: "0.8rem", background: "transparent" }}
-                  placeholder={state.tags.length === 0 ? "e.g. longevity, prediction, omics" : "Add tag…"}
+                  placeholder={state.tags.length === 0 ? scientistCopy.tagPlaceholder : "Add keyword…"}
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1551,14 +1710,14 @@ export function PostClient() {
 
       {/* ── Section 2: Data & Inputs (type-adaptive) ── */}
       <div className="form-section">
-        <SectionHeader step={2} title="Data & Inputs" />
+        <SectionHeader step={2} title="Data & Reference Artifacts" />
         <div className="form-section-body">
           <PipelineVisual type={state.type} />
           <div className="form-grid">
             {/* ── Prediction: 3 uploads ── */}
             {state.type === "prediction" && (
               <>
-                <FormField label="Train (with labels)" hint="Public dataset solvers use to build and train models">
+                <FormField label="Training dataset (with labels)" hint="Public labeled data solvers use to fit and validate their models">
                   <DataUploadField
                     value={state.train}
                     onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
@@ -1568,7 +1727,7 @@ export function PostClient() {
                     fileName={fileNames.train}
                   />
                 </FormField>
-                <FormField label="Test (no labels)" hint="Public test inputs — solvers predict values for these rows">
+                <FormField label="Evaluation inputs (without labels)" hint="Public rows solvers generate predictions for">
                   <DataUploadField
                     value={state.test}
                     onChange={(v) => { setState((s) => ({ ...s, test: v })); if (!v) setFileNames((p) => ({ ...p, test: "" })); }}
@@ -1578,7 +1737,7 @@ export function PostClient() {
                     fileName={fileNames.test}
                   />
                 </FormField>
-                <FormField label="Hidden labels (for scoring)" hint="Ground truth labels the scorer compares submissions against" className="span-full">
+                <FormField label="Hidden scoring labels" hint="Ground-truth targets used by the official scorer after submission" className="span-full">
                   <DataUploadField
                     value={state.hiddenLabels}
                     onChange={(v) => { setState((s) => ({ ...s, hiddenLabels: v })); if (!v) setFileNames((p) => ({ ...p, hiddenLabels: "" })); }}
@@ -1594,7 +1753,7 @@ export function PostClient() {
             {/* ── Reproducibility: 2 uploads + tolerance ── */}
             {state.type === "reproducibility" && (
               <>
-                <FormField label="Input dataset (visible to solvers)" hint="Source data and inputs solvers must reproduce from">
+                <FormField label="Source dataset" hint="Public source data and inputs solvers must reproduce from">
                   <DataUploadField
                     value={state.train}
                     onChange={(v) => { setState((s) => ({ ...s, train: v })); if (!v) setFileNames((p) => ({ ...p, train: "" })); }}
@@ -1604,14 +1763,17 @@ export function PostClient() {
                     fileName={fileNames.train}
                   />
                 </FormField>
-                <FormField label="Expected output (used for scoring)" hint="Reference artifact the scorer compares submissions against">
+                <FormField
+                  label="Reference output"
+                  hint="This CSV is posted with the challenge and becomes the public reference benchmark the official scorer compares submissions against."
+                >
                   <DataUploadField
                     value={state.test}
                     onChange={(v) => {
                       setState((s) => ({
                         ...s, test: v,
                         // Clear detected columns when file is removed
-                        ...(!v ? { detectedColumns: [], expectedSubmissionColumns: [] } : {}),
+                        ...(!v ? { detectedColumns: [] } : {}),
                       }));
                       if (!v) setFileNames((p) => ({ ...p, test: "" }));
                     }}
@@ -1621,10 +1783,57 @@ export function PostClient() {
                     fileName={fileNames.test}
                   />
                 </FormField>
-                <FormField label="Tolerance" hint="Numeric tolerance for comparison (e.g. 1e-4). Leave empty for exact match.">
-                  <input className="form-input form-input-mono" placeholder="e.g. 1e-4 or 0.001"
-                    value={state.tolerance} onChange={(e) => setState((s) => ({ ...s, tolerance: e.target.value }))} />
-                </FormField>
+                <div className="form-field span-full">
+                  <label className="form-label">Match rule (How strict the official scorer should be when comparing numeric values)</label>
+                  <div className="choice-grid">
+                    <button
+                      type="button"
+                      className={`choice-card choice-card-with-input ${!usesNumericDrift ? "active" : ""}`}
+                      onClick={() => setState((s) => ({ ...s, tolerance: "0" }))}
+                    >
+                      <span className="choice-card-title">Exact match</span>
+                      <span className="choice-card-hint">All numeric values must match exactly.</span>
+                      <div className="choice-card-inline-field">
+                        <span className="choice-card-inline-label">Allowed drift</span>
+                        <span className="choice-card-inline-static">None</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`choice-card choice-card-with-input ${usesNumericDrift ? "active" : ""}`}
+                      onClick={() => {
+                        if (!usesNumericDrift) {
+                          setState((s) => ({
+                            ...s,
+                            tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
+                          }));
+                        }
+                      }}
+                    >
+                      <span className="choice-card-title">Allow small drift</span>
+                      <span className="choice-card-hint">Useful when minor rounding or floating-point noise should still count as correct.</span>
+                      <div className="choice-card-inline-field">
+                        <span className="choice-card-inline-label">Allowed drift</span>
+                        <input
+                          className="choice-card-inline-input form-input-mono"
+                          placeholder="0.001"
+                          value={usesNumericDrift ? state.tolerance : ""}
+                          onChange={(e) => setState((s) => ({ ...s, tolerance: e.target.value }))}
+                          onFocus={() => {
+                            if (!usesNumericDrift) {
+                              setState((s) => ({
+                                ...s,
+                                tolerance: s.tolerance.trim() && Number(s.tolerance) > 0 ? s.tolerance : "0.001",
+                              }));
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </button>
+                  </div>
+                  <span className="form-hint">Absolute numeric tolerance is used for official scoring. Example: 0.001 means values within ±0.001 are treated as matching.</span>
+                </div>
               </>
             )}
 
@@ -1725,45 +1934,56 @@ export function PostClient() {
 
       {/* ── Section 3: Evaluation ── */}
       <div className="form-section">
-        <SectionHeader step={3} title="Evaluation" />
+        <SectionHeader step={3} title="Submission & Scoring" />
         <div className="form-section-body">
           <div className="form-grid">
-            {/* Submission type dropdown — always shown */}
-            <FormField label="Submission type" hint={SUBMISSION_TYPES.find(t => t.value === state.submissionType)?.desc ?? ""}>
-              <select className="form-select" value={state.submissionType}
-                onChange={(e) => {
-                  const st = SUBMISSION_TYPES.find(t => t.value === e.target.value);
-                  setState((s) => ({ ...s, submissionType: e.target.value, submissionFormat: st?.format ?? "" }));
-                }}>
-                {SUBMISSION_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </FormField>
-            {state.submissionType === "custom" ? (
-              <FormField label="Custom format" hint="Describe the expected submission structure">
-                <input className="form-input" placeholder="e.g. ZIP containing model.pkl and predictions.csv"
-                  value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
-              </FormField>
-            ) : (
-              <FormField label="Submission rules" hint="What makes a submission valid? (plain English)">
-                <input className="form-input" placeholder="e.g. Must be a positive integer"
-                  value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
-              </FormField>
+            {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
+              <>
+                <FormField label="Submission type" hint={SUBMISSION_TYPES.find(t => t.value === state.submissionType)?.desc ?? ""}>
+                  <select className="form-select" value={state.submissionType}
+                    onChange={(e) => {
+                      const st = SUBMISSION_TYPES.find(t => t.value === e.target.value);
+                      setState((s) => ({ ...s, submissionType: e.target.value, submissionFormat: st?.format ?? "" }));
+                    }}>
+                    {SUBMISSION_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                {state.submissionType === "custom" ? (
+                  <FormField label="Custom format" hint="Describe the expected submission structure">
+                    <input className="form-input" placeholder="e.g. ZIP containing model.pkl and predictions.csv"
+                      value={state.submissionFormat} onChange={(e) => setState((s) => ({ ...s, submissionFormat: e.target.value }))} />
+                  </FormField>
+                ) : (
+                  <FormField label="Submission rules" hint="What makes a submission valid? (plain English)">
+                    <input className="form-input" placeholder="e.g. Must be a positive integer"
+                      value={state.successDefinition} onChange={(e) => setState((s) => ({ ...s, successDefinition: e.target.value }))} />
+                  </FormField>
+                )}
+              </>
             )}
 
             {/* ── Prediction-specific fields ── */}
             {state.type === "prediction" && (
               <>
-                <FormField label="ID column" hint="Column name for row identifiers in test.csv">
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Submission artifact</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
+                    <Check size={14} style={{ color: "#000" }} />
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV predictions only</span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Solvers submit one prediction row per evaluation input</span>
+                  </div>
+                </div>
+                <FormField label="Row ID column" hint="Identifier column name in the evaluation input CSV">
                   <input className="form-input form-input-mono" placeholder="id"
                     value={state.idColumn} onChange={(e) => setState((s) => ({ ...s, idColumn: e.target.value }))} />
                 </FormField>
-                <FormField label="Label column" hint="Column name solvers must predict">
+                <FormField label="Target column" hint="Column name solvers must predict in their submission CSV">
                   <input className="form-input form-input-mono" placeholder="prediction"
                     value={state.labelColumn} onChange={(e) => setState((s) => ({ ...s, labelColumn: e.target.value }))} />
                 </FormField>
-                <FormField label="Metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
+                <FormField label="Primary metric" hint={METRIC_OPTIONS.find(m => m.value === state.metric)?.hint ?? ""}>
                   <select className="form-select" value={state.metric}
                     onChange={(e) => {
                       const m = METRIC_OPTIONS.find(o => o.value === e.target.value);
@@ -1778,14 +1998,14 @@ export function PostClient() {
                     ))}
                   </select>
                 </FormField>
-                <FormField label="Scoring detail" hint="Additional context (optional)">
-                  <input className="form-input" placeholder="e.g. Evaluated on held-out test split"
+                <FormField label="Solver notes (optional)" hint="Add any scientific or dataset context that helps solvers build better predictions">
+                  <input className="form-input" placeholder="e.g. Rows are assay replicates and scores are judged on Spearman correlation"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
                 {/* Solver output format preview */}
                 <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Solver output format</p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>Required submission file</p>
                   <p style={{ fontSize: "0.68rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", lineHeight: 1.4 }}>
                     Solvers submit a CSV file with these columns:
                   </p>
@@ -1802,27 +2022,55 @@ export function PostClient() {
             {/* ── Reproducibility-specific fields ── */}
             {state.type === "reproducibility" && (
               <>
-                {/* Locked scoring method badge */}
+                <div
+                  className="span-full"
+                  style={{
+                    display: "grid",
+                    gap: "0.35rem",
+                    padding: "0.75rem 0.9rem",
+                    background: "#FAFAFA",
+                    border: "1px solid #E5E7EB",
+                    borderRadius: "6px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <AlertCircle size={15} style={{ color: "#000" }} />
+                    <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                      Open reference benchmark
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                    In the current protocol, the reference output is part of the posted challenge materials. This template is best for public artifact-matching and benchmark tasks, not blind holdout evaluation.
+                  </p>
+                </div>
                 <div className="span-full">
-                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Scoring method</p>
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Submission artifact</p>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
                     <Check size={14} style={{ color: "#000" }} />
-                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV Comparison</span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Row-by-row comparison against ground truth</span>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>CSV output only</span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; Solvers submit a CSV matching the reference output columns and row order</span>
                   </div>
                 </div>
-                <FormField label="Scoring description" hint="Describe how submissions are compared to expected output" className="span-full">
-                  <textarea className="form-textarea" placeholder="e.g. Row-by-row comparison of output CSV against expected_output.csv with numeric tolerance 1e-4"
+                <div className="span-full">
+                  <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.35rem", fontWeight: 600 }}>Official scoring rule</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px" }}>
+                    <Check size={14} style={{ color: "#000" }} />
+                    <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-primary)" }}>Exact CSV comparison</span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-tertiary)" }}>&mdash; The official scorer compares each row against the posted reference output and applies the allowed numeric drift above</span>
+                  </div>
+                </div>
+                <FormField label="Solver notes (optional)" hint="Add any human guidance that helps solvers reproduce the artifact correctly" className="span-full">
+                  <textarea className="form-textarea" placeholder="e.g. Rows must stay in the original order and all values should be rounded to three decimals"
                     value={state.evaluationCriteria} onChange={(e) => setState((s) => ({ ...s, evaluationCriteria: e.target.value }))} />
                 </FormField>
                 {/* Solver output format */}
                 <div className="span-full" style={{ borderTop: "1px solid var(--border-subtle)", margin: "0.25rem 0" }} />
                 <div className="span-full">
                   <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: "0 0 0.25rem", fontWeight: 600 }}>
-                    Solver output format
+                    Required submission columns
                     {state.detectedColumns.length > 0 && (
                       <span style={{ fontWeight: 400, fontStyle: "italic", marginLeft: "0.5rem" }}>
-                        (auto-detected from {fileNames.test || "expected output"})
+                        (auto-detected from {fileNames.test || "reference output"})
                       </span>
                     )}
                   </p>
@@ -1834,23 +2082,13 @@ export function PostClient() {
                       <pre style={{ margin: 0, padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.72rem", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", lineHeight: 1.6, overflowX: "auto" }}>
                         {state.detectedColumns.join(",")}
                       </pre>
-                      <input
-                        className="form-input form-input-mono"
-                        style={{ marginTop: "0.35rem", fontSize: "0.72rem" }}
-                        value={state.expectedSubmissionColumns.join(",")}
-                        onChange={(e) => setState((s) => ({
-                          ...s,
-                          expectedSubmissionColumns: e.target.value.split(",").map((c) => c.trim()).filter(Boolean),
-                        }))}
-                        placeholder="Edit column names if needed"
-                      />
                       <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: "0.25rem 0 0", fontStyle: "italic" }}>
-                        The scorer compares each row of the solver&#39;s output against your expected output.
+                        Solvers should keep the same column order and row order as the posted reference output.
                       </p>
                     </>
                   ) : (
                     <p style={{ fontSize: "0.72rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
-                      Upload expected output above to auto-detect the required columns.
+                      Upload the reference output above to preview the required submission columns.
                     </p>
                   )}
                 </div>
@@ -1943,8 +2181,8 @@ export function PostClient() {
             {!isCustomType && (
               <div className="span-full" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", background: "#FAFAFA", border: "1px solid #E5E7EB", borderRadius: "6px", fontSize: "0.75rem", fontFamily: "var(--font-mono)" }}>
-                  <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Scorer:</span>
-                  <span style={{ color: "var(--text-primary)" }}>{engineDisplayName(state.container)}</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Official scoring rule:</span>
+                  <span style={{ color: "var(--text-primary)" }}>{scoringRuleLabel(state)}</span>
                 </div>
                 <p style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", margin: 0, fontStyle: "italic" }}>
                   Managed scorer — scoring is deterministic and independently verifiable.
@@ -1962,25 +2200,26 @@ export function PostClient() {
 
       {/* ── Section 4: Reward & Execution ── */}
       <div className="form-section">
-        <SectionHeader step={4} title="Reward & Execution" />
+        <SectionHeader step={4} title="Reward & Timeline" />
         <div className="form-section-body">
           <div className="form-grid">
             <FormField
-              label="Reward (USDC)"
-              hint={`Between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`}
+              label="Reward pool (USDC)"
+              hint={`Escrowed on-chain. Between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC.`}
+              className="span-full measure-small"
             >
               <input className="form-input form-input-mono" type="number" min={CHALLENGE_LIMITS.rewardMinUsdc} max={CHALLENGE_LIMITS.rewardMaxUsdc}
                 value={state.reward} onChange={(e) => setState((s) => ({ ...s, reward: e.target.value }))} />
             </FormField>
-            <FormField label="Winner selection" hint={WINNER_LABELS[state.distribution] ?? ""}>
-              <select className="form-select" value={state.distribution}
-                onChange={(e) => setState((s) => ({ ...s, distribution: e.target.value as FormState["distribution"] }))}>
-                <option value="winner_take_all">Winner Take All</option>
-                <option value="top_3">Top 3</option>
-                <option value="proportional">Proportional</option>
-              </select>
-            </FormField>
-            <FormField label="Submission deadline" hint="How long solvers have to submit">
+            <ChoiceField
+              label="Payout rule"
+              hint="Choose how the reward pool is distributed after protocol fees."
+              value={state.distribution}
+              options={PAYOUT_RULE_OPTIONS}
+              onChange={(next) => setState((s) => ({ ...s, distribution: next }))}
+              className="span-full"
+            />
+            <FormField label="Submission window" hint="How long solvers have to submit before scoring begins">
               <select className="form-select" value={state.deadlineDays}
                 onChange={(e) => setState((s) => ({ ...s, deadlineDays: e.target.value }))}>
                 {isTestnetChain(CHAIN_ID) && <option value="0">Quick test (30 min)</option>}
@@ -1991,7 +2230,7 @@ export function PostClient() {
                 <option value="90">90 days</option>
               </select>
             </FormField>
-            <FormField label="Dispute window" hint="Time for anyone to challenge scores before payout">
+            <FormField label="Review window before payout" hint="Time for anyone to challenge scores before funds are released">
               <select className="form-select" value={state.disputeWindow}
                 onChange={(e) => setState((s) => ({ ...s, disputeWindow: e.target.value }))}>
                 {isTestnetChain(CHAIN_ID) && <option value="0">No dispute window (testnet only)</option>}
@@ -2045,12 +2284,12 @@ export function PostClient() {
 
       {/* ── Section 5: Challenge Summary ── */}
       <div className="form-section">
-        <SectionHeader step={5} title="Challenge Summary" />
+        <SectionHeader step={5} title="Review & Publish" />
         <div className="form-section-body">
           <div className="challenge-summary-layout">
             <div className="summary-column">
               <div className="summary-panel summary-receipt">
-                <p className="summary-panel-eyebrow">The Contract</p>
+                <p className="summary-panel-eyebrow">Escrow & payout</p>
                 <div className="receipt-row">
                   <span className="receipt-label">Deposit</span>
                   <span className="receipt-value">
@@ -2076,7 +2315,7 @@ export function PostClient() {
               </div>
 
               <div className="summary-panel summary-parameters">
-                <p className="summary-panel-eyebrow">Challenge Parameters</p>
+                <p className="summary-panel-eyebrow">Challenge setup</p>
                 <div className="summary-kv-list">
                   <div className="summary-kv-row">
                     <span className="summary-kv-label">Type</span>
@@ -2085,14 +2324,16 @@ export function PostClient() {
                     </span>
                   </div>
                   <div className="summary-kv-row">
-                    <span className="summary-kv-label">Winner selection</span>
+                    <span className="summary-kv-label">Payout rule</span>
                     <span className="summary-kv-value">{DISTRIBUTION_SUMMARY_LABELS[state.distribution]}</span>
                   </div>
                   <div className="summary-kv-row">
-                    <span className="summary-kv-label">Scoring</span>
+                    <span className="summary-kv-label">Official scoring rule</span>
                     <span className="summary-kv-value">
                       {state.type === "reproducibility"
-                        ? PRESET_REGISTRY[state.reproPresetId]?.label ?? state.reproPresetId
+                        ? scoringRuleLabel(state)
+                        : state.type === "prediction"
+                          ? scoringRuleLabel(state)
                         : isCustomType
                           ? "Custom scorer"
                           : engineDisplayName(state.container)}
@@ -2102,13 +2343,13 @@ export function PostClient() {
               </div>
 
               <div className="summary-panel summary-trust">
-                <p className="summary-panel-eyebrow">Trust & Security</p>
+                <p className="summary-panel-eyebrow">Scoring trust</p>
                 <div className="summary-trust-copy">
                   <span className="summary-trust-icon" aria-hidden="true">🔒</span>
                   <div>
                     <p className="summary-trust-title">Checkable Scoring</p>
                     <p className="summary-trust-text">
-                      Agora operates scoring first, but the scorer image, challenge inputs, and published outputs are intended to be replayable and independently checked.
+                      Agora operates scoring first, but the scorer image, posted inputs, and published outputs are designed to be replayable and independently checked.
                     </p>
                   </div>
                 </div>
@@ -2117,7 +2358,7 @@ export function PostClient() {
 
             <div className="summary-column">
               <div className="summary-panel summary-timeline">
-                <p className="summary-panel-eyebrow">The Lifecycle</p>
+                <p className="summary-panel-eyebrow">Lifecycle</p>
                 <div className="timeline-list">
                   {[
                     {
@@ -2139,7 +2380,7 @@ export function PostClient() {
                       active: false,
                     },
                     {
-                      label: "Dispute window",
+                      label: "Review window",
                       detail: state.disputeWindow === "0" ? "Duration: none" : `Duration: ${state.disputeWindow}h`,
                       note: "Anyone can challenge the result before payout is released.",
                       active: false,
@@ -2204,9 +2445,9 @@ export function PostClient() {
         <div className="preview-overlay" onClick={() => setShowPreview(false)}>
           <div className="preview-card" onClick={(e) => e.stopPropagation()}>
             <div className="preview-card-header">
-              <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
-                <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
-                Review Challenge
+                <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
+                  <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+                Review Before Publish
               </h3>
               <button type="button" onClick={() => setShowPreview(false)}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}>
@@ -2214,15 +2455,18 @@ export function PostClient() {
               </button>
             </div>
             <div className="preview-summary">
-              <div className="preview-row"><span className="preview-label">Title</span><span className="preview-value">{state.title || "—"}</span></div>
-              <div className="preview-row"><span className="preview-label">Domain</span><span className="preview-value">{state.domain}</span></div>
+              <div className="preview-row"><span className="preview-label">Bounty title</span><span className="preview-value">{state.title || "—"}</span></div>
+              <div className="preview-row"><span className="preview-label">Marketplace category</span><span className="preview-value">{state.domain}</span></div>
               <div className="preview-row"><span className="preview-label">Type</span><span className="preview-value">{TYPE_CONFIG[state.type].label}</span></div>
-              {state.description && <div className="preview-row span-full"><span className="preview-label">Description</span><span className="preview-value">{state.description}</span></div>}
-              {state.tags.length > 0 && <div className="preview-row"><span className="preview-label">Tags</span><span className="preview-value">{state.tags.join(", ")}</span></div>}
+              {state.description && <div className="preview-row span-full"><span className="preview-label">Challenge brief</span><span className="preview-value">{state.description}</span></div>}
+              {state.referenceLink && <div className="preview-row span-full"><span className="preview-label">Reference link</span><span className="preview-value">{state.referenceLink}</span></div>}
+              {state.tags.length > 0 && <div className="preview-row"><span className="preview-label">Keywords</span><span className="preview-value">{state.tags.join(", ")}</span></div>}
               <div className="preview-divider" />
-              <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
-              {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Scoring method</span><span className="preview-value">{PRESET_REGISTRY[state.reproPresetId]?.label ?? state.reproPresetId}</span></div>}
-              {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Tolerance</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.tolerance}</span></div>}
+              {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
+                <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
+              )}
+              {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Official scoring rule</span><span className="preview-value">{scoringRuleLabel(state)}</span></div>}
+              {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Allowed drift</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.tolerance}</span></div>}
               {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
               {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
               {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.labelColumn}</span></div>}
@@ -2231,10 +2475,10 @@ export function PostClient() {
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}
               <div className="preview-divider" />
-              <div className="preview-row"><span className="preview-label">Reward</span><span className="preview-value">{state.reward} USDC</span></div>
-              <div className="preview-row"><span className="preview-label">Distribution</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
+              <div className="preview-row"><span className="preview-label">Reward pool</span><span className="preview-value">{state.reward} USDC</span></div>
+              <div className="preview-row"><span className="preview-label">Payout rule</span><span className="preview-value">{state.distribution.replace(/_/g, " ")}</span></div>
               <div className="preview-row"><span className="preview-label">Submission window</span><span className="preview-value">{state.deadlineDays === "0" ? "30 min" : `${state.deadlineDays} days`}</span></div>
-              <div className="preview-row"><span className="preview-label">Dispute window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
+              <div className="preview-row"><span className="preview-label">Review window</span><span className="preview-value">{state.disputeWindow === "0" ? "none" : `${state.disputeWindow}h`}</span></div>
               <div className="preview-row"><span className="preview-label">Payout released</span><span className="preview-value">{formatPayoutDate(state.deadlineDays, state.disputeWindow)}</span></div>
               <div className="preview-divider" />
               <div className="preview-row span-full">

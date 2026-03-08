@@ -3,6 +3,7 @@ import type { ChallengeEvalRow } from "@agora/common";
 export interface ChallengeRow extends ChallengeEvalRow {
   id: string;
   contract_address: string;
+  spec_cid?: string | null;
   runner_preset_id: string;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;

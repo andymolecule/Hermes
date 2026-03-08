@@ -19,6 +19,7 @@ import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
+  resolveScoringEnvironmentFromSpecCid,
   SealedSubmissionError,
   resolveSubmissionSource,
   scoreToWad,
@@ -171,6 +172,9 @@ export async function scoreSubmissionAndBuildProof(
     image: evalPlan.image,
   };
   const isProduction = process.env.NODE_ENV === "production";
+  const scoringEnv = await resolveScoringEnvironmentFromSpecCid(
+    challenge.spec_cid,
+  );
   let submissionSource;
   try {
     submissionSource = await resolveSubmissionSource({
@@ -196,6 +200,7 @@ export async function scoreSubmissionAndBuildProof(
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
     submission: submissionSource,
+    env: scoringEnv,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
     strictPull: isProduction,

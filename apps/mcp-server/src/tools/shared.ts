@@ -40,6 +40,7 @@ import {
 import { pinJSON, unpinCid } from "@agora/ipfs";
 import {
   executeScoringPipeline,
+  resolveScoringEnvironmentFromSpecCid,
   resolveSubmissionSource,
   wadToScore,
 } from "@agora/scorer";
@@ -407,6 +408,9 @@ export async function scoreLocal(input: {
       image: evalPlan.image,
       evaluationBundle: { cid: evalPlan.evaluationBundleCid },
       submission: { localPath: input.filePath },
+      env: await resolveScoringEnvironmentFromSpecCid(
+        (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+      ),
     });
 
     try {
@@ -450,6 +454,9 @@ export async function verifySubmission(input: {
         solverAddress: submission.solver_address,
         privateKeyPem: loadConfig().AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM,
       }),
+      env: await resolveScoringEnvironmentFromSpecCid(
+        (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+      ),
     });
     try {
       const onChain = await getOnChainSubmission(

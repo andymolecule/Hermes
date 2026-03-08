@@ -23,6 +23,7 @@ import { pinFile } from "@agora/ipfs";
 import { keccak256, toBytes } from "viem";
 import { buildProofBundle } from "./proof.js";
 import { executeScoringPipeline } from "./pipeline.js";
+import { resolveScoringEnvironmentFromSpecCid } from "./pipeline.js";
 import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
 
@@ -63,6 +64,7 @@ export async function oracleScore(
   const challenge = (await getChallengeById(db, submission.challenge_id)) as ChallengeEvalRow & {
     id: string;
     contract_address: string;
+    spec_cid?: string | null;
   };
   const evalPlan = resolveEvalSpec(challenge);
   if (!evalPlan.evaluationBundleCid) {
@@ -83,6 +85,7 @@ export async function oracleScore(
     image: evalPlan.image,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
     submission: submissionSource,
+    env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
     keepWorkspace: true,
   });
 

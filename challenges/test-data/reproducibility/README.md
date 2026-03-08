@@ -8,6 +8,11 @@ This folder is meant to feel like a small but believable computational reproduci
 - solvers submit a reproduced CSV artifact
 - score reflects row-by-row agreement with optional numeric tolerance
 
+Important realism note:
+- this is an **open reference benchmark**, not a blind holdout evaluation flow
+- the reference output is part of the posted challenge materials in the current protocol
+- use this template for public artifact-matching and benchmark tasks, not for secret-answer scoring
+
 ## Current Runtime Contract
 
 The reproducibility scorer currently expects:
@@ -26,7 +31,7 @@ The built-in preset is:
 | File | Use in UI | Purpose |
 |------|-----------|---------|
 | `input_dataset.csv` | Input dataset | Public source data solvers work from |
-| `expected_output.csv` | Expected output | Reference artifact used for scoring |
+| `expected_output.csv` | Reference output | Public reference artifact used for scoring |
 
 ### Solver submission fixtures
 
@@ -45,7 +50,7 @@ The built-in preset is:
 
 ## Recommended Human UI Test Plan
 
-## 1. Post a realistic reproducibility challenge
+## 1. Post an open reproducibility benchmark
 
 Use these values in `/post`:
 
@@ -60,19 +65,19 @@ Use these values in `/post`:
 
 ### Section 2: Data
 - Input dataset: `input_dataset.csv`
-- Expected output: `expected_output.csv`
+- Reference output: `expected_output.csv`
 
 ### Section 3: Evaluation
 - Scoring method: keep the default `CSV Comparison` preset
 - Tolerance: `0.001`
 - Scoring description:
-  `Rows are compared positionally against the expected output, with numeric values accepted within tolerance 0.001.`
+  `Rows are compared positionally against the public reference output, with numeric values accepted within tolerance 0.001.`
 
 ### Section 4: Reward & Execution
 - Reward: `10`
 - Winner selection: `Winner takes all`
-- Deadline: `7 days`
-- Dispute window: any dropdown value you want to test
+- Deadline: `30 min` for testnet E2E, or `7 days` for a production-like posting walkthrough
+- Dispute window: `0` for fast testnet E2E, or any longer value you want to test operationally
 
 ## 2. Submit the exact reproduction
 

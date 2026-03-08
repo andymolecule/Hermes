@@ -15,6 +15,7 @@ import type { ProofBundle as ProofBundlePayload } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
+  resolveScoringEnvironmentFromSpecCid,
   resolveSubmissionSource,
 } from "@agora/scorer";
 import { Command } from "commander";
@@ -48,6 +49,7 @@ type SubmissionRecord = {
 type ChallengeRecord = ChallengeEvalRow & {
   id: string;
   contract_address: string | null;
+  spec_cid?: string | null;
 };
 
 type ProofBundleRecord = {
@@ -192,6 +194,7 @@ export function buildVerifyCommand() {
             proofPayload.containerImageDigest ?? proof.container_image_hash,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: submissionSource,
+          env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
         });
         runSpinner.succeed("Verification scoring finished");
 

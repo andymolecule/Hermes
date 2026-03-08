@@ -18,6 +18,7 @@ import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
+  resolveScoringEnvironmentFromSpecCid,
   resolveSubmissionSource,
 } from "@agora/scorer";
 import { Command } from "commander";
@@ -46,6 +47,7 @@ type SubmissionRecord = {
 type ChallengeRecord = ChallengeEvalRow & {
   id: string;
   contract_address: string;
+  spec_cid?: string | null;
 };
 
 export function buildOracleScoreCommand() {
@@ -110,6 +112,7 @@ export function buildOracleScoreCommand() {
           image: evalPlan.image,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: submissionSource,
+          env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
           keepWorkspace: true,
         });
         runSpinner.succeed(`Scored submission: ${run.result.score}`);

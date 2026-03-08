@@ -1,6 +1,9 @@
 import { getOnChainSubmission } from "@agora/chain";
 import { getJSON } from "@agora/ipfs";
-import { executeScoringPipeline } from "@agora/scorer";
+import {
+  executeScoringPipeline,
+  resolveScoringEnvironmentFromSpecCid,
+} from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
 import { fetchApiJson } from "../lib/api";
@@ -130,6 +133,9 @@ export function buildVerifyPublicCommand() {
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },
           submission: { cid: payload.replaySubmissionCid },
+          env: await resolveScoringEnvironmentFromSpecCid(
+            payload.challengeSpecCid,
+          ),
           strictPull: true,
         });
         runSpinner.succeed("Public verification scoring finished");

@@ -14,6 +14,7 @@ export interface RunScorerInput {
   image: string;
   inputDir: string;
   timeoutMs?: number;
+  env?: Record<string, string>;
   limits?: {
     memory?: string;
     cpus?: string;
@@ -208,8 +209,13 @@ export async function runScorer(
     `type=bind,src=${inputDir},dst=/input,readonly`,
     "--mount",
     `type=bind,src=${outputDir},dst=/output`,
-    input.image,
   ];
+  for (const [key, value] of Object.entries(input.env ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    args.push("--env", `${key}=${value}`);
+  }
+  args.push(input.image);
 
   let run: CommandResult;
   try {

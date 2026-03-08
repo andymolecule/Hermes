@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_CHAIN_ID, validateChallengeSpec } from "@agora/common";
+import {
+  DEFAULT_CHAIN_ID,
+  resolveScoringEnvironmentFromSpec,
+  validateChallengeSpec,
+} from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
 import { Command } from "commander";
 import yaml from "yaml";
@@ -59,6 +63,7 @@ export function buildValidateCommand() {
                     image: container,
                     evaluationBundle: { content: "id,value\n1,0.5\n" },
                     submission: { content: "id,value\n1,0.5\n" },
+                    env: resolveScoringEnvironmentFromSpec(parsed.data),
                     timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
                 });
 
