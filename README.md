@@ -139,7 +139,7 @@ pnpm --filter @agora/web dev
 ./scripts/e2e-test.sh
 ```
 
-Exercises the full lifecycle: `post → indexer pickup → list → get → score-local → submit → score → finalize → claim`.
+Exercises the full lifecycle: `post → indexer pickup → list → get → score-local → submit → worker scoring → verify-public → finalize → claim`.
 
 Fast testnet override example:
 

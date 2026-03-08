@@ -48,9 +48,11 @@ type ChallengeRecord = ChallengeEvalRow & {
   contract_address: string;
 };
 
-export function buildScoreCommand() {
-  const cmd = new Command("score")
-    .description("Oracle scoring flow: run scorer, pin proof, post on-chain")
+export function buildOracleScoreCommand() {
+  const cmd = new Command("oracle-score")
+    .description(
+      "Manual official scoring flow: run scorer, pin proof, and post the canonical score on-chain",
+    )
     .argument("<submissionId>", "Submission UUID")
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_ORACLE_KEY")
     .option("--format <format>", "table or json", "table")
@@ -73,7 +75,7 @@ export function buildScoreCommand() {
           process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
         } else {
           throw new Error(
-            "agora score is oracle-only. Provide --key env:AGORA_ORACLE_KEY or set AGORA_ORACLE_KEY.",
+            "agora oracle-score is oracle-only. Provide --key env:AGORA_ORACLE_KEY or set AGORA_ORACLE_KEY.",
           );
         }
         ensurePrivateKey();

@@ -87,7 +87,7 @@ JSON
   return 0
 }
 
-echo "Step 1/11: Creating challenge + submission fixtures..."
+echo "Step 1/12: Creating challenge + submission fixtures..."
 cat >"$TMP_DIR/ground_truth.csv" <<'CSV'
 id,value
 1,0.20
@@ -129,11 +129,11 @@ dispute_window_hours: ${E2E_DISPUTE_WINDOW_HOURS}
 lab_tba: "0x0000000000000000000000000000000000000000"
 YAML
 
-echo "Step 2/11: Posting challenge..."
+echo "Step 2/12: Posting challenge..."
 post_json="$("${AGORA_CMD[@]}" post "$TMP_DIR/challenge.yaml" --format json)" || fail "agora post"
 echo "$post_json" >"$TMP_DIR/post.json"
 
-echo "Step 3/11: Waiting for indexer -> challenge visible in agora list..."
+echo "Step 3/12: Waiting for indexer -> challenge visible in agora list..."
 challenge_id=""
 poll_find_challenge() {
   local list_json
@@ -150,13 +150,13 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 poll_until 600 10 poll_find_challenge || fail "challenge did not appear in agora list"
 echo "Challenge ID: $challenge_id"
 
-echo "Step 4/11: Downloading challenge data..."
+echo "Step 4/12: Downloading challenge data..."
 "${AGORA_CMD[@]}" get "$challenge_id" --download "$TMP_DIR/downloaded" --format json >/dev/null || fail "agora get --download"
 
-echo "Step 5/11: Running local scorer..."
+echo "Step 5/12: Running local scorer..."
 "${AGORA_CMD[@]}" score-local "$challenge_id" --submission "$TMP_DIR/submission.csv" --format json >"$TMP_DIR/score-local.json" || fail "agora score-local"
 
-echo "Step 6/11: Submitting on-chain..."
+echo "Step 6/12: Submitting on-chain..."
 submit_json="$("${AGORA_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json)" || fail "agora submit"
 echo "$submit_json" >"$TMP_DIR/submit.json"
 submit_onchain_id="$(printf "%s" "$submit_json" | node --input-type=module -e '
@@ -174,7 +174,7 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 [[ -n "$submit_onchain_id" ]] || fail "submit did not return on-chain submission id"
 echo "✔ On-chain submission succeeded (subId=${submit_onchain_id})"
 
-echo "Step 7/11: Waiting for submission row..."
+echo "Step 7/12: Waiting for submission row..."
 submission_uuid=""
 poll_find_submission() {
   local get_json
@@ -193,10 +193,29 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 poll_until 600 10 poll_find_submission || fail "submission did not appear in index with result_cid"
 echo "Submission ID: $submission_uuid"
 
-echo "Step 8/11: Oracle scoring..."
-"${AGORA_CMD[@]}" score "$submission_uuid" --format json >"$TMP_DIR/score.json" || fail "agora score"
+echo "Step 8/12: Waiting for official worker scoring..."
+scored_submission_json=""
+poll_scored_submission() {
+  local get_json
+  get_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || return 1
+  scored_submission_json="$(printf "%s" "$get_json" | node --input-type=module -e '
+let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
+  const payload = JSON.parse(raw);
+  const rows = payload.submissions ?? [];
+  const subId = Number(process.argv[1]);
+  const found = rows.find((s) => Number(s.on_chain_sub_id) === subId && s.scored === true);
+  if (found) process.stdout.write(JSON.stringify(found));
+});' "$submit_onchain_id")"
+  [[ -n "$scored_submission_json" ]]
+}
+poll_until 600 10 poll_scored_submission || fail "worker did not score the submission in time (ensure the worker is running and Docker is available)"
+printf "%s" "$scored_submission_json" >"$TMP_DIR/score.json"
+echo "✔ Worker scoring completed"
 
-echo "Step 9/11: Waiting for finalization window..."
+echo "Step 9/12: Verifying public replay artifacts..."
+"${AGORA_CMD[@]}" verify-public "$challenge_id" --sub "$submission_uuid" --format json >"$TMP_DIR/verify-public.json" || fail "agora verify-public"
+
+echo "Step 10/12: Waiting for finalization window..."
 challenge_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || fail "agora get before finalize"
 finalize_wait_seconds="$(printf "%s" "$challenge_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
@@ -221,10 +240,10 @@ if [[ "$finalize_wait_seconds" -gt 0 ]]; then
   fi
 fi
 
-echo "Step 10/11: Finalize challenge..."
+echo "Step 11/12: Finalize challenge..."
 "${AGORA_CMD[@]}" finalize "$challenge_id" --format json >"$TMP_DIR/finalize.json" || fail "agora finalize"
 
-echo "Step 11/11: Claim payout and verify winner balance increase..."
+echo "Step 12/12: Claim payout and verify winner balance increase..."
 claim_json="$("${AGORA_CMD[@]}" claim "$challenge_id" --format json)" || fail "agora claim"
 claimed_delta="$(printf "%s" "$claim_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{

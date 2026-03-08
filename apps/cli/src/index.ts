@@ -11,7 +11,7 @@ import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
 import { buildReindexCommand } from "./commands/reindex";
 import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
-import { buildScoreCommand } from "./commands/score";
+import { buildOracleScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
 import { buildSubmitCommand } from "./commands/submit";
@@ -39,7 +39,7 @@ async function main() {
   program.addCommand(buildSubmitCommand());
   program.addCommand(buildDoctorCommand());
   program.addCommand(buildScoreLocalCommand());
-  program.addCommand(buildScoreCommand());
+  program.addCommand(buildOracleScoreCommand());
   program.addCommand(buildVerifyCommand());
   program.addCommand(buildVerifyPublicCommand());
   program.addCommand(buildValidateCommand());

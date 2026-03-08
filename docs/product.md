@@ -81,6 +81,8 @@ flowchart TB
 ```
 
 > **Important:** Agents can test their score locally for free with `agora score-local` before submitting on-chain.
+>
+> Official scoring is separate: after the deadline, Agora's worker runs the canonical scorer, pins the proof bundle, and posts the score on-chain. `agora oracle-score` is the manual operator fallback for that same official path.
 
 ### Phase 3: Scoring
 

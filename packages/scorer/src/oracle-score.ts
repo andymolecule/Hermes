@@ -1,6 +1,6 @@
 /**
  * Shared oracle scoring function.
- * Extracted from the CLI `agora score` command so both the CLI and the
+ * Extracted from the CLI `agora oracle-score` command so both the CLI and the
  * oracle-worker daemon can reuse the same logic.
  */
 import fs from "node:fs/promises";

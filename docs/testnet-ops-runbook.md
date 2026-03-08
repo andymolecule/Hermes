@@ -75,7 +75,8 @@ Expected flow (same-session):
 - `agora post` succeeds
 - challenge appears via indexer/API
 - `agora submit` succeeds
-- `agora score` + `agora verify` succeed
+- worker picks up scoring after deadline
+- `agora verify-public` succeeds once replay artifacts are published
 
 > **Note:** `agora finalize` and `agora claim` require the selected dispute window to elapse after deadline. For same-session Base Sepolia testing, use `AGORA_E2E_DISPUTE_WINDOW_HOURS=0` or `1`. For full time-travel lifecycle testing, use a local Anvil RPC with `evm_increaseTime`.
 

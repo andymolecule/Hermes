@@ -299,7 +299,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Oracle
-    participant CLI as agora score
+    participant CLI as agora oracle-score
     participant IPFS as Pinata
     participant Docker as Scorer Container
     participant Chain as Base
@@ -307,7 +307,7 @@ sequenceDiagram
 
     Note over Oracle: Deadline passes → status = Scoring
 
-    Oracle->>CLI: agora score <subId>
+    Oracle->>CLI: agora oracle-score <subId>
     CLI->>IPFS: Fetch test dataset + submission
     CLI->>Docker: Run scorer (sandboxed)
     Docker-->>CLI: score.json {score: 0.923}

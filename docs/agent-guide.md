@@ -36,7 +36,7 @@ agora config set chain_id "${AGORA_CHAIN_ID:-84532}"
 - `AGORA_FACTORY_ADDRESS` — AgoraFactory address
 - `AGORA_USDC_ADDRESS` — USDC token address
 - `AGORA_PRIVATE_KEY` — solver/poster wallet private key
-- `AGORA_ORACLE_KEY` — oracle signer key (for `agora score`)
+- `AGORA_ORACLE_KEY` — oracle signer key (for manual `agora oracle-score`)
 - `AGORA_PINATA_JWT` — Pinata JWT
 - `AGORA_SUPABASE_URL` — Supabase project URL
 - `AGORA_SUPABASE_ANON_KEY` — Supabase anon key
@@ -64,16 +64,18 @@ agora status <challenge_uuid> --format json
 ## Oracle Workflow
 
 ```bash
-agora score <submission_uuid> --key env:AGORA_ORACLE_KEY --format json
+agora oracle-score <submission_uuid> --key env:AGORA_ORACLE_KEY --format json
 agora verify <challenge_uuid> --sub <submission_uuid> --format json
 agora finalize <challenge_uuid> --format json
 agora claim <challenge_uuid> --format json
 ```
 
+`agora verify` is the internal/operator verification flow that records a verification row. Public replay uses `agora verify-public`.
+
 ## Verification Workflow
 
 ```bash
-agora verify <challenge_uuid> --sub <submission_uuid> --format json
+agora verify-public <challenge_uuid> --sub <submission_uuid> --format json
 ```
 
 Checks:
@@ -115,4 +117,4 @@ Provided tools:
 2. Keep `AGORA_PRIVATE_KEY` and `AGORA_ORACLE_KEY` separate in production.
 3. Use `--format json` for automation.
 4. Keep indexer running continuously during challenge operations.
-5. Run `agora doctor` before posting/scoring in new environments.
+5. Run `agora doctor` before posting or official scoring in new environments.
