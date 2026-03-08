@@ -7,6 +7,7 @@ import {
   defaultMinimumScoreForChallengeType,
   findPresetIdsByContainer,
   inferPresetIdByContainer,
+  resolveEvalSpec,
   validateChallengeScoreability,
   validatePresetIntegrity,
 } from "@agora/common";
@@ -16,7 +17,6 @@ export interface ChallengeInsert {
   chain_id: number;
   contract_address: string;
   factory_address: string;
-  factory_challenge_id: number;
   poster_address: string;
   title: string;
   description: string;
@@ -25,11 +25,9 @@ export interface ChallengeInsert {
   spec_cid: string;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
-  scoring_container: string;
-  scoring_metric: string;
-  scoring_preset_id?: string | null;
-  eval_engine_id?: string | null;
-  eval_engine_digest?: string | null;
+  eval_image: string;
+  eval_metric: string;
+  runner_preset_id: string;
   eval_bundle_cid?: string | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
@@ -46,12 +44,12 @@ export interface BuildChallengeInsertInput {
   chainId: number;
   contractAddress: string;
   factoryAddress: string;
-  factoryChallengeId: number;
   posterAddress: string;
   specCid: string;
   spec: ChallengeSpecOutput;
   rewardAmountUsdc: number;
   disputeWindowHours: number;
+  requirePinnedPresetDigests?: boolean;
   txHash: string;
   onChainDeadline?: string;
 }
@@ -59,10 +57,7 @@ export interface BuildChallengeInsertInput {
 export async function buildChallengeInsert(
   input: BuildChallengeInsertInput,
 ): Promise<ChallengeInsert> {
-  const requirePinnedPresetDigest =
-    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS === "1" ||
-    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS === "true" ||
-    process.env.NODE_ENV === "production";
+  const requirePinnedPresetDigest = input.requirePinnedPresetDigests ?? false;
   const canonicalSpec = await canonicalizeChallengeSpec(input.spec, {
     resolveOfficialPresetDigests: requirePinnedPresetDigest,
   });
@@ -121,26 +116,13 @@ export async function buildChallengeInsert(
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
-
-  const evalEngineId =
-    canonicalSpec.eval_spec?.engine_id ?? inferredPresetId ?? "custom";
-  const evalEngineDigest =
-    canonicalSpec.eval_spec?.engine_digest ??
-    (canonicalSpec.scoring.container.includes("@sha256:")
-      ? canonicalSpec.scoring.container
-      : undefined);
-  const evalBundleCid =
-    canonicalSpec.eval_spec?.evaluation_bundle ??
-    (canonicalSpec.type === "prediction"
-      ? canonicalSpec.dataset?.hidden_labels
-      : undefined) ??
-    canonicalSpec.dataset?.test;
+  const runnerPresetId = inferredPresetId ?? "custom";
+  const resolvedEvalPlan = resolveEvalSpec(canonicalSpec);
 
   return {
     chain_id: input.chainId,
     contract_address: input.contractAddress.toLowerCase(),
     factory_address: input.factoryAddress.toLowerCase(),
-    factory_challenge_id: input.factoryChallengeId,
     poster_address: input.posterAddress.toLowerCase(),
     title: canonicalSpec.title,
     description: canonicalSpec.description,
@@ -149,12 +131,10 @@ export async function buildChallengeInsert(
     spec_cid: input.specCid,
     dataset_train_cid: canonicalSpec.dataset?.train ?? null,
     dataset_test_cid: canonicalSpec.dataset?.test ?? null,
-    scoring_container: canonicalSpec.scoring.container,
-    scoring_metric: canonicalSpec.scoring.metric,
-    scoring_preset_id: inferredPresetId,
-    eval_engine_id: evalEngineId,
-    eval_engine_digest: evalEngineDigest ?? null,
-    eval_bundle_cid: evalBundleCid ?? null,
+    eval_image: resolvedEvalPlan.image,
+    eval_metric: resolvedEvalPlan.metric,
+    runner_preset_id: runnerPresetId,
+    eval_bundle_cid: resolvedEvalPlan.evaluationBundleCid ?? null,
     minimum_score:
       canonicalSpec.minimum_score ??
       defaultMinimumScoreForChallengeType(canonicalSpec.type) ??
@@ -273,17 +253,15 @@ export async function updateChallengeStatus(
 export async function setChallengeFinalized(
   db: AgoraDbClient,
   challengeId: string,
-  finalizedAt: string,
-  winnerOnChainSubId: number | null,
-  winnerSubmissionId: string | null,
+  winningOnChainSubId: number | null,
+  winnerSolverAddress: string | null,
 ) {
   const { data, error } = await db
     .from("challenges")
     .update({
       status: CHALLENGE_STATUS.finalized,
-      finalized_at: finalizedAt,
-      winner_on_chain_sub_id: winnerOnChainSubId,
-      winner_submission_id: winnerSubmissionId,
+      winning_on_chain_sub_id: winningOnChainSubId,
+      winner_solver_address: winnerSolverAddress?.toLowerCase() ?? null,
     })
     .eq("id", challengeId)
     .select("*")
@@ -292,4 +270,33 @@ export async function setChallengeFinalized(
     throw new Error(`Failed to finalize challenge: ${error.message}`);
   }
   return data;
+}
+
+export async function clearChallengeSettlement(
+  db: AgoraDbClient,
+  challengeId: string,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .update({
+      winning_on_chain_sub_id: null,
+      winner_solver_address: null,
+    })
+    .eq("id", challengeId)
+    .select("*")
+    .single();
+  if (error) {
+    throw new Error(`Failed to clear challenge settlement: ${error.message}`);
+  }
+  return data;
+}
+
+export async function deleteChallengeById(
+  db: AgoraDbClient,
+  challengeId: string,
+) {
+  const { error } = await db.from("challenges").delete().eq("id", challengeId);
+  if (error) {
+    throw new Error(`Failed to delete challenge: ${error.message}`);
+  }
 }

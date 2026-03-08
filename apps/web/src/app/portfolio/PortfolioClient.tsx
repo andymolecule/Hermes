@@ -62,7 +62,11 @@ Issued At: ${issuedAt}`;
 function SubmissionRow({ submission }: { submission: SolverSubmission }) {
   const challenge = submission.challenges;
   const statusStyle = getStatusStyle(challenge.status);
-  const isFinalized = challenge.status === CHALLENGE_STATUS.finalized;
+  const claimableAmount = BigInt(submission.payout_claimable_amount ?? "0");
+  const payoutAmount =
+    submission.payout_amount === null ? 0 : Number(submission.payout_amount);
+  const hasClaimable = claimableAmount > 0n;
+  const hasEarned = Number.isFinite(payoutAmount) && payoutAmount > 0;
 
   return (
     <tr className="border-b last:border-b-0 border-black hover:bg-black/5 transition-colors">
@@ -98,9 +102,14 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
         >
           {challenge.status}
         </span>
-        {isFinalized && (
+        {hasClaimable && (
           <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-green-100 text-green-700 border border-green-300 rounded-[2px]">
-            Claimable
+            Payout Available
+          </span>
+        )}
+        {!hasClaimable && hasEarned && (
+          <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-black/[0.06] text-black/70 border border-black/20 rounded-[2px]">
+            Paid
           </span>
         )}
       </td>

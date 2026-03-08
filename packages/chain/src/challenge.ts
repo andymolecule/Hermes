@@ -152,6 +152,7 @@ export type OnChainSubmission = {
 export async function getOnChainSubmission(
   challengeAddress: `0x${string}`,
   subId: bigint,
+  blockNumber?: bigint,
 ): Promise<OnChainSubmission> {
   const publicClient = getPublicClient();
   const raw: unknown = await publicClient.readContract({
@@ -159,6 +160,7 @@ export async function getOnChainSubmission(
     abi: AgoraChallengeAbi,
     functionName: "getSubmission",
     args: [subId],
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
   });
   // readContract may return an object (struct) or a tuple (array) depending on ABI
   if (Array.isArray(raw)) {
@@ -182,8 +184,50 @@ export async function getOnChainSubmission(
   };
 }
 
+export async function getChallengeSubmissionCount(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<bigint> {
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "submissionCount",
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
+  }) as Promise<bigint>;
+}
+
+export async function getChallengeWinningSubmissionId(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<bigint> {
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "winningSubmissionId",
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
+  }) as Promise<bigint>;
+}
+
+export async function getChallengePayoutByAddress(
+  challengeAddress: `0x${string}`,
+  solverAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<bigint> {
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "payoutByAddress",
+    args: [solverAddress],
+    ...(blockNumber !== undefined ? { blockNumber } : {}),
+  }) as Promise<bigint>;
+}
+
 export async function getChallengeLifecycleState(
   challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
 ): Promise<{
   status: ChallengeStatus;
   deadline: bigint;
@@ -195,16 +239,19 @@ export async function getChallengeLifecycleState(
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "status",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
     }) as Promise<bigint>,
     publicClient.readContract({
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "deadline",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
     }) as Promise<bigint>,
     publicClient.readContract({
       address: challengeAddress,
       abi: AgoraChallengeAbi,
       functionName: "disputeWindowHours",
+      ...(blockNumber !== undefined ? { blockNumber } : {}),
     }) as Promise<bigint>,
   ]);
   const status = ON_CHAIN_STATUS_ORDER[Number(rawStatus)];

@@ -10,7 +10,6 @@ const baseInput = {
   chainId: DEFAULT_CHAIN_ID,
   contractAddress: "0x0000000000000000000000000000000000000001",
   factoryAddress: "0x000000000000000000000000000000000000000f",
-  factoryChallengeId: 1,
   posterAddress: "0x0000000000000000000000000000000000000002",
   specCid: "ipfs://bafybeigdyrztz4x",
   rewardAmountUsdc: 10,
@@ -44,7 +43,7 @@ const insertWithPreset = await buildChallengeInsert({
   ...baseInput,
   spec: regressionSpec,
 });
-assert.equal(insertWithPreset.scoring_preset_id, "regression_v1");
+assert.equal(insertWithPreset.runner_preset_id, "regression_v1");
 assert.equal(
   insertWithPreset.factory_address,
   "0x000000000000000000000000000000000000000f",
@@ -84,16 +83,13 @@ const inferredSpec = challengeSpecSchema.parse({
 
 const insertInferred = await buildChallengeInsert({
   ...baseInput,
-  factoryChallengeId: 2,
   spec: inferredSpec,
 });
-assert.equal(insertInferred.scoring_preset_id, "regression_v1");
-assert.equal(insertInferred.eval_engine_id, "regression_v1");
+assert.equal(insertInferred.runner_preset_id, "regression_v1");
 assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
 
 const insertWithOnChainDeadline = await buildChallengeInsert({
   ...baseInput,
-  factoryChallengeId: 15,
   spec: inferredSpec,
   onChainDeadline: "2027-01-01T00:00:00Z",
 });
@@ -113,7 +109,6 @@ await assert.rejects(
   () =>
     buildChallengeInsert({
       ...baseInput,
-      factoryChallengeId: 3,
       spec: mismatchSpec,
     }),
   /Invalid scoring preset configuration/,
@@ -141,7 +136,6 @@ await assert.rejects(
   () =>
     buildChallengeInsert({
       ...baseInput,
-      factoryChallengeId: 4,
       spec: customUnpinnedSpec,
     }),
   /(pinned digest|:latest)/,
@@ -158,10 +152,9 @@ const customPinnedSpec = challengeSpecSchema.parse({
 
 const customInsert = await buildChallengeInsert({
   ...baseInput,
-  factoryChallengeId: 5,
   spec: customPinnedSpec,
 });
-assert.equal(customInsert.scoring_preset_id, "custom");
+assert.equal(customInsert.runner_preset_id, "custom");
 
 const customLimitsSpec = challengeSpecSchema.parse({
   ...regressionSpec,
@@ -171,7 +164,6 @@ const customLimitsSpec = challengeSpecSchema.parse({
 });
 const customLimitsInsert = await buildChallengeInsert({
   ...baseInput,
-  factoryChallengeId: 6,
   spec: customLimitsSpec,
 });
 assert.equal(customLimitsInsert.max_submissions_total, 25);
@@ -200,18 +192,14 @@ await assert.rejects(
   () =>
     buildChallengeInsert({
       ...baseInput,
-      factoryChallengeId: 7,
       spec: reproMissingBundleSpec,
     }),
   /Reproducibility challenges require an evaluation bundle/,
 );
 
-const originalRequirePinned = process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
 const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;
 try {
-  process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS = "true";
-
   let fetchCalls = 0;
   globalThis.fetch = (async () => {
     fetchCalls += 1;
@@ -225,26 +213,22 @@ try {
 
   const pinnedInsert = await buildChallengeInsert({
     ...baseInput,
-    factoryChallengeId: 8,
     spec: regressionSpec,
+    requirePinnedPresetDigests: true,
   });
   assert.equal(
-    pinnedInsert.scoring_container,
+    pinnedInsert.eval_image,
     "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
   );
-  assert.equal(
-    pinnedInsert.eval_engine_digest,
-    "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
-  );
-  assert.equal(pinnedInsert.eval_engine_id, "regression_v1");
+  assert.equal(pinnedInsert.runner_preset_id, "regression_v1");
 
   const cachedInsert = await buildChallengeInsert({
     ...baseInput,
-    factoryChallengeId: 9,
     spec: regressionSpec,
+    requirePinnedPresetDigests: true,
   });
   assert.equal(
-    cachedInsert.scoring_container,
+    cachedInsert.eval_image,
     "ghcr.io/agora-science/regression-scorer@sha256:" + "b".repeat(64),
   );
   assert.equal(fetchCalls, 1);
@@ -279,8 +263,8 @@ try {
     () =>
       buildChallengeInsert({
         ...baseInput,
-        factoryChallengeId: 10,
         spec: reproOfficialSpec,
+        requirePinnedPresetDigests: true,
       }),
     /GHCR auth failure/,
   );
@@ -291,8 +275,8 @@ try {
     () =>
       buildChallengeInsert({
         ...baseInput,
-        factoryChallengeId: 11,
         spec: reproOfficialSpec,
+        requirePinnedPresetDigests: true,
       }),
     /GHCR rate limit/,
   );
@@ -303,8 +287,8 @@ try {
     () =>
       buildChallengeInsert({
         ...baseInput,
-        factoryChallengeId: 12,
         spec: reproOfficialSpec,
+        requirePinnedPresetDigests: true,
       }),
     /missing docker-content-digest header/,
   );
@@ -323,13 +307,12 @@ try {
     () =>
       buildChallengeInsert({
         ...baseInput,
-        factoryChallengeId: 13,
         spec: reproOfficialSpec,
+        requirePinnedPresetDigests: true,
       }),
     /Timed out resolving official preset image/,
   );
 
-  delete process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
   let nonStrictFetchCalls = 0;
   globalThis.fetch = (async () => {
     nonStrictFetchCalls += 1;
@@ -342,22 +325,16 @@ try {
   }) as typeof fetch;
   const nonStrictInsert = await buildChallengeInsert({
     ...baseInput,
-    factoryChallengeId: 14,
     spec: regressionSpec,
   });
   assert.equal(
-    nonStrictInsert.scoring_container,
+    nonStrictInsert.eval_image,
     "ghcr.io/agora-science/regression-scorer:latest",
   );
   assert.equal(nonStrictFetchCalls, 0);
 } finally {
   globalThis.fetch = originalFetch;
   Date.now = originalDateNow;
-  if (originalRequirePinned === undefined) {
-    delete process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS;
-  } else {
-    process.env.AGORA_REQUIRE_PINNED_PRESET_DIGESTS = originalRequirePinned;
-  }
 }
 
 console.log("challenge insert preset tests passed");

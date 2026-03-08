@@ -122,14 +122,12 @@ if (resolvedLegacy.metric !== "custom") {
 }
 
 const resolvedRow = resolveEvalSpec({
-  scoring_container: "ghcr.io/agora-science/repro-scorer:v1",
-  scoring_metric: "custom",
-  dataset_test_cid: "ipfs://QmLegacyBundle",
-  eval_engine_digest: "ghcr.io/agora-science/repro-scorer@sha256:def456",
+  eval_image: "ghcr.io/agora-science/repro-scorer@sha256:def456",
+  eval_metric: "custom",
   eval_bundle_cid: "ipfs://QmResolvedBundle",
 });
 if (resolvedRow.image !== "ghcr.io/agora-science/repro-scorer@sha256:def456") {
-  console.error("resolveEvalSpec should prefer eval_engine_digest for DB rows");
+  console.error("resolveEvalSpec should use eval_image for DB rows");
   process.exit(1);
 }
 if (resolvedRow.evaluationBundleCid !== "ipfs://QmResolvedBundle") {
@@ -137,7 +135,7 @@ if (resolvedRow.evaluationBundleCid !== "ipfs://QmResolvedBundle") {
   process.exit(1);
 }
 if (resolvedRow.metric !== "custom") {
-  console.error("resolveEvalSpec should preserve scoring_metric for DB rows");
+  console.error("resolveEvalSpec should preserve eval_metric for DB rows");
   process.exit(1);
 }
 

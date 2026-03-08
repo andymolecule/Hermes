@@ -15,8 +15,12 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
     getChallengeById: async () =>
       ({
         id: "challenge-1",
+        contract_address: "0x0000000000000000000000000000000000000001",
         status: CHALLENGE_STATUS.open,
       }) as never,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.open,
+    }),
     listChallengesWithDetails: async () => [],
     listSubmissionsForChallenge: async () => {
       submissionReads += 1;

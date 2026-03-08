@@ -1,4 +1,5 @@
 import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import { pathToFileURL } from "node:url";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
@@ -18,14 +19,15 @@ import {
   persistChallengeCursors,
   processChallengeLog,
   processFactoryLog,
+  reconcileChallengeProjection,
   type ChallengeListRow,
   type ParsedLog,
 } from "./indexer/handlers.js";
 import {
-  CONFIRMATION_DEPTH,
   POLL_INTERVAL_MS,
   chunkedGetLogs,
   getDueReplayBlock,
+  resolveIndexerPollingConfig,
   rewindStartBlock,
   sleep,
 } from "./indexer/polling.js";
@@ -35,6 +37,7 @@ const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 
 export async function runIndexer() {
   const config = loadConfig();
+  const pollingConfig = resolveIndexerPollingConfig(config);
   const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
 
@@ -55,12 +58,13 @@ export async function runIndexer() {
   }
 
   const persistedCursor = await getIndexerCursor(db, cursorKey);
-  const envStartBlock = process.env.AGORA_INDEXER_START_BLOCK
-    ? BigInt(process.env.AGORA_INDEXER_START_BLOCK)
-    : BigInt(0);
+  const envStartBlock =
+    config.AGORA_INDEXER_START_BLOCK !== undefined
+      ? BigInt(config.AGORA_INDEXER_START_BLOCK)
+      : BigInt(0);
   let fromBlock =
     persistedCursor ??
-    (process.env.AGORA_INDEXER_START_BLOCK
+    (config.AGORA_INDEXER_START_BLOCK !== undefined
       ? envStartBlock
       : lastBlock
         ? BigInt(lastBlock.block_number)
@@ -74,8 +78,8 @@ export async function runIndexer() {
     try {
       const chainHead = await publicClient.getBlockNumber();
       const toBlock =
-        chainHead > CONFIRMATION_DEPTH
-          ? chainHead - CONFIRMATION_DEPTH
+        chainHead > pollingConfig.confirmationDepth
+          ? chainHead - pollingConfig.confirmationDepth
           : BigInt(0);
 
       if (pollCount === 0 || pollCount % 10 === 0) {
@@ -116,6 +120,7 @@ export async function runIndexer() {
           db,
           publicClient,
           config,
+          pollingConfig,
           log,
           fromBlock,
         });
@@ -158,12 +163,24 @@ export async function runIndexer() {
               db,
               publicClient,
               challenge,
+              pollingConfig,
               log,
               fromBlock,
               challengeFromBlock,
               challengeCursorKey,
               challengePersistTargets,
             });
+          }
+
+          const reconcileResult = await reconcileChallengeProjection({
+            db,
+            publicClient,
+            challenge,
+            blockNumber: toBlock,
+          });
+          if (reconcileResult.deleted) {
+            resolvedChallengeKeys.delete(challengeCursorKey);
+            challengePersistTargets.delete(challengeCursorKey);
           }
         }
       } catch (challengePollError) {
@@ -178,9 +195,12 @@ export async function runIndexer() {
 
       // ── Always: persist cursors ──────────────────────────────────────
       const nextBlock = toBlock + BigInt(1);
+      const replayStartBlock = rewindStartBlock(nextBlock, pollingConfig);
       const dueReplayBlock = getDueReplayBlock(Date.now());
       const globalPersistedBlock =
-        dueReplayBlock !== null ? rewindStartBlock(dueReplayBlock) : nextBlock;
+        dueReplayBlock !== null
+          ? rewindStartBlock(dueReplayBlock, pollingConfig)
+          : replayStartBlock;
       fromBlock = globalPersistedBlock;
 
       await setIndexerCursor(db, cursorKey, globalPersistedBlock);
@@ -188,7 +208,7 @@ export async function runIndexer() {
         db,
         resolvedChallengeKeys,
         challengePersistTargets,
-        nextBlock,
+        nextBlock: replayStartBlock,
       });
     } catch (error) {
       console.error(
@@ -201,7 +221,11 @@ export async function runIndexer() {
   }
 }
 
-if (process.env.NODE_ENV !== "test") {
+const isEntrypoint =
+  process.argv[1] !== undefined &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isEntrypoint) {
   runIndexer().catch((error) => {
     console.error("Indexer failed", error instanceof Error ? error.message : String(error));
     process.exit(1);

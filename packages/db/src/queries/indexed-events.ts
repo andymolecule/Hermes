@@ -23,6 +23,7 @@ export async function markEventIndexed(
   logIndex: number,
   eventName: string,
   blockNumber: number,
+  blockHash?: string | null,
 ) {
   const { error } = await db.from("indexed_events").upsert(
     {
@@ -30,6 +31,7 @@ export async function markEventIndexed(
       log_index: logIndex,
       event_name: eventName,
       block_number: blockNumber,
+      block_hash: blockHash ?? null,
     },
     { onConflict: "tx_hash,log_index" },
   );

@@ -184,7 +184,6 @@ export async function getSubmissionStatus(submissionId: string) {
     proofBundle: proofBundle
       ? {
           reproducible: proofBundle.reproducible,
-          verified_count: proofBundle.verified_count,
         }
       : null,
     scoringStatus,

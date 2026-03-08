@@ -10,6 +10,8 @@ test("portfolio route requires a session", async () => {
 
   const router = createPortfolioRouter({
     createSupabaseClient: () => ({}) as never,
+    getChallengePayoutByAddress: async () => 0n,
+    listChallengePayoutsBySolver: async () => [],
     listSubmissionsBySolver: async () => [],
     requireSiweSession: rejectSession,
   });
@@ -31,6 +33,15 @@ test("portfolio route returns only the session wallet portfolio", async () => {
 
   const router = createPortfolioRouter({
     createSupabaseClient: () => ({}) as never,
+    getChallengePayoutByAddress: async () => 5_000_000n,
+    listChallengePayoutsBySolver: async () => [
+      {
+        challenge_id: "challenge-1",
+        amount: "5",
+        claimed_at: null,
+        claim_tx_hash: null,
+      },
+    ],
     listSubmissionsBySolver: async (_db, address, limit) => {
       requestedAddress = address;
       requestedLimit = limit;
@@ -68,7 +79,11 @@ test("portfolio route returns only the session wallet portfolio", async () => {
       address: string;
       totalSubmissions: number;
       challengesParticipated: number;
-      submissions: Array<{ solver_address: string }>;
+      submissions: Array<{
+        solver_address: string;
+        payout_amount: string | number | null;
+        payout_claimable_amount: string;
+      }>;
     };
   };
 
@@ -78,4 +93,6 @@ test("portfolio route returns only the session wallet portfolio", async () => {
   assert.equal(body.data.totalSubmissions, 1);
   assert.equal(body.data.challengesParticipated, 1);
   assert.equal(body.data.submissions[0]?.solver_address, sessionAddress);
+  assert.equal(body.data.submissions[0]?.payout_amount, "5");
+  assert.equal(body.data.submissions[0]?.payout_claimable_amount, "5000000");
 });

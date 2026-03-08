@@ -262,7 +262,7 @@ function TechnicalDetailsSection({
   challenge: {
     dataset_train_cid?: string | null;
     dataset_test_cid?: string | null;
-    scoring_container?: string | null;
+    eval_image?: string | null;
   };
 }) {
   return (
@@ -303,12 +303,12 @@ function TechnicalDetailsSection({
           icon={Database}
         />
         <InfoRow
-          label="Scoring container"
+          label="Evaluation image"
           value={
-            challenge.scoring_container ? (
+            challenge.eval_image ? (
               <LinkedValue
-                href={containerHref(challenge.scoring_container)}
-                value={challenge.scoring_container}
+                href={containerHref(challenge.eval_image)}
+                value={challenge.eval_image}
               />
             ) : (
               "—"
@@ -552,8 +552,8 @@ export function DetailClient({ id }: { id: string }) {
                             Metric
                           </div>
                           <div className="mt-2 text-2xl font-display font-bold text-black">
-                            {challenge.scoring_metric
-                              ? titleCase(challenge.scoring_metric)
+                            {challenge.eval_metric
+                              ? titleCase(challenge.eval_metric)
                               : "Custom"}
                           </div>
                         </div>

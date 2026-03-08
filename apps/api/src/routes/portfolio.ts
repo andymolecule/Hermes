@@ -1,4 +1,9 @@
-import { createSupabaseClient, listSubmissionsBySolver } from "@agora/db";
+import { getChallengePayoutByAddress } from "@agora/chain";
+import {
+  createSupabaseClient,
+  listChallengePayoutsBySolver,
+  listSubmissionsBySolver,
+} from "@agora/db";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { requireSiweSession } from "../middleware/siwe.js";
@@ -6,6 +11,8 @@ import type { ApiEnv } from "../types.js";
 
 type PortfolioRouteDeps = {
   createSupabaseClient: typeof createSupabaseClient;
+  getChallengePayoutByAddress: typeof getChallengePayoutByAddress;
+  listChallengePayoutsBySolver: typeof listChallengePayoutsBySolver;
   listSubmissionsBySolver: typeof listSubmissionsBySolver;
   requireSiweSession: MiddlewareHandler<ApiEnv>;
 };
@@ -15,8 +22,19 @@ type SolverSubmissionRow = Awaited<
   ReturnType<typeof listSubmissionsBySolver>
 >[number];
 
+function challengeContractAddress(
+  submission: SolverSubmissionRow,
+): `0x${string}` | undefined {
+  const challengeMeta = Array.isArray(submission.challenges)
+    ? submission.challenges[0]
+    : submission.challenges;
+  return challengeMeta?.contract_address as `0x${string}` | undefined;
+}
+
 const defaultDeps: PortfolioRouteDeps = {
   createSupabaseClient,
+  getChallengePayoutByAddress,
+  listChallengePayoutsBySolver,
   listSubmissionsBySolver,
   requireSiweSession,
 };
@@ -24,9 +42,19 @@ const defaultDeps: PortfolioRouteDeps = {
 export function buildPortfolioResponse(
   address: string,
   submissions: SolverSubmissionRow[],
+  payoutRows: Array<{
+    challenge_id: string;
+    amount: string | number;
+    claimed_at?: string | null;
+    claim_tx_hash?: string | null;
+  }>,
+  claimableAmounts: Record<string, string>,
 ) {
   const challengeIds = new Set(
     submissions.map((submission) => submission.challenge_id),
+  );
+  const payoutsByChallenge = new Map(
+    payoutRows.map((payout) => [payout.challenge_id, payout]),
   );
 
   return {
@@ -34,16 +62,24 @@ export function buildPortfolioResponse(
       address,
       totalSubmissions: submissions.length,
       challengesParticipated: challengeIds.size,
-      submissions: submissions.map((submission) => ({
-        challenge_id: submission.challenge_id,
-        on_chain_sub_id: submission.on_chain_sub_id,
-        solver_address: submission.solver_address,
-        score: submission.score,
-        scored: submission.scored,
-        submitted_at: submission.submitted_at,
-        scored_at: submission.scored_at,
-        challenges: submission.challenges,
-      })),
+      submissions: submissions.map((submission) => {
+        const payout = payoutsByChallenge.get(submission.challenge_id);
+        return {
+          challenge_id: submission.challenge_id,
+          on_chain_sub_id: submission.on_chain_sub_id,
+          solver_address: submission.solver_address,
+          score: submission.score,
+          scored: submission.scored,
+          submitted_at: submission.submitted_at,
+          scored_at: submission.scored_at,
+          payout_amount: payout?.amount ?? null,
+          payout_claimable_amount:
+            claimableAmounts[submission.challenge_id] ?? "0",
+          payout_claimed_at: payout?.claimed_at ?? null,
+          payout_claim_tx_hash: payout?.claim_tx_hash ?? null,
+          challenges: submission.challenges,
+        };
+      }),
     },
   };
 }
@@ -54,9 +90,31 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
   router.get("/", deps.requireSiweSession, async (c) => {
     const address = c.get("sessionAddress").toLowerCase();
     const db = deps.createSupabaseClient(true) as PortfolioDbClient;
-    const submissions = await deps.listSubmissionsBySolver(db, address, 100);
+    const [submissions, payoutRows] = await Promise.all([
+      deps.listSubmissionsBySolver(db, address, 100),
+      deps.listChallengePayoutsBySolver(db, address),
+    ]);
+    const claimableAmounts: Record<string, string> = {};
 
-    return c.json(buildPortfolioResponse(address, submissions));
+    for (const challengeId of new Set(submissions.map((s) => s.challenge_id))) {
+      const submission = submissions.find((s) => s.challenge_id === challengeId);
+      const contractAddress = submission
+        ? challengeContractAddress(submission)
+        : undefined;
+      if (!contractAddress) {
+        claimableAmounts[challengeId] = "0";
+        continue;
+      }
+      const amount = await deps.getChallengePayoutByAddress(
+        contractAddress,
+        address as `0x${string}`,
+      );
+      claimableAmounts[challengeId] = amount.toString();
+    }
+
+    return c.json(
+      buildPortfolioResponse(address, submissions, payoutRows, claimableAmounts),
+    );
   });
 
   return router;

@@ -3,9 +3,7 @@ import type { ChallengeEvalRow } from "@agora/common";
 export interface ChallengeRow extends ChallengeEvalRow {
   id: string;
   contract_address: string;
-  scoring_preset_id?: string | null;
-  // Eval spec columns (populated from eval_spec or backfilled from legacy fields)
-  eval_engine_id?: string | null;
+  runner_preset_id: string;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
 }

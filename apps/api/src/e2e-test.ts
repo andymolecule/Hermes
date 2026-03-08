@@ -152,16 +152,25 @@ export async function runLifecycleE2E() {
   console.log("\n=== E2E TEST: Open -> Scoring -> Verify -> Dispute -> Claim ===\n");
 
   const spec = {
-    version: "1.0",
+    id: `e2e-${Date.now()}`,
     title: "E2E Lifecycle Test – Quick Arithmetic",
     description: "Answer with a number. Score = 100 when answer = 42",
     domain: "other",
-    type: "deterministic",
-    scoring_container: "agora/toy-arithmetic-scorer:latest",
-    scoring_metric: "exact_match",
-    submission_format: "JSON with {answer: number}",
-    success_definition: "answer = 42",
-    distribution_type: "winner_takes_all",
+    type: "custom",
+    scoring: {
+      container: "ghcr.io/agora-science/toy-arithmetic-scorer@sha256:" +
+        "a".repeat(64),
+      metric: "custom",
+    },
+    reward: {
+      total: 1,
+      distribution: "winner_take_all",
+    },
+    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    evaluation: {
+      submission_format: "JSON with {answer: number}",
+      success_definition: "answer = 42",
+    },
   };
   const specCid = await pinJSON(
     "e2e-lifecycle-spec.json",
@@ -245,19 +254,20 @@ export async function runLifecycleE2E() {
   const chalRow = {
     chain_id: config.AGORA_CHAIN_ID,
     contract_address: normalizedChallengeAddress,
-    factory_address: config.AGORA_FACTORY_ADDRESS,
-    factory_challenge_id: Number(createdChallengeId ?? 0),
+    factory_address: config.AGORA_FACTORY_ADDRESS.toLowerCase(),
     poster_address: account.address.toLowerCase(),
     title: spec.title,
     description: spec.description,
     domain: spec.domain,
     challenge_type: spec.type,
     spec_cid: specCidClean,
-    scoring_container: spec.scoring_container,
-    scoring_metric: spec.scoring_metric,
+    eval_image: spec.scoring.container,
+    eval_metric: spec.scoring.metric,
+    runner_preset_id: "custom",
+    eval_bundle_cid: null,
     minimum_score: 0,
     reward_amount: 1,
-    distribution_type: spec.distribution_type,
+    distribution_type: spec.reward.distribution,
     deadline: new Date(Number(deadlineSeconds) * 1000).toISOString(),
     dispute_window_hours: 1,
     status: CHALLENGE_STATUS.open,
@@ -392,13 +402,7 @@ export async function runLifecycleE2E() {
 
   const resolveTxHash = await resolveDispute(normalizedChallengeAddress, 0n);
   await publicClient.waitForTransactionReceipt({ hash: resolveTxHash });
-  await setChallengeFinalized(
-    db,
-    dbChallenge.id,
-    new Date().toISOString(),
-    0,
-    submissionId,
-  );
+  await setChallengeFinalized(db, dbChallenge.id, 0, account.address);
   console.log("9. Dispute resolved:", resolveTxHash);
 
   const payoutBeforeClaim = (await publicClient.readContract({

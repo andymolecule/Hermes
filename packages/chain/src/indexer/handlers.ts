@@ -7,34 +7,43 @@ import {
   parseCsvHeaders,
   resolveSubmissionLimits,
 } from "@agora/common";
-import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
-  type: "json",
-};
 import {
+  clearChallengeSettlement,
   buildChallengeInsert,
   countSubmissionsBySolverForChallenge,
   countSubmissionsForChallenge,
   createScoreJob,
   type createSupabaseClient,
+  deleteChallengeById,
+  deleteSubmissionsFromOnChainSubId,
   getIndexerCursor,
-  getSubmissionByChainId,
   isEventIndexed,
   markEventIndexed,
   markScoreJobSkipped,
+  markChallengePayoutClaimed,
+  replaceChallengePayouts,
   setChallengeFinalized,
   setIndexerCursor,
+  syncExistingSubmissionOnChainState,
   updateChallengeStatus,
   upsertChallenge,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getText } from "@agora/ipfs";
-import type { Abi } from "viem";
+import {
+  getChallengeLifecycleState,
+  getChallengePayoutByAddress,
+  getChallengeSubmissionCount,
+  getChallengeWinningSubmissionId,
+  getOnChainSubmission,
+} from "../challenge.js";
 import {
   fetchValidatedChallengeSpec,
   loadChallengeDefinitionFromChain,
 } from "../challenge-definition.js";
 import type { getPublicClient } from "../client.js";
 import {
+  type IndexerPollingConfig,
   clearRetryableEvent,
   isRetryableError,
   onRetryableEvent,
@@ -42,7 +51,6 @@ import {
   sleep,
 } from "./polling.js";
 
-const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 const SPEC_FETCH_MAX_RETRIES = 4;
 const SPEC_FETCH_RETRY_BASE_MS = 500;
 
@@ -54,6 +62,7 @@ export interface ParsedLog {
   transactionHash: `0x${string}` | null;
   logIndex: number | null;
   blockNumber: bigint | null;
+  blockHash?: `0x${string}` | null;
 }
 
 export interface ChallengeListRow {
@@ -125,39 +134,6 @@ async function fetchChallengeSpec(specCid: string, chainId: number) {
   );
 }
 
-async function readSubmission(
-  challengeAddress: `0x${string}`,
-  submissionId: bigint,
-  publicClient: ReturnType<typeof getPublicClient>,
-) {
-  const submission = (await publicClient.readContract({
-    address: challengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "getSubmission",
-    args: [submissionId],
-  })) as {
-    solver: `0x${string}`;
-    resultHash: `0x${string}`;
-    proofBundleHash: `0x${string}`;
-    score: bigint;
-    submittedAt: bigint;
-    scored: boolean;
-  };
-  return submission;
-}
-
-async function readWinningSubmissionId(
-  challengeAddress: `0x${string}`,
-  publicClient: ReturnType<typeof getPublicClient>,
-) {
-  const winner = (await publicClient.readContract({
-    address: challengeAddress,
-    abi: AgoraChallengeAbi,
-    functionName: "winningSubmissionId",
-  })) as bigint;
-  return winner;
-}
-
 async function blockTimestampIso(
   publicClient: ReturnType<typeof getPublicClient>,
   blockNumber: bigint | null,
@@ -165,6 +141,158 @@ async function blockTimestampIso(
   if (!blockNumber) return new Date().toISOString();
   const block = await publicClient.getBlock({ blockNumber });
   return new Date(Number(block.timestamp) * 1000).toISOString();
+}
+
+function payoutAmountUsdc(amount: bigint) {
+  return Number(amount) / 1_000_000;
+}
+
+async function projectChallengeSettlement(input: {
+  db: DbClient;
+  publicClient: ReturnType<typeof getPublicClient>;
+  challenge: ChallengeListRow;
+  blockNumber: bigint | null;
+}) {
+  const { db, publicClient, challenge, blockNumber } = input;
+  const challengeAddress = challenge.contract_address as `0x${string}`;
+  const settlementBlock = blockNumber ?? (await publicClient.getBlockNumber());
+  const [winnerOnChainSubId, submissionCount] = await Promise.all([
+    getChallengeWinningSubmissionId(challengeAddress, settlementBlock),
+    getChallengeSubmissionCount(challengeAddress, settlementBlock),
+  ]);
+
+  const onChainSubmissions = await Promise.all(
+    Array.from({ length: Number(submissionCount) }, (_, index) =>
+      getOnChainSubmission(challengeAddress, BigInt(index), settlementBlock),
+    ),
+  );
+
+  const winnerSolverAddress =
+    onChainSubmissions[Number(winnerOnChainSubId)]?.solver?.toLowerCase() ??
+    null;
+
+  const uniqueSolvers = [...new Set(onChainSubmissions.map((s) => s.solver))];
+  const payoutRows = (
+    await Promise.all(
+      uniqueSolvers.map(async (solverAddress) => {
+        const amount = await getChallengePayoutByAddress(
+          challengeAddress,
+          solverAddress,
+          settlementBlock,
+        );
+        if (amount === 0n) {
+          return null;
+        }
+        return {
+          challenge_id: challenge.id,
+          solver_address: solverAddress.toLowerCase(),
+          amount: payoutAmountUsdc(amount),
+        };
+      }),
+    )
+  ).filter((row) => row !== null);
+
+  await setChallengeFinalized(
+    db,
+    challenge.id,
+    winnerSolverAddress !== null ? Number(winnerOnChainSubId) : null,
+    winnerSolverAddress,
+  );
+  await replaceChallengePayouts(db, challenge.id, payoutRows);
+}
+
+export async function reconcileChallengeProjection(input: {
+  db: DbClient;
+  publicClient: ReturnType<typeof getPublicClient>;
+  challenge: ChallengeListRow;
+  blockNumber: bigint;
+}) {
+  const { db, publicClient, challenge, blockNumber } = input;
+  const challengeAddress = challenge.contract_address as `0x${string}`;
+  const code = await publicClient.getCode({
+    address: challengeAddress,
+    blockNumber,
+  });
+  if (!code || code === "0x") {
+    await deleteChallengeById(db, challenge.id);
+    return { deleted: true as const };
+  }
+
+  const [lifecycle, submissionCount] = await Promise.all([
+    getChallengeLifecycleState(challengeAddress, blockNumber),
+    getChallengeSubmissionCount(challengeAddress, blockNumber),
+  ]);
+
+  await deleteSubmissionsFromOnChainSubId(
+    db,
+    challenge.id,
+    Number(submissionCount),
+  );
+
+  for (let subIndex = 0; subIndex < Number(submissionCount); subIndex++) {
+    const submission = await getOnChainSubmission(
+      challengeAddress,
+      BigInt(subIndex),
+      blockNumber,
+    );
+    await syncExistingSubmissionOnChainState(db, {
+      challenge_id: challenge.id,
+      on_chain_sub_id: subIndex,
+      solver_address: submission.solver,
+      result_hash: submission.resultHash,
+      proof_bundle_hash: submission.proofBundleHash,
+      score: submission.scored ? submission.score.toString() : null,
+      scored: submission.scored,
+      submitted_at: new Date(
+        Number(submission.submittedAt) * 1000,
+      ).toISOString(),
+      ...(submission.scored ? {} : { scored_at: null }),
+      tx_hash: challenge.tx_hash,
+    });
+  }
+
+  if (lifecycle.status === CHALLENGE_STATUS.cancelled) {
+    await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.cancelled);
+    await clearChallengeSettlement(db, challenge.id);
+    await replaceChallengePayouts(db, challenge.id, []);
+    return { deleted: false as const };
+  }
+
+  if (lifecycle.status === CHALLENGE_STATUS.disputed) {
+    await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.disputed);
+    await clearChallengeSettlement(db, challenge.id);
+    await replaceChallengePayouts(db, challenge.id, []);
+    return { deleted: false as const };
+  }
+
+  if (lifecycle.status === CHALLENGE_STATUS.open) {
+    await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.open);
+    await clearChallengeSettlement(db, challenge.id);
+    await replaceChallengePayouts(db, challenge.id, []);
+    return { deleted: false as const };
+  }
+
+  if (lifecycle.status === CHALLENGE_STATUS.finalized) {
+    await projectChallengeSettlement({
+      db,
+      publicClient,
+      challenge,
+      blockNumber,
+    });
+    return { deleted: false as const };
+  }
+
+  if (
+    lifecycle.status === CHALLENGE_STATUS.scoring &&
+    challenge.status !== CHALLENGE_STATUS.open &&
+    challenge.status !== CHALLENGE_STATUS.scoring
+  ) {
+    await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.scoring);
+    await clearChallengeSettlement(db, challenge.id);
+    await replaceChallengePayouts(db, challenge.id, []);
+  }
+
+  return { deleted: false as const };
 }
 
 export async function resolveChallengeInitialFromBlock(
@@ -206,10 +334,11 @@ export async function processFactoryLog(input: {
   db: DbClient;
   publicClient: ReturnType<typeof getPublicClient>;
   config: AgoraConfig;
+  pollingConfig?: IndexerPollingConfig;
   log: ParsedLog;
   fromBlock: bigint;
 }) {
-  const { db, publicClient, config, log, fromBlock } = input;
+  const { db, publicClient, config, pollingConfig, log, fromBlock } = input;
   if (!log.eventName || !log.transactionHash) return;
   const txHash = log.transactionHash;
   const logIndex = Number(log.logIndex ?? 0);
@@ -255,7 +384,6 @@ export async function processFactoryLog(input: {
           chainId: config.AGORA_CHAIN_ID,
           contractAddress: challengeAddr,
           factoryAddress: config.AGORA_FACTORY_ADDRESS,
-          factoryChallengeId: Number(id),
           posterAddress: poster,
           specCid,
           spec,
@@ -263,6 +391,8 @@ export async function processFactoryLog(input: {
           disputeWindowHours:
             spec.dispute_window_hours ??
             CHALLENGE_LIMITS.defaultDisputeWindowHours,
+          requirePinnedPresetDigests:
+            config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
           txHash,
           // On-chain deadline is the source of truth — spec deadline is informational.
           onChainDeadline: onChainDeadlineIso,
@@ -303,12 +433,17 @@ export async function processFactoryLog(input: {
       logIndex,
       log.eventName,
       Number(log.blockNumber ?? 0),
+      log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
   } catch (error) {
     if (isRetryableError(error)) {
       const key = retryKey(txHash, logIndex);
-      const retry = onRetryableEvent(key, log.blockNumber ?? fromBlock);
+      const retry = onRetryableEvent(
+        key,
+        log.blockNumber ?? fromBlock,
+        pollingConfig,
+      );
       if (!retry.shouldRetryNow) {
         return;
       }
@@ -328,6 +463,7 @@ export async function processFactoryLog(input: {
           logIndex,
           `${log.eventName}:retry_exhausted`,
           Number(log.blockNumber ?? 0),
+          log.blockHash ?? null,
         );
         return;
       }
@@ -356,6 +492,7 @@ export async function processFactoryLog(input: {
       logIndex,
       `${log.eventName}:invalid`,
       Number(log.blockNumber ?? 0),
+      log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
   }
@@ -365,6 +502,7 @@ export async function processChallengeLog(input: {
   db: DbClient;
   publicClient: ReturnType<typeof getPublicClient>;
   challenge: ChallengeListRow;
+  pollingConfig?: IndexerPollingConfig;
   log: ParsedLog;
   fromBlock: bigint;
   challengeFromBlock: bigint;
@@ -375,6 +513,7 @@ export async function processChallengeLog(input: {
     db,
     publicClient,
     challenge,
+    pollingConfig,
     log,
     fromBlock,
     challengeFromBlock,
@@ -398,10 +537,9 @@ export async function processChallengeLog(input: {
           eventArg(log.args, "submissionId"),
         "submissionId",
       );
-      const submission = await readSubmission(
+      const submission = await getOnChainSubmission(
         challengeAddress,
         submissionId,
-        publicClient,
       );
 
       const row = await upsertSubmissionOnChain(db, {
@@ -480,10 +618,9 @@ export async function processChallengeLog(input: {
         "proofBundleHash",
       );
 
-      const submission = await readSubmission(
+      const submission = await getOnChainSubmission(
         challengeAddress,
         submissionId,
-        publicClient,
       );
       // upsertSubmissionOnChain writes all on-chain-owned fields (score,
       // scored, scored_at, proof_bundle_hash).  proof_bundle_cid is owned
@@ -511,50 +648,41 @@ export async function processChallengeLog(input: {
         "toStatus",
       );
       await updateChallengeStatus(db, challenge.id, nextStatus);
+      if (nextStatus !== CHALLENGE_STATUS.finalized) {
+        await clearChallengeSettlement(db, challenge.id);
+        await replaceChallengePayouts(db, challenge.id, []);
+      }
     }
 
     if (log.eventName === "Finalized") {
-      const winnerOnChain = await readWinningSubmissionId(
-        challengeAddress,
-        publicClient,
-      );
-      const winnerRow = await getSubmissionByChainId(
+      await projectChallengeSettlement({
         db,
-        challenge.id,
-        Number(winnerOnChain),
-      );
-      const finalizedAt = await blockTimestampIso(
         publicClient,
-        log.blockNumber ?? null,
-      );
-      await setChallengeFinalized(
-        db,
-        challenge.id,
-        finalizedAt,
-        Number(winnerOnChain),
-        winnerRow?.id ?? null,
-      );
+        challenge,
+        blockNumber: log.blockNumber ?? null,
+      });
     }
 
     if (log.eventName === "DisputeResolved") {
-      const rawWinner =
-        eventArg(log.args, 0) ?? eventArg(log.args, "winnerSubId");
-      const winnerOnChain = rawWinner
-        ? parseRequiredBigInt(rawWinner, "winnerSubId")
-        : null;
-      const winnerRow = winnerOnChain
-        ? await getSubmissionByChainId(db, challenge.id, Number(winnerOnChain))
-        : null;
-      const finalizedAt = await blockTimestampIso(
+      await projectChallengeSettlement({
+        db,
         publicClient,
-        log.blockNumber ?? null,
+        challenge,
+        blockNumber: log.blockNumber ?? null,
+      });
+    }
+
+    if (log.eventName === "Claimed") {
+      const claimant = parseRequiredAddress(
+        eventArg(log.args, 0) ?? eventArg(log.args, "claimant"),
+        "claimant",
       );
-      await setChallengeFinalized(
+      await markChallengePayoutClaimed(
         db,
         challenge.id,
-        finalizedAt,
-        winnerOnChain ? Number(winnerOnChain) : null,
-        winnerRow?.id ?? null,
+        claimant,
+        await blockTimestampIso(publicClient, log.blockNumber ?? null),
+        txHash,
       );
     }
 
@@ -564,12 +692,17 @@ export async function processChallengeLog(input: {
       logIndex,
       log.eventName,
       Number(log.blockNumber ?? 0),
+      log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
   } catch (error) {
     if (isRetryableError(error)) {
       const key = retryKey(txHash, logIndex);
-      const retry = onRetryableEvent(key, log.blockNumber ?? fromBlock);
+      const retry = onRetryableEvent(
+        key,
+        log.blockNumber ?? fromBlock,
+        pollingConfig,
+      );
       const currentTarget = challengePersistTargets.get(challengeCursorKey);
       const fallbackTarget = challengeFromBlock;
       const safeTarget =
@@ -600,6 +733,7 @@ export async function processChallengeLog(input: {
           logIndex,
           `${log.eventName}:retry_exhausted`,
           Number(log.blockNumber ?? 0),
+          log.blockHash ?? null,
         );
         challengePersistTargets.delete(challengeCursorKey);
         return;
@@ -633,6 +767,7 @@ export async function processChallengeLog(input: {
       logIndex,
       `${log.eventName}:invalid`,
       Number(log.blockNumber ?? 0),
+      log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
   }

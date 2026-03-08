@@ -1,6 +1,6 @@
 # Agora — Technical Architecture
 
-> Last updated: 27 Feb 2026
+> Last updated: 8 Mar 2026
 
 ## System Overview
 
@@ -469,15 +469,23 @@ erDiagram
         uuid id PK
         int chain_id
         string contract_address UK
-        int factory_challenge_id
+        string factory_address
         string poster_address
         string title
+        string description
         string domain
+        string challenge_type
         string status
         decimal reward_amount
         timestamp deadline
         int dispute_window_hours
         string spec_cid
+        string eval_image
+        string eval_metric
+        string runner_preset_id
+        string eval_bundle_cid
+        int winning_on_chain_sub_id
+        string winner_solver_address
         string tx_hash
     }
 
@@ -500,7 +508,15 @@ erDiagram
         string input_hash
         string output_hash
         string container_image_hash
-        int verified_count
+        boolean reproducible
+    }
+
+    challenge_payouts {
+        uuid challenge_id FK
+        string solver_address
+        decimal amount
+        timestamp claimed_at
+        string claim_tx_hash
     }
 
     indexed_events {
@@ -508,10 +524,12 @@ erDiagram
         int log_index PK
         string event_name
         int block_number
+        string block_hash
     }
 
     challenges ||--o{ submissions : has
     submissions ||--o| proof_bundles : has
+    challenges ||--o{ challenge_payouts : settles
 ```
 
 ---
@@ -556,7 +574,7 @@ sequenceDiagram
     Wallet-->>Browser: signature
     Browser->>API: POST /api/auth/verify {message, signature}
     API->>API: Verify SIWE signature
-    API->>API: Create session (in-memory)
+    API->>API: Create session (auth_sessions row)
     API-->>Browser: Set-Cookie: agora_session
     Note over Browser,API: Subsequent requests use cookie
 ```
@@ -575,11 +593,14 @@ flowchart TB
         Poller["getLogs() every 30s"]
         Parser["Parse event data"]
         Dedup["Dedup via indexed_events table"]
+        Replay["Replay recent confirmed block window"]
+        Reconcile["Reconcile DB projection against chain"]
     end
 
     subgraph DB["Supabase"]
         CT["challenges table"]
         ST["submissions table"]
+        PT["challenge_payouts table"]
         IE["indexed_events table"]
     end
 
@@ -591,12 +612,20 @@ flowchart TB
     Events --> Poller
     Poller --> Parser
     Parser --> Dedup
-    Dedup --> CT
-    Dedup --> ST
+    Dedup --> Replay
+    Replay --> Reconcile
+    Reconcile --> CT
+    Reconcile --> ST
+    Reconcile --> PT
     Dedup --> IE
     IE --> Lag
     Lag --> Health
 ```
+
+Projection rules:
+- On-chain contracts are authoritative for lifecycle status, payout entitlements, and claimability.
+- Supabase is a projection and operational cache. Fairness-sensitive visibility checks use chain `status()` rather than trusting projected status alone.
+- Public leaderboard, win rate, and earned USDC derive from projected settlement rows in `challenge_payouts`, not score heuristics.
 
 **Health states:**
 - `ok`: ≤ 20 blocks behind chain head

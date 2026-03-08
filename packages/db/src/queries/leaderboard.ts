@@ -18,6 +18,7 @@ type FinalizedSubmissionRow = {
         distribution_type: string | null;
         contract_address: string;
         deadline: string;
+        winner_solver_address?: string | null;
       }
     | Array<{
         id: string;
@@ -29,6 +30,22 @@ type FinalizedSubmissionRow = {
         distribution_type: string | null;
         contract_address: string;
         deadline: string;
+        winner_solver_address?: string | null;
+      }>;
+};
+
+type FinalizedPayoutRow = {
+  challenge_id: string;
+  solver_address: string;
+  amount: number | string;
+  challenges:
+    | {
+        status: string;
+        winner_solver_address?: string | null;
+      }
+    | Array<{
+        status: string;
+        winner_solver_address?: string | null;
       }>;
 };
 
@@ -56,37 +73,59 @@ export async function getPublicLeaderboard(
   db: AgoraDbClient,
   limit = 25,
 ): Promise<PublicLeaderboardEntry[]> {
-  const { data, error } = await db
-    .from("submissions")
-    .select(`
-      challenge_id,
-      solver_address,
-      score,
-      scored,
-      submitted_at,
-      challenges!inner(
-        id,
-        title,
-        domain,
-        challenge_type,
-        status,
-        reward_amount,
-        distribution_type,
-        contract_address,
-        deadline
-      )
-    `)
-    .eq("challenges.status", CHALLENGE_STATUS.finalized)
-    .order("submitted_at", { ascending: false });
+  const [{ data: submissionsData, error: submissionsError }, { data: payoutsData, error: payoutsError }] =
+    await Promise.all([
+      db
+        .from("submissions")
+        .select(`
+          challenge_id,
+          solver_address,
+          score,
+          scored,
+          submitted_at,
+          challenges!inner(
+            id,
+            title,
+            domain,
+            challenge_type,
+            status,
+            reward_amount,
+            distribution_type,
+            contract_address,
+            deadline,
+            winner_solver_address
+          )
+        `)
+        .eq("challenges.status", CHALLENGE_STATUS.finalized)
+        .order("submitted_at", { ascending: false }),
+      db
+        .from("challenge_payouts")
+        .select(`
+          challenge_id,
+          solver_address,
+          amount,
+          challenges!inner(
+            status,
+            winner_solver_address
+          )
+        `)
+        .eq("challenges.status", CHALLENGE_STATUS.finalized),
+    ]);
 
-  if (error) {
-    throw new Error(`Failed to fetch public leaderboard: ${error.message}`);
+  if (submissionsError) {
+    throw new Error(
+      `Failed to fetch public leaderboard submissions: ${submissionsError.message}`,
+    );
+  }
+  if (payoutsError) {
+    throw new Error(
+      `Failed to fetch public leaderboard payouts: ${payoutsError.message}`,
+    );
   }
 
-  const rows = (data ?? []) as unknown as FinalizedSubmissionRow[];
+  const rows = (submissionsData ?? []) as unknown as FinalizedSubmissionRow[];
+  const payouts = (payoutsData ?? []) as unknown as FinalizedPayoutRow[];
   const grouped = new Map<string, PublicLeaderboardEntry>();
-  const earnedChallenges = new Map<string, Set<string>>();
-  const winsByAddress = new Map<string, Set<string>>();
 
   for (const row of rows) {
     const challengeMeta = Array.isArray(row.challenges)
@@ -136,27 +175,38 @@ export async function getPublicLeaderboard(
       existing.challenges.map((challenge) => challenge.challengeId),
     );
     existing.challengesParticipated = participated.size;
-
-    if (row.score !== null && BigInt(row.score) > 0n) {
-      const wins = winsByAddress.get(address) ?? new Set<string>();
-      if (!wins.has(row.challenge_id)) {
-        wins.add(row.challenge_id);
-        winsByAddress.set(address, wins);
-        existing.wins = wins.size;
-      }
-
-      const earned = earnedChallenges.get(address) ?? new Set<string>();
-      if (!earned.has(row.challenge_id)) {
-        earned.add(row.challenge_id);
-        earnedChallenges.set(address, earned);
-        existing.totalEarnedUsdc += Number(challengeMeta.reward_amount) * 0.95;
-      }
-    }
-
-    existing.winRate = existing.scoredSubmissions
-      ? Math.round((existing.wins / existing.scoredSubmissions) * 100)
-      : 0;
     grouped.set(address, existing);
+  }
+
+  for (const payout of payouts) {
+    const address = payout.solver_address.toLowerCase();
+    const challengeMeta = Array.isArray(payout.challenges)
+      ? payout.challenges[0]
+      : payout.challenges;
+    const existing = grouped.get(address) ?? {
+      address,
+      totalSubmissions: 0,
+      challengesParticipated: 0,
+      scoredSubmissions: 0,
+      wins: 0,
+      winRate: 0,
+      totalEarnedUsdc: 0,
+      challenges: [],
+    };
+
+    existing.totalEarnedUsdc += Number(payout.amount);
+    if (
+      challengeMeta?.winner_solver_address?.toLowerCase() === address
+    ) {
+      existing.wins += 1;
+    }
+    grouped.set(address, existing);
+  }
+
+  for (const entry of grouped.values()) {
+    entry.winRate = entry.challengesParticipated
+      ? Math.round((entry.wins / entry.challengesParticipated) * 100)
+      : 0;
   }
 
   return [...grouped.values()]

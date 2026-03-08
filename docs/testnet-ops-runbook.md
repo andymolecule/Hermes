@@ -6,7 +6,7 @@ This runbook is for Base Sepolia operations before opening Agora to real users.
 
 1. Merge latest `main` and deploy from `main` only.
 2. Ensure all required environment variables are set in your host platform.
-3. Apply Supabase migrations in `packages/db/supabase/migrations`.
+3. Reset the testnet Supabase schema if it still has pre-baseline data, then apply the baseline migration in `packages/db/supabase/migrations`.
 4. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 5. Set API CORS allowlist via `AGORA_CORS_ORIGINS` (comma-separated exact origins).
 6. Build and run preflight:
@@ -116,7 +116,7 @@ agora reindex --from-block <block_number>
 
 1. Roll back API and web to previous release in hosting platform.
 2. Keep indexer running if schema is unchanged.
-3. If schema changed, roll back DB migration first, then restart indexer.
+3. If schema changed, reset the testnet DB and re-apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql), then restart indexer.
 
 ### Worker stalled
 

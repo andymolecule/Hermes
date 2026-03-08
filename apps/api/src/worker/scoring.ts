@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  findPresetIdsByContainer,
   getSubmissionLimitViolation,
   loadConfig,
   lookupPreset,
@@ -37,14 +36,12 @@ export interface ResolvedRunnerPolicy {
     pids: number;
   };
   timeoutMs?: number;
-  source: "preset_id" | "container_unique" | "default";
-  warning?: string;
+  source: "runner_preset_id" | "default";
 }
 
 function policyFromLimits(
   runnerLimits: RunnerLimits,
   source: ResolvedRunnerPolicy["source"],
-  warning?: string,
 ): ResolvedRunnerPolicy {
   return {
     limits: {
@@ -54,70 +51,39 @@ function policyFromLimits(
     },
     timeoutMs: runnerLimits.timeoutMs,
     source,
-    warning,
   };
 }
 
 export function resolveRunnerPolicyForChallenge(
   challenge: {
     image: string;
-    scoring_preset_id?: string | null;
+    runner_preset_id: string;
   },
 ): ResolvedRunnerPolicy {
-  const presetId =
-    typeof challenge.scoring_preset_id === "string"
-      ? challenge.scoring_preset_id.trim()
-      : "";
+  const presetId = challenge.runner_preset_id.trim();
 
-  if (presetId) {
-    if (presetId === "custom") {
-      const customIntegrityError = validatePresetIntegrity(
-        "custom",
-        challenge.image,
-      );
-      if (customIntegrityError) {
-        throw new Error(
-          `Invalid scoring preset configuration: ${customIntegrityError}`,
-        );
-      }
-      return { source: "default" };
-    }
-
-    const preset = lookupPreset(presetId);
-    if (!preset) {
-      throw new Error(`Unknown scoring preset_id on challenge: ${presetId}`);
-    }
-    const integrityError = validatePresetIntegrity(
-      presetId,
+  if (presetId === "custom") {
+    const customIntegrityError = validatePresetIntegrity(
+      "custom",
       challenge.image,
     );
-    if (integrityError) {
-      throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
-    }
-    return policyFromLimits(preset.runnerLimits, "preset_id");
-  }
-
-  const matchedPresetIds = findPresetIdsByContainer(challenge.image);
-  if (matchedPresetIds.length === 1) {
-    const matchedId = matchedPresetIds[0];
-    const preset = matchedId ? lookupPreset(matchedId) : undefined;
-    if (preset) {
-      return policyFromLimits(
-        preset.runnerLimits,
-        "container_unique",
-        "Challenge missing scoring_preset_id; resolved preset by unique container match.",
+    if (customIntegrityError) {
+      throw new Error(
+        `Invalid scoring preset configuration: ${customIntegrityError}`,
       );
     }
+    return { source: "default" };
   }
 
-  if (matchedPresetIds.length > 1) {
-    return {
-      source: "default",
-      warning: `Challenge missing scoring_preset_id and container maps to multiple presets (${matchedPresetIds.join(", ")}). Using default runner limits.`,
-    };
+  const preset = lookupPreset(presetId);
+  if (!preset) {
+    throw new Error(`Unknown runner_preset_id on challenge: ${presetId}`);
   }
-
-  return { source: "default" };
+  const integrityError = validatePresetIntegrity(presetId, challenge.image);
+  if (integrityError) {
+    throw new Error(`Invalid scoring preset configuration: ${integrityError}`);
+  }
+  return policyFromLimits(preset.runnerLimits, "runner_preset_id");
 }
 
 export interface ScoringOutcomeSuccess {
@@ -196,7 +162,7 @@ export async function scoreSubmissionAndBuildProof(
   const evalPlan = resolveEvalSpec(challenge);
   const runnerPolicy = resolveRunnerPolicyForChallenge({
     image: evalPlan.image,
-    scoring_preset_id: challenge.scoring_preset_id,
+    runner_preset_id: challenge.runner_preset_id,
   });
   const phaseMeta = {
     jobId,
@@ -204,14 +170,6 @@ export async function scoreSubmissionAndBuildProof(
     challengeId: challenge.id,
     image: evalPlan.image,
   };
-  if (runnerPolicy.warning) {
-    log("warn", runnerPolicy.warning, {
-      challengeId: challenge.id,
-      submissionId: submission.id,
-      image: evalPlan.image,
-    });
-  }
-
   const isProduction = process.env.NODE_ENV === "production";
   let submissionSource;
   try {

@@ -15,8 +15,8 @@ export type Challenge = {
   submissions_count?: number;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
-  scoring_metric?: string | null;
-  scoring_container?: string | null;
+  eval_metric?: string | null;
+  eval_image?: string | null;
   distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;
@@ -53,6 +53,10 @@ export type SolverSubmission = {
   scored: boolean;
   submitted_at: string;
   scored_at: string | null;
+  payout_amount: string | number | null;
+  payout_claimable_amount: string;
+  payout_claimed_at: string | null;
+  payout_claim_tx_hash: string | null;
   challenges: {
     id: string;
     title: string;

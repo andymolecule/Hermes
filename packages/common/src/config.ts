@@ -56,7 +56,40 @@ const configSchema = z.object({
     )
     .optional(),
   AGORA_LOG_LEVEL: z.string().min(1).optional(),
+  AGORA_INDEXER_START_BLOCK: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().nonnegative(),
+    )
+    .optional(),
+  AGORA_INDEXER_CONFIRMATION_DEPTH: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().nonnegative(),
+    )
+    .default(3),
+  AGORA_INDEXER_RETRY_MAX_ATTEMPTS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(8),
+  AGORA_INDEXER_RETRY_BASE_DELAY_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(30_000),
+  AGORA_INDEXER_REPLAY_WINDOW_BLOCKS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().nonnegative(),
+    )
+    .default(2_000),
   AGORA_ENABLE_NON_CORE_FEATURES: z
+    .preprocess(parseBooleanLike, z.boolean())
+    .default(false),
+  AGORA_REQUIRE_PINNED_PRESET_DIGESTS: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
   AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS: z

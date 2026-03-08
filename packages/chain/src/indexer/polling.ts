@@ -1,24 +1,33 @@
+import type { AgoraConfig } from "@agora/common";
 import { getPublicClient } from "../client.js";
 
 export const POLL_INTERVAL_MS = 30_000;
-const confirmationDepthValue = Number(
-  process.env.AGORA_INDEXER_CONFIRMATION_DEPTH ?? 3,
-);
-export const CONFIRMATION_DEPTH = BigInt(
-  Number.isFinite(confirmationDepthValue) && confirmationDepthValue > 0
-    ? Math.floor(confirmationDepthValue)
-    : 0,
-);
 const MAX_BLOCK_RANGE = BigInt(9_999);
-const RETRYABLE_EVENT_MAX_ATTEMPTS = Number(
-  process.env.AGORA_INDEXER_RETRY_MAX_ATTEMPTS ?? 8,
-);
-const RETRYABLE_EVENT_BASE_DELAY_MS = Number(
-  process.env.AGORA_INDEXER_RETRY_BASE_DELAY_MS ?? 30_000,
-);
-const RETRY_REPLAY_WINDOW_BLOCKS = BigInt(
-  Number(process.env.AGORA_INDEXER_REPLAY_WINDOW_BLOCKS ?? 2000),
-);
+
+export interface IndexerPollingConfig {
+  confirmationDepth: bigint;
+  retryableEventMaxAttempts: number;
+  retryableEventBaseDelayMs: number;
+  replayWindowBlocks: bigint;
+}
+
+export const DEFAULT_INDEXER_POLLING_CONFIG: IndexerPollingConfig = {
+  confirmationDepth: BigInt(3),
+  retryableEventMaxAttempts: 8,
+  retryableEventBaseDelayMs: 30_000,
+  replayWindowBlocks: BigInt(2_000),
+};
+
+export function resolveIndexerPollingConfig(
+  config: AgoraConfig,
+): IndexerPollingConfig {
+  return {
+    confirmationDepth: BigInt(config.AGORA_INDEXER_CONFIRMATION_DEPTH),
+    retryableEventMaxAttempts: config.AGORA_INDEXER_RETRY_MAX_ATTEMPTS,
+    retryableEventBaseDelayMs: config.AGORA_INDEXER_RETRY_BASE_DELAY_MS,
+    replayWindowBlocks: BigInt(config.AGORA_INDEXER_REPLAY_WINDOW_BLOCKS),
+  };
+}
 
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,7 +44,11 @@ export function retryKey(txHash: string, logIndex: number) {
   return `${txHash}:${logIndex}`;
 }
 
-export function onRetryableEvent(key: string, blockNumber: bigint) {
+export function onRetryableEvent(
+  key: string,
+  blockNumber: bigint,
+  config: IndexerPollingConfig = DEFAULT_INDEXER_POLLING_CONFIG,
+) {
   const now = Date.now();
   const state = retryEventState.get(key) ?? {
     attempts: 0,
@@ -54,7 +67,7 @@ export function onRetryableEvent(key: string, blockNumber: bigint) {
   }
 
   state.attempts += 1;
-  if (state.attempts >= RETRYABLE_EVENT_MAX_ATTEMPTS) {
+  if (state.attempts >= config.retryableEventMaxAttempts) {
     retryEventState.delete(key);
     return {
       shouldRetryNow: true,
@@ -64,7 +77,7 @@ export function onRetryableEvent(key: string, blockNumber: bigint) {
     };
   }
 
-  const delay = RETRYABLE_EVENT_BASE_DELAY_MS * 2 ** (state.attempts - 1);
+  const delay = config.retryableEventBaseDelayMs * 2 ** (state.attempts - 1);
   state.nextAttemptAt = now + delay;
   retryEventState.set(key, state);
   return {
@@ -123,8 +136,11 @@ export async function chunkedGetLogs(
   return allLogs;
 }
 
-export function rewindStartBlock(targetBlock: bigint) {
-  return targetBlock > RETRY_REPLAY_WINDOW_BLOCKS
-    ? targetBlock - RETRY_REPLAY_WINDOW_BLOCKS
+export function rewindStartBlock(
+  targetBlock: bigint,
+  config: IndexerPollingConfig = DEFAULT_INDEXER_POLLING_CONFIG,
+) {
+  return targetBlock > config.replayWindowBlocks
+    ? targetBlock - config.replayWindowBlocks
     : BigInt(0);
 }

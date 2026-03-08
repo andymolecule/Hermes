@@ -10,6 +10,7 @@ import {
   listChallengesWithDetails,
   listSubmissionsForChallenge,
 } from "@agora/db";
+import { getChallengeLifecycleState } from "@agora/chain";
 import { z } from "zod";
 
 type SubmissionRow = Awaited<
@@ -21,12 +22,12 @@ type ProofBundleRow = {
   output_hash?: string | null;
   container_image_hash?: string | null;
   reproducible?: boolean;
-  verified_count?: number;
 };
 
 type ChallengeSharedDeps = {
   createSupabaseClient: typeof createSupabaseClient;
   getChallengeById: typeof getChallengeById;
+  getChallengeLifecycleState: typeof getChallengeLifecycleState;
   listChallengesWithDetails: typeof listChallengesWithDetails;
   listSubmissionsForChallenge: typeof listSubmissionsForChallenge;
 };
@@ -34,6 +35,7 @@ type ChallengeSharedDeps = {
 const defaultDeps: ChallengeSharedDeps = {
   createSupabaseClient,
   getChallengeById,
+  getChallengeLifecycleState,
   listChallengesWithDetails,
   listSubmissionsForChallenge,
 };
@@ -71,7 +73,6 @@ export function toPrivateProofBundle(row: ProofBundleRow | null) {
     output_hash: row.output_hash ?? null,
     container_image_hash: row.container_image_hash ?? null,
     reproducible: row.reproducible ?? false,
-    verified_count: row.verified_count ?? 0,
   };
 }
 
@@ -161,9 +162,12 @@ export async function getChallengeWithLeaderboard(
 ) {
   const db = deps.createSupabaseClient(true);
   const challenge = await deps.getChallengeById(db, challengeId);
+  const lifecycle = await deps.getChallengeLifecycleState(
+    challenge.contract_address as `0x${string}`,
+  );
   const normalizedChallenge = {
     ...challenge,
-    status: normalizeChallengeStatus(challenge.status),
+    status: lifecycle.status,
   };
 
   if (!canExposeChallengeResults(normalizedChallenge.status)) {

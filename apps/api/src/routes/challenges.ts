@@ -150,7 +150,6 @@ router.post(
         chainId: config.AGORA_CHAIN_ID,
         contractAddress: challengeAddress,
         factoryAddress,
-        factoryChallengeId: Number(challengeId),
         posterAddress,
         specCid,
         spec,
@@ -158,6 +157,8 @@ router.post(
         disputeWindowHours:
           spec.dispute_window_hours ??
           CHALLENGE_LIMITS.defaultDisputeWindowHours,
+        requirePinnedPresetDigests:
+          config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
         txHash,
         onChainDeadline: onChainDeadlineIso,
       });

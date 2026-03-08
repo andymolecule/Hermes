@@ -224,10 +224,8 @@ export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
 export interface ChallengeEvalRow {
-  scoring_container: string;
-  scoring_metric: string;
-  dataset_test_cid?: string | null;
-  eval_engine_digest?: string | null;
+  eval_image: string;
+  eval_metric: string;
   eval_bundle_cid?: string | null;
 }
 
@@ -405,8 +403,7 @@ export function getChallengeTypeScoreabilityProfile(type: ChallengeType) {
 }
 
 /**
- * Resolve the effective evaluation spec from a challenge spec.
- * Supports both new `eval_spec` field and legacy `scoring` + `dataset.test`.
+ * Resolve the effective evaluation spec from a challenge spec or stored challenge row.
  */
 export function resolveEvalSpec(spec: ChallengeSpecOutput): ResolvedEvalSpec;
 export function resolveEvalSpec(spec: ChallengeEvalRow): ResolvedEvalSpec;
@@ -425,10 +422,9 @@ export function resolveEvalSpec(
   }
 
   return {
-    image: spec.eval_engine_digest ?? spec.scoring_container,
-    evaluationBundleCid:
-      spec.eval_bundle_cid ?? spec.dataset_test_cid ?? undefined,
-    metric: spec.scoring_metric,
+    image: spec.eval_image,
+    evaluationBundleCid: spec.eval_bundle_cid ?? undefined,
+    metric: spec.eval_metric,
   };
 }
 

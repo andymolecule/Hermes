@@ -25,7 +25,7 @@ export interface SubmissionOnChainWrite {
  * - Off-chain ingest owns: result_cid (via setSubmissionResultCid)
  * - Worker scoring output owns: proof_bundle_cid + score fields (via updateScore)
  *
- * This function intentionally never writes result_cid/proof_bundle_cid/rank.
+ * This function intentionally never writes result_cid/proof_bundle_cid.
  */
 export async function upsertSubmissionOnChain(
   db: AgoraDbClient,
@@ -90,6 +90,58 @@ export async function getSubmissionByChainId(
     throw new Error(`Failed to fetch submission: ${error.message}`);
   }
   return data ?? null;
+}
+
+export async function syncExistingSubmissionOnChainState(
+  db: AgoraDbClient,
+  payload: SubmissionOnChainWrite,
+) {
+  const normalizedPayload: SubmissionOnChainWrite = {
+    ...payload,
+    solver_address: payload.solver_address.toLowerCase(),
+  };
+
+  const updatePayload: Record<string, unknown> = {
+    solver_address: normalizedPayload.solver_address,
+    result_hash: normalizedPayload.result_hash,
+    proof_bundle_hash: normalizedPayload.proof_bundle_hash,
+    score: normalizedPayload.score,
+    scored: normalizedPayload.scored,
+    submitted_at: normalizedPayload.submitted_at,
+  };
+  if ("scored_at" in normalizedPayload) {
+    updatePayload.scored_at = normalizedPayload.scored_at ?? null;
+  }
+
+  const { data, error } = await db
+    .from("submissions")
+    .update(updatePayload)
+    .eq("challenge_id", normalizedPayload.challenge_id)
+    .eq("on_chain_sub_id", normalizedPayload.on_chain_sub_id)
+    .select("*")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to sync submission state: ${error.message}`);
+  }
+
+  return data ?? null;
+}
+
+export async function deleteSubmissionsFromOnChainSubId(
+  db: AgoraDbClient,
+  challengeId: string,
+  firstMissingOnChainSubId: number,
+) {
+  const { error } = await db
+    .from("submissions")
+    .delete()
+    .eq("challenge_id", challengeId)
+    .gte("on_chain_sub_id", firstMissingOnChainSubId);
+
+  if (error) {
+    throw new Error(`Failed to delete stale submissions: ${error.message}`);
+  }
 }
 
 export async function getSubmissionById(db: AgoraDbClient, id: string) {
