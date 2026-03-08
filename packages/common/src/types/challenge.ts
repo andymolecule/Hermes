@@ -42,6 +42,23 @@ export function isChallengeStatus(value: unknown): value is ChallengeStatus {
   return typeof value === "string" && CHALLENGE_STATUS_SET.has(value);
 }
 
+export function getEffectiveChallengeStatus(
+  status: ChallengeStatus,
+  deadline?: string | null,
+  now = Date.now(),
+): ChallengeStatus {
+  if (status !== CHALLENGE_STATUS.open || !deadline) {
+    return status;
+  }
+
+  const deadlineMs = new Date(deadline).getTime();
+  if (Number.isNaN(deadlineMs)) {
+    return status;
+  }
+
+  return deadlineMs <= now ? CHALLENGE_STATUS.scoring : status;
+}
+
 export type RewardDistribution = "winner_take_all" | "top_3" | "proportional";
 
 export interface ChallengeDataset {

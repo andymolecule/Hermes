@@ -31,7 +31,7 @@ import type { SubmissionVerification } from "../../../lib/types";
 import {
   canShowChallengeResults,
   getChallengeLeaderboardEntries,
-  shouldFetchPublicVerification,
+  getPublicVerificationTarget,
 } from "./detail-visibility";
 
 function InfoRow({
@@ -338,18 +338,15 @@ export function DetailClient({ id }: { id: string }) {
     ? canShowChallengeResults(detailQuery.data.challenge.status)
     : false;
   const leaderboardEntries = getChallengeLeaderboardEntries(detailQuery.data);
-  const firstScoredSubmission = leaderboardEntries.find(
-    (entry) => entry.scored && entry.score !== null,
-  );
+  const verificationSubmission = getPublicVerificationTarget(detailQuery.data);
   const verificationQuery = useQuery<SubmissionVerification>({
-    queryKey: ["submission-verification", firstScoredSubmission?.id],
+    queryKey: ["submission-verification", verificationSubmission?.id],
     queryFn: () =>
-      getPublicSubmissionVerification(firstScoredSubmission?.id as string),
+      getPublicSubmissionVerification(verificationSubmission?.id as string),
     enabled: detailQuery.data
-      ? shouldFetchPublicVerification(
-          detailQuery.data.challenge.status,
-          firstScoredSubmission?.id,
-        )
+      ? canShowChallengeResults(detailQuery.data.challenge.status) &&
+        Boolean(verificationSubmission?.id) &&
+        verificationSubmission?.has_public_verification === true
       : false,
     staleTime: 5 * 60 * 1000,
   });
@@ -579,7 +576,7 @@ export function DetailClient({ id }: { id: string }) {
 
             <TechnicalDetailsSection challenge={challenge} />
 
-            {resultsVisible && firstScoredSubmission && (
+            {resultsVisible && verificationSubmission && (
               <Section title="Public Verification" icon={ShieldCheck}>
                 {verificationQuery.isLoading ? (
                   <div className="space-y-3">
@@ -598,6 +595,10 @@ export function DetailClient({ id }: { id: string }) {
                       Agora currently operates scoring, but this submission
                       exposes the public artifacts needed to replay the scorer
                       and check the published result independently.
+                    </p>
+                    <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
+                      Showing artifacts for submission #
+                      {verificationSubmission.on_chain_sub_id}
                     </p>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -667,8 +668,8 @@ export function DetailClient({ id }: { id: string }) {
                   </div>
                 ) : (
                   <p className="text-sm leading-relaxed text-black/60">
-                    Verification artifacts are not available for this submission
-                    yet.
+                    Public replay artifacts have not been published for any
+                    scored submission yet.
                   </p>
                 )}
               </Section>

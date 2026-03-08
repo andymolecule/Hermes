@@ -15,9 +15,15 @@ export function getChallengeLeaderboardEntries(
   return detail.leaderboard.length > 0 ? detail.leaderboard : detail.submissions;
 }
 
-export function shouldFetchPublicVerification(
-  status: ChallengeStatus,
-  submissionId?: string,
-) {
-  return canShowChallengeResults(status) && Boolean(submissionId);
+export function getPublicVerificationTarget(
+  detail?: ChallengeDetails,
+): Submission | null {
+  const scoredEntries = getChallengeLeaderboardEntries(detail).filter(
+    (entry) => entry.scored && entry.score !== null,
+  );
+  return (
+    scoredEntries.find((entry) => entry.has_public_verification) ??
+    scoredEntries[0] ??
+    null
+  );
 }

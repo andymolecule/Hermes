@@ -3,6 +3,7 @@ import {
   CHALLENGE_STATUS,
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
+  getEffectiveChallengeStatus,
   ON_CHAIN_STATUS_ORDER,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
@@ -43,6 +44,34 @@ assert.deepEqual(
 assert.ok(
   SCORE_JOB_STATUSES.includes(SCORE_JOB_STATUS.skipped),
   "score job statuses should include skipped",
+);
+
+assert.equal(
+  getEffectiveChallengeStatus(
+    CHALLENGE_STATUS.open,
+    "2026-03-07T00:00:00.000Z",
+    Date.parse("2026-03-08T00:00:00.000Z"),
+  ),
+  CHALLENGE_STATUS.scoring,
+  "open challenges should become scoring once the deadline passes",
+);
+assert.equal(
+  getEffectiveChallengeStatus(
+    CHALLENGE_STATUS.open,
+    "2026-03-09T00:00:00.000Z",
+    Date.parse("2026-03-08T00:00:00.000Z"),
+  ),
+  CHALLENGE_STATUS.open,
+  "open challenges should remain open before the deadline",
+);
+assert.equal(
+  getEffectiveChallengeStatus(
+    CHALLENGE_STATUS.cancelled,
+    "2026-03-07T00:00:00.000Z",
+    Date.parse("2026-03-08T00:00:00.000Z"),
+  ),
+  CHALLENGE_STATUS.cancelled,
+  "terminal statuses should not change based on the deadline",
 );
 
 assert.equal(

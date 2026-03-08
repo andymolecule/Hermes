@@ -5,6 +5,7 @@ import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
   getChallengeWithLeaderboard,
+  listChallengesFromQuery,
 } from "../src/routes/challenges-shared.js";
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
@@ -63,4 +64,96 @@ test("challenge results remain hidden while open and unlock during scoring", () 
     { score: "20", scored: true },
     { score: "10", scored: true },
   ]);
+});
+
+test("challenge list derives effective scoring status once deadline passes", async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-08T00:00:00.000Z");
+  try {
+    const rows = await listChallengesFromQuery(
+      {},
+      {
+        createSupabaseClient: () => ({}) as never,
+        getChallengeById: async () => {
+          throw new Error("not used");
+        },
+        getChallengeLifecycleState: async () => ({
+          status: CHALLENGE_STATUS.open,
+        }),
+        listChallengesWithDetails: async () =>
+          [
+            {
+              id: "challenge-1",
+              status: CHALLENGE_STATUS.open,
+              deadline: "2026-03-07T00:00:00.000Z",
+              reward_amount: 10,
+            },
+            {
+              id: "challenge-2",
+              status: CHALLENGE_STATUS.open,
+              deadline: "2026-03-09T00:00:00.000Z",
+              reward_amount: 20,
+            },
+          ] as never[],
+        listSubmissionsForChallenge: async () => [] as never[],
+      },
+    );
+
+    assert.equal(rows[0]?.status, CHALLENGE_STATUS.scoring);
+    assert.equal(rows[1]?.status, CHALLENGE_STATUS.open);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("challenge list filters open and scoring after effective-status normalization", async () => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-03-08T00:00:00.000Z");
+  try {
+    const sharedDeps = {
+      createSupabaseClient: () => ({}) as never,
+      getChallengeById: async () => {
+        throw new Error("not used");
+      },
+      getChallengeLifecycleState: async () => ({
+        status: CHALLENGE_STATUS.open,
+      }),
+      listChallengesWithDetails: async () =>
+        [
+          {
+            id: "challenge-1",
+            status: CHALLENGE_STATUS.open,
+            deadline: "2026-03-07T00:00:00.000Z",
+            reward_amount: 10,
+          },
+          {
+            id: "challenge-2",
+            status: CHALLENGE_STATUS.open,
+            deadline: "2026-03-09T00:00:00.000Z",
+            reward_amount: 20,
+          },
+        ] as never[],
+      listSubmissionsForChallenge: async () => [] as never[],
+    };
+
+    const openRows = await listChallengesFromQuery(
+      { status: CHALLENGE_STATUS.open },
+      sharedDeps,
+    );
+    const scoringRows = await listChallengesFromQuery(
+      { status: CHALLENGE_STATUS.scoring },
+      sharedDeps,
+    );
+
+    assert.deepEqual(
+      openRows.map((row) => row.id),
+      ["challenge-2"],
+    );
+    assert.deepEqual(
+      scoringRows.map((row) => row.id),
+      ["challenge-1"],
+    );
+  } finally {
+    Date.now = originalNow;
+  }
 });

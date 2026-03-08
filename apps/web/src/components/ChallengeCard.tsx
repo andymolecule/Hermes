@@ -4,6 +4,7 @@ import { CHALLENGE_STATUS } from "@agora/common";
 import { Clock } from "lucide-react";
 import Link from "next/link";
 import { deadlineCountdown, formatUsdc } from "../lib/format";
+import { getStatusStyle } from "../lib/status-styles";
 import type { Challenge } from "../lib/types";
 
 export function ChallengeCard({
@@ -12,7 +13,31 @@ export function ChallengeCard({
   challenge: Challenge;
   index?: number;
 }) {
-  const isOpen = challenge.status === CHALLENGE_STATUS.open;
+  const statusStyle = getStatusStyle(challenge.status);
+  const badgeLabel =
+    {
+      [CHALLENGE_STATUS.open]: "Live",
+      [CHALLENGE_STATUS.scoring]: "Scoring",
+      [CHALLENGE_STATUS.disputed]: "Disputed",
+      [CHALLENGE_STATUS.finalized]: "Settled",
+      [CHALLENGE_STATUS.cancelled]: "Cancelled",
+    }[challenge.status] ?? challenge.status;
+  const footerLabel = (() => {
+    switch (challenge.status) {
+      case CHALLENGE_STATUS.open:
+        return deadlineCountdown(challenge.deadline);
+      case CHALLENGE_STATUS.scoring:
+        return "Submissions closed";
+      case CHALLENGE_STATUS.disputed:
+        return "Payout on hold";
+      case CHALLENGE_STATUS.finalized:
+        return "Settled on-chain";
+      case CHALLENGE_STATUS.cancelled:
+        return "Challenge cancelled";
+      default:
+        return deadlineCountdown(challenge.deadline);
+    }
+  })();
 
   return (
     <Link
@@ -21,11 +46,19 @@ export function ChallengeCard({
     >
       {/* Top row: status + reward */}
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border border-black bg-white text-black">
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.5px] font-mono border"
+          style={{
+            backgroundColor: statusStyle.bg,
+            borderColor: statusStyle.borderColor,
+            color: statusStyle.text,
+          }}
+        >
           <span
-            className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-green-500" : "bg-black"}`}
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: statusStyle.text }}
           />
-          {challenge.status}
+          {badgeLabel}
         </span>
         <span className="inline-flex items-baseline text-xl font-display font-bold text-black tabular-nums tracking-tight">
           ${formatUsdc(challenge.reward_amount)}
@@ -52,7 +85,7 @@ export function ChallengeCard({
         </span>
         <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.5px] text-black/50">
           <Clock className="w-3 h-3" />
-          {deadlineCountdown(challenge.deadline)}
+          {footerLabel}
         </span>
       </div>
     </Link>

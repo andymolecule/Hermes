@@ -1,5 +1,6 @@
 import {
   CHALLENGE_STATUS,
+  getEffectiveChallengeStatus,
   type ChallengeStatus,
   SUBMISSION_RESULT_FORMAT,
   isChallengeStatus,
@@ -48,6 +49,7 @@ export function toPublicSubmission(row: SubmissionRow) {
     score: row.score,
     scored: row.scored,
     submitted_at: row.submitted_at,
+    has_public_verification: Boolean(row.proof_bundle_cid),
   };
 }
 
@@ -136,21 +138,33 @@ export async function listChallengesFromQuery(
   deps: ChallengeSharedDeps = defaultDeps,
 ) {
   const db = deps.createSupabaseClient(false);
+  const dbStatusFilter =
+    query.status &&
+    query.status !== CHALLENGE_STATUS.open &&
+    query.status !== CHALLENGE_STATUS.scoring
+      ? query.status
+      : undefined;
   const rows = (await deps.listChallengesWithDetails(db, {
-    status: query.status,
+    status: dbStatusFilter,
     domain: query.domain,
     posterAddress: query.poster_address,
     limit: query.limit,
   })) as Array<Record<string, unknown>>;
   const normalizedRows = rows.map((row) => ({
     ...row,
-    status: normalizeChallengeStatus(row.status),
+    status: getEffectiveChallengeStatus(
+      normalizeChallengeStatus(row.status),
+      typeof row.deadline === "string" ? row.deadline : null,
+    ),
   }));
+  const statusFilteredRows = query.status
+    ? normalizedRows.filter((row) => row.status === query.status)
+    : normalizedRows;
 
   const minReward = query.min_reward;
   return minReward === undefined
-    ? normalizedRows
-    : normalizedRows.filter(
+    ? statusFilteredRows
+    : statusFilteredRows.filter(
         (row: Record<string, unknown>) =>
           Number(row.reward_amount) >= minReward,
       );

@@ -31,6 +31,7 @@ export type Submission = {
   score: string | null;
   scored: boolean;
   submitted_at: string;
+  has_public_verification?: boolean;
 };
 
 export type ChallengeDetails = {
