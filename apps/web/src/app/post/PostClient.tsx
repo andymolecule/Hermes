@@ -379,22 +379,22 @@ const PAYOUT_RULE_OPTIONS: Array<{
   label: string;
   hint: string;
 }> = [
-  {
-    value: "winner_take_all",
-    label: "Winner takes all",
-    hint: "Best when the reward pool is small or you care most about the single top result.",
-  },
-  {
-    value: "top_3",
-    label: "Top 3",
-    hint: "Rewards multiple strong submissions and encourages broader participation.",
-  },
-  {
-    value: "proportional",
-    label: "Proportional",
-    hint: "Distributes payout by score when you want many valid submissions to earn something.",
-  },
-];
+    {
+      value: "winner_take_all",
+      label: "Winner takes all",
+      hint: "Best when the reward pool is small or you care most about the single top result.",
+    },
+    {
+      value: "top_3",
+      label: "Top 3",
+      hint: "Rewards multiple strong submissions and encourages broader participation.",
+    },
+    {
+      value: "proportional",
+      label: "Proportional",
+      hint: "Distributes payout by score when you want many valid submissions to earn something.",
+    },
+  ];
 
 // ─── Pipeline diagrams per type ──────────────────────
 
@@ -1123,8 +1123,8 @@ export function PostClient() {
         [field]: pinResult.cid,
         ...(shouldDetectColumns && detectedCols.length > 0
           ? {
-              detectedColumns: detectedCols,
-            }
+            detectedColumns: detectedCols,
+          }
           : {}),
       }));
       setFileNames((prev) => ({ ...prev, [field]: file.name }));
@@ -2339,9 +2339,9 @@ export function PostClient() {
                         ? scoringRuleLabel(state)
                         : state.type === "prediction"
                           ? scoringRuleLabel(state)
-                        : isCustomType
-                          ? "Custom scorer"
-                          : engineDisplayName(state.container)}
+                          : isCustomType
+                            ? "Custom scorer"
+                            : engineDisplayName(state.container)}
                     </span>
                   </div>
                 </div>
@@ -2450,8 +2450,8 @@ export function PostClient() {
         <div className="preview-overlay" onClick={() => setShowPreview(false)}>
           <div className="preview-card" onClick={(e) => e.stopPropagation()}>
             <div className="preview-card-header">
-                <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
-                  <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+              <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
+                <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
                 Review Before Publish
               </h3>
               <button type="button" onClick={() => setShowPreview(false)}
@@ -2523,7 +2523,7 @@ export function PostClient() {
                     type="button"
                     disabled={isBusy || fundingState.status !== "ready" || allowanceReady || !balanceReady}
                     onClick={() => { void handleApprove(); }}
-                    className="dash-btn"
+                    className={`dash-btn ${!allowanceReady && balanceReady ? "dash-btn-primary" : ""}`}
                     style={{ fontSize: "0.8rem" }}
                   >
                     {pendingAction === "approving"
@@ -2547,7 +2547,7 @@ export function PostClient() {
                       || (fundingState.method === "approve" && !allowanceReady)
                     }
                     onClick={() => { void handleCreate(); }}
-                    className="dash-btn dash-btn-primary"
+                    className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : ""}`}
                     style={{ fontSize: "0.8rem" }}
                   >
                     {isBusy

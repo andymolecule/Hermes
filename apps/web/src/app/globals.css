@@ -1220,6 +1220,7 @@ a:hover {
 }
 
 @media (max-width: 900px) {
+
   .type-selector,
   .type-selector-primary {
     grid-template-columns: 1fr;
@@ -1235,7 +1236,7 @@ a:hover {
     row-gap: 1rem;
   }
 
-  .form-grid > *,
+  .form-grid>*,
   .form-grid .span-full,
   .form-grid .span-8,
   .form-grid .span-7,
@@ -1354,7 +1355,7 @@ a:hover {
   align-items: start;
 }
 
-.form-grid > * {
+.form-grid>* {
   grid-column: span 6;
   min-width: 0;
 }
@@ -1713,8 +1714,8 @@ a:hover {
   gap: 1rem;
 }
 
-.receipt-row + .receipt-row,
-.summary-kv-row + .summary-kv-row {
+.receipt-row+.receipt-row,
+.summary-kv-row+.summary-kv-row {
   margin-top: 0.65rem;
 }
 
@@ -1884,11 +1885,9 @@ a:hover {
   left: 0.35rem;
   width: 1px;
   height: calc(100% + 1rem);
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.8) 0 5px,
-    transparent 5px 10px
-  );
+  background-image: repeating-linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.8) 0 5px,
+      transparent 5px 10px);
   animation: timeline-march 1.6s linear infinite;
 }
 
@@ -2556,6 +2555,19 @@ a:hover {
   padding: 0.1rem 0.35rem;
   margin-left: 0.25rem;
   white-space: nowrap;
+  background: transparent;
+}
+
+.dash-btn-primary .preview-action-step {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dash-btn:disabled .preview-action-step {
+  color: var(--text-tertiary);
+  border-color: var(--border-default, #e5e7eb);
+  background: transparent;
 }
 
 .preview-action-helper {
