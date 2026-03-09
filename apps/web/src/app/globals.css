@@ -977,7 +977,7 @@ a:hover {
 .dash-btn-secondary {
   background-color: transparent;
   color: var(--color-warm-900);
-  border: 1.5px solid var(--color-warm-300);
+  border: 1px solid var(--color-warm-300);
 }
 
 .dash-btn-secondary:hover {
@@ -2535,8 +2535,8 @@ a:hover {
   background: var(--surface-default, #fff);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  max-width: 600px;
-  width: 90vw;
+  max-width: 660px;
+  width: 92vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -2630,8 +2630,6 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .preview-action-stack {
