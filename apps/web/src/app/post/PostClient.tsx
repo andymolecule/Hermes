@@ -2517,43 +2517,54 @@ export function PostClient() {
                 className="dash-btn" style={{ fontSize: "0.8rem" }}>
                 ← Edit
               </button>
-              {fundingState.status === "ready" && fundingState.method === "approve" && (
-                <button
-                  type="button"
-                  disabled={isBusy || fundingState.status !== "ready" || allowanceReady || !balanceReady}
-                  onClick={() => { void handleApprove(); }}
-                  className="dash-btn"
-                  style={{ fontSize: "0.8rem" }}
-                >
-                  {pendingAction === "approving"
-                    ? <Loader2 size={14} className="animate-spin" />
-                    : allowanceReady
-                      ? <Check size={14} />
-                      : <Wallet size={14} />}
-                  {allowanceReady ? "USDC Approved" : "Approve USDC"}
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={
-                  isBusy
-                  || fundingState.status !== "ready"
-                  || !balanceReady
-                  || (fundingState.method === "approve" && !allowanceReady)
-                }
-                onClick={() => { void handleCreate(); }}
-                className="dash-btn dash-btn-primary"
-                style={{ fontSize: "0.8rem" }}
-              >
-                {isBusy
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <ArrowRight size={14} />}
-                {fundingState.method === "approve" && !allowanceReady
-                  ? "Approve USDC First"
-                  : fundingState.method === "permit" && !allowanceReady
-                  ? "Sign Permit & Create"
-                  : "Create Challenge"}
-              </button>
+              <div className="preview-actions-main">
+                {fundingState.status === "ready" && fundingState.method === "approve" && (
+                  <div className="preview-action-stack">
+                    <span className="preview-action-step">Step 1 of 2</span>
+                    <button
+                      type="button"
+                      disabled={isBusy || fundingState.status !== "ready" || allowanceReady || !balanceReady}
+                      onClick={() => { void handleApprove(); }}
+                      className="dash-btn"
+                      style={{ fontSize: "0.8rem" }}
+                    >
+                      {pendingAction === "approving"
+                        ? <Loader2 size={14} className="animate-spin" />
+                        : allowanceReady
+                          ? <Check size={14} />
+                          : <Wallet size={14} />}
+                      {allowanceReady ? "USDC Approved" : "Approve USDC"}
+                    </button>
+                  </div>
+                )}
+                <div className="preview-action-stack">
+                  {fundingState.status === "ready" && fundingState.method === "approve" && (
+                    <span className="preview-action-step">Step 2 of 2</span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={
+                      isBusy
+                      || fundingState.status !== "ready"
+                      || !balanceReady
+                      || (fundingState.method === "approve" && !allowanceReady)
+                    }
+                    onClick={() => { void handleCreate(); }}
+                    className="dash-btn dash-btn-primary"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    {isBusy
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : <ArrowRight size={14} />}
+                    {fundingState.method === "permit" && !allowanceReady
+                      ? "Sign Permit & Create"
+                      : "Create Challenge"}
+                  </button>
+                  {fundingState.status === "ready" && fundingState.method === "approve" && !allowanceReady && (
+                    <span className="preview-action-helper">Available after approval</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
