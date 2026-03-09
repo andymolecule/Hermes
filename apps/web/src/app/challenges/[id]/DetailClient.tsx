@@ -10,6 +10,7 @@ import {
   Clock,
   Container,
   Database,
+  DollarSign,
   ExternalLink,
   FileText,
   ShieldCheck,
@@ -688,14 +689,15 @@ export function DetailClient({ id }: { id: string }) {
           {/* Right column: incentives, timeline, actions (sticky) */}
           <div className="space-y-5 lg:sticky lg:top-6 lg:self-start">
             <section className="rounded-lg border border-[var(--border-default)] bg-white p-6">
-              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Incentives & Timing
-              </div>
-              <div className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
-                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              <h3 className="text-xl font-display font-bold text-[var(--color-warm-900)] flex items-center gap-2 uppercase tracking-tight">
+                <DollarSign className="w-5 h-5" strokeWidth={2.5} />
+                Rewards
+              </h3>
+              <div className="mt-4 rounded-lg border border-[#16A34A]/20 bg-[#F0FDF4] px-5 py-4">
+                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#16A34A]">
                   Reward Pool
                 </div>
-                <div className="mt-2 text-4xl font-display font-bold tracking-tight text-[var(--color-warm-900)]">
+                <div className="mt-2 text-4xl font-display font-bold tracking-tight text-[#16A34A]">
                   {formatUsdc(challenge.reward_amount)} USDC
                 </div>
               </div>
