@@ -67,17 +67,17 @@ export function SubmitSolution({
 
   if (!canSubmit) {
     return (
-      <div className="rounded-[2px] border border-black p-6 bg-white">
+      <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
         <div className="flex items-start gap-3">
           <Upload
-            className="mt-0.5 w-5 h-5 text-black/40 shrink-0"
+            className="mt-0.5 w-5 h-5 text-[var(--text-muted)] shrink-0"
             strokeWidth={1.75}
           />
           <div className="min-w-0">
-            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-black">
+            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[var(--color-warm-900)]">
               Submissions Closed
             </h3>
-            <p className="text-sm text-black/60 font-medium leading-relaxed">
+            <p className="text-sm text-[var(--text-muted)] font-medium leading-relaxed">
               {isPastDeadline
                 ? "Submission deadline has passed."
                 : `This challenge is ${challengeStatus} — submissions are not open.`}
@@ -246,8 +246,8 @@ export function SubmitSolution({
   }
 
   return (
-    <div className="rounded-[2px] border border-black p-6 bg-white">
-      <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2 text-black uppercase tracking-tight">
+    <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
+      <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2 text-[var(--color-warm-900)] uppercase tracking-tight">
         <Upload className="w-5 h-5" strokeWidth={2.5} />
         Submit Solution
       </h3>
@@ -280,39 +280,37 @@ export function SubmitSolution({
       ) : (
         <div className="space-y-5">
           {/* Wallet info + payout notice */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-black/10 bg-surface-base">
-            <div className="flex items-center gap-2 text-sm text-black/80 font-bold">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-[var(--border-subtle)] bg-[var(--surface-inset)] rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-[var(--color-warm-900)] font-bold">
               <Wallet className="w-4 h-4" strokeWidth={2} />
               <span className="font-mono">
                 {address?.slice(0, 6)}...{address?.slice(-4)}
               </span>
             </div>
-            <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-black/60">
+            <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-[var(--text-muted)]">
               ← Rewards paid here
             </span>
           </div>
 
           {/* Input mode toggle */}
-          <div className="flex border border-black p-0.5 bg-surface-base w-fit">
+          <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] w-fit rounded-lg">
             <button
               type="button"
               onClick={() => setInputMode("file")}
-              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors ${
-                inputMode === "file"
-                  ? "bg-black text-white"
-                  : "text-black/60 hover:text-black"
-              }`}
+              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "file"
+                  ? "bg-[var(--color-warm-900)] text-white"
+                  : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                }`}
             >
               Upload File
             </button>
             <button
               type="button"
               onClick={() => setInputMode("text")}
-              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors ${
-                inputMode === "text"
-                  ? "bg-black text-white"
-                  : "text-black/60 hover:text-black"
-              }`}
+              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "text"
+                  ? "bg-[var(--color-warm-900)] text-white"
+                  : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                }`}
             >
               Text Answer
             </button>
@@ -339,13 +337,12 @@ export function SubmitSolution({
               <button
                 type="button"
                 disabled={isSubmitting}
-                className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed cursor-pointer transition-colors ${
-                  dragging
-                    ? "border-black bg-black/10"
+                className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg cursor-pointer transition-colors ${dragging
+                    ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
                     : resultFile
-                      ? "border-black bg-black/5 hover:bg-black/5"
-                      : "border-black/30 hover:bg-black/5"
-                }`}
+                      ? "border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-inset)]"
+                      : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                  }`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragging(true);
@@ -372,38 +369,38 @@ export function SubmitSolution({
                 {resultFile ? (
                   <>
                     <FileCheck
-                      className="w-8 h-8 text-black"
+                      className="w-8 h-8 text-[var(--color-warm-900)]"
                       strokeWidth={1.5}
                     />
-                    <span className="text-sm font-bold text-black font-mono">
+                    <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
                       {resultFile.name}
                     </span>
-                    <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/60 bg-white border border-black/10 px-2 py-0.5">
+                    <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
                       {(resultFile.size / 1024).toFixed(1)} KB — click to change
                     </span>
                   </>
                 ) : (
                   <>
                     <FileUp
-                      className="w-8 h-8 text-black/40"
+                      className="w-8 h-8 text-[var(--text-muted)]"
                       strokeWidth={1.5}
                     />
-                    <span className="text-sm font-medium text-black/70">
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">
                       Drop your result file here or{" "}
-                      <span className="text-black font-bold underline underline-offset-2">
+                      <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
                         browse
                       </span>
                     </span>
-                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-black/40">
+                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
                       Encrypted locally before upload
                     </span>
-                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-black/40">
+                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
                       CSV, JSON, or any file format
                     </span>
                   </>
                 )}
               </button>
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
                 Hidden from the public. Agora-operated scoring can decrypt for
                 scoring.
               </p>
@@ -415,13 +412,13 @@ export function SubmitSolution({
             <div className="flex flex-col">
               <label
                 htmlFor="submission-text"
-                className="block text-[10px] font-bold font-mono tracking-wider uppercase text-black/70 mb-2"
+                className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
               >
                 Your answer
               </label>
               <textarea
                 id="submission-text"
-                className="w-full px-4 py-3 text-sm border font-mono border-black bg-white text-black placeholder:text-black/40 resize-none input-focus"
+                className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
                 rows={4}
                 placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
                 value={resultText}
@@ -431,10 +428,10 @@ export function SubmitSolution({
                 }}
                 disabled={isSubmitting}
               />
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
                 Encrypted locally, sealed to IPFS, hash recorded on-chain.
               </p>
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-black/50 mt-1">
+              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
                 Hidden from the public. Agora-operated scoring can decrypt for
                 scoring.
               </p>
@@ -463,7 +460,7 @@ export function SubmitSolution({
 
           {/* Status messages */}
           {isSuccess && (
-            <div className="flex items-start gap-3 p-4 border border-black bg-[#f4f4f0] text-black text-sm">
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
               <CheckCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -487,7 +484,7 @@ export function SubmitSolution({
           )}
 
           {isError && (
-            <div className="flex items-start gap-3 p-4 border border-black bg-white text-black text-sm">
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
               <AlertCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
                 strokeWidth={2}
