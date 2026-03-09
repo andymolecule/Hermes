@@ -2450,12 +2450,12 @@ export function PostClient() {
         <div className="preview-overlay" onClick={() => setShowPreview(false)}>
           <div className="preview-card" onClick={(e) => e.stopPropagation()}>
             <div className="preview-card-header">
-              <h3 style={{ margin: 0, fontSize: "0.95rem", fontFamily: "var(--font-heading)" }}>
-                <Eye size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+              <h3>
+                <Eye size={16} />
                 Review Before Publish
               </h3>
               <button type="button" onClick={() => setShowPreview(false)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)" }}>
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "4px" }}>
                 <X size={18} />
               </button>
             </div>
@@ -2468,14 +2468,14 @@ export function PostClient() {
               {state.tags.length > 0 && <div className="preview-row"><span className="preview-label">Keywords</span><span className="preview-value">{state.tags.join(", ")}</span></div>}
               <div className="preview-divider" />
               {!AVAILABLE_TYPE_OPTIONS.includes(state.type) && (
-                <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
+                <div className="preview-row"><span className="preview-label">Container</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{state.container || "—"}</span></div>
               )}
               {state.type === "reproducibility" && <div className="preview-row"><span className="preview-label">Official scoring rule</span><span className="preview-value">{scoringRuleLabel(state)}</span></div>}
-              {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Allowed drift</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.tolerance}</span></div>}
+              {state.type === "reproducibility" && state.tolerance && <div className="preview-row"><span className="preview-label">Allowed drift</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.tolerance}</span></div>}
               {state.type === "prediction" && state.metric && <div className="preview-row"><span className="preview-label">Metric</span><span className="preview-value">{state.metric}</span></div>}
-              {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.idColumn}</span></div>}
-              {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "monospace" }}>{state.labelColumn}</span></div>}
-              {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Hidden labels</span><span className="preview-value" style={{ fontFamily: "monospace", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
+              {state.type === "prediction" && state.idColumn && <div className="preview-row"><span className="preview-label">ID column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.idColumn}</span></div>}
+              {state.type === "prediction" && state.labelColumn && <div className="preview-row"><span className="preview-label">Label column</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)" }}>{state.labelColumn}</span></div>}
+              {state.type === "prediction" && state.hiddenLabels && <div className="preview-row"><span className="preview-label">Hidden labels</span><span className="preview-value" style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem" }}>{state.hiddenLabels.length > 40 ? state.hiddenLabels.slice(0, 40) + "…" : state.hiddenLabels}</span></div>}
               {state.submissionFormat && <div className="preview-row"><span className="preview-label">Submission format</span><span className="preview-value">{state.submissionFormat}</span></div>}
               {state.successDefinition && <div className="preview-row"><span className="preview-label">Success criteria</span><span className="preview-value">{state.successDefinition}</span></div>}
               {state.evaluationCriteria && <div className="preview-row span-full"><span className="preview-label">Evaluation</span><span className="preview-value">{state.evaluationCriteria}</span></div>}
@@ -2514,7 +2514,7 @@ export function PostClient() {
             ) : null}
             <div className="preview-actions">
               <button type="button" onClick={() => setShowPreview(false)}
-                className="dash-btn" style={{ fontSize: "0.8rem" }}>
+                className="dash-btn dash-btn-secondary" style={{ fontSize: "0.8rem" }}>
                 ← Edit
               </button>
               <div className="preview-actions-main">
@@ -2531,41 +2531,32 @@ export function PostClient() {
                       : allowanceReady
                         ? <Check size={14} />
                         : <Wallet size={14} />}
-                    <span className="preview-btn-label">
-                      {allowanceReady ? "USDC Approved" : "Approve USDC"}
-                    </span>
+                    {allowanceReady ? "USDC Approved" : "Approve USDC"}
                     <span className="preview-action-step">Step 1 of 2</span>
                   </button>
                 )}
-                <div className="preview-action-stack">
-                  <button
-                    type="button"
-                    disabled={
-                      isBusy
-                      || fundingState.status !== "ready"
-                      || !balanceReady
-                      || (fundingState.method === "approve" && !allowanceReady)
-                    }
-                    onClick={() => { void handleCreate(); }}
-                    className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : ""}`}
-                    style={{ fontSize: "0.8rem" }}
-                  >
-                    {isBusy
-                      ? <Loader2 size={14} className="animate-spin" />
-                      : <ArrowRight size={14} />}
-                    <span className="preview-btn-label">
-                      {fundingState.method === "permit" && !allowanceReady
-                        ? "Sign Permit & Create"
-                        : "Create Challenge"}
-                    </span>
-                    {fundingState.status === "ready" && fundingState.method === "approve" && (
-                      <span className="preview-action-step">Step 2 of 2</span>
-                    )}
-                  </button>
-                  {fundingState.status === "ready" && fundingState.method === "approve" && !allowanceReady && (
-                    <span className="preview-action-helper">Available after approval</span>
+                <button
+                  type="button"
+                  disabled={
+                    isBusy
+                    || fundingState.status !== "ready"
+                    || !balanceReady
+                    || (fundingState.method === "approve" && !allowanceReady)
+                  }
+                  onClick={() => { void handleCreate(); }}
+                  className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : ""}`}
+                  style={{ fontSize: "0.8rem" }}
+                >
+                  {isBusy
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <ArrowRight size={14} />}
+                  {fundingState.method === "permit" && !allowanceReady
+                    ? "Sign Permit & Create"
+                    : "Create Challenge"}
+                  {fundingState.status === "ready" && fundingState.method === "approve" && (
+                    <span className="preview-action-step">Step 2 of 2</span>
                   )}
-                </div>
+                </button>
               </div>
             </div>
           </div>
