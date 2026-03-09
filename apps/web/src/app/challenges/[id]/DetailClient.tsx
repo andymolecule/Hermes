@@ -67,13 +67,18 @@ function Section({
   title,
   icon: Icon,
   children,
+  id,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   children: React.ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--border-default)] bg-white p-6 sm:p-8">
+    <section
+      id={id}
+      className="rounded-lg border border-[var(--border-default)] bg-white p-6 sm:p-8"
+    >
       <h2 className="mb-4 flex items-center gap-2 text-xl font-display font-bold tracking-tight text-[var(--color-warm-900)]">
         <Icon className="h-5 w-5" strokeWidth={2.25} />
         {title}
@@ -601,7 +606,11 @@ export function DetailClient({ id }: { id: string }) {
                   )}
                 </Section>
 
-                <Section title="How You're Judged" icon={Target}>
+                <Section
+                  title="How You're Judged"
+                  icon={Target}
+                  id="how-you-are-judged"
+                >
                   <div className="space-y-5">
                     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                       <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
@@ -709,6 +718,35 @@ export function DetailClient({ id }: { id: string }) {
                             </div>
                             <div>
                               <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                                Read further
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-3">
+                                {challenge.spec_cid && (
+                                  <a
+                                    href={cidHref(challenge.spec_cid) ?? undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                  >
+                                    <span>Challenge spec</span>
+                                    <ExternalLink
+                                      className="h-3.5 w-3.5 shrink-0"
+                                      strokeWidth={1.75}
+                                    />
+                                  </a>
+                                )}
+                                {resultsVisible && (
+                                  <a
+                                    href="#public-verification"
+                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                  >
+                                    <span>Public verification</span>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                                 Scorer image ref
                               </div>
                               <p className="mt-1 text-sm leading-relaxed text-black/70">
@@ -718,6 +756,19 @@ export function DetailClient({ id }: { id: string }) {
                               <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
                                 {challenge.eval_image ?? "—"}
                               </div>
+                              {resultsVisible && (
+                                <p className="mt-3 text-sm leading-relaxed text-black/70">
+                                  After scoring begins, the{" "}
+                                  <a
+                                    href="#public-verification"
+                                    className="font-medium text-[var(--color-warm-900)] underline decoration-black/20 underline-offset-4 transition-colors hover:text-[#ff2e63] hover:decoration-[#ff2e63]"
+                                  >
+                                    Public Verification
+                                  </a>{" "}
+                                  section exposes the replay-grade scorer image
+                                  digest used for a scored submission.
+                                </p>
+                              )}
                             </div>
                           </div>
                         ) : (
@@ -750,7 +801,11 @@ export function DetailClient({ id }: { id: string }) {
             <TechnicalDetailsSection challenge={challenge} />
 
             {resultsVisible && verificationSubmission && (
-              <Section title="Public Verification" icon={ShieldCheck}>
+              <Section
+                title="Public Verification"
+                icon={ShieldCheck}
+                id="public-verification"
+              >
                 {verificationQuery.isLoading ? (
                   <div className="space-y-3">
                     <div className="skeleton h-4 w-full" />
