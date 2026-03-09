@@ -17,7 +17,19 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
 
-  /* Molecule Blue: Grey Neutrals (A-range) */
+  /* ── Warm Neutrals ── */
+  --color-warm-50: #FAFAF7;
+  --color-warm-100: #F4F4F0;
+  --color-warm-200: #E8E6E1;
+  --color-warm-300: #D4D1CB;
+  --color-warm-400: #B0ADA6;
+  --color-warm-500: #8A8680;
+  --color-warm-600: #6B6862;
+  --color-warm-700: #4A4844;
+  --color-warm-800: #2D2B28;
+  --color-warm-900: #1A1917;
+
+  /* ── Legacy grey aliases (kept for backward compat) ── */
   --color-grey-100: #F4F6F7;
   --color-grey-200: #C5C7D9;
   --color-grey-300: #A0A5B9;
@@ -29,7 +41,7 @@
   --color-grey-900: #0A1419;
   --color-grey-1000: #050B0D;
 
-  /* Molecule Blue: Core Blues (B-range) */
+  /* ── Blues (dark mode surfaces) ── */
   --color-blue-100: #F4F6FC;
   --color-blue-200: #BBC6F4;
   --color-blue-300: #8697F7;
@@ -42,7 +54,7 @@
   --color-blue-1000: #061726;
   --color-blue-1100: #0D0F20;
 
-  /* Molecule Blue: Cobalts (C-range) */
+  /* ── Cobalts (dark mode accents) ── */
   --color-cobalt-100: #E0F3FF;
   --color-cobalt-200: #1399F4;
   --color-cobalt-300: #0F86D9;
@@ -54,7 +66,7 @@
   --color-cobalt-900: #033A45;
   --color-cobalt-1000: #012B31;
 
-  /* Accents */
+  /* ── Accents ── */
   --color-purple-100: #F4EEFF;
   --color-purple-200: #D8C2FF;
   --color-purple-500: #9562F7;
@@ -63,7 +75,7 @@
   --color-turquoise: #11F1F1;
   --color-turquoise-dark: #00B392;
 
-  /* Semantic: Status */
+  /* ── Status ── */
   --color-success: #16A34A;
   --color-success-bg: #F0FDF4;
   --color-warning: #D97706;
@@ -78,28 +90,28 @@
 
 :root {
   /* Surfaces */
-  --surface-base: #f4f4f0;
+  --surface-base: var(--color-warm-100);
   --surface-default: #FFFFFF;
   --surface-elevated: #FFFFFF;
   --surface-overlay: rgba(255, 255, 255, 0.85);
-  --surface-inset: var(--color-blue-100);
+  --surface-inset: var(--color-warm-50);
 
   /* Accents */
   --accent-pink: #ff2e63;
 
   /* Text */
-  --text-primary: #000;
-  --text-secondary: var(--color-grey-500);
-  --text-tertiary: var(--color-grey-400);
-  --text-muted: var(--color-grey-300);
+  --text-primary: var(--color-warm-900);
+  --text-secondary: var(--color-warm-700);
+  --text-tertiary: var(--color-warm-600);
+  --text-muted: var(--color-warm-400);
   --text-accent: #000;
 
   /* Borders */
-  --border-default: var(--color-grey-200);
-  --border-subtle: var(--color-grey-100);
-  --border-strong: var(--color-grey-300);
-  --border-focus: var(--color-blue-400);
-  --border-accent: var(--color-cobalt-200);
+  --border-default: var(--color-warm-300);
+  --border-subtle: var(--color-warm-200);
+  --border-strong: var(--color-warm-500);
+  --border-focus: var(--color-warm-800);
+  --border-accent: var(--color-warm-700);
 
   /* Glass */
   --glass-bg: rgba(255, 255, 255, 0.70);

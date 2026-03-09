@@ -8,39 +8,39 @@ See @docs/design/design-system/DESIGN-SYSTEM.md for the full colour palette, fon
 
 ## Key Choices
 
-- **Palette:** Warm Neutral — a light beige base (`#f4f4f0`) with black text, warm grey borders, and white card surfaces. The UI is typographic and restrained; colour is used sparingly for status and accents.
+- **Palette:** Warm Neutral — beige base (`--color-warm-100 / #F4F4F0`) with near-black text, warm grey borders, and white card surfaces.
 - **Primary accent:** Black (`#000`) for CTAs and active states. Status colours (green/amber/red) for state feedback.
-- **Fonts:** Space Grotesk (headings/display), Inter (body), JetBrains Mono (numeric/crypto data, addresses, scores).
-- **Styling:** Tailwind CSS 4 classes + semantic utility classes (`.bg-surface-default`, `.text-primary`, etc.) bridging CSS custom properties defined in `globals.css`.
-- **Hover/focus:** CSS-only via `.card-hover`, `.input-focus`, `.btn-primary`, Tailwind `hover:` / `focus:` utilities. Avoid JS `onMouseEnter`/`onMouseLeave` for styling.
-- **Animation:** Keep Framer Motion (`motion/react`) to hero entrances and meaningful status feedback. Use CSS transitions for hover/focus states.
+- **Fonts:** Space Grotesk (headings/display), Inter (body), JetBrains Mono (numeric/crypto data).
+- **Styling:** Tailwind CSS 4 classes + semantic utility classes bridging CSS custom properties in `globals.css`.
+- **Hover/focus:** CSS-only. Avoid JS `onMouseEnter`/`onMouseLeave` for styling.
+- **Animation:** Framer Motion (`motion/react`) for hero entrances only. CSS transitions for hover/focus.
 - **Icons:** Lucide React.
-- **Themes:** Light (default), Dark. Theme set in `<head>` blocking script from `localStorage`.
+- **Themes:** Light (default), Dark. Set via `<head>` blocking script from `localStorage`.
 
-## Light Theme Tokens (`:root`)
+## Warm Neutral Token Scale
 
-| Token | Value | Notes |
-|-------|-------|-------|
-| `--surface-base` | `#f4f4f0` | Warm beige page background |
-| `--surface-default` | `#FFFFFF` | Card/panel backgrounds |
-| `--surface-elevated` | `#FFFFFF` | Elevated cards |
-| `--text-primary` | `#000` | Headings, labels |
-| `--text-secondary` | `grey-500` (`#464B52`) | Body text |
-| `--text-tertiary` | `grey-400` (`#646872`) | Captions, metadata |
-| `--text-muted` | `grey-300` (`#A0A5B9`) | Placeholder, disabled |
-| `--border-default` | `grey-200` (`#C5C7D9`) | Standard borders |
-| `--border-subtle` | `grey-100` (`#F4F6F7`) | Light dividers |
+| Token | Hex | Use |
+|-------|-----|-----|
+| `warm-50` | `#FAFAF7` | Lightest tint, inset wells |
+| `warm-100` | `#F4F4F0` | **Page background** |
+| `warm-200` | `#E8E6E1` | Subtle borders |
+| `warm-300` | `#D4D1CB` | Default borders |
+| `warm-400` | `#B0ADA6` | Muted/placeholder text |
+| `warm-500` | `#8A8680` | Tertiary text |
+| `warm-600` | `#6B6862` | Secondary text |
+| `warm-700` | `#4A4844` | Primary body text |
+| `warm-800` | `#2D2B28` | Headings |
+| `warm-900` | `#1A1917` | Near-black |
 
 ## Buttons
 
-- **Primary CTA:** Black background (`#000`), white text, 1px black border. Hover lifts with `translateY(-2px)`.
-- **Secondary:** Transparent background, black text, 2px black border. Hover inverts to black bg / white text.
-- **Disabled:** `#d4d4d8` background, `#71717a` text.
-- **Border radius:** `4px` (subtle, not rounded).
+- **Primary:** `#000` bg, white text, `4px` radius, `36px` height.
+- **Secondary:** Transparent bg, black text, 2px black border. Hover inverts.
+- **Disabled:** `#d4d4d8` bg, `#71717a` text.
 
 ## Implementation
 
-- Framework: Next.js 14 (app router), SSR enabled
+- Next.js 14 (app router), SSR enabled
 - `ClientLayout` wraps children in `WebProviders` (wagmi/RainbowKit, client-only)
 - Status styles shared via `lib/status-styles.ts`
-- Desktop-first, responsive with mobile hamburger menu at `md` breakpoint
+- Desktop-first, responsive at `md` breakpoint
