@@ -273,7 +273,7 @@ export async function canonicalizeChallengeSpec(
   let resolvedImage =
     spec.eval_spec?.engine_digest?.trim() || scoringContainer;
   if (
-    options.resolveOfficialPresetDigests !== false &&
+    options.resolveOfficialPresetDigests === true &&
     inferredPresetId &&
     inferredPresetId !== "custom" &&
     isOfficialContainer(scoringContainer) &&

@@ -638,6 +638,7 @@ for (const challengeType of CHALLENGE_TYPES) {
       dispute_window_hours: 168,
     }),
     {
+      resolveOfficialPresetDigests: true,
       fetchImpl: (async () =>
         new Response(null, {
           status: 200,
