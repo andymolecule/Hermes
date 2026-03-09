@@ -416,10 +416,10 @@ export function DetailClient({ id }: { id: string }) {
           className="group inline-flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-white px-4 py-2 text-sm font-bold font-mono uppercase tracking-wider text-[var(--color-warm-900)] transition-colors duration-200 hover:bg-[var(--color-warm-900)] hover:text-white hover:border-[var(--color-warm-900)]"
         >
           <ArrowLeft
-            className="h-4 w-4 transition-colors"
+            className="h-4 w-4 text-[var(--color-warm-900)] transition-colors group-hover:text-white"
             strokeWidth={2}
           />
-          <span className="transition-colors">
+          <span className="text-[var(--color-warm-900)] transition-colors group-hover:text-white">
             Back
           </span>
         </Link>
