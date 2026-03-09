@@ -2534,7 +2534,7 @@ a:hover {
 
 .preview-actions-main {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.75rem;
 }
 
@@ -2545,18 +2545,24 @@ a:hover {
   gap: 0.3rem;
 }
 
-.preview-action-step,
-.preview-action-helper {
+.preview-action-step {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-tertiary);
+  border: 1px solid var(--border-default, #e5e7eb);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  margin-left: 0.25rem;
+  white-space: nowrap;
 }
 
 .preview-action-helper {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
   letter-spacing: 0.08em;
-  text-transform: none;
+  color: var(--text-tertiary);
 }
 
 .preview-status {
