@@ -35,11 +35,11 @@ These fixtures are aligned to the current scorer implementation.
 Important current constraint:
 - the prediction scorer expects `ground_truth.csv` with columns `id,label`
 - the submission scorer expects `submission.csv` with columns `id,prediction`
-- the current web UI exposes `ID column` and `Label column`, but the scorer does not actually honor arbitrary custom column names yet
+- the current web UI exposes `Row ID column` and `Target column`, but the scorer does not actually honor arbitrary custom column names yet
 
 For human UI testing, use the default prediction field names:
-- `ID column`: `id`
-- `Label column`: `prediction`
+- `Row ID column`: `id`
+- `Target column`: `prediction`
 
 Do not treat those two UI fields as truly configurable yet.
 
@@ -49,9 +49,9 @@ Do not treat those two UI fields as truly configurable yet.
 
 | File | Use in UI | Purpose |
 |------|-----------|---------|
-| `train.csv` | Training Data | Public training set with labels |
-| `test.csv` | Test Data | Public held-out inputs with no labels |
-| `hidden_labels.csv` | Hidden Labels | Private evaluation labels used during scoring |
+| `train.csv` | Training dataset (with labels) | Public training set with labels |
+| `test.csv` | Evaluation inputs (without labels) | Public held-out inputs with no labels |
+| `hidden_labels.csv` | Hidden scoring labels | Private evaluation labels used during scoring |
 
 ### Solver submission fixtures
 
@@ -77,47 +77,49 @@ Do not treat those two UI fields as truly configurable yet.
 
 Use these values in `/post`:
 
-### Section 1: Problem
-- Title: `Predict assay response from tabular feature measurements`
-- Domain: `Omics`
-- Description:
+### Step 1: Scientific Brief
+- Bounty title: `Predict assay response from tabular feature measurements`
+- Challenge brief:
   `We provide a public training set of samples with numeric feature measurements and observed response values.`
   `Your task is to predict the response for a held-out test set using the same feature schema.`
   `Submissions must be a CSV with columns id,prediction. Scores are computed against private labels using R².`
-- Tags: `prediction, regression, assay`
+- Reference paper or protocol link (optional): add a paper, notebook, or methods page if you have one
+- Marketplace category: `Omics`
+- Keywords (optional): `prediction, regression, assay`
 
 Why this is a better test post:
 - it sounds like a normal applied science prediction bounty
 - it tells solvers what the target is, what format to submit, and how scoring works
 - it is still simple enough to debug end to end
 
-### Section 2: Data
-- Training Data: `train.csv`
-- Test Data: `test.csv`
-- Hidden Labels: `hidden_labels.csv`
+### Step 2: Data & Reference Artifacts
+- Training dataset (with labels): `train.csv`
+- Evaluation inputs (without labels): `test.csv`
+- Hidden scoring labels: `hidden_labels.csv`
 
 Why this matters:
 - verifies the canonical prediction path where hidden labels become the evaluation bundle
 - matches the current scoreability gate for prediction challenges
 - mirrors the common public-train / public-test / private-labels bounty pattern
 
-### Section 3: Evaluation
-- ID column: `id`
-- Label column: `prediction`
-- Metric: `R²`
-- Scoring detail: `Predictions are matched to the held-out test set by id and evaluated against private labels using R².`
-- Minimum score: `0`
+### Step 3: Submission & Scoring
+- Submission artifact: fixed to CSV predictions only
+- Row ID column: `id`
+- Target column: `prediction`
+- Primary metric: `R²`
+- Solver notes (optional):
+  `Predictions are matched to the held-out test set by id and evaluated against private labels using R².`
 
 Why this matters:
 - matches the actual scorer contract
 - avoids the current runtime mismatch around custom column names
 - gives solvers a realistic, explicit submission contract
 
-### Section 4: Reward & Execution
-- Reward: `10`
-- Winner selection: `Top 3`
-- Deadline: `7 days`
-- Dispute window: pick any dropdown option you want to validate
+### Step 4: Reward & Timeline
+- Reward pool: `10`
+- Payout rule: `Top 3`
+- Submission window: `7 days`
+- Review window before payout: pick any dropdown option you want to validate
 
 Why this matters:
 - the frontend/backend now align to the selected dropdown value instead of silently forcing a 168h minimum
@@ -223,13 +225,13 @@ Expected current behavior:
 
 | UI field | Recommended value | Why |
 |----------|-------------------|-----|
-| Training Data | `train.csv` | Gives solvers labeled examples they can train on |
-| Test Data | `test.csv` | Defines the held-out rows they must predict |
-| Hidden Labels | `hidden_labels.csv` | Provides the private ground truth used only at scoring time |
-| ID column | `id` | Must match the current scorer contract and the test set key |
-| Label column | `prediction` | Must match the current scorer contract for solver uploads |
-| Metric | `R²` | Matches the scorer's primary ranking score |
-| Minimum score | `0` | Keeps the challenge permissive while you test success and failure cases |
+| Training dataset (with labels) | `train.csv` | Gives solvers labeled examples they can train on |
+| Evaluation inputs (without labels) | `test.csv` | Defines the held-out rows they must predict |
+| Hidden scoring labels | `hidden_labels.csv` | Provides the private ground truth used only at scoring time |
+| Row ID column | `id` | Must match the current scorer contract and the test set key |
+| Target column | `prediction` | Must match the current scorer contract for solver uploads |
+| Primary metric | `R²` | Matches the scorer's primary ranking score |
+| Payout rule | `Top 3` | Reflects the current reward-distribution control in the form |
 
 ## If You Want It To Feel More Like A Real Bounty
 
