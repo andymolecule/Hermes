@@ -16,8 +16,7 @@
     "test": "node --import tsx src/tests/fetch-resilience.ts && node --import tsx src/tests/pinata-roundtrip.ts"
   },
   "dependencies": {
-    "@agora/common": "workspace:*",
-    "@pinata/sdk": "^2.1.0"
+    "@agora/common": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.2"

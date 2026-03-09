@@ -18,7 +18,6 @@
     "@agora/ipfs": "workspace:*",
     "@agora/db": "workspace:*",
     "@agora/chain": "workspace:*",
-    "@pinata/sdk": "^2.1.0",
     "@supabase/supabase-js": "^2.97.0",
     "chalk": "^5.4.1",
     "commander": "^12.1.0",

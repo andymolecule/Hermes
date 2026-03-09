@@ -1,7 +1,28 @@
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { loadIpfsConfig } from "@agora/common";
-import pinataSDK from "@pinata/sdk";
+
+const PINATA_UPLOAD_URL = "https://uploads.pinata.cloud/v3/files";
+const PINATA_PUBLIC_FILES_URL = "https://api.pinata.cloud/v3/files/public";
+
+interface PinataUploadResponse {
+  data?: {
+    cid?: string;
+  };
+  error?: unknown;
+}
+
+interface PinataPublicFile {
+  id?: string;
+  cid?: string;
+}
+
+interface PinataListFilesResponse {
+  data?: {
+    files?: PinataPublicFile[];
+  };
+  error?: unknown;
+}
 
 function normalizeIpfsError(error: unknown): Error {
   if (error instanceof Error) {
@@ -41,21 +62,87 @@ function normalizeIpfsError(error: unknown): Error {
   return new Error(String(error));
 }
 
-function createClient() {
+function getPinataJwt() {
   const config = loadIpfsConfig();
   if (!config.AGORA_PINATA_JWT) {
     throw new Error("AGORA_PINATA_JWT is required to pin to IPFS.");
   }
-  return new pinataSDK({ pinataJWTKey: config.AGORA_PINATA_JWT });
+  return config.AGORA_PINATA_JWT;
 }
 
-let cachedClient: ReturnType<typeof createClient> | null = null;
+function authHeaders() {
+  return {
+    Authorization: `Bearer ${getPinataJwt()}`,
+  };
+}
 
-function getClient() {
-  if (!cachedClient) {
-    cachedClient = createClient();
+async function parseJsonSafely(response: Response) {
+  try {
+    return (await response.json()) as Record<string, unknown>;
+  } catch {
+    return null;
   }
-  return cachedClient;
+}
+
+async function throwPinataHttpError(response: Response): Promise<never> {
+  const payload = await parseJsonSafely(response);
+  const message =
+    (payload && typeof payload.error === "string" && payload.error) ||
+    (payload && typeof payload.message === "string" && payload.message) ||
+    `Pinata request failed: ${response.status}`;
+  throw new Error(message);
+}
+
+async function uploadPublicFile(file: File, name: string): Promise<string> {
+  const form = new FormData();
+  form.set("network", "public");
+  form.set("name", name);
+  form.set("file", file, name);
+
+  const response = await fetch(PINATA_UPLOAD_URL, {
+    method: "POST",
+    headers: authHeaders(),
+    body: form,
+  });
+
+  if (!response.ok) {
+    await throwPinataHttpError(response);
+  }
+
+  const payload = (await response.json()) as PinataUploadResponse;
+  const cid = payload.data?.cid;
+  if (!cid) {
+    throw new Error("Pinata upload response did not include a CID.");
+  }
+  return `ipfs://${cid}`;
+}
+
+async function listPublicFilesByCid(cid: string): Promise<PinataPublicFile[]> {
+  const url = new URL(PINATA_PUBLIC_FILES_URL);
+  url.searchParams.set("cid", cid);
+  url.searchParams.set("limit", "100");
+
+  const response = await fetch(url, {
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    await throwPinataHttpError(response);
+  }
+
+  const payload = (await response.json()) as PinataListFilesResponse;
+  return payload.data?.files ?? [];
+}
+
+async function deletePublicFileById(id: string): Promise<void> {
+  const response = await fetch(`${PINATA_PUBLIC_FILES_URL}/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+
+  if (!response.ok) {
+    await throwPinataHttpError(response);
+  }
 }
 
 export async function pinJSON<T extends Record<string, unknown>>(
@@ -63,11 +150,11 @@ export async function pinJSON<T extends Record<string, unknown>>(
   payload: T,
 ): Promise<string> {
   try {
-    const client = getClient();
-    const result = await client.pinJSONToIPFS(payload, {
-      pinataMetadata: { name },
+    const json = JSON.stringify(payload, null, 2);
+    const file = new File([json], `${name}.json`, {
+      type: "application/json",
     });
-    return `ipfs://${result.IpfsHash}`;
+    return await uploadPublicFile(file, `${name}.json`);
   } catch (error) {
     throw normalizeIpfsError(error);
   }
@@ -78,15 +165,9 @@ export async function pinFile(
   name?: string,
 ): Promise<string> {
   try {
-    const client = getClient();
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`File not found: ${filePath}`);
-    }
-    const stream = fs.createReadStream(filePath);
-    const result = await client.pinFileToIPFS(stream, {
-      pinataMetadata: { name: name ?? path.basename(filePath) },
-    });
-    return `ipfs://${result.IpfsHash}`;
+    const safeName = name ?? path.basename(filePath);
+    const file = new File([await fs.readFile(filePath)], safeName);
+    return await uploadPublicFile(file, safeName);
   } catch (error) {
     throw normalizeIpfsError(error);
   }
@@ -94,27 +175,14 @@ export async function pinFile(
 
 export async function unpinCid(cid: string): Promise<void> {
   try {
-    const client = getClient();
     const hash = cid.replace("ipfs://", "");
-    await client.unpin(hash);
-  } catch (error) {
-    throw normalizeIpfsError(error);
-  }
-}
-
-export async function pinDirectory(
-  dirPath: string,
-  name?: string,
-): Promise<string> {
-  try {
-    const client = getClient();
-    if (!fs.existsSync(dirPath)) {
-      throw new Error(`Directory not found: ${dirPath}`);
-    }
-    const result = await client.pinFromFS(dirPath, {
-      pinataMetadata: { name: name ?? path.basename(dirPath) },
-    });
-    return `ipfs://${result.IpfsHash}`;
+    const files = await listPublicFilesByCid(hash);
+    await Promise.all(
+      files
+        .map((file) => file.id)
+        .filter((id): id is string => Boolean(id))
+        .map((id) => deletePublicFileById(id)),
+    );
   } catch (error) {
     throw normalizeIpfsError(error);
   }
