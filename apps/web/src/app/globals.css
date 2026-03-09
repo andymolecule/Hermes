@@ -1555,7 +1555,8 @@ a:hover {
 
 .choice-grid.compact {
   grid-template-columns: repeat(6, 1fr);
-  gap: 0.65rem;
+  gap: 0.5rem;
+  justify-items: center;
 }
 
 @media (max-width: 768px) {
@@ -1580,12 +1581,13 @@ a:hover {
 
 .choice-card.compact {
   min-height: 0;
-  padding: 0.7rem 0.85rem;
-  gap: 0.2rem;
+  padding: 0.4rem 0.65rem;
+  gap: 0.15rem;
   border-radius: 999px;
   background: #FBFBFC;
   align-items: center;
-  justify-items: start;
+  justify-items: center;
+  text-align: center;
 }
 
 .choice-card:hover {
@@ -1607,8 +1609,8 @@ a:hover {
 }
 
 .choice-card.compact .choice-card-title {
-  font-size: 0.84rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--text-secondary);
   letter-spacing: -0.01em;
 }

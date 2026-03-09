@@ -1686,7 +1686,7 @@ export function PostClient() {
         <SectionHeader step={1} title="Scientific Brief" />
         <div className="form-section-body">
           <div className="form-grid">
-            <FormField label="Bounty title" className="span-full measure-medium">
+            <FormField label="Bounty title" className="span-full">
               <input className="form-input" placeholder={scientistCopy.titlePlaceholder}
                 value={state.title} onChange={(e) => setState((s) => ({ ...s, title: e.target.value }))} />
             </FormField>
@@ -1697,7 +1697,7 @@ export function PostClient() {
             <FormField
               label="Reference paper or protocol link (optional)"
               hint="Link the publication, methods page, notebook, or protocol that defines the target artifact."
-              className="span-full measure-medium"
+              className="span-full"
             >
               <input className="form-input" placeholder="https://..."
                 value={state.referenceLink} onChange={(e) => setState((s) => ({ ...s, referenceLink: e.target.value }))} />
