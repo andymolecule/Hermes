@@ -1554,8 +1554,14 @@ a:hover {
 }
 
 .choice-grid.compact {
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(6, 1fr);
   gap: 0.65rem;
+}
+
+@media (max-width: 768px) {
+  .choice-grid.compact {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .choice-card {
