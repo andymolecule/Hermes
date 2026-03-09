@@ -228,6 +228,93 @@ function containerHref(value: string | null | undefined) {
   return null;
 }
 
+type ScorerTransparencyInfo = {
+  label: string;
+  summary: string;
+  details: string[];
+  sourceLinks: Array<{ label: string; href: string }>;
+};
+
+function getScorerTransparencyInfo(
+  value: string | null | undefined,
+): ScorerTransparencyInfo | null {
+  if (!value) return null;
+
+  const ref = value.toLowerCase();
+  if (ref.includes("repro-scorer")) {
+    return {
+      label: "Agora Repro Scorer",
+      summary:
+        "Compares the submitted CSV against the posted reference output row by row using deterministic rules.",
+      details: [
+        "Requires every reference-output column to be present in the submitted CSV.",
+        "Reorders submission columns to match the reference output before comparison.",
+        "Uses absolute numeric tolerance for numeric values.",
+        "Uses exact equality for non-numeric values.",
+        "Writes deterministic JSON score output for reproducible replay.",
+      ],
+      sourceLinks: [
+        {
+          label: "score.py",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/score.py",
+        },
+        {
+          label: "Dockerfile",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/Dockerfile",
+        },
+      ],
+    };
+  }
+
+  if (ref.includes("regression-scorer")) {
+    return {
+      label: "Agora Regression Scorer",
+      summary:
+        "Matches submitted predictions to the posted ground-truth labels by row id and computes standard regression metrics.",
+      details: [
+        "Requires id and prediction columns in the submission and id and label columns in the ground truth.",
+        "Matches rows by id rather than by file order.",
+        "Computes R², RMSE, MAE, Pearson, and Spearman metrics.",
+        "Uses clamped R² as the primary score for payout and ranking.",
+        "Writes deterministic JSON score output for reproducible replay.",
+      ],
+      sourceLinks: [
+        {
+          label: "score.py",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/score.py",
+        },
+        {
+          label: "Dockerfile",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/Dockerfile",
+        },
+      ],
+    };
+  }
+
+  if (ref.includes("docking-scorer")) {
+    return {
+      label: "Agora Docking Scorer",
+      summary:
+        "Reserved for the official docking scorer image family, but the current implementation is still a placeholder.",
+      details: [
+        "The container reference is public, but the docking scoring logic in this repo is not yet a full solver-facing implementation.",
+      ],
+      sourceLinks: [
+        {
+          label: "score.py",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/score.py",
+        },
+        {
+          label: "Dockerfile",
+          href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/Dockerfile",
+        },
+      ],
+    };
+  }
+
+  return null;
+}
+
 function LinkedValue({
   href,
   value,
@@ -400,6 +487,7 @@ export function DetailClient({ id }: { id: string }) {
   const verifyCommand = hasPublicVerificationArtifacts && verification
     ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
     : null;
+  const scorerInfo = getScorerTransparencyInfo(challenge.eval_image);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -569,14 +657,80 @@ export function DetailClient({ id }: { id: string }) {
                       </div>
                       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-5 py-4">
                         <div className="mb-2 text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                          Scorer image
+                          Official scorer
                         </div>
-                        <p className="text-sm leading-relaxed text-black/70">
-                          Exact OCI container image used for official scoring.
-                        </p>
-                        <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                          {challenge.eval_image ?? "—"}
-                        </div>
+                        {scorerInfo ? (
+                          <div className="space-y-4">
+                            <div>
+                              <div className="text-base font-bold text-[var(--color-warm-900)]">
+                                {scorerInfo.label}
+                              </div>
+                              <p className="mt-1 text-sm leading-relaxed text-black/75">
+                                {scorerInfo.summary}
+                              </p>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                                What this scorer does
+                              </div>
+                              <ul className="mt-2 space-y-2 text-sm leading-relaxed text-black/75">
+                                {scorerInfo.details.map((detail) => (
+                                  <li
+                                    key={detail}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-warm-900)]" />
+                                    <span>{detail}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                                Source code
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-3">
+                                {scorerInfo.sourceLinks.map((link) => (
+                                  <a
+                                    key={link.href}
+                                    href={link.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                  >
+                                    <span>{link.label}</span>
+                                    <ExternalLink
+                                      className="h-3.5 w-3.5 shrink-0"
+                                      strokeWidth={1.75}
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                                Scorer image ref
+                              </div>
+                              <p className="mt-1 text-sm leading-relaxed text-black/70">
+                                Exact OCI container image reference used by the
+                                worker for official scoring.
+                              </p>
+                              <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
+                                {challenge.eval_image ?? "—"}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <p className="text-sm leading-relaxed text-black/70">
+                              Exact OCI container image reference used by the
+                              worker for official scoring.
+                            </p>
+                            <div className="break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
+                              {challenge.eval_image ?? "—"}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
