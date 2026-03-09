@@ -2629,7 +2629,9 @@ a:hover {
 .preview-actions-main {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .preview-action-stack {
@@ -2641,16 +2643,17 @@ a:hover {
 
 .preview-action-step {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.08em;
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  padding: 0.1rem 0.35rem;
-  margin-left: var(--space-2);
+  padding: 0.1rem 0.3rem;
+  margin-left: var(--space-1);
   white-space: nowrap;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .dash-btn-primary .preview-action-step {

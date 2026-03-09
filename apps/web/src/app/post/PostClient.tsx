@@ -2544,7 +2544,7 @@ export function PostClient() {
                     || (fundingState.method === "approve" && !allowanceReady)
                   }
                   onClick={() => { void handleCreate(); }}
-                  className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : ""}`}
+                  className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
                   style={{ fontSize: "0.8rem" }}
                 >
                   {isBusy
