@@ -5,7 +5,6 @@ import {
   CHALLENGE_STATUS,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
-  computeSubmissionResultHash,
   importSubmissionSealPublicKey,
   isValidPinnedSpecCid,
   sealSubmission,
@@ -30,7 +29,11 @@ import {
 import { useRef, useState } from "react";
 import type { Abi } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { createSubmissionRecord, getSubmissionPublicKey } from "../lib/api";
+import {
+  createSubmissionIntent,
+  createSubmissionRecord,
+  getSubmissionPublicKey,
+} from "../lib/api";
 import { CHAIN_ID } from "../lib/config";
 import { ScoringTrustNotice } from "./ScoringTrustNotice";
 
@@ -264,7 +267,7 @@ export function SubmitSolution({
     if (!submissionPublicKey) {
       setStatus(
         sealingUnavailableMessage ??
-        "Private answer protection is unavailable. Retry later.",
+          "Private answer protection is unavailable. Retry later.",
       );
       return;
     }
@@ -342,7 +345,13 @@ export function SubmitSolution({
         throw new Error("Pinned CID is invalid.");
       }
 
-      const resultHash = computeSubmissionResultHash(cid);
+      setStatus("Reserving submission intent...");
+      const submissionIntent = await createSubmissionIntent({
+        challengeId,
+        solverAddress: normalizedAddress as `0x${string}`,
+        resultCid: cid,
+        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+      });
       const contractVersion = (await publicClient.readContract({
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
@@ -360,22 +369,34 @@ export function SubmitSolution({
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
         functionName: "submit",
-        args: [resultHash],
+        args: [submissionIntent.resultHash],
       });
 
       setStatus("Waiting for confirmation...");
       await publicClient.waitForTransactionReceipt({ hash: tx });
 
-      setStatus("Recording submission metadata...");
-      await createSubmissionRecord({
-        challengeId,
-        resultCid: cid,
-        txHash: tx,
-        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-      });
+      let metadataWarning: string | null = null;
+      try {
+        setStatus("Confirming submission metadata...");
+        await createSubmissionRecord({
+          challengeId,
+          resultCid: cid,
+          txHash: tx,
+          resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+        });
+      } catch (registrationError) {
+        metadataWarning =
+          registrationError instanceof Error
+            ? registrationError.message
+            : "Metadata reconciliation may take a minute.";
+      }
 
       setTxHash(tx);
-      setStatus(`success: Submission confirmed! tx=${tx}`);
+      setStatus(
+        metadataWarning
+          ? `success: Submission confirmed! tx=${tx} Metadata reconciliation may take a minute.`
+          : `success: Submission confirmed! tx=${tx}`,
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Submission failed.";
@@ -472,20 +493,22 @@ export function SubmitSolution({
                 <button
                   type="button"
                   onClick={() => setInputMode("file")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "file"
-                    ? "bg-[var(--color-warm-900)] text-white"
-                    : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                    }`}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                    inputMode === "file"
+                      ? "bg-[var(--color-warm-900)] text-white"
+                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                  }`}
                 >
                   Upload File
                 </button>
                 <button
                   type="button"
                   onClick={() => setInputMode("text")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "text"
-                    ? "bg-[var(--color-warm-900)] text-white"
-                    : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                    }`}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                    inputMode === "text"
+                      ? "bg-[var(--color-warm-900)] text-white"
+                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                  }`}
                 >
                   Text Answer
                 </button>
@@ -505,12 +528,13 @@ export function SubmitSolution({
                   <button
                     type="button"
                     disabled={dropZoneDisabled}
-                    className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${dragging
-                      ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
-                      : resultFile
-                        ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
-                        : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
-                      } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                    className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${
+                      dragging
+                        ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
+                        : resultFile
+                          ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
+                          : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                    } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                     onDragEnter={handleDragEnter}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
@@ -536,7 +560,8 @@ export function SubmitSolution({
                             Sealed locally
                           </span>
                           <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
-                            {(resultFile.size / 1024).toFixed(1)} KB — click to change
+                            {(resultFile.size / 1024).toFixed(1)} KB — click to
+                            change
                           </span>
                         </div>
                       </>

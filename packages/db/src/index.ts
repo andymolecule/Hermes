@@ -32,6 +32,7 @@ export * from "./queries/indexer-cursors.js";
 export * from "./queries/proofs.js";
 export * from "./queries/payouts.js";
 export * from "./queries/score-jobs.js";
+export * from "./queries/submission-intents.js";
 export * from "./queries/worker-runtime.js";
 export * from "./queries/analytics.js";
 export * from "./queries/leaderboard.js";

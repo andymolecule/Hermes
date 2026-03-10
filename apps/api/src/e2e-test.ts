@@ -22,7 +22,6 @@ import {
 } from "@agora/chain";
 import {
   SUBMISSION_RESULT_FORMAT,
-  computeSubmissionResultHash,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
@@ -402,7 +401,33 @@ export async function runLifecycleE2E() {
     `3. Submission payload pinned${useSealedSubmission ? " (sealed path)" : ""}`,
   );
 
-  const resultHash = computeSubmissionResultHash(submissionCid);
+  const intentResponse = await app.request(
+    new Request("http://localhost/api/submissions/intent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.id,
+        solverAddress: account.address.toLowerCase(),
+        resultCid: submissionCid,
+        resultFormat: useSealedSubmission
+          ? SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
+          : SUBMISSION_RESULT_FORMAT.plainV0,
+      }),
+    }),
+  );
+  if (intentResponse.status !== 200) {
+    throw new Error(
+      `Submission intent creation failed (${intentResponse.status}): ${await intentResponse.text()}`,
+    );
+  }
+  const intentBody = (await intentResponse.json()) as {
+    data?: { resultHash?: `0x${string}` };
+  };
+  const resultHash = intentBody.data?.resultHash;
+  if (!resultHash) {
+    throw new Error("Submission intent route succeeded without a result hash.");
+  }
+
   const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
   console.log("4. Submission posted:", submitTxHash);

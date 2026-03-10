@@ -1,5 +1,8 @@
 import { getChallengeLifecycleState, getPublicClient } from "@agora/chain";
-import { CHALLENGE_STATUS } from "@agora/common";
+import {
+  CHALLENGE_STATUS,
+  SUBMISSION_RESULT_CID_MISSING_ERROR,
+} from "@agora/common";
 import {
   completeJob,
   type createSupabaseClient,
@@ -173,7 +176,7 @@ export async function processJob(
       await resolvedDeps.failJob(
         db,
         job.id,
-        "missing_result_cid_onchain_submission",
+        SUBMISSION_RESULT_CID_MISSING_ERROR,
         job.max_attempts,
         job.max_attempts,
       );

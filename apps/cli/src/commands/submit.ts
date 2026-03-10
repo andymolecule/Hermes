@@ -9,14 +9,10 @@ import {
 import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
-  computeSubmissionResultHash,
   importSubmissionSealPublicKey,
   sealSubmission,
 } from "@agora/common";
-import {
-  createSupabaseClient,
-  getChallengeById,
-} from "@agora/db";
+import { createSupabaseClient, getChallengeById } from "@agora/db";
 import { pinJSON } from "@agora/ipfs";
 import { Command } from "commander";
 import {
@@ -73,6 +69,42 @@ async function registerSubmissionWithApi(input: {
     );
   }
   return body;
+}
+
+async function createSubmissionIntentWithApi(input: {
+  apiUrl: string;
+  challengeId: string;
+  solverAddress: `0x${string}`;
+  resultCid: string;
+  resultFormat: "sealed_submission_v2";
+}): Promise<{ resultHash: `0x${string}` }> {
+  const response = await fetch(
+    `${input.apiUrl.replace(/\/$/, "")}/api/submissions/intent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: input.challengeId,
+        solverAddress: input.solverAddress,
+        resultCid: input.resultCid,
+        resultFormat: input.resultFormat,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Failed to create submission intent with API (${response.status}): ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as {
+    data?: { resultHash?: `0x${string}` };
+  };
+  if (!body.data?.resultHash) {
+    throw new Error(
+      "Submission intent response was missing the result hash. Next step: retry the submission preparation request.",
+    );
+  }
+  return { resultHash: body.data.resultHash };
 }
 
 export function buildSubmitCommand() {
@@ -183,7 +215,13 @@ export function buildSubmitCommand() {
           throw new Error("Deadline passed.");
         }
 
-        const resultHash = computeSubmissionResultHash(resultCid);
+        const submissionIntent = await createSubmissionIntentWithApi({
+          apiUrl: process.env.AGORA_API_URL as string,
+          challengeId: challenge.id,
+          solverAddress: walletAddress as `0x${string}`,
+          resultCid,
+          resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+        });
 
         const submitSpinner =
           opts.format === "json"
@@ -191,7 +229,7 @@ export function buildSubmitCommand() {
             : createSpinner("Submitting on-chain...");
         const txHash = await submitChallengeResult(
           challenge.contract_address as `0x${string}`,
-          resultHash,
+          submissionIntent.resultHash,
         );
         submitSpinner?.succeed(`Submission tx sent: ${txHash}`);
 
@@ -203,14 +241,22 @@ export function buildSubmitCommand() {
           receipt,
           challenge.contract_address as `0x${string}`,
         );
-        const registration = await registerSubmissionWithApi({
-          apiUrl: process.env.AGORA_API_URL as string,
-          challengeId: challenge.id,
-          resultCid,
-          txHash,
-          resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-        });
-        const registrationWarning = registration.warning ?? null;
+        let registrationWarning: string | null = null;
+        try {
+          const registration = await registerSubmissionWithApi({
+            apiUrl: process.env.AGORA_API_URL as string,
+            challengeId: challenge.id,
+            resultCid,
+            txHash,
+            resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+          });
+          registrationWarning = registration.warning ?? null;
+        } catch (error) {
+          registrationWarning =
+            error instanceof Error
+              ? error.message
+              : "Submission metadata confirmation may take a minute.";
+        }
         if (registrationWarning && opts.format !== "json") {
           printWarning(registrationWarning);
         }

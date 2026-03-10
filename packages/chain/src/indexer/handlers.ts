@@ -2,58 +2,52 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  getSubmissionLimitViolation,
   parseCsvHeaders,
-  resolveSubmissionLimits,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
 import {
-  clearChallengeSettlement,
   buildChallengeInsert,
-  countSubmissionsBySolverForChallenge,
-  countSubmissionsForChallenge,
-  createScoreJob,
+  clearChallengeSettlement,
   type createSupabaseClient,
   deleteChallengeById,
   deleteSubmissionsFromOnChainSubId,
   getIndexerCursor,
   isEventIndexed,
-  markEventIndexed,
-  markScoreJobSkipped,
   markChallengePayoutClaimed,
+  markEventIndexed,
+  reconcileSubmissionIntentMatch,
   replaceChallengePayouts,
   setChallengeFinalized,
   setIndexerCursor,
-  syncExistingSubmissionOnChainState,
-  upsertChallengePayoutAllocation,
   updateChallengeStatus,
   upsertChallenge,
+  upsertChallengePayoutAllocation,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getText } from "@agora/ipfs";
+import { type Abi, parseEventLogs } from "viem";
+import {
+  fetchValidatedChallengeSpec,
+  loadChallengeDefinitionFromChain,
+} from "../challenge-definition.js";
 import {
   decodeChallengeStatusValue,
   getChallengeLifecycleState,
   getChallengeSubmissionCount,
   getOnChainSubmission,
 } from "../challenge.js";
-import {
-  fetchValidatedChallengeSpec,
-  loadChallengeDefinitionFromChain,
-} from "../challenge-definition.js";
 import type { getPublicClient } from "../client.js";
 import {
-  chunkedGetLogs,
   type IndexerPollingConfig,
+  chunkedGetLogs,
   clearRetryableEvent,
   isRetryableError,
   onRetryableEvent,
   retryKey,
   sleep,
 } from "./polling.js";
-import { type Abi, parseEventLogs } from "viem";
 
 const SPEC_FETCH_MAX_RETRIES = 4;
 const SPEC_FETCH_RETRY_BASE_MS = 500;
@@ -226,7 +220,9 @@ function payoutRowsMatch(
       return false;
     }
     if (current.rank !== next.rank) return false;
-    if (payoutAmountMicros(current.amount) !== payoutAmountMicros(next.amount)) {
+    if (
+      payoutAmountMicros(current.amount) !== payoutAmountMicros(next.amount)
+    ) {
       return false;
     }
     if ((current.claimed_at ?? null) !== (next.claimed_at ?? null)) {
@@ -290,7 +286,10 @@ async function buildCanonicalChallengeSettlement(input: {
         "claimant",
       ).toLowerCase();
       claimStateBySolver.set(claimant, {
-        claimed_at: await blockTimestampIso(publicClient, log.blockNumber ?? null),
+        claimed_at: await blockTimestampIso(
+          publicClient,
+          log.blockNumber ?? null,
+        ),
         claim_tx_hash: log.transactionHash,
       });
       continue;
@@ -410,7 +409,8 @@ export async function reconcileChallengeProjection(input: {
   challengeFromBlock: bigint;
   blockNumber: bigint;
 }) {
-  const { db, publicClient, challenge, challengeFromBlock, blockNumber } = input;
+  const { db, publicClient, challenge, challengeFromBlock, blockNumber } =
+    input;
   const challengeAddress = challenge.contract_address as `0x${string}`;
   const code = await publicClient.getCode({
     address: challengeAddress,
@@ -438,7 +438,7 @@ export async function reconcileChallengeProjection(input: {
       BigInt(subIndex),
       blockNumber,
     );
-    await syncExistingSubmissionOnChainState(db, {
+    await upsertSubmissionOnChain(db, {
       challenge_id: challenge.id,
       on_chain_sub_id: subIndex,
       solver_address: submission.solver,
@@ -451,6 +451,16 @@ export async function reconcileChallengeProjection(input: {
       ).toISOString(),
       ...(submission.scored ? {} : { scored_at: null }),
       tx_hash: challenge.tx_hash,
+    });
+    await reconcileSubmissionIntentMatch(db, {
+      challenge: {
+        id: challenge.id,
+        status: lifecycle.status,
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      },
+      solverAddress: submission.solver,
+      resultHash: submission.resultHash,
     });
   }
 
@@ -581,6 +591,7 @@ export async function processFactoryLog(input: {
           publicClient,
           challengeAddress: challengeAddr,
           chainId: config.AGORA_CHAIN_ID,
+          ...(log.blockNumber !== null ? { blockNumber: log.blockNumber } : {}),
         });
 
       await upsertChallenge(
@@ -746,6 +757,7 @@ export async function processChallengeLog(input: {
       const submission = await getOnChainSubmission(
         challengeAddress,
         submissionId,
+        log.blockNumber ?? undefined,
       );
 
       const row = await upsertSubmissionOnChain(db, {
@@ -762,49 +774,27 @@ export async function processChallengeLog(input: {
         tx_hash: txHash,
       });
 
-      if (!submission.scored && challenge.status === CHALLENGE_STATUS.open) {
-        const limits = resolveSubmissionLimits({
+      const reconcileResult = await reconcileSubmissionIntentMatch(db, {
+        challenge: {
+          id: challenge.id,
+          status:
+            challenge.status as (typeof CHALLENGE_STATUS)[keyof typeof CHALLENGE_STATUS],
           max_submissions_total: challenge.max_submissions_total,
           max_submissions_per_solver: challenge.max_submissions_per_solver,
+        },
+        solverAddress: submission.solver,
+        resultHash: submission.resultHash,
+      });
+      if (reconcileResult.warning) {
+        console.warn("Submission scoring skipped by limits", {
+          challengeId: challenge.id,
+          submissionId: Number(submissionId),
+          solver: submission.solver,
+          reason: reconcileResult.warning,
+          scoreJobAction: reconcileResult.scoreJobAction,
+          matchedIntent: reconcileResult.matched,
+          submissionRowId: row.id,
         });
-        const [totalSubmissions, solverSubmissions] = await Promise.all([
-          countSubmissionsForChallenge(db, challenge.id),
-          countSubmissionsBySolverForChallenge(
-            db,
-            challenge.id,
-            submission.solver,
-          ),
-        ]);
-        const violation = getSubmissionLimitViolation({
-          totalSubmissions,
-          solverSubmissions,
-          limits,
-        });
-
-        if (violation) {
-          await markScoreJobSkipped(
-            db,
-            {
-              submission_id: row.id,
-              challenge_id: challenge.id,
-            },
-            violation,
-          );
-          console.warn("Submission scoring skipped by limits", {
-            challengeId: challenge.id,
-            submissionId: Number(submissionId),
-            solver: submission.solver,
-            totalSubmissions,
-            solverSubmissions,
-            limits,
-            reason: violation,
-          });
-        } else {
-          await createScoreJob(db, {
-            submission_id: row.id,
-            challenge_id: challenge.id,
-          });
-        }
       }
     }
 
@@ -827,6 +817,7 @@ export async function processChallengeLog(input: {
       const submission = await getOnChainSubmission(
         challengeAddress,
         submissionId,
+        log.blockNumber ?? undefined,
       );
       // upsertSubmissionOnChain writes all on-chain-owned fields (score,
       // scored, scored_at, proof_bundle_hash).  proof_bundle_cid is owned

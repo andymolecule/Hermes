@@ -11,6 +11,9 @@ export const SUBMISSION_RESULT_FORMAT = {
   sealedSubmissionV2: "sealed_submission_v2",
 } as const;
 
+export const SUBMISSION_RESULT_CID_MISSING_ERROR =
+  "missing_result_cid_onchain_submission";
+
 export type SubmissionResultFormat =
   (typeof SUBMISSION_RESULT_FORMAT)[keyof typeof SUBMISSION_RESULT_FORMAT];
 

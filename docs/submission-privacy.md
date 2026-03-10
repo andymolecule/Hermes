@@ -87,9 +87,12 @@ sequenceDiagram
     Solver->>Solver: seal bytes as sealed_submission_v2
     Solver->>IPFS: upload sealed-submission.json
     IPFS-->>Solver: result CID
-    Solver->>Chain: submit(keccak256(result CID))
-    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat }
-    API->>DB: persist result_cid + result_format
+    Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, resultCid, resultFormat }
+    API->>API: compute resultHash
+    API->>DB: store submission_intent + attempt reconcile
+    Solver->>Chain: submit(resultHash)
+    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (best-effort)
+    API->>DB: upsert on-chain submission + reconcile intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
 
@@ -115,6 +118,7 @@ The contract does not store the plaintext answer and does not store the IPFS CID
 
 ### In Supabase
 
+- `submission_intents` stores pre-registered `(challenge_id, solver_address, result_hash) -> (result_cid, result_format)` mappings before the on-chain submit is sent.
 - `submissions.result_cid` points to the IPFS object used for scoring.
 - `submissions.result_format` is either `plain_v0` or `sealed_submission_v2`.
 - For sealed submissions, `result_cid` points to the sealed envelope, not the replay artifact.
@@ -209,8 +213,10 @@ This is why the system should be described as public-hidden answer privacy durin
 5. The browser imports the API-provided RSA public key.
 6. The browser seals the submission locally as `sealed_submission_v2`.
 7. The browser uploads only `sealed-submission.json` to IPFS.
-8. The browser submits `keccak256(result CID)` on-chain.
-9. The browser records `challengeId`, `txHash`, `resultCid`, and `resultFormat=sealed_submission_v2` with the API.
+8. The browser pre-registers a `submission_intent` and receives the canonical `resultHash`.
+9. The browser submits that `resultHash` on-chain.
+10. The browser makes a best-effort submit-confirmation call to the API.
+11. If that best-effort call fails, the stored `submission_intent` still lets the API/indexer reconcile the on-chain submission later.
 
 Important consequence:
 

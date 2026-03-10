@@ -151,6 +151,23 @@ export async function createSubmissionRecord(input: {
   };
 }
 
+export async function createSubmissionIntent(input: {
+  challengeId: string;
+  solverAddress: `0x${string}`;
+  resultCid: string;
+  resultFormat?: "plain_v0" | "sealed_submission_v2";
+}) {
+  return requestWithCredentials<{
+    intentId: string;
+    resultHash: `0x${string}`;
+    expiresAt: string;
+    matchedSubmissionId: string | null;
+  }>("/api/submissions/intent", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getSubmissionPublicKey() {
   return request<{
     version: "sealed_submission_v2";
@@ -201,7 +218,9 @@ export async function verifySiweSession(input: {
   });
   if (!response.ok) {
     const message = await getApiErrorMessage(response);
-    throw new Error(`SIWE verification failed (${response.status}): ${message}`);
+    throw new Error(
+      `SIWE verification failed (${response.status}): ${message}`,
+    );
   }
   return (await response.json()) as {
     ok: boolean;

@@ -1,6 +1,7 @@
 import {
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
+  SUBMISSION_RESULT_CID_MISSING_ERROR,
   type ScoreJobStatus,
 } from "@agora/common";
 import { CHALLENGE_STATUS } from "@agora/common";
@@ -143,6 +144,57 @@ export async function markScoreJobSkipped(
     throw new Error(`Failed to mark score job skipped: ${error.message}`);
   }
   return data as ScoreJobRow | null;
+}
+
+export async function getScoreJobBySubmissionId(
+  db: AgoraDbClient,
+  submissionId: string,
+): Promise<ScoreJobRow | null> {
+  const { data, error } = await db
+    .from("score_jobs")
+    .select("*")
+    .eq("submission_id", submissionId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to fetch score job by submission: ${error.message}`,
+    );
+  }
+
+  return (data as ScoreJobRow | null) ?? null;
+}
+
+export async function reviveMetadataBlockedScoreJob(
+  db: AgoraDbClient,
+  submissionId: string,
+): Promise<ScoreJobRow | null> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await db
+    .from("score_jobs")
+    .update({
+      status: SCORE_JOB_STATUS.queued,
+      attempts: 0,
+      next_attempt_at: nowIso,
+      last_error: null,
+      locked_at: null,
+      run_started_at: null,
+      locked_by: null,
+      updated_at: nowIso,
+    })
+    .eq("submission_id", submissionId)
+    .eq("status", SCORE_JOB_STATUS.failed)
+    .like("last_error", `${SUBMISSION_RESULT_CID_MISSING_ERROR}%`)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to revive metadata-blocked score job: ${error.message}`,
+    );
+  }
+
+  return (data as ScoreJobRow | null) ?? null;
 }
 
 export async function markJobPosted(
@@ -320,7 +372,10 @@ export async function getOldestPendingJobTime(
   if (error) {
     throw new Error(`Failed to get oldest pending job: ${error.message}`);
   }
-  return (data as { next_attempt_at?: string | null } | null)?.next_attempt_at ?? null;
+  return (
+    (data as { next_attempt_at?: string | null } | null)?.next_attempt_at ??
+    null
+  );
 }
 
 export async function getEligibleQueuedJobCount(

@@ -1,11 +1,12 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
+import { CHALLENGE_STATUS } from "@agora/common";
 import {
   canReadPublicSubmissionVerification,
+  getSubmissionIntentExpiry,
   getSubmissionReadRetryMessage,
   isInvalidOnChainSubmissionReadError,
 } from "../src/routes/submissions.js";
-import { CHALLENGE_STATUS } from "@agora/common";
 
 test("public submission verification stays locked while challenge is open", () => {
   assert.equal(
@@ -29,7 +30,9 @@ test("public submission verification stays locked while challenge is open", () =
 test("invalid on-chain submission read errors are detected", () => {
   assert.equal(
     isInvalidOnChainSubmissionReadError(
-      new Error('The contract function "getSubmission" reverted. Error: InvalidSubmission()'),
+      new Error(
+        'The contract function "getSubmission" reverted. Error: InvalidSubmission()',
+      ),
     ),
     true,
   );
@@ -47,4 +50,12 @@ test("submission read retry message includes actionable retry guidance", () => {
 
   assert.match(message, /submission #0/i);
   assert.match(message, /retry in a few seconds/i);
+});
+
+test("submission intent expiry extends thirty days past the deadline", () => {
+  const expiresAt = getSubmissionIntentExpiry({
+    deadlineMs: Date.parse("2026-03-10T12:00:00.000Z"),
+  });
+
+  assert.equal(expiresAt, "2026-04-09T12:00:00.000Z");
 });

@@ -1,6 +1,7 @@
 import {
-  getChallengeSubmissionCount,
+  type OnChainSubmission,
   getChallengeLifecycleState,
+  getChallengeSubmissionCount,
   getOnChainSubmission,
   getPublicClient,
   parseSubmittedReceipt,
@@ -12,28 +13,26 @@ import {
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
   computeSubmissionResultHash,
-  getSubmissionLimitViolation,
+  isValidPinnedSpecCid,
   loadConfig,
   resolveEvalSpec,
-  resolveSubmissionLimits,
 } from "@agora/common";
 import {
-  countSubmissionsBySolverForChallenge,
-  countSubmissionsForChallenge,
-  createScoreJob,
+  createSubmissionIntent,
   createSupabaseClient,
   getChallengeById,
-  hasReadyWorkerForSealKey,
   getProofBundleBySubmissionId,
   getSubmissionById,
-  markScoreJobSkipped,
-  setSubmissionResultCid,
+  hasReadyWorkerForSealKey,
+  reconcileSubmissionIntentMatch,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { getJSON } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { getCookie } from "hono/cookie";
 import { z } from "zod";
+import { getSession } from "../lib/auth-store.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
@@ -53,6 +52,20 @@ const createSubmissionBodySchema = z.object({
     ])
     .optional(),
 });
+
+const createSubmissionIntentBodySchema = z.object({
+  challengeId: z.string().uuid(),
+  solverAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  resultCid: z.string().min(1),
+  resultFormat: z
+    .enum([
+      SUBMISSION_RESULT_FORMAT.plainV0,
+      SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+    ])
+    .optional(),
+});
+
+const SUBMISSION_INTENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 type PublicSubmissionVerification = {
   challengeId: string;
@@ -105,6 +118,31 @@ export function getSubmissionReadRetryMessage(input: {
   challengeAddress: string;
 }) {
   return `Submission transaction is confirmed, but submission #${input.submissionId.toString()} is not readable from challenge ${input.challengeAddress} yet. Next step: retry in a few seconds.`;
+}
+
+export function getSubmissionIntentExpiry(input: {
+  deadlineMs: number;
+  retentionMs?: number;
+}) {
+  return new Date(
+    input.deadlineMs + (input.retentionMs ?? SUBMISSION_INTENT_RETENTION_MS),
+  ).toISOString();
+}
+
+async function getOptionalSessionAddress(c: Context<ApiEnv>) {
+  const token = getCookie(c, "agora_session");
+  const session = await getSession(token);
+  return session?.address.toLowerCase() ?? null;
+}
+
+async function getChallengeSubmissionIntentWindow(input: {
+  challengeAddress: `0x${string}`;
+}) {
+  const lifecycle = await getChallengeLifecycleState(input.challengeAddress);
+  return {
+    status: lifecycle.status,
+    deadlineMs: Number(lifecycle.deadline) * 1000,
+  };
 }
 
 const router = new Hono<ApiEnv>();
@@ -240,6 +278,93 @@ router.get("/:id", requireSiweSession, async (c) => {
 });
 
 router.post(
+  "/intent",
+  requireWriteQuota("/api/submissions/intent"),
+  zValidator("json", createSubmissionIntentBodySchema),
+  async (c) => {
+    const { challengeId, solverAddress, resultCid, resultFormat } =
+      c.req.valid("json");
+    const normalizedResultCid = resultCid.trim();
+    if (!isValidPinnedSpecCid(normalizedResultCid)) {
+      return c.json(
+        {
+          error:
+            "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+        },
+        400,
+      );
+    }
+
+    const sessionAddress = await getOptionalSessionAddress(c);
+    if (sessionAddress && sessionAddress !== solverAddress.toLowerCase()) {
+      return c.json(
+        {
+          error:
+            "Authenticated wallet does not match the submission solver. Next step: switch to the submitting wallet or sign out and retry.",
+        },
+        403,
+      );
+    }
+
+    const db = createSupabaseClient(true);
+    const challenge = await getChallengeById(db, challengeId);
+    const challengeAddress = challenge.contract_address as `0x${string}`;
+    const window = await getChallengeSubmissionIntentWindow({
+      challengeAddress,
+    });
+
+    if (window.status !== CHALLENGE_STATUS.open) {
+      return c.json(
+        {
+          error:
+            "Challenge is no longer accepting submissions. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
+        },
+        409,
+      );
+    }
+    if (window.deadlineMs <= Date.now()) {
+      return c.json(
+        {
+          error:
+            "Challenge submission deadline has passed. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
+        },
+        409,
+      );
+    }
+
+    const normalizedSolverAddress = solverAddress.toLowerCase();
+    const resultHash = computeSubmissionResultHash(normalizedResultCid);
+    const intent = await createSubmissionIntent(db, {
+      challenge_id: challengeId,
+      solver_address: normalizedSolverAddress,
+      result_hash: resultHash,
+      result_cid: normalizedResultCid,
+      result_format: resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
+      expires_at: getSubmissionIntentExpiry({ deadlineMs: window.deadlineMs }),
+    });
+    const reconcileResult = await reconcileSubmissionIntentMatch(db, {
+      challenge: {
+        id: challenge.id,
+        status: challenge.status,
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      },
+      solverAddress: normalizedSolverAddress,
+      resultHash,
+    });
+
+    return c.json({
+      data: {
+        intentId: intent.id,
+        resultHash,
+        expiresAt: intent.expires_at,
+        matchedSubmissionId: reconcileResult.submission?.id ?? null,
+      },
+    });
+  },
+);
+
+router.post(
   "/",
   requireWriteQuota("/api/submissions"),
   zValidator("json", createSubmissionBodySchema),
@@ -247,7 +372,16 @@ router.post(
     const { challengeId, resultCid, txHash, resultFormat } =
       c.req.valid("json");
     const normalizedResultCid = resultCid.trim();
-    const sessionAddress = c.get("sessionAddress");
+    if (!isValidPinnedSpecCid(normalizedResultCid)) {
+      return c.json(
+        {
+          error:
+            "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+        },
+        400,
+      );
+    }
+    const sessionAddress = await getOptionalSessionAddress(c);
 
     const db = createSupabaseClient(true);
     const challenge = await getChallengeById(db, challengeId);
@@ -273,7 +407,7 @@ router.post(
       return c.json({ error: message }, 400);
     }
 
-    let onChain;
+    let onChain: OnChainSubmission;
     try {
       onChain = await getOnChainSubmission(
         challenge.contract_address as `0x${string}`,
@@ -329,7 +463,7 @@ router.post(
       );
     }
 
-    await upsertSubmissionOnChain(db, {
+    const submissionRow = await upsertSubmissionOnChain(db, {
       challenge_id: challengeId,
       on_chain_sub_id: Number(subId),
       solver_address: onChain.solver,
@@ -341,48 +475,78 @@ router.post(
       tx_hash: txHash,
     });
 
-    const row = await setSubmissionResultCid(
-      db,
-      challengeId,
-      Number(subId),
-      normalizedResultCid,
-      resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0,
-    );
-
-    if (!onChain.scored && challenge.status === CHALLENGE_STATUS.open) {
-      const limits = resolveSubmissionLimits({
-        max_submissions_total: challenge.max_submissions_total,
-        max_submissions_per_solver: challenge.max_submissions_per_solver,
-      });
-      const [totalSubmissions, solverSubmissions] = await Promise.all([
-        countSubmissionsForChallenge(db, challengeId),
-        countSubmissionsBySolverForChallenge(db, challengeId, onChain.solver),
-      ]);
-      const violation = getSubmissionLimitViolation({
-        totalSubmissions,
-        solverSubmissions,
-        limits,
-      });
-
-      if (violation) {
-        await markScoreJobSkipped(
-          db,
-          {
-            submission_id: row.id,
-            challenge_id: challengeId,
-          },
-          violation,
-        );
-        return c.json({ ok: true, submission: row, warning: violation }, 202);
+    const requestedResultFormat =
+      resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0;
+    if (submissionRow.result_cid) {
+      if (
+        submissionRow.result_cid === normalizedResultCid &&
+        submissionRow.result_format === requestedResultFormat
+      ) {
+        return c.json({ ok: true, submission: submissionRow });
       }
-
-      await createScoreJob(db, {
-        submission_id: row.id,
-        challenge_id: challengeId,
-      });
+      return c.json(
+        {
+          error:
+            "Submission metadata is already attached with a different CID or format. Next step: inspect the stored submission row before retrying.",
+        },
+        409,
+      );
     }
 
-    return c.json({ ok: true, submission: row });
+    const reconcileInput = {
+      challenge: {
+        id: challenge.id,
+        status: challenge.status,
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      },
+      solverAddress: onChain.solver,
+      resultHash: onChain.resultHash,
+    } as const;
+    let reconcileResult = await reconcileSubmissionIntentMatch(
+      db,
+      reconcileInput,
+    );
+    if (!reconcileResult.submission) {
+      await createSubmissionIntent(db, {
+        challenge_id: challengeId,
+        solver_address: onChain.solver,
+        result_hash: onChain.resultHash,
+        result_cid: normalizedResultCid,
+        result_format: requestedResultFormat,
+        expires_at: getSubmissionIntentExpiry({
+          deadlineMs: new Date(challenge.deadline).getTime(),
+        }),
+      });
+      reconcileResult = await reconcileSubmissionIntentMatch(
+        db,
+        reconcileInput,
+      );
+    }
+    const submission =
+      reconcileResult.submission &&
+      (await getSubmissionById(db, reconcileResult.submission.id));
+
+    if (!submission) {
+      return c.json(
+        {
+          error:
+            "Submission was confirmed on-chain, but metadata could not be attached yet. Next step: retry in a few seconds.",
+        },
+        409,
+      );
+    }
+
+    return c.json(
+      {
+        ok: true,
+        submission,
+        ...(reconcileResult.warning
+          ? { warning: reconcileResult.warning }
+          : {}),
+      },
+      reconcileResult.warning ? 202 : 200,
+    );
   },
 );
 

@@ -135,12 +135,12 @@ flowchart LR
 
 Architecture boundary:
 
-- API/indexer create `score_jobs` rows when submissions arrive.
+- Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation and the indexer both reconcile intents into `submissions` rows and only then create or revive `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
 - Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
 
 ---
 
@@ -186,6 +186,7 @@ Existing testnet DBs:
 - Fresh environments should apply all migrations.
 - Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
 - Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
+- Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata can reconcile safely after on-chain submit confirmation.
 
 Operational privacy boundary:
 
@@ -287,8 +288,9 @@ Per-challenge overrides can be set in the challenge spec:
 
 ## Confirming Worker Scoring
 
-1. Check `score_jobs` transitions: jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
-2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll). It should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
+1. Check `submission_intents`: each client submission should create an unmatched intent before the wallet transaction is sent, then the intent should gain `matched_submission_id` after the on-chain submission is indexed or the submit-confirmation API call succeeds.
+2. Check `score_jobs` transitions: once the submission has both on-chain state and reconciled metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
+3. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after that intent is reconciled into a `submissions` row. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
 3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { SUBMISSION_RESULT_FORMAT } from "@agora/common";
-import { setSubmissionResultCid, upsertSubmissionOnChain } from "../queries/submissions.js";
+import {
+  attachSubmissionResultMetadata,
+  upsertSubmissionOnChain,
+} from "../queries/submissions.js";
 
 function makeConflictDbMock() {
   const calls: {
@@ -88,13 +91,16 @@ async function testOnChainUpsertConflictPathDoesNotTouchOffchainFields() {
     "on-chain upsert must never overwrite result_cid",
   );
   assert.equal(
-    Object.prototype.hasOwnProperty.call(calls.updatePayload, "proof_bundle_cid"),
+    Object.prototype.hasOwnProperty.call(
+      calls.updatePayload,
+      "proof_bundle_cid",
+    ),
     false,
     "on-chain upsert must never overwrite proof_bundle_cid",
   );
 }
 
-async function testSetSubmissionResultCidTouchesOnlyResultCid() {
+async function testAttachSubmissionResultMetadataTouchesOnlyMetadataFields() {
   let updatePayload: Record<string, unknown> | null = null;
   const db = {
     from(table: string) {
@@ -103,12 +109,19 @@ async function testSetSubmissionResultCidTouchesOnlyResultCid() {
         update(payload: Record<string, unknown>) {
           updatePayload = payload;
           return {
-            eq() {
+            eq(field: string, value: string) {
+              assert.equal(field, "id");
+              assert.equal(value, "sub-1");
+              return this;
+            },
+            is(field: string, value: null) {
+              assert.equal(field, "result_cid");
+              assert.equal(value, null);
               return this;
             },
             select() {
               return {
-                async single() {
+                async maybeSingle() {
                   return { data: { id: "sub-1", ...payload }, error: null };
                 },
               };
@@ -119,7 +132,12 @@ async function testSetSubmissionResultCidTouchesOnlyResultCid() {
     },
   } as never;
 
-  await setSubmissionResultCid(db, "challenge-1", 1, "ipfs://bafy-test");
+  await attachSubmissionResultMetadata(
+    db,
+    "sub-1",
+    "ipfs://bafy-test",
+    SUBMISSION_RESULT_FORMAT.plainV0,
+  );
   assert.deepEqual(updatePayload, {
     result_cid: "ipfs://bafy-test",
     result_format: SUBMISSION_RESULT_FORMAT.plainV0,
@@ -127,5 +145,5 @@ async function testSetSubmissionResultCidTouchesOnlyResultCid() {
 }
 
 await testOnChainUpsertConflictPathDoesNotTouchOffchainFields();
-await testSetSubmissionResultCidTouchesOnlyResultCid();
+await testAttachSubmissionResultMetadataTouchesOnlyMetadataFields();
 console.log("submission write ownership tests passed");
