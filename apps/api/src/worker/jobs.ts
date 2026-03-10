@@ -17,7 +17,11 @@ import {
   reconcileScoredSubmission,
 } from "./chain.js";
 import { runWorkerPhase } from "./phases.js";
-import { isDockerInfrastructureError } from "./policy.js";
+import {
+  INFRA_RETRY_DELAY_MS,
+  POST_TX_RETRY_DELAY_MS,
+  isWorkerInfrastructureError,
+} from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
 import type {
   ChallengeRow,
@@ -136,6 +140,7 @@ export async function processJob(
           job.id,
           job.attempts,
           reason,
+          POST_TX_RETRY_DELAY_MS,
         );
         return;
       }
@@ -273,16 +278,21 @@ export async function processJob(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (isDockerInfrastructureError(message)) {
-      log("error", "Docker unavailable — requeuing job without penalty", {
-        jobId: job.id,
-        submissionId: job.submission_id,
-      });
+    if (isWorkerInfrastructureError(message)) {
+      log(
+        "error",
+        "Scorer infrastructure unavailable — requeuing job without penalty",
+        {
+          jobId: job.id,
+          submissionId: job.submission_id,
+        },
+      );
       await resolvedDeps.requeueJobWithoutAttemptPenalty(
         db,
         job.id,
         job.attempts,
-        `docker_unavailable: ${message}`,
+        `scorer_infrastructure: ${message}`,
+        INFRA_RETRY_DELAY_MS,
       );
       return;
     }

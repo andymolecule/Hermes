@@ -22,6 +22,8 @@ import {
   FileCheck,
   FileUp,
   Loader2,
+  Lock,
+  ShieldCheck,
   Upload,
   Wallet,
 } from "lucide-react";
@@ -262,7 +264,7 @@ export function SubmitSolution({
     if (!submissionPublicKey) {
       setStatus(
         sealingUnavailableMessage ??
-          "Private answer protection is unavailable. Retry later.",
+        "Private answer protection is unavailable. Retry later.",
       );
       return;
     }
@@ -470,22 +472,20 @@ export function SubmitSolution({
                 <button
                   type="button"
                   onClick={() => setInputMode("file")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
-                    inputMode === "file"
-                      ? "bg-[var(--color-warm-900)] text-white"
-                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                  }`}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "file"
+                    ? "bg-[var(--color-warm-900)] text-white"
+                    : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                    }`}
                 >
                   Upload File
                 </button>
                 <button
                   type="button"
                   onClick={() => setInputMode("text")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
-                    inputMode === "text"
-                      ? "bg-[var(--color-warm-900)] text-white"
-                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                  }`}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "text"
+                    ? "bg-[var(--color-warm-900)] text-white"
+                    : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                    }`}
                 >
                   Text Answer
                 </button>
@@ -493,7 +493,7 @@ export function SubmitSolution({
 
               {/* File upload with drag-and-drop */}
               {inputMode === "file" && (
-                <div>
+                <div className="w-full">
                   <input
                     id="submission-file"
                     ref={fileInputRef}
@@ -505,13 +505,12 @@ export function SubmitSolution({
                   <button
                     type="button"
                     disabled={dropZoneDisabled}
-                    className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-colors ${
-                      dragging
-                        ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
-                        : resultFile
-                          ? "border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-inset)]"
-                          : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
-                    } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                    className={`w-full flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-all duration-300 ${dragging
+                      ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
+                      : resultFile
+                        ? "border-[#7A9A6D] bg-gradient-to-b from-[#F0F5ED] to-[#FAFAF8]"
+                        : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                      } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                     onDragEnter={handleDragEnter}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
@@ -522,17 +521,24 @@ export function SubmitSolution({
                   >
                     {resultFile ? (
                       <>
-                        <FileCheck
-                          className="w-8 h-8 text-[var(--color-warm-900)]"
-                          strokeWidth={1.5}
-                        />
+                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-[#E8F0E4] mb-1">
+                          <ShieldCheck
+                            className="w-6 h-6 text-[#5A7D4F]"
+                            strokeWidth={1.75}
+                          />
+                        </div>
                         <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
                           {resultFile.name}
                         </span>
-                        <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
-                          {(resultFile.size / 1024).toFixed(1)} KB — click to
-                          change
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#5A7D4F] bg-[#E8F0E4] border border-[#C4D9BC] px-2 py-0.5 rounded-sm flex items-center gap-1">
+                            <Lock className="w-3 h-3" />
+                            Sealed locally
+                          </span>
+                          <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
+                            {(resultFile.size / 1024).toFixed(1)} KB — click to change
+                          </span>
+                        </div>
                       </>
                     ) : (
                       <>
@@ -547,32 +553,29 @@ export function SubmitSolution({
                           </span>
                         </span>
                         <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
-                          Sealed locally before upload
-                        </span>
-                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
                           CSV, JSON, or any file format
                         </span>
                       </>
                     )}
                   </button>
-                  {resultFile && (
-                    <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
-                      File staged locally. Submit when ready to seal and upload
-                      it.
-                    </p>
-                  )}
-                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
-                    {PRIVATE_SUBMISSION_COPY}
-                  </p>
-                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
-                    {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
-                  </p>
+                  {/* Consolidated sealing notice */}
+                  <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
+                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
+                        {PRIVATE_SUBMISSION_COPY}
+                      </p>
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
+                        {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Text input */}
               {inputMode === "text" && (
-                <div className="flex flex-col">
+                <div className="flex flex-col w-full">
                   <label
                     htmlFor="submission-text"
                     className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
@@ -591,12 +594,18 @@ export function SubmitSolution({
                     }}
                     disabled={isSubmitting}
                   />
-                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
-                    {PRIVATE_SUBMISSION_COPY}
-                  </p>
-                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
-                    {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
-                  </p>
+                  {/* Consolidated sealing notice */}
+                  <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
+                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
+                        {PRIVATE_SUBMISSION_COPY}
+                      </p>
+                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
+                        {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 

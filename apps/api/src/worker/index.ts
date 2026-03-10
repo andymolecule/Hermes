@@ -2,9 +2,11 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import crypto from "node:crypto";
 import {
+  CHALLENGE_STATUS,
   getAgoraRuntimeIdentity,
   hasSubmissionSealPublicConfig,
   hasSubmissionSealWorkerConfig,
+  isOfficialContainer,
   loadConfig,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
@@ -19,7 +21,7 @@ import {
   upsertWorkerRuntimeState,
   WORKER_RUNTIME_TYPE,
 } from "@agora/db";
-import { ensureDockerReady } from "@agora/scorer";
+import { ensureDockerReady, ensureScorerImagePullable } from "@agora/scorer";
 import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
 import {
@@ -145,8 +147,46 @@ function resolveWorkerRuntimeId(config: ReturnType<typeof loadConfig>) {
   return `scoring-${WORKER_HOST}-${config.AGORA_CHAIN_ID}-${config.AGORA_FACTORY_ADDRESS.slice(2, 10)}`;
 }
 
+async function preflightOfficialScoringImages(
+  db: ReturnType<typeof createSupabaseClient>,
+  log: WorkerLogFn,
+) {
+  const { data, error } = await db
+    .from("challenges")
+    .select("eval_image, runner_preset_id")
+    .eq("status", CHALLENGE_STATUS.scoring);
+
+  if (error) {
+    throw new Error(
+      `Failed to read active scoring challenge images. Next step: verify Supabase connectivity and retry worker startup. ${error.message}`,
+    );
+  }
+
+  const images = Array.from(
+    new Set(
+      (data ?? [])
+        .filter((row) => row.runner_preset_id !== "custom")
+        .map((row) => row.eval_image)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" &&
+            value.trim().length > 0 &&
+            isOfficialContainer(value),
+        ),
+    ),
+  );
+
+  for (const image of images) {
+    await ensureScorerImagePullable(image, 60_000);
+    log("info", "Official scorer image preflight passed", {
+      image,
+    });
+  }
+
+  return images.length;
+}
+
 export async function startWorker() {
-  loadConfig();
   const config = loadConfig();
 
   if (!process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
@@ -200,6 +240,7 @@ export async function startWorker() {
   }
 
   const db = createSupabaseClient(true);
+  const preflightedOfficialImages = await preflightOfficialScoringImages(db, log);
   const runtimeWorkerId = resolveWorkerRuntimeId(config);
   const prunedRuntimeRows = await pruneWorkerRuntimeStates(db, {
     workerType: WORKER_RUNTIME_TYPE.scoring,
@@ -235,6 +276,7 @@ export async function startWorker() {
     runtimeWorkerId,
     host: WORKER_HOST,
     prunedRuntimeRows,
+    preflightedOfficialImages,
     runtimeIdentity: getAgoraRuntimeIdentity(config),
   });
 

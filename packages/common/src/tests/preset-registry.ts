@@ -78,6 +78,14 @@ assert.ok(
   "official scorer repository names should reject alternate GHCR owners",
 );
 
+const officialLatestError = validateScoringContainer(
+  "ghcr.io/agora-science/repro-scorer:latest",
+);
+assert.ok(
+  officialLatestError?.includes("not allowed"),
+  "official scorers should reject :latest tags",
+);
+
 const officialDigestIntegrity = validatePresetIntegrity(
   "regression_v1",
   resolvedRegressionDigest,
@@ -108,11 +116,11 @@ assert.ok(
   "preset validation should enforce pinned digests when strict mode is enabled",
 );
 
-// getUnpinnedOfficialImages — should flag :latest tags
+// getUnpinnedOfficialImages — should flag non-digest official refs
 const unpinned = getUnpinnedOfficialImages();
 assert.ok(
   unpinned.length > 0,
-  "dev images use :latest and should be flagged as unpinned",
+  "official release tags should still be flagged as unpinned until resolved to @sha256",
 );
 for (const img of unpinned) {
   assert.ok(

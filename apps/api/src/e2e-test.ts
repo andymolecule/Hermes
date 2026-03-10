@@ -163,7 +163,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       test: input.expectedCid,
     },
     scoring: {
-      container: "ghcr.io/agora-science/repro-scorer:latest",
+      container: "ghcr.io/agora-science/repro-scorer:v1",
       metric: "custom" as const,
     },
     reward: {

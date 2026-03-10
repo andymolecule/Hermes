@@ -30,7 +30,7 @@ const regressionSpec = challengeSpecSchema.parse({
     hidden_labels: "ipfs://QmHiddenLabelsOnly",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -73,7 +73,7 @@ const inferredSpec = challengeSpecSchema.parse({
     test: "ipfs://QmLegacyTest",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -103,7 +103,7 @@ const mismatchSpec = challengeSpecSchema.parse({
   id: "ch-3",
   preset_id: "regression_v1",
   scoring: {
-    container: "ghcr.io/agora-science/repro-scorer:latest",
+    container: "ghcr.io/agora-science/repro-scorer:v1",
     metric: "rmse",
   },
 });
@@ -182,7 +182,7 @@ const reproMissingBundleSpec = challengeSpecSchema.parse({
   type: "reproducibility",
   description: "desc",
   scoring: {
-    container: "ghcr.io/agora-science/repro-scorer:latest",
+    container: "ghcr.io/agora-science/repro-scorer:v1",
     metric: "custom",
   },
   reward: {
@@ -252,7 +252,7 @@ try {
       test: "ipfs://QmReproBundle",
     },
     scoring: {
-      container: "ghcr.io/agora-science/repro-scorer:latest",
+      container: "ghcr.io/agora-science/repro-scorer:v1",
       metric: "custom",
     },
     reward: {
@@ -335,7 +335,7 @@ try {
   });
   assert.equal(
     nonStrictInsert.eval_image,
-    "ghcr.io/agora-science/regression-scorer:latest",
+    "ghcr.io/agora-science/regression-scorer:v1",
   );
   assert.equal(nonStrictFetchCalls, 0);
 } finally {

@@ -1,0 +1,53 @@
+name: Publish Scorers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "containers/**"
+      - ".github/workflows/publish-scorers.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GHCR_NAMESPACE: agora-science
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: repro-scorer
+            context: containers/repro-scorer
+          - name: regression-scorer
+            context: containers/regression-scorer
+          - name: docking-scorer
+            context: containers/docking-scorer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_PAT || github.token }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/${{ matrix.name }}:v1
+            ghcr.io/${{ env.GHCR_NAMESPACE }}/${{ matrix.name }}:sha-${{ github.sha }}

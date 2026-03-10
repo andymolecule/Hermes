@@ -22,7 +22,7 @@ The reproducibility scorer currently expects:
 
 The built-in preset is:
 - `CSV Comparison`
-- official container: `ghcr.io/agora-science/repro-scorer:latest`
+- official container: `ghcr.io/agora-science/repro-scorer:v1`
 
 ## Files
 

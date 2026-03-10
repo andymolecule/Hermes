@@ -1,5 +1,6 @@
 import {
   finalizeChallenge,
+  getChallengeFinalizeState,
   getChallengeLifecycleState,
   getOnChainSubmission,
   getPublicClient,
@@ -16,9 +17,35 @@ import {
   updateScore,
 } from "@agora/db";
 import { runWorkerPhase } from "./phases.js";
+import { POST_TX_RETRY_DELAY_MS } from "./policy.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
+
+export function shouldAttemptChallengeFinalize(
+  lifecycle: {
+    deadline: bigint;
+    disputeWindowHours: bigint;
+    scoringGracePeriod: bigint;
+    submissionCount: bigint;
+    scoredCount: bigint;
+  },
+  nowSeconds: bigint,
+) {
+  const disputeWindowEndsAt =
+    lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
+  if (nowSeconds <= disputeWindowEndsAt) {
+    return false;
+  }
+
+  const allScored = lifecycle.scoredCount >= lifecycle.submissionCount;
+  if (allScored) {
+    return true;
+  }
+
+  const scoringGraceEndsAt = lifecycle.deadline + lifecycle.scoringGracePeriod;
+  return nowSeconds > scoringGraceEndsAt;
+}
 
 export async function reconcileScoredSubmission(
   db: DbClient,
@@ -77,7 +104,13 @@ export async function handlePreviouslyPostedScoreTx(
       }
       const reason =
         "Score tx mined but submission is not marked scored on-chain yet.";
-      await requeueJobWithoutAttemptPenalty(db, job.id, job.attempts, reason);
+      await requeueJobWithoutAttemptPenalty(
+        db,
+        job.id,
+        job.attempts,
+        reason,
+        POST_TX_RETRY_DELAY_MS,
+      );
       log("warn", reason, {
         jobId: job.id,
         submissionId: submission.id,
@@ -105,7 +138,13 @@ export async function handlePreviouslyPostedScoreTx(
       )
     ) {
       const reason = `Score tx pending confirmation: ${job.score_tx_hash}`;
-      await requeueJobWithoutAttemptPenalty(db, job.id, job.attempts, reason);
+      await requeueJobWithoutAttemptPenalty(
+        db,
+        job.id,
+        job.attempts,
+        reason,
+        POST_TX_RETRY_DELAY_MS,
+      );
       log("info", reason, {
         jobId: job.id,
         submissionId: submission.id,
@@ -202,15 +241,16 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
         continue;
       }
 
-      const finalizeAfterSeconds =
-        lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
-      if (nowSeconds <= finalizeAfterSeconds) {
+      const finalizeState = await getChallengeFinalizeState(challengeAddress);
+      if (!shouldAttemptChallengeFinalize(finalizeState, nowSeconds)) {
         continue;
       }
 
       log("info", "Auto-finalizing challenge", {
         challengeId: challenge.id,
         contract: challengeAddress,
+        submissionCount: finalizeState.submissionCount.toString(),
+        scoredCount: finalizeState.scoredCount.toString(),
       });
 
       const txHash = await finalizeChallenge(challengeAddress);

@@ -138,6 +138,7 @@ Architecture boundary:
 - API/indexer create `score_jobs` rows when submissions arrive.
 - Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline.
 - Scorer is the Docker container itself (e.g. `ghcr.io/agora-science/repro-scorer:v1`) — stateless, sandboxed, no network access.
+- Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
 
@@ -155,6 +156,7 @@ Required env vars:
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
 - Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
 - Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
+- Optional delayed retry tuning: `AGORA_WORKER_POST_TX_RETRY_MS`, `AGORA_WORKER_INFRA_RETRY_MS`
 
 Key handling rules:
 
@@ -183,6 +185,7 @@ Existing testnet DBs:
 
 - Fresh environments should apply all migrations.
 - Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
+- Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
 
 Operational privacy boundary:
 
@@ -258,6 +261,7 @@ Expected results:
 - Indexer health is `ok` or `warning`, not `critical`.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` only while `/api/worker-health` reports a healthy worker for the same active `kid`.
+- If active scoring challenges use official Agora scorer images, the worker should refuse startup unless those GHCR images are pullable from the host.
 
 ---
 
@@ -283,7 +287,7 @@ Per-challenge overrides can be set in the challenge spec:
 
 ## Confirming Worker Scoring
 
-1. Check `score_jobs` transitions: jobs should move from `queued` -> `running` -> `scored`.
+1. Check `score_jobs` transitions: jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
 2. After a submission, a new `score_jobs` row appears within ~30s (indexer poll). It should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
 3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
@@ -514,7 +518,13 @@ This section covers non-code work for deployment across hosted systems.
 #### Image Registry
 
 - Publish scorer images under the Agora namespace (`ghcr.io/agora-science/*`).
+- Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
+- If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
+- Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
+- Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
 - Verify tags/digests referenced by presets are available.
+- Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
+- After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 - Keep legacy images frozen if historical replay requires them.
 
 #### DNS and Domains

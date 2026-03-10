@@ -10,6 +10,23 @@ const DEFAULT_RUNNER_LIMITS = {
   pids: 32,
 } as const;
 
+const SCORER_INFRASTRUCTURE_ERROR_PATTERNS = [
+  /docker is required/i,
+  /docker.*not running/i,
+  /docker info failed/i,
+  /failed to pull scorer image/i,
+  /not found locally\. run: docker pull/i,
+  /error response from daemon:.*denied/i,
+  /error response from daemon:.*unauthorized/i,
+  /error response from daemon:.*toomanyrequests/i,
+  /error response from daemon:.*rate/i,
+  /error response from daemon:.*tls/i,
+  /error response from daemon:.*connection/i,
+  /error response from daemon:.*no such host/i,
+  /error response from daemon:.*i\/o timeout/i,
+  /error response from daemon:.*temporary failure/i,
+] as const;
+
 export interface RunScorerInput {
   image: string;
   inputDir: string;
@@ -82,6 +99,26 @@ export async function ensureDockerReady() {
   } catch {
     throw new Error("Docker is required for scoring. Please start Docker.");
   }
+}
+
+export function isScorerInfrastructureError(message: string): boolean {
+  return SCORER_INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+}
+
+export async function ensureScorerImagePullable(
+  image: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
+  await ensureDockerReady();
+  const pull = await runCommand("docker", ["pull", image], timeoutMs);
+  if (pull.code !== 0) {
+    throw new Error(
+      `Failed to pull scorer image ${image}. ${pull.stderr || pull.stdout || "docker pull failed"}`,
+    );
+  }
+  return resolveImageDigest(image);
 }
 
 async function resolveImageDigest(image: string) {

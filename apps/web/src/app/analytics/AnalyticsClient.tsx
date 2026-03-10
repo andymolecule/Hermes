@@ -4,12 +4,15 @@ import { PROTOCOL_FEE_PERCENT } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   CheckCircle2,
   DollarSign,
   ExternalLink,
   FileText,
   FlaskConical,
+  Lock,
+  ShieldCheck,
   Target,
   TrendingUp,
   Users,
@@ -26,6 +29,15 @@ function formatDate(iso: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+}
+
+function formatTimestamp(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
 }
 
@@ -137,6 +149,31 @@ function ProgressMetric({
           }}
         />
       </div>
+    </div>
+  );
+}
+
+// ─── Stat Cell (small metric for grids) ────────────────
+
+function StatCell({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string | number;
+  muted?: boolean;
+}) {
+  return (
+    <div className="text-center py-3">
+      <p
+        className={`text-lg font-mono font-bold tabular-nums ${muted ? "text-black/40" : "text-black"}`}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] font-mono uppercase tracking-wider text-black/40 font-bold mt-0.5">
+        {label}
+      </p>
     </div>
   );
 }
@@ -289,11 +326,10 @@ function RecentSubmissionsTable({
               </td>
               <td className="py-2 px-4 text-right">
                 <span
-                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
-                    s.scored
+                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${s.scored
                       ? "bg-[#e8efe8] text-[#2d6a2e] border-[#b5cdb6]"
                       : "bg-black/5 text-black/40 border-black/10"
-                  }`}
+                    }`}
                 >
                   {s.scored ? "Yes" : "Pending"}
                 </span>
@@ -341,6 +377,74 @@ function AnalyticsSkeleton() {
   );
 }
 
+function ProjectionFreshnessBanner({
+  freshness,
+}: {
+  freshness: AnalyticsData["freshness"];
+}) {
+  const lagLabel =
+    typeof freshness.lagBlocks === "number"
+      ? `${freshness.lagBlocks} blocks`
+      : "unknown lag";
+  const tone =
+    freshness.indexerStatus === "ok"
+      ? {
+        border: "#b5cdb6",
+        background: "#e8efe8",
+        text: "#2d6a2e",
+        label: "Projection Current",
+      }
+      : freshness.indexerStatus === "warning"
+        ? {
+          border: "#f5d0a4",
+          background: "#fff7ed",
+          text: "#b45309",
+          label: "Projection Delayed",
+        }
+        : {
+          border: "#fca5a5",
+          background: "#fef2f2",
+          text: "#dc2626",
+          label: "Projection Stale",
+        };
+
+  return (
+    <div
+      className="border p-4"
+      style={{
+        borderColor: tone.border,
+        backgroundColor: tone.background,
+        color: tone.text,
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle
+          className="w-4 h-4 mt-0.5 flex-shrink-0"
+          strokeWidth={2}
+        />
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider">
+              {tone.label}
+            </p>
+            <p className="text-[10px] font-mono uppercase tracking-wider opacity-80">
+              Source: indexed DB projection
+            </p>
+          </div>
+          <p className="mt-1 text-sm font-mono">
+            {freshness.warning ??
+              `Analytics are derived from indexed DB projections. Current lag: ${lagLabel}.`}
+          </p>
+          <p className="mt-1 text-[10px] font-mono uppercase tracking-wider opacity-80">
+            Generated {formatTimestamp(freshness.generatedAt)} · Checked{" "}
+            {formatTimestamp(freshness.checkedAt)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Worker Status ─────────────────────────────────────
 
 function WorkerStatus() {
@@ -363,103 +467,111 @@ function WorkerStatus() {
 
   const ready = health?.status === "ok" || health?.status === "idle";
 
+  const sealingReady = health?.sealing?.workerReady;
+  const sealingConfigured = health?.sealing?.configured;
+
   return (
-    <div className="border border-black p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="border border-black overflow-hidden">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-5 py-3 bg-[#f4f4f0] border-b border-black">
         <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Activity className="w-4 h-4" strokeWidth={2} />
           Scoring Worker
         </h3>
         <span
-          className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 border"
+          className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 border rounded-[2px]"
           style={
             ready
               ? {
-                  backgroundColor: "#e8efe8",
-                  color: "#2d6a2e",
-                  borderColor: "#b5cdb6",
-                }
+                backgroundColor: "#e8efe8",
+                color: "#2d6a2e",
+                borderColor: "#b5cdb6",
+              }
               : {
-                  backgroundColor: "#fef2f2",
-                  color: "#dc2626",
-                  borderColor: "#fca5a5",
-                }
+                backgroundColor: "#fef2f2",
+                color: "#dc2626",
+                borderColor: "#fca5a5",
+              }
           }
         >
           {ready ? "Active — Ready to Score" : s.label}
         </span>
       </div>
+
       {health?.jobs ? (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(
-              [
-                ["Eligible", health.jobs.eligibleQueued],
-                ["Queued", health.jobs.queued],
-                ["Running", health.jobs.running],
-                ["Scored", health.jobs.scored],
-              ] as const
-            ).map(([label, count]) => (
-              <div key={label} className="text-center">
-                <span className="text-lg font-mono font-bold tabular-nums">
-                  {count}
-                </span>
-                <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t border-black/10">
-            <div className="text-center">
-              <span className="text-sm font-mono font-bold tabular-nums">
-                {formatRelativeAge(health.metrics?.oldestQueuedAgeMs)}
-              </span>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
-                Oldest eligible
-              </p>
-            </div>
-            <div className="text-center">
-              <span className="text-sm font-mono font-bold tabular-nums">
-                {health.jobs.failed}
-              </span>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
-                Failed
-              </p>
-            </div>
-            <div className="text-center">
-              <span className="text-sm font-mono font-bold tabular-nums">
-                {health.runningOverThresholdCount ?? 0}
-              </span>
-              <p className="text-[10px] font-mono uppercase tracking-wider text-black/50 font-bold">
-                Running stale
-              </p>
+        <div className="bg-white">
+          {/* Job Pipeline — consistent 4-column grid */}
+          <div className="px-5 pt-4 pb-3">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mb-3">
+              Job Pipeline
+            </p>
+            <div className="grid grid-cols-4 divide-x divide-black/10">
+              <StatCell label="Eligible" value={health.jobs.eligibleQueued} />
+              <StatCell label="Queued" value={health.jobs.queued} />
+              <StatCell label="Running" value={health.jobs.running} />
+              <StatCell label="Scored" value={health.jobs.scored} />
             </div>
           </div>
-          {health.sealing && (
-            <div className="pt-1 border-t border-black/10">
-              <div className="flex items-center justify-between gap-3 text-[10px] font-mono font-bold uppercase tracking-wider text-black/50">
-                <span>Sealed submissions</span>
-                <span>
-                  {health.sealing.workerReady
-                    ? "Ready"
-                    : health.sealing.configured
-                      ? "Worker unavailable"
-                      : "Disabled"}
-                </span>
-              </div>
-              {health.sealing.keyId && (
-                <p className="mt-1 text-[10px] font-mono text-black/50">
-                  Active key: {health.sealing.keyId}
+
+          <div className="border-t border-black/10 mx-5" />
+
+          {/* Health Indicators — consistent 4-column grid */}
+          <div className="px-5 pt-3 pb-4">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/30 mb-3">
+              Health Indicators
+            </p>
+            <div className="grid grid-cols-4 divide-x divide-black/10">
+              <StatCell
+                label="Oldest Eligible"
+                value={formatRelativeAge(health.metrics?.oldestQueuedAgeMs)}
+                muted
+              />
+              <StatCell label="Failed" value={health.jobs.failed} />
+              <StatCell
+                label="Running Stale"
+                value={health.runningOverThresholdCount ?? 0}
+              />
+              {/* Sealed submissions inline */}
+              <div className="text-center py-3">
+                <div className="flex items-center justify-center gap-1.5">
+                  {sealingReady ? (
+                    <ShieldCheck className="w-4 h-4 text-[#5A7D4F]" strokeWidth={2} />
+                  ) : (
+                    <Lock className="w-4 h-4 text-black/30" strokeWidth={2} />
+                  )}
+                  <p
+                    className={`text-lg font-mono font-bold ${sealingReady ? "text-[#5A7D4F]" : "text-black/40"}`}
+                  >
+                    {sealingReady
+                      ? "Ready"
+                      : sealingConfigured
+                        ? "Down"
+                        : "Off"}
+                  </p>
+                </div>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-black/40 font-bold mt-0.5">
+                  Sealed Submissions
                 </p>
-              )}
+              </div>
+            </div>
+          </div>
+
+          {/* Active Key footer */}
+          {health.sealing?.keyId && (
+            <div className="border-t border-black/10 px-5 py-2.5 bg-[#fafaf8]">
+              <p className="text-[10px] font-mono text-black/40 flex items-center gap-1.5">
+                <Lock className="w-3 h-3" strokeWidth={2} />
+                Active key: {health.sealing.keyId}
+              </p>
             </div>
           )}
         </div>
       ) : (
-        <p className="text-sm text-black/40 font-mono">
-          {query.isLoading ? "Loading..." : "Worker health unavailable"}
-        </p>
+        <div className="px-5 py-6 bg-white">
+          <p className="text-sm text-black/40 font-mono">
+            {query.isLoading ? "Loading..." : "Worker health unavailable"}
+          </p>
+        </div>
       )}
     </div>
   );
@@ -471,6 +583,7 @@ export function AnalyticsClient() {
   const query = useQuery({
     queryKey: ["platform-analytics"],
     queryFn: getAnalytics,
+    refetchInterval: 30_000,
   });
 
   const d = query.data;
@@ -496,6 +609,8 @@ export function AnalyticsClient() {
         </div>
       ) : d ? (
         <>
+          <ProjectionFreshnessBanner freshness={d.freshness} />
+
           {/* ── Section 1: Financial Overview ── */}
           <div>
             <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-black/40 mb-2 flex items-center gap-1.5">

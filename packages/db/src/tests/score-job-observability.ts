@@ -30,6 +30,7 @@ async function testCompleteJobClearsRunStartedAt() {
 
   await completeJob(db, "job-1", "0xabc");
   assert.equal(payload?.run_started_at, null);
+  assert.equal(payload?.next_attempt_at, null);
 }
 
 async function testFailJobClearsRunStartedAt() {
@@ -55,6 +56,7 @@ async function testFailJobClearsRunStartedAt() {
 
   await failJob(db, "job-2", "boom", 2, 5);
   assert.equal(payload?.run_started_at, null);
+  assert.equal(typeof payload?.next_attempt_at, "string");
 }
 
 async function testRequeueClearsRunStartedAt() {
@@ -80,6 +82,7 @@ async function testRequeueClearsRunStartedAt() {
 
   await requeueJobWithoutAttemptPenalty(db, "job-3", 2, "pending");
   assert.equal(payload?.run_started_at, null);
+  assert.equal(typeof payload?.next_attempt_at, "string");
 }
 
 async function testRunningOverThresholdCountUsesRunStartedAt() {

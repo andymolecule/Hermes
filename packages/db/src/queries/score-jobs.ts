@@ -18,6 +18,7 @@ export interface ScoreJobRow {
   status: ScoreJobStatus;
   attempts: number;
   max_attempts: number;
+  next_attempt_at: string | null;
   locked_at: string | null;
   run_started_at: string | null;
   locked_by: string | null;
@@ -87,6 +88,7 @@ export async function createScoreJob(
   db: AgoraDbClient,
   payload: ScoreJobInsert,
 ): Promise<ScoreJobRow | null> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await db
     .from("score_jobs")
     .upsert(
@@ -94,6 +96,7 @@ export async function createScoreJob(
         submission_id: payload.submission_id,
         challenge_id: payload.challenge_id,
         status: SCORE_JOB_STATUS.queued,
+        next_attempt_at: nowIso,
         run_started_at: null,
       },
       { onConflict: "submission_id", ignoreDuplicates: true },
@@ -114,6 +117,7 @@ export async function markScoreJobSkipped(
   payload: ScoreJobInsert,
   reason: string,
 ): Promise<ScoreJobRow | null> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await db
     .from("score_jobs")
     .upsert(
@@ -123,11 +127,12 @@ export async function markScoreJobSkipped(
         status: SCORE_JOB_STATUS.skipped,
         attempts: 0,
         max_attempts: 0,
+        next_attempt_at: null,
         last_error: reason,
         locked_at: null,
         run_started_at: null,
         locked_by: null,
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       },
       { onConflict: "submission_id" },
     )
@@ -183,6 +188,7 @@ export async function completeJob(
 ) {
   const payload: Record<string, unknown> = {
     status: SCORE_JOB_STATUS.scored,
+    next_attempt_at: null,
     last_error: null,
     locked_at: null,
     run_started_at: null,
@@ -212,15 +218,17 @@ export async function failJob(
   maxAttempts: number,
 ) {
   const exhausted = currentAttempts >= maxAttempts;
+  const nowIso = new Date().toISOString();
   const { error } = await db
     .from("score_jobs")
     .update({
       status: exhausted ? SCORE_JOB_STATUS.failed : SCORE_JOB_STATUS.queued,
+      next_attempt_at: exhausted ? null : nowIso,
       last_error: errorMessage,
       locked_at: null,
       run_started_at: null,
       locked_by: null,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("id", jobId);
 
@@ -230,24 +238,28 @@ export async function failJob(
 }
 
 /**
- * Requeue a job without consuming an attempt (for transient reconciliation waits).
+ * Requeue a job without consuming an attempt and optionally apply a retry delay.
  */
 export async function requeueJobWithoutAttemptPenalty(
   db: AgoraDbClient,
   jobId: string,
   currentAttempts: number,
   reason: string,
+  delayMs = 0,
 ) {
+  const now = Date.now();
+  const nextAttemptAt = new Date(now + Math.max(0, delayMs)).toISOString();
   const { error } = await db
     .from("score_jobs")
     .update({
       status: SCORE_JOB_STATUS.queued,
       attempts: currentAttempts > 0 ? currentAttempts - 1 : 0,
+      next_attempt_at: nextAttemptAt,
       last_error: reason,
       locked_at: null,
       run_started_at: null,
       locked_by: null,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(now).toISOString(),
     })
     .eq("id", jobId);
 
@@ -288,35 +300,39 @@ export async function getScoreJobCounts(
 }
 
 /**
- * Get the oldest pending (queued) job's created_at timestamp.
- * Used by worker-health to detect stuck queues.
+ * Get the oldest eligible queued job time.
+ * Used by worker-health to detect stuck queues without counting delayed backoff rows.
  */
 export async function getOldestPendingJobTime(
   db: AgoraDbClient,
 ): Promise<string | null> {
+  const nowIso = new Date().toISOString();
   const { data, error } = await db
     .from("score_jobs")
-    .select("created_at, challenges!inner(id, status)")
+    .select("next_attempt_at, challenges!inner(id, status)")
     .eq("status", SCORE_JOB_STATUS.queued)
     .eq("challenges.status", CHALLENGE_STATUS.scoring)
-    .order("created_at", { ascending: true })
+    .lte("next_attempt_at", nowIso)
+    .order("next_attempt_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
   if (error) {
     throw new Error(`Failed to get oldest pending job: ${error.message}`);
   }
-  return data?.created_at ?? null;
+  return (data as { next_attempt_at?: string | null } | null)?.next_attempt_at ?? null;
 }
 
 export async function getEligibleQueuedJobCount(
   db: AgoraDbClient,
 ): Promise<number> {
+  const nowIso = new Date().toISOString();
   const { count, error } = await db
     .from("score_jobs")
     .select("id, challenges!inner(id, status)", { count: "exact", head: true })
     .eq("status", SCORE_JOB_STATUS.queued)
-    .eq("challenges.status", CHALLENGE_STATUS.scoring);
+    .eq("challenges.status", CHALLENGE_STATUS.scoring)
+    .lte("next_attempt_at", nowIso);
 
   if (error) {
     throw new Error(`Failed to count eligible queued jobs: ${error.message}`);
@@ -420,15 +436,17 @@ export async function retryFailedJobs(
   db: AgoraDbClient,
   challengeId?: string,
 ): Promise<number> {
+  const nowIso = new Date().toISOString();
   let query = db
     .from("score_jobs")
     .update({
       status: SCORE_JOB_STATUS.queued,
       attempts: 0,
+      next_attempt_at: nowIso,
       locked_at: null,
       locked_by: null,
       last_error: null,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("status", SCORE_JOB_STATUS.failed);
 

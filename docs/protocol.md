@@ -47,7 +47,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 | `submit()` | — | Yes | — | — |
 | `startScoring()` | — | — | — | Yes (after deadline) |
 | `postScore()` | — | — | Yes | — |
-| `finalize()` | — | — | — | Yes (after dispute window) |
+| `finalize()` | — | — | — | Yes (after dispute window, once all submissions are scored or scoring grace elapses) |
 | `dispute()` | — | — | — | Yes (during dispute window) |
 | `resolveDispute()` | — | — | Yes | — |
 | `cancel()` | Yes (if 0 subs) | — | — | — |
@@ -66,7 +66,7 @@ stateDiagram-v2
     Open --> Cancelled : cancel() [0 submissions]
     Scoring --> Scoring : postScore()
     Scoring --> Disputed : dispute()
-    Scoring --> Finalized : finalize() [after dispute window]
+    Scoring --> Finalized : finalize() [after dispute window + all scored, or grace elapsed]
     Disputed --> Finalized : resolveDispute()
     Disputed --> Cancelled : timeoutRefund() [30 days]
     Finalized --> [*] : claim()
@@ -209,7 +209,7 @@ The authoritative schema for challenge specification files.
 | `type` | enum | One of: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`. |
 | `description` | string | Full challenge description. |
 | `dataset` | object | Dataset configuration object. All sub-fields (`train`, `test`, `hidden_labels`) are optional. |
-| `scoring.container` | string | Pinned Docker image reference (tag or digest). |
+| `scoring.container` | string | Docker image reference for scoring. Official Agora scorers use stable public version tags in authored YAML and are resolved to pinned digests before persistence; custom scorers must already use a pinned digest. |
 | `scoring.metric` | enum | One of: `rmse`, `mae`, `r2`, `pearson`, `spearman`, `custom`. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
 | `reward.distribution` | enum | One of: `winner_take_all`, `top_3`, `proportional`. |
@@ -268,6 +268,8 @@ deadline: "2026-03-04T23:59:59Z"
 ## Scoring Model
 
 - **Deterministic Docker execution:** Same container + same input = same score, every time.
+- **Public official scorers:** Agora-managed scorer code and images are public artifacts so solvers can inspect the exact scoring logic before they submit.
+- **No hidden data in images:** Hidden labels, reference outputs, and other non-public evaluation material must live in the evaluation bundle or mounted dataset CIDs, not inside the scorer image.
 - **Container constraints:**
   - `--network=none` — no network access, cannot exfiltrate data
   - `--read-only` — only `/output` is writable

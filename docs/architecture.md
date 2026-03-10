@@ -212,7 +212,7 @@ stateDiagram-v2
     Open --> Cancelled : cancel() [0 submissions]
     Scoring --> Scoring : postScore()
     Scoring --> Disputed : dispute()
-    Scoring --> Finalized : finalize() [after dispute window]
+    Scoring --> Finalized : finalize() [after dispute window + all scored, or grace elapsed]
     Disputed --> Finalized : resolveDispute()
     Disputed --> Cancelled : timeoutRefund() [30 days]
     Finalized --> [*] : claim()
@@ -261,6 +261,7 @@ Current privacy boundary:
 - The active public key is served by `GET /api/submissions/public-key`; the worker must hold the matching private key for that `kid`.
 - `sealed_submission_v2` authenticates `challengeId`, `solverAddress`, `fileName`, and `mimeType` as AES-GCM additional data, so those fields cannot be tampered with without breaking decryption.
 - This is anti-copy privacy, not full metadata opacity. Wallet address and transaction remain on-chain. After scoring begins, replay artifacts may be published for public verification.
+- Official scorer code and images should stay public for reproducibility, but hidden evaluation material belongs in mounted datasets or evaluation bundles, not inside the image itself.
 
 ### USDC Flow
 

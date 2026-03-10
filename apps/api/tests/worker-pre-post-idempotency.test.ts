@@ -12,7 +12,7 @@ import type {
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  eval_image: "ghcr.io/agora-science/repro-scorer:latest",
+  eval_image: "ghcr.io/agora-science/repro-scorer:v1",
   eval_metric: "custom",
   eval_bundle_cid: "ipfs://bundle",
   runner_preset_id: "csv_comparison_v1",

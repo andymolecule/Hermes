@@ -6,6 +6,7 @@
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",
+    "scorers:check": "node scripts/check-scorer-containers.mjs",
     "abi:sync": "pnpm --filter @agora/contracts build && node scripts/sync-abi.mjs",
     "abi:check": "pnpm --filter @agora/contracts build && node scripts/check-abi-sync.mjs",
     "verify": "pnpm abi:check && pnpm build && pnpm test",

@@ -129,6 +129,17 @@ export type AnalyticsData = {
     submitted_at: string;
   }[];
   topSolvers: { address: string; count: number }[];
+  freshness: {
+    source: "indexed_db_projection";
+    generatedAt: string;
+    stale: boolean;
+    indexerStatus: "ok" | "warning" | "critical" | "empty" | "error";
+    lagBlocks: number | null;
+    indexedHead: number | null;
+    finalizedHead: number | null;
+    checkedAt: string;
+    warning: string | null;
+  };
 };
 
 export type WorkerHealth = {

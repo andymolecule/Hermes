@@ -6,13 +6,15 @@
 import type { ChallengeType } from "./types/challenge.js";
 
 // ---------------------------------------------------------------------------
-// Official images — match containers/ directory names exactly
+// Official images — match containers/ directory names exactly.
+// These are stable public release tags. Challenge publication resolves them
+// to immutable @sha256 digests before persistence when strict pinning is on.
 // ---------------------------------------------------------------------------
 
 export const OFFICIAL_IMAGES = {
-    repro: "ghcr.io/agora-science/repro-scorer:latest",
-    regression: "ghcr.io/agora-science/regression-scorer:latest",
-    docking: "ghcr.io/agora-science/docking-scorer:latest",
+    repro: "ghcr.io/agora-science/repro-scorer:v1",
+    regression: "ghcr.io/agora-science/regression-scorer:v1",
+    docking: "ghcr.io/agora-science/docking-scorer:v1",
 } as const;
 
 // ===========================================================================
@@ -34,9 +36,9 @@ export interface ScorerPresetV2 {
     /** Short description */
     description: string;
     /**
-     * Official presets may use local/dev mutable refs in source.
-     * Challenge publication should resolve those validated refs to immutable
-     * @sha256 digests before pinning or persistence.
+     * Official presets use stable release tags in source. Challenge
+     * publication should resolve those validated refs to immutable @sha256
+     * digests before pinning or persistence.
      */
     container: string;
     /** Auto-generated scoring description (read-only for presets) */
@@ -56,7 +58,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         id: "csv_comparison_v1",
         label: "CSV Comparison",
         description: "Row-by-row CSV comparison against ground truth",
-        container: OFFICIAL_IMAGES.repro,  // TODO: pin @sha256: before production
+        container: OFFICIAL_IMAGES.repro,
         scoringDescription: "Evaluated deterministically by the Repro Scorer. Submissions are compared row-by-row against the reference CSV. Score = matched_rows / total_rows.",
         runnerLimits: { memory: "512m", cpus: "1", pids: 64, timeoutMs: 300_000 },
         defaultMinimumScore: 0,
@@ -65,7 +67,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         id: "number_absdiff_v1",
         label: "Number (Absolute Difference)",
         description: "Score = 100 - abs(answer - target). Highest wins.",
-        container: OFFICIAL_IMAGES.repro,  // TODO: replace with number-scorer@sha256: once containerized
+        container: OFFICIAL_IMAGES.repro,  // TODO: replace with number-scorer:v1 once containerized
         scoringDescription: "Score = 100 - abs(answer - target). The closest answer to the target wins. Evaluated by the Number Scorer engine.",
         runnerLimits: { memory: "128m", cpus: "0.5", pids: 32, timeoutMs: 60_000 },
         defaultMinimumScore: 1,
@@ -74,7 +76,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         id: "file_hash_v1",
         label: "File Hash Match",
         description: "Submit a string whose SHA-256 matches the target hash",
-        container: OFFICIAL_IMAGES.repro,  // TODO: pin @sha256: before production
+        container: OFFICIAL_IMAGES.repro,
         scoringDescription: "Evaluated by SHA-256 hash comparison. Score = 100 if exact match, 0 otherwise. Fully deterministic and verifiable.",
         runnerLimits: { memory: "256m", cpus: "0.5", pids: 32, timeoutMs: 60_000 },
         defaultMinimumScore: 100,
@@ -83,7 +85,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         id: "regression_v1",
         label: "Regression Metrics",
         description: "Scored by a numerical metric (RMSE, R², etc.)",
-        container: OFFICIAL_IMAGES.regression,  // TODO: pin @sha256: before production
+        container: OFFICIAL_IMAGES.regression,
         scoringDescription: "Evaluated by the Regression Scorer engine using the selected metric against the reference dataset.",
         runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
         defaultMinimumScore: 0,
@@ -92,7 +94,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
         id: "docking_v1",
         label: "Molecular Docking",
         description: "Rank compounds by docking score against a protein target",
-        container: OFFICIAL_IMAGES.docking,  // TODO: pin @sha256: before production
+        container: OFFICIAL_IMAGES.docking,
         scoringDescription: "Evaluated by the Docking Scorer engine. Submissions are ranked by correlation to reference docking scores.",
         runnerLimits: { memory: "4g", cpus: "2", pids: 64, timeoutMs: 1_200_000 },
         defaultMinimumScore: 0,
@@ -252,9 +254,8 @@ export function validateScoringContainer(container: string): string | null {
         return `Official scorer images must use the canonical Agora image reference. Use ${officialContainer}.`;
     }
 
-    // Warn about :latest on non-official containers
-    if (trimmed.endsWith(":latest") && !isOfficialContainer(trimmed)) {
-        return "Using :latest tag is not recommended for reproducibility. Pin a specific version or digest (@sha256:...).";
+    if (trimmed.endsWith(":latest")) {
+        return "Using :latest is not allowed for scoring. Use an official version tag (for Agora-managed scorers) or a pinned digest (@sha256:...).";
     }
 
     return null;

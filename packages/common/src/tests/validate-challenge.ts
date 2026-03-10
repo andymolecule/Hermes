@@ -169,7 +169,7 @@ const predictionHiddenLabelsOnly = challengeSpecSchema.safeParse({
     hidden_labels: "ipfs://QmHiddenLabels",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -221,7 +221,7 @@ const predictionTestOnly = challengeSpecSchema.safeParse({
     test: "ipfs://QmPredictionTest",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -256,7 +256,7 @@ const predictionMissingEvalBundle = challengeSpecSchema.safeParse({
   type: "prediction",
   description: "Prediction challenge without a scoreable bundle.",
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -289,7 +289,7 @@ const predictionMatchingEvalBundle = challengeSpecSchema.safeParse({
     evaluation_bundle: "ipfs://QmSharedBundle",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -329,7 +329,7 @@ const predictionMismatchedEvalBundle = challengeSpecSchema.safeParse({
     evaluation_bundle: "ipfs://QmDifferentBundle",
   },
   scoring: {
-    container: "ghcr.io/agora-science/regression-scorer:latest",
+    container: "ghcr.io/agora-science/regression-scorer:v1",
     metric: "rmse",
   },
   reward: {
@@ -452,7 +452,7 @@ const dockingMissingBundle = validateChallengeScoreability(
     type: "docking",
     description: "Docking challenge without evaluation bundle.",
     scoring: {
-      container: "ghcr.io/agora-science/docking-scorer:latest",
+      container: "ghcr.io/agora-science/docking-scorer:v1",
       metric: "spearman",
     },
     reward: {
@@ -492,7 +492,7 @@ if (
       test: "ipfs://QmDockingEvalBundle",
     },
     scoring: {
-      container: "ghcr.io/agora-science/docking-scorer:latest",
+      container: "ghcr.io/agora-science/docking-scorer:v1",
       metric: "spearman",
     },
     reward: {
@@ -627,7 +627,7 @@ for (const challengeType of CHALLENGE_TYPES) {
         hidden_labels: "ipfs://QmCanonicalHidden",
       },
       scoring: {
-        container: "ghcr.io/agora-science/regression-scorer:latest",
+        container: "ghcr.io/agora-science/regression-scorer:v1",
         metric: "rmse",
       },
       reward: {

@@ -299,6 +299,21 @@ function cidHref(value: string | null | undefined) {
 
 function containerHref(value: string | null | undefined) {
   if (!value) return null;
+  const match =
+    /^ghcr\.io\/(?<owner>[^/]+)\/(?<name>[^:@]+)(?::[^@]+)?(?:@sha256:[a-f0-9]{64})?$/i.exec(
+      value.trim(),
+    );
+  if (!match?.groups) return null;
+
+  const owner = match.groups.owner?.toLowerCase();
+  const name = match.groups.name;
+  if (!owner || !name) return null;
+  if (owner === "agora-science") {
+    return `https://github.com/orgs/${owner}/packages/container/${name}`;
+  }
+  if (owner === "andymolecule") {
+    return `https://github.com/users/${owner}/packages/container/${name}`;
+  }
   return null;
 }
 

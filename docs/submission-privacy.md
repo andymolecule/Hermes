@@ -44,7 +44,7 @@ Key code paths:
 - Worker scoring flow and replay publication: `apps/api/src/worker/scoring.ts`
 - Scorer-side sealed envelope resolution and decrypt: `packages/scorer/src/sealed-submission.ts`
 - Worker heartbeat/readiness queries: `packages/db/src/queries/worker-runtime.ts`
-- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`
+- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`, `packages/db/supabase/migrations/004_add_score_job_backoff.sql`
 
 ---
 
