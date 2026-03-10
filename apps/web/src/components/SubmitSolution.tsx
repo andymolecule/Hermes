@@ -3,6 +3,7 @@
 import {
   ACTIVE_CONTRACT_VERSION,
   CHALLENGE_STATUS,
+  SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   computeSubmissionResultHash,
   importSubmissionSealPublicKey,
@@ -13,6 +14,7 @@ import {
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
@@ -31,6 +33,53 @@ import { CHAIN_ID } from "../lib/config";
 import { ScoringTrustNotice } from "./ScoringTrustNotice";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
+const MAX_UPLOAD_MB = SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024;
+const PRIVATE_SUBMISSION_COPY =
+  "Submission contents are sealed in your browser before upload, so other solvers cannot read them while the challenge is open.";
+const PRIVATE_SUBMISSION_DISCLOSURE_COPY =
+  "Your wallet address and transaction remain visible on-chain. After scoring begins, replay artifacts may be published for public verification.";
+const PRIVATE_SUBMISSION_UNAVAILABLE_COPY =
+  "Private answer protection is currently unavailable. Agora requires sealed submissions to keep submission contents hidden while a challenge is open. Retry later after sealed submissions are restored.";
+
+function getFileSelectionError(file: { size: number }) {
+  return getSubmissionSizeError(
+    file.size,
+    "Selected file is empty. Choose a non-empty result file and retry.",
+    `Selected file exceeds the ${MAX_UPLOAD_MB} MB limit. Choose a smaller file and retry.`,
+  );
+}
+
+function getTextSubmissionError(text: string) {
+  return getSubmissionSizeError(
+    new TextEncoder().encode(text).byteLength,
+    "Your answer is empty. Enter a non-empty answer and retry.",
+    `Your answer exceeds the ${MAX_UPLOAD_MB} MB limit. Shorten it and retry.`,
+  );
+}
+
+function getSubmissionSizeError(
+  size: number,
+  emptyMessage: string,
+  tooLargeMessage: string,
+) {
+  if (size <= 0) {
+    return emptyMessage;
+  }
+  if (size > SUBMISSION_LIMITS.maxUploadBytes) {
+    return tooLargeMessage;
+  }
+  return null;
+}
+
+function getSubmissionSealingErrorMessage(error: unknown) {
+  if (
+    error instanceof Error &&
+    error.message.includes("Submission sealing is not configured")
+  ) {
+    return PRIVATE_SUBMISSION_UNAVAILABLE_COPY;
+  }
+  return "Unable to confirm private answer protection right now. Retry in a moment before submitting.";
+}
 
 interface SubmitSolutionProps {
   challengeId: string;
@@ -50,6 +99,16 @@ export function SubmitSolution({
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const isOpen = challengeStatus === CHALLENGE_STATUS.open;
+  const isPastDeadline = new Date(deadline).getTime() <= Date.now();
+  const canSubmit = isOpen && !isPastDeadline;
+  const submissionKeyQuery = useQuery({
+    queryKey: ["submission-public-key"],
+    queryFn: getSubmissionPublicKey,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    enabled: canSubmit,
+  });
 
   const [resultFile, setResultFile] = useState<File | null>(null);
   const [resultText, setResultText] = useState("");
@@ -60,10 +119,16 @@ export function SubmitSolution({
   const [txHash, setTxHash] = useState("");
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
 
-  const isOpen = challengeStatus === CHALLENGE_STATUS.open;
-  const isPastDeadline = new Date(deadline).getTime() <= Date.now();
-  const canSubmit = isOpen && !isPastDeadline;
+  const submissionPublicKey = submissionKeyQuery.data;
+  const isCheckingSealing = submissionKeyQuery.isLoading;
+  const sealingUnavailableMessage =
+    !submissionPublicKey && submissionKeyQuery.isError
+      ? getSubmissionSealingErrorMessage(submissionKeyQuery.error)
+      : null;
+  const dropZoneDisabled =
+    isSubmitting || uploading || isCheckingSealing || !submissionPublicKey;
 
   if (!canSubmit) {
     return (
@@ -91,6 +156,68 @@ export function SubmitSolution({
   const isSuccess = status.startsWith("success:");
   const isError = status && !isSuccess && !isSubmitting && !uploading;
   const hasResult = inputMode === "file" ? !!resultFile : !!resultText.trim();
+
+  function resetDragState() {
+    dragDepthRef.current = 0;
+    setDragging(false);
+  }
+
+  function selectResultFile(file: File) {
+    const selectionError = getFileSelectionError(file);
+    if (selectionError) {
+      setResultFile(null);
+      resetDragState();
+      setStatus(selectionError);
+      return;
+    }
+
+    setResultFile(file);
+    resetDragState();
+    setStatus("");
+  }
+
+  function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) selectResultFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleDragEnter(e: React.DragEvent<HTMLButtonElement>) {
+    if (dropZoneDisabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    setDragging(true);
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLButtonElement>) {
+    if (dropZoneDisabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (!dragging) setDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLButtonElement>) {
+    if (dropZoneDisabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLButtonElement>) {
+    if (dropZoneDisabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) {
+      resetDragState();
+      setStatus("Drop a file to attach it, then submit when ready.");
+      return;
+    }
+    selectResultFile(file);
+  }
 
   async function pinResultToIpfs(file: File): Promise<string> {
     setUploading(true);
@@ -127,6 +254,17 @@ export function SubmitSolution({
       setStatus("Wallet address not available. Reconnect and retry.");
       return;
     }
+    if (isCheckingSealing) {
+      setStatus("Checking private answer protection. Wait a moment and retry.");
+      return;
+    }
+    if (!submissionPublicKey) {
+      setStatus(
+        sealingUnavailableMessage ??
+          "Private answer protection is unavailable. Retry later.",
+      );
+      return;
+    }
     if (!hasResult) {
       setStatus("Upload a result file or enter your answer.");
       return;
@@ -154,7 +292,6 @@ export function SubmitSolution({
         }
       }
 
-      const submissionPublicKey = await getSubmissionPublicKey();
       const publicKey = await importSubmissionSealPublicKey(
         submissionPublicKey.publicKeyPem,
       );
@@ -163,9 +300,20 @@ export function SubmitSolution({
       let sourceFile: File;
       if (inputMode === "file") {
         if (!resultFile) throw new Error("No file selected.");
+        const fileSelectionError = getFileSelectionError(resultFile);
+        if (fileSelectionError) {
+          setStatus(fileSelectionError);
+          return;
+        }
         sourceFile = resultFile;
       } else {
-        const blob = new Blob([resultText.trim()], { type: "text/plain" });
+        const trimmedResultText = resultText.trim();
+        const textSubmissionError = getTextSubmissionError(trimmedResultText);
+        if (textSubmissionError) {
+          setStatus(textSubmissionError);
+          return;
+        }
+        const blob = new Blob([trimmedResultText], { type: "text/plain" });
         sourceFile = new File([blob], "result.txt", { type: "text/plain" });
       }
 
@@ -192,11 +340,11 @@ export function SubmitSolution({
       }
 
       const resultHash = computeSubmissionResultHash(cid);
-      const contractVersion = await publicClient.readContract({
+      const contractVersion = (await publicClient.readContract({
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
         functionName: "contractVersion",
-      }) as bigint;
+      })) as bigint;
       if (Number(contractVersion) !== ACTIVE_CONTRACT_VERSION) {
         throw new Error(
           `Unsupported challenge contract version ${contractVersion}. Refresh against the active v${ACTIVE_CONTRACT_VERSION} deployment and retry.`,
@@ -292,171 +440,186 @@ export function SubmitSolution({
             </span>
           </div>
 
-          {/* Input mode toggle */}
-          <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] w-fit rounded-lg">
-            <button
-              type="button"
-              onClick={() => setInputMode("file")}
-              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "file"
-                  ? "bg-[var(--color-warm-900)] text-white"
-                  : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                }`}
-            >
-              Upload File
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode("text")}
-              className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${inputMode === "text"
-                  ? "bg-[var(--color-warm-900)] text-white"
-                  : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                }`}
-            >
-              Text Answer
-            </button>
-          </div>
-
-          {/* File upload with drag-and-drop */}
-          {inputMode === "file" && (
-            <div>
-              <input
-                id="submission-file"
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                disabled={isSubmitting}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    setResultFile(file);
-                    setStatus("");
-                  }
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
+          {isCheckingSealing ? (
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
+              <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin" />
+              <p className="font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
+                Checking private answer protection...
+              </p>
+            </div>
+          ) : sealingUnavailableMessage ? (
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
+              <AlertCircle
+                className="w-5 h-5 mt-0.5 shrink-0"
+                strokeWidth={2}
               />
+              <div className="space-y-2">
+                <p className="font-bold text-base font-display">
+                  Private Answer Protection Unavailable
+                </p>
+                <p className="font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
+                  {sealingUnavailableMessage}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Input mode toggle */}
+              <div className="flex border border-[var(--border-default)] p-0.5 bg-[var(--surface-inset)] w-fit rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setInputMode("file")}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                    inputMode === "file"
+                      ? "bg-[var(--color-warm-900)] text-white"
+                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                  }`}
+                >
+                  Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode("text")}
+                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                    inputMode === "text"
+                      ? "bg-[var(--color-warm-900)] text-white"
+                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                  }`}
+                >
+                  Text Answer
+                </button>
+              </div>
+
+              {/* File upload with drag-and-drop */}
+              {inputMode === "file" && (
+                <div>
+                  <input
+                    id="submission-file"
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    disabled={dropZoneDisabled}
+                    onChange={handleFileInputChange}
+                  />
+                  <button
+                    type="button"
+                    disabled={dropZoneDisabled}
+                    className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg transition-colors ${
+                      dragging
+                        ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
+                        : resultFile
+                          ? "border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-inset)]"
+                          : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
+                    } ${dropZoneDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                    onDragEnter={handleDragEnter}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() =>
+                      !dropZoneDisabled && fileInputRef.current?.click()
+                    }
+                  >
+                    {resultFile ? (
+                      <>
+                        <FileCheck
+                          className="w-8 h-8 text-[var(--color-warm-900)]"
+                          strokeWidth={1.5}
+                        />
+                        <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
+                          {resultFile.name}
+                        </span>
+                        <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
+                          {(resultFile.size / 1024).toFixed(1)} KB — click to
+                          change
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <FileUp
+                          className="w-8 h-8 text-[var(--text-muted)]"
+                          strokeWidth={1.5}
+                        />
+                        <span className="text-sm font-medium text-[var(--text-secondary)]">
+                          Drop your result file here or{" "}
+                          <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
+                            browse
+                          </span>
+                        </span>
+                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                          Sealed locally before upload
+                        </span>
+                        <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                          CSV, JSON, or any file format
+                        </span>
+                      </>
+                    )}
+                  </button>
+                  {resultFile && (
+                    <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
+                      File staged locally. Submit when ready to seal and upload
+                      it.
+                    </p>
+                  )}
+                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
+                    {PRIVATE_SUBMISSION_COPY}
+                  </p>
+                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
+                    {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
+                  </p>
+                </div>
+              )}
+
+              {/* Text input */}
+              {inputMode === "text" && (
+                <div className="flex flex-col">
+                  <label
+                    htmlFor="submission-text"
+                    className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
+                  >
+                    Your answer
+                  </label>
+                  <textarea
+                    id="submission-text"
+                    className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
+                    rows={4}
+                    placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
+                    value={resultText}
+                    onChange={(e) => {
+                      setResultText(e.target.value);
+                      setStatus("");
+                    }}
+                    disabled={isSubmitting}
+                  />
+                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
+                    {PRIVATE_SUBMISSION_COPY}
+                  </p>
+                  <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
+                    {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
+                  </p>
+                </div>
+              )}
+
+              {/* Submit button */}
               <button
                 type="button"
-                disabled={isSubmitting}
-                className={`flex flex-col items-center justify-center gap-3 p-8 border border-dashed rounded-lg cursor-pointer transition-colors ${dragging
-                    ? "border-[var(--color-warm-900)] bg-[var(--color-warm-900)]/10"
-                    : resultFile
-                      ? "border-[var(--border-default)] bg-[var(--surface-inset)] hover:bg-[var(--surface-inset)]"
-                      : "border-[var(--border-default)] hover:bg-[var(--surface-inset)]"
-                  }`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  const file = e.dataTransfer.files[0];
-                  if (file) {
-                    setResultFile(file);
-                    setStatus("");
-                  }
-                }}
-                onClick={() => !isSubmitting && fileInputRef.current?.click()}
-                onKeyDown={(e) => {
-                  if (isSubmitting) return;
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
+                onClick={handleSubmit}
+                disabled={isSubmitting || uploading || !hasResult}
+                className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-xs font-bold font-mono uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                {resultFile ? (
+                {isSubmitting ? (
                   <>
-                    <FileCheck
-                      className="w-8 h-8 text-[var(--color-warm-900)]"
-                      strokeWidth={1.5}
-                    />
-                    <span className="text-sm font-bold text-[var(--color-warm-900)] font-mono">
-                      {resultFile.name}
-                    </span>
-                    <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
-                      {(resultFile.size / 1024).toFixed(1)} KB — click to change
-                    </span>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {status}
                   </>
                 ) : (
                   <>
-                    <FileUp
-                      className="w-8 h-8 text-[var(--text-muted)]"
-                      strokeWidth={1.5}
-                    />
-                    <span className="text-sm font-medium text-[var(--text-secondary)]">
-                      Drop your result file here or{" "}
-                      <span className="text-[var(--color-warm-900)] font-bold underline underline-offset-2">
-                        browse
-                      </span>
-                    </span>
-                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
-                      Encrypted locally before upload
-                    </span>
-                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
-                      CSV, JSON, or any file format
-                    </span>
+                    Submit Solution
+                    <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
-                Hidden from the public. Agora-operated scoring can decrypt for
-                scoring.
-              </p>
-            </div>
+            </>
           )}
-
-          {/* Text input */}
-          {inputMode === "text" && (
-            <div className="flex flex-col">
-              <label
-                htmlFor="submission-text"
-                className="block text-[10px] font-bold font-mono tracking-wider uppercase text-[var(--text-muted)] mb-2"
-              >
-                Your answer
-              </label>
-              <textarea
-                id="submission-text"
-                className="w-full px-4 py-3 text-sm border font-mono border-[var(--border-default)] bg-white text-[var(--color-warm-900)] placeholder:text-[var(--text-muted)] resize-none input-focus rounded-lg"
-                rows={4}
-                placeholder="Type your answer here (e.g., a number, JSON object, prediction result...)"
-                value={resultText}
-                onChange={(e) => {
-                  setResultText(e.target.value);
-                  setStatus("");
-                }}
-                disabled={isSubmitting}
-              />
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-2">
-                Encrypted locally, sealed to IPFS, hash recorded on-chain.
-              </p>
-              <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] mt-1">
-                Hidden from the public. Agora-operated scoring can decrypt for
-                scoring.
-              </p>
-            </div>
-          )}
-
-          {/* Submit button */}
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSubmitting || uploading || !hasResult}
-            className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-xs font-bold font-mono uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {status}
-              </>
-            ) : (
-              <>
-                Submit Solution
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
 
           {/* Status messages */}
           {isSuccess && (
