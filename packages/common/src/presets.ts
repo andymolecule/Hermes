@@ -313,7 +313,11 @@ const ghcrDigestCache = new Map<
   { digest: string; expiresAt: number }
 >();
 
-function getGhcrHeaders(env: Record<string, string | undefined>) {
+async function getGhcrHeaders(
+  env: Record<string, string | undefined>,
+  imagePath?: string,
+  fetchImpl: typeof fetch = fetch,
+) {
   const headers: Record<string, string> = {
     Accept:
       "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
@@ -321,6 +325,21 @@ function getGhcrHeaders(env: Record<string, string | undefined>) {
   const token = env.AGORA_GHCR_TOKEN ?? env.GHCR_TOKEN ?? env.GITHUB_TOKEN;
   if (typeof token === "string" && token.length > 0) {
     headers.Authorization = `Bearer ${token}`;
+  } else if (imagePath) {
+    // Anonymous token exchange — GHCR requires a bearer token even for public images
+    try {
+      const tokenRes = await fetchImpl(
+        `https://ghcr.io/token?scope=repository:${imagePath}:pull`,
+      );
+      if (tokenRes.ok) {
+        const body = (await tokenRes.json()) as { token?: string };
+        if (typeof body.token === "string" && body.token.length > 0) {
+          headers.Authorization = `Bearer ${body.token}`;
+        }
+      }
+    } catch {
+      // Proceed without token — request will likely 401 and be caught downstream
+    }
   }
   return headers;
 }
@@ -392,7 +411,7 @@ export async function resolveOfficialImageToDigest(
       `https://ghcr.io/v2/${parsed.imagePath}/manifests/${parsed.tag ?? "latest"}`,
       {
         method: "GET",
-        headers: getGhcrHeaders(env),
+        headers: await getGhcrHeaders(env, parsed.imagePath, fetchImpl),
         signal: controller.signal,
       },
     );
