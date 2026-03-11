@@ -1,6 +1,6 @@
 "use client";
 
-import { CHALLENGE_STATUS } from "@agora/common";
+import { CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, FileText, FlaskConical, User } from "lucide-react";
 import Link from "next/link";
@@ -12,6 +12,7 @@ import {
   logoutSiweSession,
   verifySiweSession,
 } from "../../lib/api";
+import { getChallengeBadgeLabel } from "../../lib/challenge-status-copy";
 import { API_BASE_URL, CHAIN_ID } from "../../lib/config";
 import { formatUsdc } from "../../lib/format";
 import { getStatusStyle } from "../../lib/status-styles";
@@ -100,7 +101,7 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
             borderColor: statusStyle.borderColor,
           }}
         >
-          {challenge.status}
+          {getChallengeBadgeLabel(challenge.status as ChallengeStatus)}
         </span>
         {hasClaimable && (
           <span className="ml-2 px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider bg-green-100 text-green-700 border border-green-300 rounded-[2px]">

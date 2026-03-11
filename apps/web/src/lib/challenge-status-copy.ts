@@ -15,8 +15,9 @@ const BASE_TIMELINE_STEPS: Record<ChallengeStatus, TimelineStep> = {
   },
   [CHALLENGE_STATUS.scoring]: {
     key: CHALLENGE_STATUS.scoring,
-    label: "Scoring",
-    detail: "Submission window closed; oracle scoring in progress",
+    label: "Closed",
+    detail:
+      "Submission window closed; scoring and review continue before settlement",
   },
   [CHALLENGE_STATUS.disputed]: {
     key: CHALLENGE_STATUS.disputed,
@@ -39,7 +40,7 @@ export function getChallengeBadgeLabel(status: ChallengeStatus): string {
   return (
     {
       [CHALLENGE_STATUS.open]: "Live",
-      [CHALLENGE_STATUS.scoring]: "Scoring",
+      [CHALLENGE_STATUS.scoring]: "Closed",
       [CHALLENGE_STATUS.disputed]: "Disputed",
       [CHALLENGE_STATUS.finalized]: "Settled",
       [CHALLENGE_STATUS.cancelled]: "Cancelled",
@@ -58,7 +59,7 @@ export function getChallengeCardFooterLabel({
     case CHALLENGE_STATUS.open:
       return deadlineCountdown(deadline);
     case CHALLENGE_STATUS.scoring:
-      return "Scoring in progress";
+      return "Submissions closed";
     case CHALLENGE_STATUS.disputed:
       return "Dispute in review";
     case CHALLENGE_STATUS.finalized:

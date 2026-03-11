@@ -27,6 +27,7 @@ import {
   getChallengeSpec,
   getPublicSubmissionVerification,
 } from "../../../lib/api";
+import { getChallengeBadgeLabel } from "../../../lib/challenge-status-copy";
 import { formatUsdc } from "../../../lib/format";
 import type { SubmissionVerification } from "../../../lib/types";
 import {
@@ -49,7 +50,12 @@ function InfoRow({
   return (
     <div className="flex flex-col gap-2 border-b border-[var(--border-subtle)] py-4 last:border-b-0 sm:flex-row sm:items-center">
       <div className="flex items-center gap-2 w-48 shrink-0">
-        {Icon && <Icon className="h-4 w-4 text-[var(--text-muted)]" strokeWidth={1.5} />}
+        {Icon && (
+          <Icon
+            className="h-4 w-4 text-[var(--text-muted)]"
+            strokeWidth={1.5}
+          />
+        )}
         <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
           {label}
         </div>
@@ -181,17 +187,21 @@ function getMetricPresentation(
     case "custom":
       return {
         label: "Custom scoring metric",
-        helper: "See the official scoring rule and scorer details below for the exact evaluation logic.",
+        helper:
+          "See the official scoring rule and scorer details below for the exact evaluation logic.",
       };
     default:
       return {
         label: "Scorer-defined metric",
-        helper: "See the official scoring rule and scorer details below for the exact evaluation logic.",
+        helper:
+          "See the official scoring rule and scorer details below for the exact evaluation logic.",
       };
   }
 }
 
-function getEligibilityThresholdPresentation(minimumScore?: number | string | null) {
+function getEligibilityThresholdPresentation(
+  minimumScore?: number | string | null,
+) {
   const parsed = Number(minimumScore ?? 0);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return {
@@ -515,8 +525,8 @@ export function DetailClient({ id }: { id: string }) {
       getPublicSubmissionVerification(verificationSubmission?.id as string),
     enabled: detailQuery.data
       ? canShowChallengeResults(detailQuery.data.challenge.status) &&
-      Boolean(verificationSubmission?.id) &&
-      verificationSubmission?.has_public_verification === true
+        Boolean(verificationSubmission?.id) &&
+        verificationSubmission?.has_public_verification === true
       : false,
     staleTime: 5 * 60 * 1000,
   });
@@ -573,9 +583,10 @@ export function DetailClient({ id }: { id: string }) {
     Boolean(challenge.spec_cid) && specQuery.isLoading;
   const verification = verificationQuery.data;
   const hasPublicVerificationArtifacts = Boolean(verification?.proofBundleCid);
-  const verifyCommand = hasPublicVerificationArtifacts && verification
-    ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
-    : null;
+  const verifyCommand =
+    hasPublicVerificationArtifacts && verification
+      ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
+      : null;
   const scorerInfo = getScorerTransparencyInfo(challenge.eval_image);
   const metricPresentation = getMetricPresentation(
     challenge.challenge_type,
@@ -617,7 +628,7 @@ export function DetailClient({ id }: { id: string }) {
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${challenge.status === CHALLENGE_STATUS.open ? "bg-green-500" : "bg-[var(--color-warm-900)]"}`}
                   />
-                  {challenge.status}
+                  {getChallengeBadgeLabel(challenge.status)}
                 </span>
               </div>
 
@@ -969,7 +980,9 @@ export function DetailClient({ id }: { id: string }) {
                         </div>
                         <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
                           <LinkedValue
-                            href={containerHref(verification.containerImageDigest)}
+                            href={containerHref(
+                              verification.containerImageDigest,
+                            )}
                             value={verification.containerImageDigest ?? "—"}
                           />
                         </div>
@@ -1023,7 +1036,7 @@ export function DetailClient({ id }: { id: string }) {
                 </div>
                 <div>
                   <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                    Deadline
+                    Submission Deadline
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-sm font-medium text-[var(--color-warm-900)]">
                     <CalendarClock
@@ -1035,7 +1048,7 @@ export function DetailClient({ id }: { id: string }) {
                 </div>
                 <div>
                   <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                    Review Period
+                    Review Window
                   </div>
                   <div className="mt-1 text-sm font-medium text-[var(--color-warm-900)]">
                     {challenge.dispute_window_hours != null

@@ -1,6 +1,10 @@
 "use client";
 
-import { CHALLENGE_LIMITS, CHALLENGE_STATUS, type ChallengeStatus } from "@agora/common";
+import {
+  CHALLENGE_LIMITS,
+  CHALLENGE_STATUS,
+  type ChallengeStatus,
+} from "@agora/common";
 import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
 import { getChallengeTimelineFlow } from "../lib/challenge-status-copy";
 import { shortAddress } from "../lib/format";
@@ -66,17 +70,29 @@ export function TimelineStatus({
       {/* Meta info */}
       <div className="space-y-4">
         <div className="flex items-center gap-3 text-sm">
-          <Calendar className="w-4 h-4 text-[var(--text-muted)]" strokeWidth={1.5} />
-          <span className="text-[var(--text-muted)] font-medium">Deadline</span>
+          <Calendar
+            className="w-4 h-4 text-[var(--text-muted)]"
+            strokeWidth={1.5}
+          />
+          <span className="text-[var(--text-muted)] font-medium">
+            Submission deadline
+          </span>
           <span className="ml-auto font-mono font-bold text-[var(--color-warm-900)] uppercase tracking-wider text-xs">
             {new Date(challenge.deadline).toLocaleString()}
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <Clock className="w-4 h-4 text-[var(--text-muted)]" strokeWidth={1.5} />
-          <span className="text-[var(--text-muted)] font-medium">Review period</span>
+          <Clock
+            className="w-4 h-4 text-[var(--text-muted)]"
+            strokeWidth={1.5}
+          />
+          <span className="text-[var(--text-muted)] font-medium">
+            Review window
+          </span>
           <span className="ml-auto font-mono font-bold text-[var(--color-warm-900)] uppercase tracking-wider text-xs">
-            {challenge.dispute_window_hours ?? CHALLENGE_LIMITS.defaultDisputeWindowHours}h
+            {challenge.dispute_window_hours ??
+              CHALLENGE_LIMITS.defaultDisputeWindowHours}
+            h
           </span>
         </div>
       </div>
@@ -86,8 +102,13 @@ export function TimelineStatus({
         <>
           <div className="my-6 border-t border-[var(--border-subtle)]" />
           <div className="flex items-center gap-3 text-sm">
-            <ExternalLink className="w-4 h-4 text-[var(--text-muted)]" strokeWidth={1.5} />
-            <span className="text-[var(--text-muted)] font-medium">Contract</span>
+            <ExternalLink
+              className="w-4 h-4 text-[var(--text-muted)]"
+              strokeWidth={1.5}
+            />
+            <span className="text-[var(--text-muted)] font-medium">
+              Contract
+            </span>
             <a
               href={`${BASESCAN_URL}/address/${challenge.contract_address}`}
               target="_blank"
