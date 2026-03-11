@@ -18,7 +18,7 @@ import {
   updateScore,
 } from "@agora/db";
 import { runWorkerPhase } from "./phases.js";
-import { POST_TX_RETRY_DELAY_MS } from "./policy.js";
+import { getWorkerPostTxRetryDelayMs } from "./policy.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
@@ -117,7 +117,7 @@ export async function handlePreviouslyPostedScoreTx(
         job.id,
         job.attempts,
         reason,
-        POST_TX_RETRY_DELAY_MS,
+        getWorkerPostTxRetryDelayMs(),
       );
       log("warn", reason, {
         jobId: job.id,
@@ -151,7 +151,7 @@ export async function handlePreviouslyPostedScoreTx(
         job.id,
         job.attempts,
         reason,
-        POST_TX_RETRY_DELAY_MS,
+        getWorkerPostTxRetryDelayMs(),
       );
       log("info", reason, {
         jobId: job.id,

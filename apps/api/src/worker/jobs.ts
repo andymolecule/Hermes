@@ -21,8 +21,8 @@ import {
 } from "./chain.js";
 import { runWorkerPhase } from "./phases.js";
 import {
-  INFRA_RETRY_DELAY_MS,
-  POST_TX_RETRY_DELAY_MS,
+  getWorkerInfraRetryDelayMs,
+  getWorkerPostTxRetryDelayMs,
   isWorkerInfrastructureError,
 } from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
@@ -143,7 +143,7 @@ export async function processJob(
           job.id,
           job.attempts,
           reason,
-          POST_TX_RETRY_DELAY_MS,
+          getWorkerPostTxRetryDelayMs(),
         );
         return;
       }
@@ -295,7 +295,7 @@ export async function processJob(
         job.id,
         job.attempts,
         `scorer_infrastructure: ${message}`,
-        INFRA_RETRY_DELAY_MS,
+        getWorkerInfraRetryDelayMs(),
       );
       return;
     }

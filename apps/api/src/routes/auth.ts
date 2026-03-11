@@ -1,10 +1,10 @@
 import { getPublicClient } from "@agora/chain";
+import { isProductionRuntime, readApiServerRuntimeConfig } from "@agora/common";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { SiweError, SiweErrorType, SiweMessage } from "siwe";
 import { z } from "zod";
-import { DEFAULT_CHAIN_ID } from "@agora/common";
 import {
   consumeNonce,
   createNonce,
@@ -34,7 +34,8 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
     return c.json({ error: "Invalid SIWE message." }, 401);
   }
 
-  const apiUrl = process.env.AGORA_API_URL;
+  const runtimeConfig = readApiServerRuntimeConfig();
+  const apiUrl = runtimeConfig.apiUrl;
   const forwardedProto = c.req.header("x-forwarded-proto");
   const requestProtocol =
     forwardedProto ?? new URL(c.req.url).protocol.replace(":", "");
@@ -45,7 +46,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
       ? `${requestProtocol}://${requestHost}`
       : undefined;
   const expectedDomain = apiUrl ? new URL(apiUrl).host : requestHost;
-  const expectedChainId = Number(process.env.AGORA_CHAIN_ID ?? DEFAULT_CHAIN_ID);
+  const expectedChainId = runtimeConfig.chainId;
 
   if (expectedDomain && siweMessage.domain !== expectedDomain) {
     return c.json({ error: "SIWE domain mismatch." }, 401);
@@ -73,7 +74,12 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
     },
     {
       suppressExceptions: true,
-      verificationFallback: async (_params, _opts, parsedMessage, _eip1271Promise) => {
+      verificationFallback: async (
+        _params,
+        _opts,
+        parsedMessage,
+        _eip1271Promise,
+      ) => {
         const isValid = await publicClient.verifyMessage({
           address: parsedMessage.address.toLowerCase() as `0x${string}`,
           message: parsedMessage.prepareMessage(),
@@ -103,7 +109,7 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
 
   const { token, expiresAt } = await createSession(address);
   const cookieSecure =
-    process.env.NODE_ENV === "production" || requestProtocol === "https";
+    isProductionRuntime(runtimeConfig) || requestProtocol === "https";
 
   setCookie(c, "agora_session", token, {
     httpOnly: true,

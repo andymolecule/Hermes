@@ -4,6 +4,7 @@ import {
   type RunnerLimits,
   SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
+  isProductionRuntime,
   loadConfig,
   lookupPreset,
   resolveEvalSpec,
@@ -170,13 +171,13 @@ export async function scoreSubmissionAndBuildProof(
     challengeId: challenge.id,
     image: evalPlan.image,
   };
-  const isProduction = process.env.NODE_ENV === "production";
+  const config = loadConfig();
+  const isProduction = isProductionRuntime(config);
   const scoringEnv = await resolveScoringEnvironmentFromSpecCid(
     challenge.spec_cid,
   );
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
-    const config = loadConfig();
     submissionSource = await resolveSubmissionSource({
       resultCid: submission.result_cid as string,
       resultFormat: submission.result_format,

@@ -6,11 +6,16 @@ import {
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   getEffectiveChallengeStatus,
+  isProductionRuntime,
   loadConfig,
   loadIpfsConfig,
+  readApiServerRuntimeConfig,
   readFeaturePolicy,
+  readIndexerHealthRuntimeConfig,
+  readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
+  resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
 } from "../index.js";
 
@@ -85,6 +90,42 @@ try {
   const config = loadConfig();
   assert.equal(config.AGORA_CHAIN_ID, DEFAULT_CHAIN_ID);
   assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
+  assert.equal(resolveRuntimePrivateKey(config), undefined);
+
+  process.env.NODE_ENV = "production";
+  process.env.AGORA_CORS_ORIGINS =
+    "https://agora-market.vercel.app, https://preview.example";
+  process.env.AGORA_API_PORT = "4010";
+  process.env.AGORA_INDEXER_LAG_WARN_BLOCKS = "42";
+  process.env.AGORA_INDEXER_LAG_CRITICAL_BLOCKS = "84";
+  process.env.AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS = "123456";
+  process.env.AGORA_WORKER_POLL_MS = "111";
+  process.env.AGORA_WORKER_FINALIZE_SWEEP_MS = "222";
+  process.env.AGORA_WORKER_POST_TX_RETRY_MS = "333";
+  process.env.AGORA_WORKER_INFRA_RETRY_MS = "444";
+  process.env.AGORA_WORKER_HEARTBEAT_MS = "555";
+  process.env.AGORA_WORKER_HEARTBEAT_STALE_MS = "777";
+  const apiRuntime = readApiServerRuntimeConfig();
+  assert.equal(apiRuntime.nodeEnv, "production");
+  assert.equal(apiRuntime.apiPort, 4010);
+  assert.deepEqual(apiRuntime.corsOrigins, [
+    "https://agora-market.vercel.app",
+    "https://preview.example",
+  ]);
+  assert.equal(isProductionRuntime(apiRuntime), true);
+
+  const indexerRuntime = readIndexerHealthRuntimeConfig();
+  assert.equal(indexerRuntime.warningLagBlocks, 42);
+  assert.equal(indexerRuntime.criticalLagBlocks, 84);
+  assert.equal(indexerRuntime.activeCursorWindowMs, 123456);
+
+  const workerTiming = readWorkerTimingConfig();
+  assert.equal(workerTiming.pollIntervalMs, 111);
+  assert.equal(workerTiming.finalizeSweepIntervalMs, 222);
+  assert.equal(workerTiming.postTxRetryDelayMs, 333);
+  assert.equal(workerTiming.infraRetryDelayMs, 444);
+  assert.equal(workerTiming.heartbeatIntervalMs, 555);
+  assert.equal(workerTiming.heartbeatStaleMs, 777);
 
   process.env.AGORA_RPC_URL = undefined;
   process.env.AGORA_FACTORY_ADDRESS = undefined;
@@ -101,12 +142,18 @@ try {
   process.env.AGORA_FACTORY_ADDRESS =
     "0x0000000000000000000000000000000000000001";
   process.env.AGORA_USDC_ADDRESS = "0x0000000000000000000000000000000000000002";
+  process.env.AGORA_ORACLE_KEY =
+    "0x1111111111111111111111111111111111111111111111111111111111111111";
   resetConfigCache();
 
   const featurePolicy = readFeaturePolicy();
   assert.equal(featurePolicy.enableNonCoreFeatures, false);
   assert.equal(featurePolicy.x402Enabled, false);
   assert.equal(featurePolicy.allowMcpRemotePrivateKeys, false);
+  assert.equal(
+    resolveRuntimePrivateKey(loadConfig()),
+    process.env.AGORA_ORACLE_KEY,
+  );
 
   process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "kid-only";
   resetConfigCache();

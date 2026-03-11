@@ -1,21 +1,10 @@
 import { getPublicClient } from "@agora/chain";
-import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
+import {
+  getAgoraRuntimeIdentity,
+  loadConfig,
+  readIndexerHealthRuntimeConfig,
+} from "@agora/common";
 import { createSupabaseClient } from "@agora/db";
-
-export const WARN_LAG_BLOCKS = Number(
-  process.env.AGORA_INDEXER_LAG_WARN_BLOCKS ?? 20,
-);
-export const CRITICAL_LAG_BLOCKS = Number(
-  process.env.AGORA_INDEXER_LAG_CRITICAL_BLOCKS ?? 120,
-);
-export const INDEXER_CONFIRMATION_DEPTH = (() => {
-  const parsed = Number(process.env.AGORA_INDEXER_CONFIRMATION_DEPTH ?? 3);
-  if (!Number.isFinite(parsed) || parsed < 0) return 0;
-  return Math.floor(parsed);
-})();
-const ACTIVE_FACTORY_CURSOR_WINDOW_MS = Number(
-  process.env.AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS ?? 15 * 60 * 1000,
-);
 
 export type IndexerLagStatus =
   | "ok"
@@ -57,15 +46,17 @@ export function toLagStatus(
   lagBlocks: number,
   hasIndexedBlock: boolean,
 ): IndexerLagStatus {
+  const runtimeConfig = readIndexerHealthRuntimeConfig();
   if (!hasIndexedBlock) return "empty";
-  if (lagBlocks >= CRITICAL_LAG_BLOCKS) return "critical";
-  if (lagBlocks >= WARN_LAG_BLOCKS) return "warning";
+  if (lagBlocks >= runtimeConfig.criticalLagBlocks) return "critical";
+  if (lagBlocks >= runtimeConfig.warningLagBlocks) return "warning";
   return "ok";
 }
 
 export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot> {
   const config = loadConfig();
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
+  const healthConfig = readIndexerHealthRuntimeConfig();
   const db = createSupabaseClient(true);
   const publicClient = getPublicClient();
 
@@ -106,7 +97,7 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
     : null;
   const chainHeadNumber = Number(chainHead);
   const finalizedHead = Math.max(
-    chainHeadNumber - INDEXER_CONFIRMATION_DEPTH,
+    chainHeadNumber - healthConfig.confirmationDepth,
     0,
   );
   const lagBlocks =
@@ -128,7 +119,7 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
       const updatedAtMs = Date.parse(row.updatedAt);
       return (
         Number.isFinite(updatedAtMs) &&
-        nowMs - updatedAtMs <= ACTIVE_FACTORY_CURSOR_WINDOW_MS
+        nowMs - updatedAtMs <= healthConfig.activeCursorWindowMs
       );
     });
   const hasAlternateActiveFactory = activeAlternateFactories.length > 0;
@@ -147,7 +138,7 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
     finalizedHead,
     indexedHead,
     lagBlocks,
-    confirmationDepth: INDEXER_CONFIRMATION_DEPTH,
+    confirmationDepth: healthConfig.confirmationDepth,
     configured: {
       chainId: runtimeIdentity.chainId,
       factoryAddress: runtimeIdentity.factoryAddress,
@@ -159,8 +150,8 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
       message: mismatchMessage,
     },
     thresholds: {
-      warning: WARN_LAG_BLOCKS,
-      critical: CRITICAL_LAG_BLOCKS,
+      warning: healthConfig.warningLagBlocks,
+      critical: healthConfig.criticalLagBlocks,
     },
     checkedAt: new Date().toISOString(),
   };

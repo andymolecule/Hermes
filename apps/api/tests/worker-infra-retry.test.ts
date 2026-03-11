@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
-import { INFRA_RETRY_DELAY_MS } from "../src/worker/policy.js";
 import { processJob } from "../src/worker/jobs.js";
+import { getWorkerInfraRetryDelayMs } from "../src/worker/policy.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
@@ -85,6 +85,6 @@ test("infra scorer failures requeue without consuming attempts", async () => {
     attempts: job.attempts,
     reason:
       'scorer_infrastructure: Failed to pull scorer image ghcr.io/agora-science/repro-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/agora-science/repro-scorer/manifests/v1": denied',
-    delayMs: INFRA_RETRY_DELAY_MS,
+    delayMs: getWorkerInfraRetryDelayMs(),
   });
 });

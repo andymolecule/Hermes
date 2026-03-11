@@ -82,37 +82,11 @@ echo
 echo "[STEP] Building workspace"
 pnpm turbo build >/dev/null
 
-echo "[STEP] Verifying official scorer digest resolution"
+echo "[STEP] Verifying official scorer publication and anonymous pull access"
 pnpm scorers:verify >/dev/null
 
 echo "[STEP] Verifying runtime database schema compatibility"
 pnpm schema:verify >/dev/null
-
-echo "[STEP] Verifying official scorer images are published and pullable"
-mapfile -t official_images < <(node --input-type=module <<'EOF'
-import { OFFICIAL_IMAGES } from "./packages/common/dist/presets.js";
-
-for (const image of Object.values(OFFICIAL_IMAGES)) {
-  console.log(image);
-}
-EOF
-)
-
-if [[ "${#official_images[@]}" -eq 0 ]]; then
-  echo "[FAIL] No official scorer images were found in presets."
-  exit 1
-fi
-
-for image in "${official_images[@]}"; do
-  pull_log="/tmp/agora_preflight_$(echo "$image" | tr '/:@' '_').log"
-  if ! docker pull "$image" >"$pull_log" 2>&1; then
-    echo "[FAIL] Official scorer image is not pullable: $image"
-    cat "$pull_log" || true
-    exit 1
-  fi
-done
-
-echo "[OK] Official scorer images pullable: ${official_images[*]}"
 
 echo
 

@@ -1,3 +1,4 @@
+import { readWorkerTimingConfig } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
 export const WORKER_RUNTIME_TYPE = {
@@ -64,14 +65,13 @@ export interface WorkerRuntimeSummary {
   staleAfterMs: number;
 }
 
-export const DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS = Number(
-  process.env.AGORA_WORKER_HEARTBEAT_MS ?? 30_000,
-);
+export function getDefaultWorkerRuntimeHeartbeatMs() {
+  return readWorkerTimingConfig().heartbeatIntervalMs;
+}
 
-export const DEFAULT_WORKER_RUNTIME_STALE_MS = Number(
-  process.env.AGORA_WORKER_HEARTBEAT_STALE_MS ??
-    DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS * 3,
-);
+export function getDefaultWorkerRuntimeStaleMs() {
+  return readWorkerTimingConfig().heartbeatStaleMs;
+}
 
 function normalizeWorkerRuntimeInput(
   input: UpsertWorkerRuntimeStateInput,
@@ -167,7 +167,7 @@ export async function pruneWorkerRuntimeStates(
   } = {},
 ): Promise<number> {
   const workerType = input.workerType ?? WORKER_RUNTIME_TYPE.scoring;
-  const staleAfterMs = input.staleAfterMs ?? DEFAULT_WORKER_RUNTIME_STALE_MS;
+  const staleAfterMs = input.staleAfterMs ?? getDefaultWorkerRuntimeStaleMs();
   const nowMs = input.nowMs ?? Date.now();
   const cutoffIso = new Date(nowMs - staleAfterMs).toISOString();
 
@@ -197,7 +197,7 @@ export async function pruneWorkerRuntimeStates(
 
 export function isWorkerRuntimeStateStale(
   row: Pick<WorkerRuntimeStateRow, "last_heartbeat_at">,
-  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+  staleAfterMs = getDefaultWorkerRuntimeStaleMs(),
   nowMs = Date.now(),
 ) {
   return nowMs - new Date(row.last_heartbeat_at).getTime() > staleAfterMs;
@@ -206,7 +206,7 @@ export function isWorkerRuntimeStateStale(
 export function isWorkerRuntimeReadyForSealKey(
   row: WorkerRuntimeStateRow,
   activeSealKeyId: string,
-  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+  staleAfterMs = getDefaultWorkerRuntimeStaleMs(),
   nowMs = Date.now(),
 ) {
   return (
@@ -228,7 +228,7 @@ export function summarizeWorkerRuntimeStates(
     nowMs?: number;
   } = {},
 ): WorkerRuntimeSummary {
-  const staleAfterMs = input.staleAfterMs ?? DEFAULT_WORKER_RUNTIME_STALE_MS;
+  const staleAfterMs = input.staleAfterMs ?? getDefaultWorkerRuntimeStaleMs();
   const nowMs = input.nowMs ?? Date.now();
   const activeSealKeyId = input.activeSealKeyId ?? null;
   const activeRuntimeVersion = input.activeRuntimeVersion ?? null;
@@ -293,7 +293,7 @@ export function summarizeWorkerRuntimeStates(
 export async function hasReadyWorkerForSealKey(
   db: AgoraDbClient,
   activeSealKeyId: string,
-  staleAfterMs = DEFAULT_WORKER_RUNTIME_STALE_MS,
+  staleAfterMs = getDefaultWorkerRuntimeStaleMs(),
 ): Promise<boolean> {
   const rows = await listWorkerRuntimeStates(db);
   const summary = summarizeWorkerRuntimeStates(rows, {

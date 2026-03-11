@@ -1,4 +1,7 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { OFFICIAL_IMAGES, resolveOfficialImageToDigest } from "@agora/common";
 import { verifyRuntimeDatabaseSchema } from "@agora/db";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -25,6 +28,33 @@ function isHexAddress(value: string | undefined) {
 
 function isPrivateKey(value: string | undefined) {
   return !!value && /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
+function dockerAvailable() {
+  const docker = spawnSync("docker", ["info"], {
+    encoding: "utf8",
+  });
+  return docker.status === 0;
+}
+
+function pullOfficialImageAnonymously(image: string) {
+  const dockerConfigDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "agora-doctor-ghcr-"),
+  );
+  try {
+    const pull = spawnSync("docker", ["pull", image], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DOCKER_CONFIG: dockerConfigDir,
+      },
+    });
+    if (pull.status !== 0) {
+      throw new Error(pull.stderr || pull.stdout || "docker pull failed");
+    }
+  } finally {
+    fs.rmSync(dockerConfigDir, { recursive: true, force: true });
+  }
 }
 
 export function buildDoctorCommand() {
@@ -372,26 +402,54 @@ export function buildDoctorCommand() {
       try {
         const resolved = await Promise.all(
           Object.values(OFFICIAL_IMAGES).map((image) =>
-            resolveOfficialImageToDigest(image).then((digest) => ({
+            resolveOfficialImageToDigest(image, { env: {} }).then((digest) => ({
               image,
               digest,
             })),
           ),
         );
         checks.push({
-          name: "Official scorer registry",
+          name: "Official scorer manifest access",
           status: "ok",
           detail: resolved.map((row) => row.digest).join(", "),
         });
       } catch (error) {
         checks.push({
-          name: "Official scorer registry",
+          name: "Official scorer manifest access",
           status: "error",
           detail:
             error instanceof Error
               ? error.message
-              : "Official scorer registry check failed",
+              : "Official scorer manifest access check failed",
         });
+      }
+
+      if (!dockerAvailable()) {
+        checks.push({
+          name: "Official scorer docker pull",
+          status: "skip",
+          detail: "Docker unavailable on this machine",
+        });
+      } else {
+        try {
+          for (const image of Object.values(OFFICIAL_IMAGES)) {
+            pullOfficialImageAnonymously(image);
+          }
+          checks.push({
+            name: "Official scorer docker pull",
+            status: "ok",
+            detail: Object.values(OFFICIAL_IMAGES).join(", "),
+          });
+        } catch (error) {
+          checks.push({
+            name: "Official scorer docker pull",
+            status: "error",
+            detail:
+              error instanceof Error
+                ? error.message
+                : "Official scorer docker pull check failed",
+          });
+        }
       }
 
       if (opts.format === "json") {

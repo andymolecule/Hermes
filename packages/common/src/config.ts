@@ -4,6 +4,7 @@ import { parseBooleanLike } from "./env.js";
 
 const configSchema = z.object({
   AGORA_RPC_URL: z.string().url(),
+  NODE_ENV: z.string().default("development"),
   AGORA_CHAIN_ID: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
@@ -71,6 +72,24 @@ const configSchema = z.object({
       z.number().int().nonnegative(),
     )
     .default(3),
+  AGORA_INDEXER_LAG_WARN_BLOCKS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().nonnegative(),
+    )
+    .default(20),
+  AGORA_INDEXER_LAG_CRITICAL_BLOCKS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().nonnegative(),
+    )
+    .default(120),
+  AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(15 * 60 * 1000),
   AGORA_INDEXER_RETRY_MAX_ATTEMPTS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
@@ -89,6 +108,42 @@ const configSchema = z.object({
       z.number().int().nonnegative(),
     )
     .default(2_000),
+  AGORA_WORKER_POLL_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(15_000),
+  AGORA_WORKER_FINALIZE_SWEEP_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(60_000),
+  AGORA_WORKER_POST_TX_RETRY_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(30_000),
+  AGORA_WORKER_INFRA_RETRY_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(5 * 60 * 1000),
+  AGORA_WORKER_HEARTBEAT_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(30_000),
+  AGORA_WORKER_HEARTBEAT_STALE_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .optional(),
   AGORA_ENABLE_NON_CORE_FEATURES: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
@@ -189,6 +244,54 @@ const ipfsConfigSchema = configSchema.pick({
 });
 export type AgoraIpfsConfig = z.infer<typeof ipfsConfigSchema>;
 
+const apiServerRuntimeConfigSchema = configSchema.pick({
+  NODE_ENV: true,
+  AGORA_API_URL: true,
+  AGORA_API_PORT: true,
+  AGORA_CORS_ORIGINS: true,
+  AGORA_CHAIN_ID: true,
+});
+
+const indexerHealthRuntimeConfigSchema = configSchema.pick({
+  AGORA_INDEXER_CONFIRMATION_DEPTH: true,
+  AGORA_INDEXER_LAG_WARN_BLOCKS: true,
+  AGORA_INDEXER_LAG_CRITICAL_BLOCKS: true,
+  AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS: true,
+});
+
+const workerTimingConfigSchema = configSchema.pick({
+  AGORA_WORKER_POLL_MS: true,
+  AGORA_WORKER_FINALIZE_SWEEP_MS: true,
+  AGORA_WORKER_POST_TX_RETRY_MS: true,
+  AGORA_WORKER_INFRA_RETRY_MS: true,
+  AGORA_WORKER_HEARTBEAT_MS: true,
+  AGORA_WORKER_HEARTBEAT_STALE_MS: true,
+});
+
+export interface AgoraApiServerRuntimeConfig {
+  nodeEnv: string;
+  apiUrl?: string;
+  apiPort: number;
+  chainId: number;
+  corsOrigins: string[];
+}
+
+export interface AgoraIndexerHealthRuntimeConfig {
+  confirmationDepth: number;
+  warningLagBlocks: number;
+  criticalLagBlocks: number;
+  activeCursorWindowMs: number;
+}
+
+export interface AgoraWorkerTimingConfig {
+  pollIntervalMs: number;
+  finalizeSweepIntervalMs: number;
+  postTxRetryDelayMs: number;
+  infraRetryDelayMs: number;
+  heartbeatIntervalMs: number;
+  heartbeatStaleMs: number;
+}
+
 export interface AgoraRuntimeIdentity {
   chainId: number;
   factoryAddress: `0x${string}`;
@@ -217,6 +320,17 @@ function formatZodError(error: z.ZodError): string {
     return `${path}: ${issue.message}`;
   });
   return `Invalid Agora configuration. Fix the following:\n- ${lines.join("\n- ")}`;
+}
+
+function parseConfigSection<Schema extends z.ZodTypeAny>(
+  schema: Schema,
+  env: Record<string, string | undefined>,
+): z.infer<Schema> {
+  const result = schema.safeParse(env);
+  if (!result.success) {
+    throw new Error(formatZodError(result.error));
+  }
+  return result.data;
 }
 
 let cachedConfig: AgoraConfig | null = null;
@@ -305,6 +419,67 @@ export function getAgoraRuntimeIdentity(
     usdcAddress: config.AGORA_USDC_ADDRESS,
     rpcUrl: config.AGORA_RPC_URL,
   };
+}
+
+export function resolveRuntimePrivateKey(
+  config: AgoraConfig = loadConfig(),
+): `0x${string}` | undefined {
+  return config.AGORA_PRIVATE_KEY ?? config.AGORA_ORACLE_KEY;
+}
+
+export function readApiServerRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraApiServerRuntimeConfig {
+  const parsed = parseConfigSection(apiServerRuntimeConfigSchema, env);
+  return {
+    nodeEnv: parsed.NODE_ENV,
+    apiUrl: parsed.AGORA_API_URL,
+    apiPort: parsed.AGORA_API_PORT ?? 3000,
+    chainId: parsed.AGORA_CHAIN_ID,
+    corsOrigins: parsed.AGORA_CORS_ORIGINS
+      ? parsed.AGORA_CORS_ORIGINS.split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : [],
+  };
+}
+
+export function readIndexerHealthRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraIndexerHealthRuntimeConfig {
+  const parsed = parseConfigSection(indexerHealthRuntimeConfigSchema, env);
+  return {
+    confirmationDepth: parsed.AGORA_INDEXER_CONFIRMATION_DEPTH,
+    warningLagBlocks: parsed.AGORA_INDEXER_LAG_WARN_BLOCKS,
+    criticalLagBlocks: parsed.AGORA_INDEXER_LAG_CRITICAL_BLOCKS,
+    activeCursorWindowMs: parsed.AGORA_INDEXER_ACTIVE_CURSOR_WINDOW_MS,
+  };
+}
+
+export function readWorkerTimingConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraWorkerTimingConfig {
+  const parsed = parseConfigSection(workerTimingConfigSchema, env);
+  return {
+    pollIntervalMs: parsed.AGORA_WORKER_POLL_MS,
+    finalizeSweepIntervalMs: parsed.AGORA_WORKER_FINALIZE_SWEEP_MS,
+    postTxRetryDelayMs: parsed.AGORA_WORKER_POST_TX_RETRY_MS,
+    infraRetryDelayMs: parsed.AGORA_WORKER_INFRA_RETRY_MS,
+    heartbeatIntervalMs: parsed.AGORA_WORKER_HEARTBEAT_MS,
+    heartbeatStaleMs:
+      parsed.AGORA_WORKER_HEARTBEAT_STALE_MS ??
+      parsed.AGORA_WORKER_HEARTBEAT_MS * 3,
+  };
+}
+
+export function isProductionRuntime(
+  config:
+    | Pick<AgoraConfig, "NODE_ENV">
+    | Pick<AgoraApiServerRuntimeConfig, "nodeEnv"> = loadConfig(),
+): boolean {
+  return (
+    ("NODE_ENV" in config ? config.NODE_ENV : config.nodeEnv) === "production"
+  );
 }
 
 export function getAgoraRuntimeVersion(

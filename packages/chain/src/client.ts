@@ -1,4 +1,4 @@
-import { CHAIN_IDS, loadConfig } from "@agora/common";
+import { CHAIN_IDS, loadConfig, resolveRuntimePrivateKey } from "@agora/common";
 import {
   http,
   type Chain,
@@ -24,12 +24,15 @@ export function createAgoraPublicClient() {
 
 export function createAgoraWalletClient() {
   const config = loadConfig();
-  if (!config.AGORA_PRIVATE_KEY) {
-    throw new Error("AGORA_PRIVATE_KEY is required for wallet operations.");
+  const privateKey = resolveRuntimePrivateKey(config);
+  if (!privateKey) {
+    throw new Error(
+      "AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY is required for wallet operations.",
+    );
   }
   const chain = resolveChain();
   const transport = http(config.AGORA_RPC_URL);
-  const account = privateKeyToAccount(config.AGORA_PRIVATE_KEY);
+  const account = privateKeyToAccount(privateKey);
   return createWalletClient({ chain, transport, account });
 }
 

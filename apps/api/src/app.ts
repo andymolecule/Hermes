@@ -1,4 +1,8 @@
-import { getAgoraRuntimeVersion } from "@agora/common";
+import {
+  getAgoraRuntimeVersion,
+  isProductionRuntime,
+  readApiServerRuntimeConfig,
+} from "@agora/common";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
@@ -17,12 +21,8 @@ import workerHealthRoutes from "./routes/worker-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
-const corsOrigins = (process.env.AGORA_CORS_ORIGINS ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
 export function createApp() {
+  const runtimeConfig = readApiServerRuntimeConfig();
   const app = new Hono<ApiEnv>();
   const x402Middleware = createX402Middleware();
 
@@ -31,10 +31,10 @@ export function createApp() {
     cors({
       origin: (origin) => {
         if (!origin) return undefined;
-        if (corsOrigins.length === 0) {
-          return process.env.NODE_ENV === "production" ? undefined : origin;
+        if (runtimeConfig.corsOrigins.length === 0) {
+          return isProductionRuntime(runtimeConfig) ? undefined : origin;
         }
-        return corsOrigins.includes(origin) ? origin : undefined;
+        return runtimeConfig.corsOrigins.includes(origin) ? origin : undefined;
       },
       allowMethods: ["GET", "POST", "OPTIONS"],
       allowHeaders: [

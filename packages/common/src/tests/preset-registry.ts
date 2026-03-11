@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import {
+  OFFICIAL_IMAGES,
   defaultMinimumScoreForChallengeType,
   defaultPresetIdForChallengeType,
   findPresetIdsByContainer,
   getUnpinnedOfficialImages,
   inferPresetIdByContainer,
   lookupPreset,
-  validateScoringContainer,
+  resolveOfficialImageToDigest,
   validatePresetIntegrity,
+  validateScoringContainer,
 } from "../presets";
 
 const regression = lookupPreset("regression_v1");
@@ -16,12 +18,15 @@ if (!regression) {
 }
 
 const uniqueIds = findPresetIdsByContainer(regression.container);
-assert.equal(uniqueIds.length, 1, "regression container should map to a single preset");
+assert.equal(
+  uniqueIds.length,
+  1,
+  "regression container should map to a single preset",
+);
 assert.equal(uniqueIds[0], "regression_v1");
 assert.equal(inferPresetIdByContainer(regression.container), "regression_v1");
 
-const resolvedRegressionDigest =
-  "ghcr.io/agora-science/regression-scorer@sha256:" + "e".repeat(64);
+const resolvedRegressionDigest = `ghcr.io/agora-science/regression-scorer@sha256:${"e".repeat(64)}`;
 const digestIds = findPresetIdsByContainer(resolvedRegressionDigest);
 assert.equal(
   digestIds.length,
@@ -53,18 +58,20 @@ assert.equal(defaultMinimumScoreForChallengeType("custom"), 0);
 assert.equal(defaultMinimumScoreForChallengeType("docking"), 0);
 
 const csvPreset = lookupPreset("csv_comparison_v1");
-const numberPreset = lookupPreset("number_absdiff_v1");
-if (!csvPreset || !numberPreset) {
-  throw new Error("csv_comparison_v1 and number_absdiff_v1 must exist");
+if (!csvPreset) {
+  throw new Error("csv_comparison_v1 must exist");
 }
 
 assert.equal(
   inferPresetIdByContainer(csvPreset.container),
-  null,
-  "container shared by multiple presets should not infer a preset id",
+  "csv_comparison_v1",
+  "csv preset container should infer a single preset id once unsupported presets are removed",
 );
 
-const mismatchError = validatePresetIntegrity("regression_v1", csvPreset.container);
+const mismatchError = validatePresetIntegrity(
+  "regression_v1",
+  csvPreset.container,
+);
 assert.ok(
   mismatchError?.includes("Container mismatch"),
   "mismatched preset/container should be rejected",
@@ -99,7 +106,7 @@ assert.equal(
 
 const unpinnedCustomError = validatePresetIntegrity(
   "custom",
-  numberPreset.container,
+  csvPreset.container,
 );
 assert.ok(
   unpinnedCustomError?.includes("pinned digest"),
@@ -128,5 +135,31 @@ for (const img of unpinned) {
     `unpinned image should not contain @sha256: — got ${img}`,
   );
 }
+
+let ghcrFetchCount = 0;
+const ghcrDigest = `sha256:${"a".repeat(64)}`;
+const ghcrFetch = async () => {
+  ghcrFetchCount += 1;
+  return new Response("", {
+    status: 200,
+    headers: {
+      "docker-content-digest": ghcrDigest,
+    },
+  });
+};
+
+await resolveOfficialImageToDigest(OFFICIAL_IMAGES.repro, {
+  env: { AGORA_GHCR_TOKEN: "secret-token" },
+  fetchImpl: ghcrFetch,
+});
+await resolveOfficialImageToDigest(OFFICIAL_IMAGES.repro, {
+  env: {},
+  fetchImpl: ghcrFetch,
+});
+assert.equal(
+  ghcrFetchCount,
+  2,
+  "authenticated and anonymous GHCR resolution should not share the same cache entry",
+);
 
 console.log("preset registry validation passed");

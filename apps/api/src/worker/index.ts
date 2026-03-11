@@ -9,11 +9,12 @@ import {
   hasSubmissionSealWorkerConfig,
   isOfficialContainer,
   loadConfig,
+  readWorkerTimingConfig,
+  resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
 } from "@agora/common";
 import {
-  DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
   WORKER_RUNTIME_TYPE,
   assertRuntimeDatabaseSchema,
   claimNextJob,
@@ -26,11 +27,7 @@ import {
 import { ensureDockerReady, ensureScorerImagePullable } from "@agora/scorer";
 import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
-import {
-  FINALIZE_SWEEP_INTERVAL_MS,
-  POLL_INTERVAL_MS,
-  sleep,
-} from "./policy.js";
+import { sleep } from "./policy.js";
 import {
   type ResolvedRunnerPolicy,
   resolveRunnerPolicyForChallenge,
@@ -98,6 +95,7 @@ function startJobLeaseHeartbeat(
 function startWorkerRuntimeHeartbeat(
   db: ReturnType<typeof createSupabaseClient>,
   runtimeWorkerId: string,
+  heartbeatIntervalMs: number,
   runtimeState: {
     ready: boolean;
     docker_ready: boolean;
@@ -136,7 +134,7 @@ function startWorkerRuntimeHeartbeat(
 
   const timer = setInterval(() => {
     void tick();
-  }, DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS);
+  }, heartbeatIntervalMs);
   timer.unref?.();
 
   return () => {
@@ -280,14 +278,12 @@ async function refreshWorkerRuntimeReadiness(
 
 export async function startWorker() {
   const config = loadConfig();
+  const timing = readWorkerTimingConfig();
 
-  if (!process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
+  if (!resolveRuntimePrivateKey(config)) {
     throw new Error(
       "AGORA_ORACLE_KEY or AGORA_PRIVATE_KEY is required for the scoring worker.",
     );
-  }
-  if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
-    process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
   }
 
   if (
@@ -346,6 +342,7 @@ export async function startWorker() {
   const stopRuntimeHeartbeat = startWorkerRuntimeHeartbeat(
     db,
     runtimeWorkerId,
+    timing.heartbeatIntervalMs,
     runtimeState,
     log,
   );
@@ -358,10 +355,10 @@ export async function startWorker() {
   let lastReadinessCheckAt = Date.now();
 
   log("info", "Scoring worker started", {
-    pollIntervalMs: POLL_INTERVAL_MS,
+    pollIntervalMs: timing.pollIntervalMs,
     readinessCheckIntervalMs: WORKER_READINESS_RECHECK_MS,
-    finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
-    heartbeatIntervalMs: DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
+    finalizeSweepIntervalMs: timing.finalizeSweepIntervalMs,
+    heartbeatIntervalMs: timing.heartbeatIntervalMs,
     workerId: PROCESS_WORKER_ID,
     runtimeWorkerId,
     host: WORKER_HOST,
@@ -387,7 +384,7 @@ export async function startWorker() {
         }
 
         if (!runtimeState.ready) {
-          if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+          if (now - lastFinalizeSweepAt >= timing.finalizeSweepIntervalMs) {
             log(
               "warn",
               "Worker is not ready; skipping scoring loop iteration",
@@ -399,11 +396,11 @@ export async function startWorker() {
             );
             lastFinalizeSweepAt = now;
           }
-          await sleep(POLL_INTERVAL_MS);
+          await sleep(timing.pollIntervalMs);
           continue;
         }
 
-        if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+        if (now - lastFinalizeSweepAt >= timing.finalizeSweepIntervalMs) {
           await sweepChallengeLifecycle(db, log);
           lastFinalizeSweepAt = now;
         }
@@ -437,7 +434,7 @@ export async function startWorker() {
       }
 
       if (!claimedJob) {
-        await sleep(POLL_INTERVAL_MS);
+        await sleep(timing.pollIntervalMs);
       }
     }
   } finally {

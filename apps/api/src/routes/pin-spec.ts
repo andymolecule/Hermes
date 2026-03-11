@@ -2,13 +2,13 @@ import { getPublicClient } from "@agora/chain";
 import {
   canonicalizeChallengeSpec,
   computeSpecHash,
-  DEFAULT_CHAIN_ID,
   getPinSpecAuthorizationTypedData,
+  readApiServerRuntimeConfig,
   validateChallengeSpec,
 } from "@agora/common";
 import { pinJSON } from "@agora/ipfs";
 import { Hono } from "hono";
-import { createNonce, consumeNonce } from "../lib/auth-store.js";
+import { consumeNonce, createNonce } from "../lib/auth-store.js";
 import type { ApiEnv } from "../types.js";
 
 const MAX_BODY_BYTES = 128 * 1024;
@@ -116,7 +116,7 @@ router.post("/", async (c) => {
       return c.json({ error: "Spec hash mismatch." }, 401);
     }
 
-    const chainId = Number(process.env.AGORA_CHAIN_ID ?? DEFAULT_CHAIN_ID);
+    const { chainId } = readApiServerRuntimeConfig();
     const parsed = validateChallengeSpec(body.spec, chainId);
     if (!parsed.success) {
       return c.json(

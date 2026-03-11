@@ -11,17 +11,14 @@ const FILE_BACKED_ENV_RULES = [
   {
     envKey: "AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM",
     fileEnvKey: "AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE",
-    defaultRelativePath: "seal-public.pem",
   },
   {
     envKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM",
     fileEnvKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE",
-    defaultRelativePath: "seal-private.pem",
   },
   {
     envKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON",
     fileEnvKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE",
-    defaultRelativePath: "seal-private-keys.json",
   },
 ];
 
@@ -53,15 +50,7 @@ function applyFileBackedEnvRule(rule) {
       );
     }
     process.env[rule.envKey] = readTextFile(resolvedPath);
-    return;
   }
-
-  const fallbackPath = resolveExistingPath(rule.defaultRelativePath);
-  if (!fallbackPath) {
-    return;
-  }
-
-  process.env[rule.envKey] = readTextFile(fallbackPath);
 }
 
 function resolveGitRuntimeVersion() {

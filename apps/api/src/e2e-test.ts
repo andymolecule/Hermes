@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  type ChallengeListRow,
   approve,
   claimPayout,
   createChallenge,
@@ -18,14 +19,13 @@ import {
   resolveDispute,
   startChallengeScoring,
   submitChallengeResult,
-  type ChallengeListRow,
 } from "@agora/chain";
 import {
   SUBMISSION_RESULT_FORMAT,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
-  resetConfigCache,
+  resolveRuntimePrivateKey,
   sealSubmission,
 } from "@agora/common";
 import {
@@ -34,8 +34,8 @@ import {
   getSubmissionById,
 } from "@agora/db";
 import { pinFile, pinJSON } from "@agora/ipfs";
-import { processJob } from "./worker/jobs.js";
 import { createApp } from "./app.js";
+import { processJob } from "./worker/jobs.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const E2E_REWARD_USDC = 1;
@@ -274,11 +274,6 @@ async function projectChallengeReceipt(input: {
 }
 
 export async function runLifecycleE2E() {
-  if (process.env.AGORA_ORACLE_KEY && !process.env.AGORA_PRIVATE_KEY) {
-    process.env.AGORA_PRIVATE_KEY = process.env.AGORA_ORACLE_KEY;
-    resetConfigCache();
-  }
-
   const config = loadConfig();
   if (!config.AGORA_SUPABASE_SERVICE_KEY) {
     throw new Error(
@@ -294,7 +289,7 @@ export async function runLifecycleE2E() {
   const publicClient = getPublicClient();
   const walletClient = getWalletClient();
   const account = walletClient.account;
-  if (!account) {
+  if (!account || !resolveRuntimePrivateKey(config)) {
     throw new Error(
       "Wallet client account is not configured. Set AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY and retry.",
     );
@@ -428,7 +423,10 @@ export async function runLifecycleE2E() {
     throw new Error("Submission intent route succeeded without a result hash.");
   }
 
-  const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
+  const submitTxHash = await submitChallengeResult(
+    challengeAddress,
+    resultHash,
+  );
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
   console.log("4. Submission posted:", submitTxHash);
 
@@ -488,16 +486,17 @@ export async function runLifecycleE2E() {
   const scoreJob = await waitFor("score job", async () =>
     claimNextJob(db, "lifecycle-e2e"),
   );
-  await processJob(
-    db,
-    scoreJob,
-    (_level, message) => console.log(`[worker] ${message}`),
+  await processJob(db, scoreJob, (_level, message) =>
+    console.log(`[worker] ${message}`),
   );
   const scoredSubmission = await getSubmissionById(db, submissionId);
   if (!scoredSubmission.scored || !scoredSubmission.proof_bundle_cid) {
     throw new Error("Worker scoring did not persist score and proof bundle.");
   }
-  console.log("7. Worker scoring completed:", scoredSubmission.proof_bundle_cid);
+  console.log(
+    "7. Worker scoring completed:",
+    scoredSubmission.proof_bundle_cid,
+  );
 
   const verifyResponse = await app.request(
     new Request(`http://localhost/api/submissions/${submissionId}/public`),
@@ -583,14 +582,18 @@ export async function runLifecycleE2E() {
     );
   }
   if ((claimedRows ?? []).length !== 3) {
-    throw new Error("Expected claim projection to preserve all three payout rows.");
+    throw new Error(
+      "Expected claim projection to preserve all three payout rows.",
+    );
   }
   for (const row of claimedRows ?? []) {
     if (!row.claimed_at || row.claim_tx_hash !== claimTxHash) {
       throw new Error("Claim projection did not repair all payout claim rows.");
     }
   }
-  console.log("11. Claim succeeded and all allocation rows were marked claimed");
+  console.log(
+    "11. Claim succeeded and all allocation rows were marked claimed",
+  );
 }
 
 function maybeRunLifecycleE2ECli(importMetaUrl: string, argv1?: string) {
