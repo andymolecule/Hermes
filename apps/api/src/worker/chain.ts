@@ -12,6 +12,7 @@ import {
   clearJobPostedTx,
   completeJob,
   type createSupabaseClient,
+  getChallengeScoreJobCounts,
   markJobPosted,
   requeueJobWithoutAttemptPenalty,
   updateScore,
@@ -45,6 +46,13 @@ export function shouldAttemptChallengeFinalize(
 
   const scoringGraceEndsAt = lifecycle.deadline + lifecycle.scoringGracePeriod;
   return nowSeconds > scoringGraceEndsAt;
+}
+
+export function shouldDeferChallengeFinalize(input: {
+  queuedJobs: number;
+  runningJobs: number;
+}) {
+  return input.queuedJobs > 0 || input.runningJobs > 0;
 }
 
 export async function reconcileScoredSubmission(
@@ -246,6 +254,22 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
         continue;
       }
 
+      const scoreJobCounts = await getChallengeScoreJobCounts(db, challenge.id);
+      if (
+        shouldDeferChallengeFinalize({
+          queuedJobs: scoreJobCounts.queued,
+          runningJobs: scoreJobCounts.running,
+        })
+      ) {
+        log("info", "Deferring finalize while scoring work is still active", {
+          challengeId: challenge.id,
+          contract: challengeAddress,
+          queuedJobs: scoreJobCounts.queued,
+          runningJobs: scoreJobCounts.running,
+        });
+        continue;
+      }
+
       log("info", "Auto-finalizing challenge", {
         challengeId: challenge.id,
         contract: challengeAddress,
@@ -267,7 +291,7 @@ export async function sweepChallengeLifecycle(db: DbClient, log: WorkerLogFn) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
-        /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed/i.test(
+        /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed|ScoringIncomplete/i.test(
           message,
         )
       ) {

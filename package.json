@@ -7,6 +7,8 @@
     "build": "turbo build",
     "test": "turbo test",
     "scorers:check": "node scripts/check-scorer-containers.mjs",
+    "backfill:challenge-metadata": "node scripts/run-node-with-root-env.mjs scripts/backfill-challenge-metadata.mjs",
+    "recover:score-jobs": "node scripts/run-node-with-root-env.mjs scripts/recover-score-jobs.mjs",
     "abi:sync": "pnpm --filter @agora/contracts build && node scripts/sync-abi.mjs",
     "abi:check": "pnpm --filter @agora/contracts build && node scripts/check-abi-sync.mjs",
     "verify": "pnpm abi:check && pnpm build && pnpm test",

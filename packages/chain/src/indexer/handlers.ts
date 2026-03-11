@@ -594,30 +594,31 @@ export async function processFactoryLog(input: {
           ...(log.blockNumber !== null ? { blockNumber: log.blockNumber } : {}),
         });
 
-      await upsertChallenge(
-        db,
-        await buildChallengeInsert({
-          chainId: config.AGORA_CHAIN_ID,
-          contractVersion,
-          contractAddress: challengeAddr,
-          factoryAddress: config.AGORA_FACTORY_ADDRESS,
-          posterAddress: poster,
-          specCid,
-          spec,
-          rewardAmountUsdc: Number(reward) / 1_000_000,
-          disputeWindowHours:
-            spec.dispute_window_hours ??
-            CHALLENGE_LIMITS.defaultDisputeWindowHours,
-          requirePinnedPresetDigests:
-            config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
-          txHash,
-          // On-chain deadline is the source of truth — spec deadline is informational.
-          onChainDeadline: onChainDeadlineIso,
-        }),
-      );
+      const challengeInsert = await buildChallengeInsert({
+        chainId: config.AGORA_CHAIN_ID,
+        contractVersion,
+        contractAddress: challengeAddr,
+        factoryAddress: config.AGORA_FACTORY_ADDRESS,
+        posterAddress: poster,
+        specCid,
+        spec,
+        rewardAmountUsdc: Number(reward) / 1_000_000,
+        disputeWindowHours:
+          spec.dispute_window_hours ??
+          CHALLENGE_LIMITS.defaultDisputeWindowHours,
+        requirePinnedPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
+        txHash,
+        // On-chain deadline is the source of truth — spec deadline is informational.
+        onChainDeadline: onChainDeadlineIso,
+      });
 
-      // Populate expected_columns from ground truth CSV headers (non-critical)
-      const testCid = spec.dataset?.test;
+      await upsertChallenge(db, challengeInsert);
+
+      // Populate expected_columns for official CSV-comparison challenges.
+      const testCid =
+        challengeInsert.runner_preset_id === "csv_comparison_v1"
+          ? (challengeInsert.eval_bundle_cid ?? spec.dataset?.test)
+          : null;
       if (testCid && typeof testCid === "string" && testCid.length > 0) {
         try {
           const gtText = await getText(testCid);

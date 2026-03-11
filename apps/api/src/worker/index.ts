@@ -1,9 +1,10 @@
+import crypto from "node:crypto";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
-import crypto from "node:crypto";
 import {
   CHALLENGE_STATUS,
   getAgoraRuntimeIdentity,
+  getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
   hasSubmissionSealWorkerConfig,
   isOfficialContainer,
@@ -12,14 +13,14 @@ import {
   runSubmissionSealSelfCheck,
 } from "@agora/common";
 import {
+  DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
+  WORKER_RUNTIME_TYPE,
   claimNextJob,
   createSupabaseClient,
-  DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
   heartbeatScoreJobLease,
   heartbeatWorkerRuntimeState,
   pruneWorkerRuntimeStates,
   upsertWorkerRuntimeState,
-  WORKER_RUNTIME_TYPE,
 } from "@agora/db";
 import { ensureDockerReady, ensureScorerImagePullable } from "@agora/scorer";
 import { sweepChallengeLifecycle } from "./chain.js";
@@ -37,6 +38,7 @@ import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
 const PROCESS_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
+const WORKER_READINESS_RECHECK_MS = 60_000;
 const WORKER_HOST = os.hostname();
 
 const log: WorkerLogFn = (level, message, meta) => {
@@ -101,6 +103,8 @@ function startWorkerRuntimeHeartbeat(
     seal_enabled: boolean;
     seal_key_id: string | null;
     seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
   },
   log: WorkerLogFn,
 ) {
@@ -111,7 +115,6 @@ function startWorkerRuntimeHeartbeat(
     try {
       const refreshed = await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
         ...runtimeState,
-        last_error: null,
       });
       if (!refreshed && !stopped) {
         log("warn", "Worker runtime heartbeat lost registration", {
@@ -149,7 +152,6 @@ function resolveWorkerRuntimeId(config: ReturnType<typeof loadConfig>) {
 
 async function preflightOfficialScoringImages(
   db: ReturnType<typeof createSupabaseClient>,
-  log: WorkerLogFn,
 ) {
   const { data, error } = await db
     .from("challenges")
@@ -178,12 +180,101 @@ async function preflightOfficialScoringImages(
 
   for (const image of images) {
     await ensureScorerImagePullable(image, 60_000);
-    log("info", "Official scorer image preflight passed", {
-      image,
-    });
   }
 
   return images.length;
+}
+
+function updateRuntimeState(
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+  nextState: {
+    ready: boolean;
+    docker_ready: boolean;
+    last_error: string | null;
+  },
+) {
+  const changed =
+    runtimeState.ready !== nextState.ready ||
+    runtimeState.docker_ready !== nextState.docker_ready ||
+    runtimeState.last_error !== nextState.last_error;
+
+  runtimeState.ready = nextState.ready;
+  runtimeState.docker_ready = nextState.docker_ready;
+  runtimeState.last_error = nextState.last_error;
+  return changed;
+}
+
+async function refreshWorkerRuntimeReadiness(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+  log: WorkerLogFn,
+) {
+  try {
+    await ensureDockerReady();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Docker health check failed";
+    const changed = updateRuntimeState(runtimeState, {
+      ready: false,
+      docker_ready: false,
+      last_error: message,
+    });
+    if (changed) {
+      log("warn", "Worker runtime degraded", {
+        reason: "docker_unavailable",
+        error: message,
+      });
+    }
+    return 0;
+  }
+
+  try {
+    const preflightedOfficialImages = await preflightOfficialScoringImages(db);
+    const changed = updateRuntimeState(runtimeState, {
+      ready: true,
+      docker_ready: true,
+      last_error: null,
+    });
+    if (changed) {
+      log("info", "Worker runtime ready", {
+        preflightedOfficialImages,
+      });
+    }
+    return preflightedOfficialImages;
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Official scorer image preflight failed";
+    const changed = updateRuntimeState(runtimeState, {
+      ready: false,
+      docker_ready: true,
+      last_error: message,
+    });
+    if (changed) {
+      log("warn", "Worker runtime degraded", {
+        reason: "image_preflight_failed",
+        error: message,
+      });
+    }
+    return 0;
+  }
 }
 
 export async function startWorker() {
@@ -228,19 +319,7 @@ export async function startWorker() {
     });
   }
 
-  try {
-    await ensureDockerReady();
-    log("info", "Docker health check passed");
-  } catch {
-    log(
-      "error",
-      "Docker is not available. Worker cannot start without Docker.",
-    );
-    process.exit(1);
-  }
-
   const db = createSupabaseClient(true);
-  const preflightedOfficialImages = await preflightOfficialScoringImages(db, log);
   const runtimeWorkerId = resolveWorkerRuntimeId(config);
   const prunedRuntimeRows = await pruneWorkerRuntimeStates(db, {
     workerType: WORKER_RUNTIME_TYPE.scoring,
@@ -248,18 +327,19 @@ export async function startWorker() {
     excludeWorkerId: runtimeWorkerId,
   });
   const runtimeState = {
-    ready: true,
-    docker_ready: true,
+    ready: false,
+    docker_ready: false,
     seal_enabled: sealEnabled,
     seal_key_id: sealKeyId,
     seal_self_check_ok: sealEnabled,
+    runtime_version: getAgoraRuntimeVersion(config),
+    last_error: "Worker starting readiness checks.",
   };
   await upsertWorkerRuntimeState(db, {
     worker_id: runtimeWorkerId,
     worker_type: WORKER_RUNTIME_TYPE.scoring,
     host: WORKER_HOST,
     ...runtimeState,
-    last_error: null,
   });
   const stopRuntimeHeartbeat = startWorkerRuntimeHeartbeat(
     db,
@@ -268,8 +348,16 @@ export async function startWorker() {
     log,
   );
 
+  let preflightedOfficialImages = await refreshWorkerRuntimeReadiness(
+    db,
+    runtimeState,
+    log,
+  );
+  let lastReadinessCheckAt = Date.now();
+
   log("info", "Scoring worker started", {
     pollIntervalMs: POLL_INTERVAL_MS,
+    readinessCheckIntervalMs: WORKER_READINESS_RECHECK_MS,
     finalizeSweepIntervalMs: FINALIZE_SWEEP_INTERVAL_MS,
     heartbeatIntervalMs: DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
     workerId: PROCESS_WORKER_ID,
@@ -277,6 +365,7 @@ export async function startWorker() {
     host: WORKER_HOST,
     prunedRuntimeRows,
     preflightedOfficialImages,
+    runtimeVersion: runtimeState.runtime_version,
     runtimeIdentity: getAgoraRuntimeIdentity(config),
   });
 
@@ -286,6 +375,32 @@ export async function startWorker() {
       let claimedJob = false;
       try {
         const now = Date.now();
+        if (now - lastReadinessCheckAt >= WORKER_READINESS_RECHECK_MS) {
+          preflightedOfficialImages = await refreshWorkerRuntimeReadiness(
+            db,
+            runtimeState,
+            log,
+          );
+          lastReadinessCheckAt = now;
+        }
+
+        if (!runtimeState.ready) {
+          if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
+            log(
+              "warn",
+              "Worker is not ready; skipping scoring loop iteration",
+              {
+                runtimeWorkerId,
+                lastError: runtimeState.last_error,
+                preflightedOfficialImages,
+              },
+            );
+            lastFinalizeSweepAt = now;
+          }
+          await sleep(POLL_INTERVAL_MS);
+          continue;
+        }
+
         if (now - lastFinalizeSweepAt >= FINALIZE_SWEEP_INTERVAL_MS) {
           await sweepChallengeLifecycle(db, log);
           lastFinalizeSweepAt = now;

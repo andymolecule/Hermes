@@ -50,6 +50,7 @@ const configSchema = z.object({
     )
     .optional(),
   AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
+  AGORA_RUNTIME_VERSION: z.string().min(1).default("dev"),
   AGORA_CORS_ORIGINS: z.string().optional(),
   AGORA_MCP_PORT: z
     .preprocess(
@@ -93,7 +94,7 @@ const configSchema = z.object({
     .default(false),
   AGORA_REQUIRE_PINNED_PRESET_DIGESTS: z
     .preprocess(parseBooleanLike, z.boolean())
-    .default(false),
+    .default(true),
   AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
@@ -304,6 +305,12 @@ export function getAgoraRuntimeIdentity(
     usdcAddress: config.AGORA_USDC_ADDRESS,
     rpcUrl: config.AGORA_RPC_URL,
   };
+}
+
+export function getAgoraRuntimeVersion(
+  config?: Pick<AgoraConfig, "AGORA_RUNTIME_VERSION"> | null,
+): string {
+  return config?.AGORA_RUNTIME_VERSION ?? "dev";
 }
 
 export function resetConfigCache() {

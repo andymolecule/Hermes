@@ -1,15 +1,16 @@
 import {
+  getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
   loadConfig,
 } from "@agora/common";
 import {
   createSupabaseClient,
-  listWorkerRuntimeStates,
   getEligibleQueuedJobCount,
   getLastScoredJobTime,
   getOldestPendingJobTime,
   getOldestRunningStartedAt,
   getScoreJobCounts,
+  listWorkerRuntimeStates,
   runningOverThresholdCount,
   summarizeWorkerRuntimeStates,
 } from "@agora/db";
@@ -36,8 +37,14 @@ export interface WorkerHealthSnapshotInput {
   runningOverThresholdCount: number;
   workerRuntime?: {
     healthyWorkers: number;
+    readyWorkers: number;
     staleWorkers: number;
     latestHeartbeatAt: string | null;
+    latestError: string | null;
+    runtimeVersions: string[];
+    activeRuntimeVersion: string | null;
+    healthyWorkersForActiveRuntimeVersion: number;
+    healthyWorkersNotOnActiveRuntimeVersion: number;
     requireReadySealWorker: boolean;
     healthyWorkersForActiveSealKey: number;
     staleAfterMs: number;
@@ -53,6 +60,14 @@ export function deriveWorkerHealthStatus(
     ? nowMs - new Date(input.oldestPendingAt).getTime()
     : null;
 
+  if (
+    input.workerRuntime?.activeRuntimeVersion &&
+    ((input.workerRuntime.healthyWorkersForActiveRuntimeVersion ?? 0) === 0 ||
+      (input.workerRuntime.healthyWorkersNotOnActiveRuntimeVersion ?? 0) > 0) &&
+    (input.workerRuntime.healthyWorkers ?? 0) > 0
+  ) {
+    return "warning";
+  }
   if (
     input.workerRuntime?.requireReadySealWorker &&
     (input.workerRuntime.healthyWorkersForActiveSealKey ?? 0) === 0
@@ -113,8 +128,16 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
     workers: input.workerRuntime
       ? {
           healthy: input.workerRuntime.healthyWorkers,
+          ready: input.workerRuntime.readyWorkers,
           stale: input.workerRuntime.staleWorkers,
           latestHeartbeatAt: input.workerRuntime.latestHeartbeatAt,
+          latestError: input.workerRuntime.latestError,
+          runtimeVersions: input.workerRuntime.runtimeVersions,
+          activeRuntimeVersion: input.workerRuntime.activeRuntimeVersion,
+          healthyWorkersForActiveRuntimeVersion:
+            input.workerRuntime.healthyWorkersForActiveRuntimeVersion,
+          healthyWorkersNotOnActiveRuntimeVersion:
+            input.workerRuntime.healthyWorkersNotOnActiveRuntimeVersion,
           staleAfterMs: input.workerRuntime.staleAfterMs,
         }
       : undefined,
@@ -150,6 +173,7 @@ router.get("/", async (c) => {
     ]);
     const workerRuntime = summarizeWorkerRuntimeStates(workerRuntimeStates, {
       activeSealKeyId,
+      activeRuntimeVersion: getAgoraRuntimeVersion(config),
     });
     const sealingConfigured = hasSubmissionSealPublicConfig(config);
     const sealingReady =
@@ -167,14 +191,25 @@ router.get("/", async (c) => {
         runningOverThresholdCount: runningOverThreshold,
         workerRuntime: {
           healthyWorkers: workerRuntime.healthyWorkers,
+          readyWorkers: workerRuntime.readyWorkers,
           staleWorkers: workerRuntime.staleWorkers,
           latestHeartbeatAt: workerRuntime.latestHeartbeatAt,
+          latestError: workerRuntimeStates[0]?.last_error ?? null,
+          runtimeVersions: workerRuntime.runtimeVersions,
+          activeRuntimeVersion: workerRuntime.activeRuntimeVersion,
+          healthyWorkersForActiveRuntimeVersion:
+            workerRuntime.healthyWorkersForActiveRuntimeVersion,
+          healthyWorkersNotOnActiveRuntimeVersion:
+            workerRuntime.healthyWorkersNotOnActiveRuntimeVersion,
           requireReadySealWorker: sealingConfigured,
           healthyWorkersForActiveSealKey:
             workerRuntime.healthyWorkersForActiveSealKey,
           staleAfterMs: workerRuntime.staleAfterMs,
         },
       }),
+      runtime: {
+        apiVersion: getAgoraRuntimeVersion(config),
+      },
       sealing: {
         enabled: sealingReady,
         configured: sealingConfigured,

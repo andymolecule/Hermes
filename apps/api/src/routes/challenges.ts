@@ -1,7 +1,7 @@
 import {
+  getChallengeContractVersion,
   getChallengeFinalizeState,
   getChallengePayoutByAddress,
-  getChallengeContractVersion,
   getPublicClient,
   loadChallengeDefinitionFromChain,
   parseChallengeCreatedReceipt,
@@ -12,6 +12,7 @@ import {
   CHALLENGE_STATUS,
   type ChallengeSpecOutput,
   loadConfig,
+  parseCsvHeaders,
   validateScoringContainer,
 } from "@agora/common";
 import {
@@ -20,6 +21,7 @@ import {
   createSupabaseClient,
   upsertChallenge,
 } from "@agora/db";
+import { getText } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -44,6 +46,26 @@ function normalizeAddress(value: string | null | undefined) {
 }
 
 const router = new Hono<ApiEnv>();
+
+async function populateExpectedColumns(challengeInsert: ChallengeInsert) {
+  if (
+    challengeInsert.runner_preset_id !== "csv_comparison_v1" ||
+    !challengeInsert.eval_bundle_cid
+  ) {
+    return challengeInsert;
+  }
+
+  const bundleText = await getText(challengeInsert.eval_bundle_cid);
+  const headers = parseCsvHeaders(bundleText);
+  if (headers.length === 0) {
+    return challengeInsert;
+  }
+
+  return {
+    ...challengeInsert,
+    expected_columns: headers,
+  };
+}
 
 router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
   const query = c.req.valid("query");
@@ -135,14 +157,25 @@ router.post(
         disputeWindowHours:
           spec.dispute_window_hours ??
           CHALLENGE_LIMITS.defaultDisputeWindowHours,
-        requirePinnedPresetDigests:
-          config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
+        requirePinnedPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
         txHash,
         onChainDeadline: onChainDeadlineIso,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return c.json({ error: message }, 400);
+    }
+
+    try {
+      challengeInsert = await populateExpectedColumns(challengeInsert);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json(
+        {
+          error: `Failed to derive expected submission columns. Next step: verify the evaluation bundle CID is pinned and contains a CSV header row. ${message}`,
+        },
+        400,
+      );
     }
 
     await upsertChallenge(db, challengeInsert);
@@ -233,7 +266,9 @@ router.get("/:id/claimable", async (c) => {
   ) {
     return c.json({ error: "Finalization timestamp out of range." }, 500);
   }
-  const reviewEndsAt = new Date(Number(reviewEndsAtSeconds) * 1000).toISOString();
+  const reviewEndsAt = new Date(
+    Number(reviewEndsAtSeconds) * 1000,
+  ).toISOString();
   const scoringGraceEndsAt = new Date(
     Number(scoringGraceEndsAtSeconds) * 1000,
   ).toISOString();

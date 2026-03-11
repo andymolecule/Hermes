@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldAttemptChallengeFinalize } from "../src/worker/chain.js";
+import {
+  shouldAttemptChallengeFinalize,
+  shouldDeferChallengeFinalize,
+} from "../src/worker/chain.js";
 
 test("does not finalize before scoring is complete or grace expires", () => {
   const shouldFinalize = shouldAttemptChallengeFinalize(
@@ -45,4 +48,19 @@ test("finalizes after scoring grace even when some submissions remain unscored",
   );
 
   assert.equal(shouldFinalize, true);
+});
+
+test("defers finalize while queued or running scoring jobs still exist", () => {
+  assert.equal(
+    shouldDeferChallengeFinalize({ queuedJobs: 1, runningJobs: 0 }),
+    true,
+  );
+  assert.equal(
+    shouldDeferChallengeFinalize({ queuedJobs: 0, runningJobs: 1 }),
+    true,
+  );
+  assert.equal(
+    shouldDeferChallengeFinalize({ queuedJobs: 0, runningJobs: 0 }),
+    false,
+  );
 });

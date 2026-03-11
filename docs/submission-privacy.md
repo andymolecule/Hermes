@@ -310,8 +310,8 @@ curl -sS http://localhost:3000/api/submissions/public-key
 Expected signals:
 
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` only while the worker heartbeat for that `kid` is healthy.
-- `/healthz` reports API process liveness only. It does not imply a scoring worker is ready.
-- `/api/worker-health` reports `workers.healthy > 0`, `sealing.workerReady=true`, and the same active `keyId`.
+- `/healthz` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
+- `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `workers.healthyWorkersNotOnActiveRuntimeVersion = 0`, `sealing.workerReady=true`, and the same active `keyId`.
 
 If the public key endpoint returns `503`, the web UI should block private submissions rather than falling back to a fake privacy claim.
 

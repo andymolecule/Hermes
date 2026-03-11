@@ -351,6 +351,36 @@ export async function getScoreJobCounts(
   return counts;
 }
 
+export async function getChallengeScoreJobCounts(
+  db: AgoraDbClient,
+  challengeId: string,
+): Promise<Record<ScoreJobStatus, number>> {
+  const counts: Record<ScoreJobStatus, number> = {
+    [SCORE_JOB_STATUS.queued]: 0,
+    [SCORE_JOB_STATUS.running]: 0,
+    [SCORE_JOB_STATUS.scored]: 0,
+    [SCORE_JOB_STATUS.failed]: 0,
+    [SCORE_JOB_STATUS.skipped]: 0,
+  };
+
+  for (const status of SCORE_JOB_STATUSES) {
+    const { count, error } = await db
+      .from("score_jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("challenge_id", challengeId)
+      .eq("status", status);
+
+    if (error) {
+      throw new Error(
+        `Failed to count score jobs for challenge ${challengeId}: ${error.message}`,
+      );
+    }
+    counts[status] = count ?? 0;
+  }
+
+  return counts;
+}
+
 /**
  * Get the oldest eligible queued job time.
  * Used by worker-health to detect stuck queues without counting delayed backoff rows.

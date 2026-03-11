@@ -11,6 +11,7 @@ export interface WorkerRuntimeStateRow {
   worker_id: string;
   worker_type: WorkerRuntimeType;
   host: string | null;
+  runtime_version: string;
   ready: boolean;
   docker_ready: boolean;
   seal_enabled: boolean;
@@ -27,6 +28,7 @@ export interface UpsertWorkerRuntimeStateInput {
   worker_id: string;
   worker_type?: WorkerRuntimeType;
   host?: string | null;
+  runtime_version: string;
   ready: boolean;
   docker_ready: boolean;
   seal_enabled: boolean;
@@ -38,6 +40,7 @@ export interface UpsertWorkerRuntimeStateInput {
 }
 
 export interface HeartbeatWorkerRuntimeStateInput {
+  runtime_version?: string;
   ready?: boolean;
   docker_ready?: boolean;
   seal_enabled?: boolean;
@@ -51,9 +54,13 @@ export interface WorkerRuntimeSummary {
   readyWorkers: number;
   healthyWorkers: number;
   staleWorkers: number;
+  runtimeVersions: string[];
   latestHeartbeatAt: string | null;
   activeSealKeyId: string | null;
+  activeRuntimeVersion: string | null;
   healthyWorkersForActiveSealKey: number;
+  healthyWorkersForActiveRuntimeVersion: number;
+  healthyWorkersNotOnActiveRuntimeVersion: number;
   staleAfterMs: number;
 }
 
@@ -74,6 +81,7 @@ function normalizeWorkerRuntimeInput(
     worker_id: input.worker_id,
     worker_type: input.worker_type ?? WORKER_RUNTIME_TYPE.scoring,
     host: input.host ?? null,
+    runtime_version: input.runtime_version,
     ready: input.ready,
     docker_ready: input.docker_ready,
     seal_enabled: input.seal_enabled,
@@ -123,7 +131,9 @@ export async function heartbeatWorkerRuntimeState(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Failed to heartbeat worker runtime state: ${error.message}`);
+    throw new Error(
+      `Failed to heartbeat worker runtime state: ${error.message}`,
+    );
   }
 
   return Boolean(data);
@@ -169,7 +179,9 @@ export async function pruneWorkerRuntimeStates(
 
   if (input.host !== undefined) {
     query =
-      input.host === null ? query.is("host", null) : query.eq("host", input.host);
+      input.host === null
+        ? query.is("host", null)
+        : query.eq("host", input.host);
   }
   if (input.excludeWorkerId) {
     query = query.neq("worker_id", input.excludeWorkerId);
@@ -211,6 +223,7 @@ export function summarizeWorkerRuntimeStates(
   rows: WorkerRuntimeStateRow[],
   input: {
     activeSealKeyId?: string | null;
+    activeRuntimeVersion?: string | null;
     staleAfterMs?: number;
     nowMs?: number;
   } = {},
@@ -218,14 +231,19 @@ export function summarizeWorkerRuntimeStates(
   const staleAfterMs = input.staleAfterMs ?? DEFAULT_WORKER_RUNTIME_STALE_MS;
   const nowMs = input.nowMs ?? Date.now();
   const activeSealKeyId = input.activeSealKeyId ?? null;
+  const activeRuntimeVersion = input.activeRuntimeVersion ?? null;
 
   let readyWorkers = 0;
   let healthyWorkers = 0;
   let staleWorkers = 0;
   let healthyWorkersForActiveSealKey = 0;
+  let healthyWorkersForActiveRuntimeVersion = 0;
+  let healthyWorkersNotOnActiveRuntimeVersion = 0;
+  const runtimeVersions = new Set<string>();
 
   for (const row of rows) {
     const stale = isWorkerRuntimeStateStale(row, staleAfterMs, nowMs);
+    runtimeVersions.add(row.runtime_version);
     if (row.ready) readyWorkers += 1;
     if (stale) {
       staleWorkers += 1;
@@ -234,14 +252,25 @@ export function summarizeWorkerRuntimeStates(
     }
     if (
       activeSealKeyId &&
-      isWorkerRuntimeReadyForSealKey(
-        row,
-        activeSealKeyId,
-        staleAfterMs,
-        nowMs,
-      )
+      isWorkerRuntimeReadyForSealKey(row, activeSealKeyId, staleAfterMs, nowMs)
     ) {
       healthyWorkersForActiveSealKey += 1;
+    }
+    if (
+      activeRuntimeVersion &&
+      row.ready &&
+      !stale &&
+      row.runtime_version === activeRuntimeVersion
+    ) {
+      healthyWorkersForActiveRuntimeVersion += 1;
+    }
+    if (
+      activeRuntimeVersion &&
+      row.ready &&
+      !stale &&
+      row.runtime_version !== activeRuntimeVersion
+    ) {
+      healthyWorkersNotOnActiveRuntimeVersion += 1;
     }
   }
 
@@ -250,9 +279,13 @@ export function summarizeWorkerRuntimeStates(
     readyWorkers,
     healthyWorkers,
     staleWorkers,
+    runtimeVersions: Array.from(runtimeVersions).sort(),
     latestHeartbeatAt: rows[0]?.last_heartbeat_at ?? null,
     activeSealKeyId,
+    activeRuntimeVersion,
     healthyWorkersForActiveSealKey,
+    healthyWorkersForActiveRuntimeVersion,
+    healthyWorkersNotOnActiveRuntimeVersion,
     staleAfterMs,
   };
 }

@@ -169,6 +169,23 @@ erDiagram
         timestamp updated_at
     }
 
+    worker_runtime_state {
+        string worker_id PK
+        string worker_type
+        string host
+        string runtime_version
+        boolean ready
+        boolean docker_ready
+        boolean seal_enabled
+        string seal_key_id
+        boolean seal_self_check_ok
+        string last_error
+        timestamp started_at
+        timestamp last_heartbeat_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
     submission_intents {
         uuid id PK
         uuid challenge_id FK
@@ -224,6 +241,8 @@ erDiagram
 - **indexed_events** — Deduplication table keyed on `(tx_hash, log_index)`. Prevents reprocessing of already-handled events. Also used for health monitoring by comparing `block_number` against chain head.
 
 - **score_jobs** — Worker coordination table. States: `queued` → `running` → `scored` | `failed` | `skipped`. Includes lease management via `locked_at`, `locked_by`, and stale-lease recovery. `max_attempts` defaults to 5. `next_attempt_at` gates delayed retries. Jobs are only created or revived after a `submissions` row has both the on-chain fields and reconciled metadata (`result_cid`, `result_format`). `skipped` means the submission exceeded per-challenge or per-solver scoring limits.
+
+- **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, Docker readiness, sealing readiness, and `last_error`. The API reads this table for `/api/worker-health`, sealed-submission key gating, and deploy-mismatch detection. `runtime_version` should match `AGORA_RUNTIME_VERSION` on both API and worker for the active deploy.
 
 - **verifications** — Records independent re-runs of the scorer. Links a proof_bundle to a verifier address, the computed score, whether it matches the original, and an optional log CID. Created by `agora verify`. `agora verify-public` is read-only and does not insert verification rows.
 
@@ -323,7 +342,7 @@ flowchart TB
 - **Effective vs persisted status:** The contract `status()` view returns `Scoring` after the deadline even if the persisted storage slot is still `Open`. Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 - **Submission reconciliation:** clients pre-register `submission_intents` before they submit on-chain. The API submit-accelerator path and the indexer both reconcile `(challenge_id, solver_address, result_hash)` against pending `submissions` rows. This keeps submissions scoreable even if the post-submit HTTP call fails.
 
-- **Worker coordination:** The worker only claims `score_jobs` after the challenge enters `Scoring` at deadline. Jobs move: `queued` → `running` → `scored` | `failed` | `skipped`. `skipped` indicates the submission exceeded per-challenge or per-solver scoring limits. The worker and API coordinate through Supabase: `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness for split deployments, and `submission_intents` prevents on-chain-only submissions from becoming permanently unscoreable.
+- **Worker coordination:** The worker only claims `score_jobs` after the challenge enters `Scoring` at deadline. Jobs move: `queued` → `running` → `scored` | `failed` | `skipped`. `skipped` indicates the submission exceeded per-challenge or per-solver scoring limits. The worker and API coordinate through Supabase: `score_jobs` drives scoring work, `worker_runtime_state` carries heartbeat/readiness/runtime-version state for split deployments, and `submission_intents` prevents on-chain-only submissions from becoming permanently unscoreable.
 
 ---
 

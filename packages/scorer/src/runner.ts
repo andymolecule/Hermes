@@ -52,6 +52,12 @@ interface CommandResult {
   code: number;
 }
 
+interface LocalImageInspection {
+  available: boolean;
+  repoDigest: string | null;
+  imageId: string | null;
+}
+
 function runCommand(
   command: string,
   args: string[],
@@ -112,30 +118,113 @@ export async function ensureScorerImagePullable(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ) {
   await ensureDockerReady();
+  const local = await inspectLocalImage(image, timeoutMs);
+  if (local.available) {
+    if (!local.repoDigest) {
+      throw new Error(
+        `Scorer image ${image} exists locally but has no registry digest. Next step: pull the published image from GHCR instead of relying on a locally built copy.`,
+      );
+    }
+    return local.repoDigest;
+  }
+
   const pull = await runCommand("docker", ["pull", image], timeoutMs);
   if (pull.code !== 0) {
     throw new Error(
       `Failed to pull scorer image ${image}. ${pull.stderr || pull.stdout || "docker pull failed"}`,
     );
   }
-  return resolveImageDigest(image);
+  return resolveImageDigest(image, timeoutMs);
 }
 
-async function resolveImageDigest(image: string) {
-  const inspect = await runCommand("docker", [
-    "image",
-    "inspect",
-    image,
-    "--format",
-    "{{index .RepoDigests 0}}",
-  ]);
+export function parseDockerImageInspection(raw: string): {
+  repoDigest: string | null;
+  imageId: string | null;
+} {
+  const [repoDigestRaw = "", imageIdRaw = ""] = raw.trim().split("|", 2);
+  return {
+    repoDigest: repoDigestRaw.trim() || null,
+    imageId: imageIdRaw.trim() || null,
+  };
+}
+
+async function inspectLocalImage(
+  image: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<LocalImageInspection> {
+  const inspect = await runCommand(
+    "docker",
+    [
+      "image",
+      "inspect",
+      image,
+      "--format",
+      "{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}|{{.Id}}",
+    ],
+    timeoutMs,
+  );
   if (inspect.code !== 0) {
+    return {
+      available: false,
+      repoDigest: null,
+      imageId: null,
+    };
+  }
+
+  const parsed = parseDockerImageInspection(inspect.stdout);
+  return {
+    available: true,
+    repoDigest: parsed.repoDigest,
+    imageId: parsed.imageId,
+  };
+}
+
+async function resolveImageDigest(
+  image: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
+  const local = await inspectLocalImage(image, timeoutMs);
+  if (!local.available) {
     throw new Error(
       `Scorer image not found locally: ${image}. Run: docker pull ${image}`,
     );
   }
-  const digest = inspect.stdout.trim();
-  return digest || image;
+  if (!local.repoDigest) {
+    throw new Error(
+      `Scorer image ${image} is missing a registry digest locally. Next step: pull the published image from GHCR instead of using a locally built copy.`,
+    );
+  }
+  return local.repoDigest;
+}
+
+async function prepareScorerImage(
+  image: string,
+  timeoutMs: number,
+): Promise<{ digest: string; pull: CommandResult | null }> {
+  const local = await inspectLocalImage(image, timeoutMs);
+  if (local.available) {
+    if (!local.repoDigest) {
+      throw new Error(
+        `Scorer image ${image} exists locally but has no registry digest. Next step: pull the published image from GHCR instead of relying on a locally built copy.`,
+      );
+    }
+    return {
+      digest: local.repoDigest,
+      pull: null,
+    };
+  }
+
+  const pull = await runCommand("docker", ["pull", image], timeoutMs);
+  if (pull.code !== 0) {
+    throw new Error(
+      `Failed to pull scorer image ${image}. ${pull.stderr || pull.stdout || "docker pull failed"}`,
+    );
+  }
+
+  return {
+    digest: await resolveImageDigest(image, timeoutMs),
+    pull,
+  };
 }
 
 function parseScorePayload(raw: string) {
@@ -153,15 +242,19 @@ function parseScorePayload(raw: string) {
   // - Legacy "error" field present → treat as invalid
   // - Otherwise → valid
   const hasExplicitOk = typeof parsed.ok === "boolean";
-  const errorMessage = typeof parsed.error === "string" ? parsed.error : undefined;
+  const errorMessage =
+    typeof parsed.error === "string" ? parsed.error : undefined;
   const ok = hasExplicitOk ? (parsed.ok as boolean) : !errorMessage;
 
-  const scoreValue = typeof parsed.score === "number" && !Number.isNaN(parsed.score)
-    ? parsed.score
-    : 0;
+  const scoreValue =
+    typeof parsed.score === "number" && !Number.isNaN(parsed.score)
+      ? parsed.score
+      : 0;
 
   if (ok && (typeof parsed.score !== "number" || Number.isNaN(parsed.score))) {
-    throw new Error("Invalid scorer output: score must be a number when ok is true.");
+    throw new Error(
+      "Invalid scorer output: score must be a number when ok is true.",
+    );
   }
 
   const detailsBase =
@@ -195,24 +288,8 @@ export async function runScorer(
   await fs.mkdir(outputDir, { recursive: true, mode: 0o777 });
   const containerName = `agora-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const pull = await runCommand("docker", ["pull", input.image], timeoutMs);
-  if (pull.code !== 0) {
-    if (input.strictPull) {
-      throw new Error(
-        `Failed to pull scorer image ${input.image}. In strict mode, local fallback is disabled to ensure reproducibility. ${pull.stderr || pull.stdout}`,
-      );
-    }
-    // Pull failed — check if image exists locally (dev/local only)
-    const localCheck = await runCommand("docker", ["image", "inspect", input.image], 30_000);
-    if (localCheck.code !== 0) {
-      throw new Error(
-        `Failed to pull scorer image ${input.image} and not found locally. Run: docker pull ${input.image}. ${pull.stderr || pull.stdout}`,
-      );
-    }
-    console.error(`Warning: pull failed for ${input.image}, using local image (not safe for production verification)`);
-  }
-
-  const digest = await resolveImageDigest(input.image);
+  const preparedImage = await prepareScorerImage(input.image, timeoutMs);
+  const digest = preparedImage.digest;
 
   // Verify digest matches when image reference includes a pinned digest
   if (input.image.includes("@sha256:")) {
@@ -241,7 +318,8 @@ export async function runScorer(
     input.limits?.cpus ?? DEFAULT_RUNNER_LIMITS.cpus,
     "--pids-limit",
     String(input.limits?.pids ?? DEFAULT_RUNNER_LIMITS.pids),
-    "--tmpfs", "/tmp:size=64m",
+    "--tmpfs",
+    "/tmp:size=64m",
     "--mount",
     `type=bind,src=${inputDir},dst=/input,readonly`,
     "--mount",
@@ -280,7 +358,10 @@ export async function runScorer(
     } catch {
       // score.json doesn't exist or isn't valid — fall through to generic error
     }
-    const containerOutput = [run.stderr, run.stdout].filter(Boolean).join("\n").trim();
+    const containerOutput = [run.stderr, run.stdout]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
     const details = [scorerError, containerOutput].filter(Boolean).join(" | ");
     throw new Error(
       `Scorer container exited with code ${run.code} for image ${input.image}.${details ? ` ${details}` : ""} If image is missing, run: docker pull ${input.image}`,
@@ -301,7 +382,12 @@ export async function runScorer(
     score: parsed.score,
     error: parsed.error,
     details: parsed.details,
-    log: [pull.stdout, pull.stderr, run.stdout, run.stderr]
+    log: [
+      preparedImage.pull?.stdout ?? "",
+      preparedImage.pull?.stderr ?? "",
+      run.stdout,
+      run.stderr,
+    ]
       .filter(Boolean)
       .join("\n"),
     outputPath: scorePath,

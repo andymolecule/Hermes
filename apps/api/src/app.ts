@@ -1,3 +1,4 @@
+import { getAgoraRuntimeVersion } from "@agora/common";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
@@ -60,6 +61,7 @@ export function createApp() {
     return c.json({
       ok: true,
       service: "api",
+      runtimeVersion: getAgoraRuntimeVersion(),
       checkedAt: new Date().toISOString(),
     });
   });

@@ -82,6 +82,34 @@ echo
 echo "[STEP] Building workspace"
 pnpm turbo build >/dev/null
 
+echo "[STEP] Verifying official scorer images are published and pullable"
+mapfile -t official_images < <(node --input-type=module <<'EOF'
+import { OFFICIAL_IMAGES } from "./packages/common/dist/presets.js";
+
+for (const image of Object.values(OFFICIAL_IMAGES)) {
+  console.log(image);
+}
+EOF
+)
+
+if [[ "${#official_images[@]}" -eq 0 ]]; then
+  echo "[FAIL] No official scorer images were found in presets."
+  exit 1
+fi
+
+for image in "${official_images[@]}"; do
+  pull_log="/tmp/agora_preflight_$(echo "$image" | tr '/:@' '_').log"
+  if ! docker pull "$image" >"$pull_log" 2>&1; then
+    echo "[FAIL] Official scorer image is not pullable: $image"
+    cat "$pull_log" || true
+    exit 1
+  fi
+done
+
+echo "[OK] Official scorer images pullable: ${official_images[*]}"
+
+echo
+
 echo "[STEP] Running CLI doctor"
 node apps/cli/dist/index.js doctor --format table
 
@@ -132,8 +160,10 @@ echo "[STEP] Checking Supabase schema reachability"
 tables=(
   challenges
   submissions
+  submission_intents
   challenge_payouts
   score_jobs
+  worker_runtime_state
   indexer_cursors
 )
 
@@ -251,8 +281,30 @@ if (payload.status === "warning" || payload.status === "error" || payload.ok ===
   process.exit(1);
 }
 
+const apiVersion = String(payload?.runtime?.apiVersion ?? "");
+const workerVersion = String(payload?.workers?.activeRuntimeVersion ?? "");
+const alignedHealthyWorkers = Number(
+  payload?.workers?.healthyWorkersForActiveRuntimeVersion ?? 0,
+);
+const mismatchedHealthyWorkers = Number(
+  payload?.workers?.healthyWorkersNotOnActiveRuntimeVersion ?? 0,
+);
+const healthyWorkers = Number(payload?.workers?.healthy ?? 0);
+
+if (!apiVersion) {
+  console.error("[FAIL] Worker health missing api runtime version");
+  process.exit(1);
+}
+
+if (healthyWorkers > 0 && (alignedHealthyWorkers === 0 || mismatchedHealthyWorkers > 0)) {
+  console.error(
+    `[FAIL] Worker runtime version mismatch: api=${apiVersion} workerVersions=${JSON.stringify(payload?.workers?.runtimeVersions ?? [])}`,
+  );
+  process.exit(1);
+}
+
 console.log(
-  `[OK] Worker health verified: status=${payload.status} eligibleQueued=${payload?.jobs?.eligibleQueued ?? "?"} running=${payload?.jobs?.running ?? "?"}`,
+  `[OK] Worker health verified: status=${payload.status} apiVersion=${apiVersion} eligibleQueued=${payload?.jobs?.eligibleQueued ?? "?"} running=${payload?.jobs?.running ?? "?"}`,
 );
 EOF
 

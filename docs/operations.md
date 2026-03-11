@@ -23,6 +23,7 @@ This doc is authoritative for: service startup, deployment procedures, monitorin
 - Four processes: API, Indexer, Worker, MCP
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Indexer polls every 30s; Worker polls score_jobs after challenges enter Scoring
+- Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
 - Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 
@@ -92,7 +93,9 @@ pnpm --filter @agora/web dev -- --port 3100
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Build and run preflight:
+9. Set the same `AGORA_RUNTIME_VERSION` value on API and worker for each deploy. Use the git SHA when possible.
+10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the worker host can still `docker pull` them.
+11. Build and run preflight:
 
 ```bash
 pnpm install
@@ -141,6 +144,18 @@ Architecture boundary:
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, and `worker_runtime_state` carries worker heartbeat/readiness for split deployments.
+- Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
+
+### Worker Docker Flow
+
+The worker now treats scorer availability as a runtime readiness problem, not a crash condition.
+
+1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
+2. It checks `docker info`, then preflights all official scorer images referenced by currently scoring official challenges.
+3. If Docker or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
+4. Readiness is retried in the background every minute.
+5. During scoring, the runner inspects the local Docker image first and only pulls when the image is missing.
+6. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
 ---
 
@@ -154,6 +169,7 @@ Required env vars:
 
 - API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
+- Shared deploy version: `AGORA_RUNTIME_VERSION` (set the same value on API and worker)
 - Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
 - Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
 - Optional delayed retry tuning: `AGORA_WORKER_POST_TX_RETRY_MS`, `AGORA_WORKER_INFRA_RETRY_MS`
@@ -177,8 +193,8 @@ curl -sS http://localhost:3000/api/submissions/public-key
 
 Expected results:
 
-- `/healthz` returns `{"ok":true,"service":"api"}` for API process liveness only.
-- `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, and `sealing.workerReady=true` for the active `keyId`.
+- `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
+- `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `workers.healthyWorkersNotOnActiveRuntimeVersion = 0`, and `sealing.workerReady=true` for the active `keyId`.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` only when the active worker heartbeat for that `kid` is healthy.
 
 Existing testnet DBs:
@@ -187,6 +203,7 @@ Existing testnet DBs:
 - Existing environments that still contain `result_format='sealed_v1'` must apply `002_align_sealed_submission_result_format.sql` before accepting new sealed submissions.
 - Existing environments should also apply `004_add_score_job_backoff.sql` so delayed no-penalty worker retries and queue eligibility work correctly.
 - Existing environments should also apply `005_add_submission_intents.sql` so pre-registered submission metadata can reconcile safely after on-chain submit confirmation.
+- Existing environments should also apply `006_add_worker_runtime_version.sql` so worker/runtime alignment is visible in health checks.
 
 Operational privacy boundary:
 
@@ -244,7 +261,7 @@ Check every 15-30 minutes during first launch window:
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
-5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true`.
+5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version.
 6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:
@@ -258,11 +275,11 @@ agora doctor
 
 Expected results:
 
-- API health returns `{"ok":true}`.
+- API health returns `{"ok":true,"runtimeVersion":"..."}`.
 - Indexer health is `ok` or `warning`, not `critical`.
 - `agora doctor` passes RPC/Supabase/factory checks.
 - If sealing is enabled, `/api/submissions/public-key` returns `sealed_submission_v2` only while `/api/worker-health` reports a healthy worker for the same active `kid`.
-- If active scoring challenges use official Agora scorer images, the worker should refuse startup unless those GHCR images are pullable from the host.
+- If active scoring challenges use official Agora scorer images and those GHCR images are not pullable, the worker should stay alive but report `ready=false`, a `latestError`, and zero healthy workers for the active runtime version.
 
 ---
 
@@ -290,9 +307,10 @@ Per-challenge overrides can be set in the challenge spec:
 
 1. Check `submission_intents`: each client submission should create an unmatched intent before the wallet transaction is sent, then the intent should gain `matched_submission_id` after the on-chain submission is indexed or the submit-confirmation API call succeeds.
 2. Check `score_jobs` transitions: once the submission has both on-chain state and reconciled metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure and tx-reconciliation retries may temporarily stay `queued` with a future `next_attempt_at`.
-3. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after that intent is reconciled into a `submissions` row. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
-3. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
-4. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
+3. Check `GET /api/worker-health`: it should show `status != "warning"`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and no mismatched healthy workers before you expect automatic scoring.
+4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after that intent is reconciled into a `submissions` row. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
+5. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
+6. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 
 ---
 
@@ -401,8 +419,10 @@ agora reindex --from-block <block_number>
 2. Tail logs: `pm2 logs agora-worker --lines 100`.
 3. Common causes:
    - Docker daemon not running or unreachable -> restart Docker, then `pm2 restart agora-worker`.
+   - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
+   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker with the same `AGORA_RUNTIME_VERSION`.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
-   - All jobs stuck in `failed` -> inspect `last_error` column, then retry: `agora retry-failed-jobs` (dry-run first), `agora retry-failed-jobs --yes` to execute.
+   - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
 4. If the worker process itself crashed: `pm2 restart agora-worker`. PM2 uses exponential backoff (3s base).
 
 ### Oracle Key Issue
@@ -501,6 +521,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
+- `AGORA_RUNTIME_VERSION` matches the deployed worker runtime version.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
@@ -523,11 +544,17 @@ This section covers non-code work for deployment across hosted systems.
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
+- If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API/backfill environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
 - Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
 - Verify tags/digests referenced by presets are available.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 - Keep legacy images frozen if historical replay requires them.
+
+#### Worker Recovery Scripts
+
+- `pnpm backfill:challenge-metadata -- --dry-run` previews pinned official scorer digest and `expected_columns` backfills for existing challenge rows. Run `pnpm turbo build` first, then rerun without `-- --dry-run` to apply.
+- `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
 
 #### DNS and Domains
 

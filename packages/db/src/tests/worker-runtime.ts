@@ -39,6 +39,7 @@ async function testUpsertWorkerRuntimeStateUsesWorkerIdConflictKey() {
   const row = await upsertWorkerRuntimeState(db, {
     worker_id: "worker-1",
     host: "droplet-1",
+    runtime_version: "sha-123",
     ready: true,
     docker_ready: true,
     seal_enabled: true,
@@ -48,6 +49,7 @@ async function testUpsertWorkerRuntimeStateUsesWorkerIdConflictKey() {
 
   assert.equal(row.worker_id, "worker-1");
   assert.equal(capturedPayload?.worker_type, "scoring");
+  assert.equal(capturedPayload?.runtime_version, "sha-123");
   assert.equal(capturedOptions?.onConflict, "worker_id");
 }
 
@@ -83,12 +85,14 @@ async function testHeartbeatWorkerRuntimeStateRefreshesTimestamp() {
   } as never;
 
   const refreshed = await heartbeatWorkerRuntimeState(db, "worker-1", {
+    runtime_version: "sha-123",
     ready: true,
     last_error: null,
   });
 
   assert.equal(refreshed, true);
   assert.equal(capturedWorkerId, "worker-1");
+  assert.equal(capturedPayload?.runtime_version, "sha-123");
   assert.equal(capturedPayload?.ready, true);
   assert.ok(typeof capturedPayload?.last_heartbeat_at === "string");
 }
@@ -165,6 +169,7 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
         worker_id: "worker-healthy",
         worker_type: "scoring",
         host: "droplet-a",
+        runtime_version: "sha-a",
         ready: true,
         docker_ready: true,
         seal_enabled: true,
@@ -180,6 +185,7 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
         worker_id: "worker-stale",
         worker_type: "scoring",
         host: "droplet-b",
+        runtime_version: "sha-a",
         ready: true,
         docker_ready: true,
         seal_enabled: true,
@@ -195,6 +201,7 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
         worker_id: "worker-wrong-kid",
         worker_type: "scoring",
         host: "droplet-c",
+        runtime_version: "sha-b",
         ready: true,
         docker_ready: true,
         seal_enabled: true,
@@ -209,6 +216,7 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
     ],
     {
       activeSealKeyId: "kid-1",
+      activeRuntimeVersion: "sha-a",
       staleAfterMs: 30_000,
       nowMs: Date.parse("2026-03-10T00:01:00.000Z"),
     },
@@ -218,7 +226,10 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
   assert.equal(summary.readyWorkers, 3);
   assert.equal(summary.healthyWorkers, 2);
   assert.equal(summary.staleWorkers, 1);
+  assert.deepEqual(summary.runtimeVersions, ["sha-a", "sha-b"]);
   assert.equal(summary.healthyWorkersForActiveSealKey, 1);
+  assert.equal(summary.healthyWorkersForActiveRuntimeVersion, 1);
+  assert.equal(summary.healthyWorkersNotOnActiveRuntimeVersion, 1);
   assert.equal(summary.latestHeartbeatAt, "2026-03-10T00:00:50.000Z");
 }
 
@@ -228,6 +239,7 @@ function testIsWorkerRuntimeReadyForSealKeyRequiresFreshMatchingWorker() {
       worker_id: "worker-1",
       worker_type: "scoring",
       host: "droplet-a",
+      runtime_version: "sha-a",
       ready: true,
       docker_ready: true,
       seal_enabled: true,

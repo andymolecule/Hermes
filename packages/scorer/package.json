@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "echo 'no tests'"
+    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort)"
   },
   "devDependencies": {
     "@types/node": "^25.3.0"

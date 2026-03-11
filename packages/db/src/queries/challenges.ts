@@ -31,6 +31,7 @@ export interface ChallengeInsert {
   eval_metric: string;
   runner_preset_id: string;
   eval_bundle_cid?: string | null;
+  expected_columns?: string[] | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
