@@ -82,6 +82,12 @@ echo
 echo "[STEP] Building workspace"
 pnpm turbo build >/dev/null
 
+echo "[STEP] Verifying official scorer digest resolution"
+pnpm scorers:verify >/dev/null
+
+echo "[STEP] Verifying runtime database schema compatibility"
+pnpm schema:verify >/dev/null
+
 echo "[STEP] Verifying official scorer images are published and pullable"
 mapfile -t official_images < <(node --input-type=module <<'EOF'
 import { OFFICIAL_IMAGES } from "./packages/common/dist/presets.js";

@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { OFFICIAL_IMAGES, resolveOfficialImageToDigest } from "@agora/common";
+import { verifyRuntimeDatabaseSchema } from "@agora/db";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
 import { http, createPublicClient } from "viem";
@@ -65,7 +67,9 @@ export function buildDoctorCommand() {
       checks.push({
         name: "Runtime identity",
         status:
-          config.chain_id && isHexAddress(config.factory_address) && isHexAddress(config.usdc_address)
+          config.chain_id &&
+          isHexAddress(config.factory_address) &&
+          isHexAddress(config.usdc_address)
             ? "ok"
             : "warn",
         detail: `chainId=${config.chain_id ?? "?"} factory=${config.factory_address ?? "missing"} usdc=${config.usdc_address ?? "missing"}`,
@@ -233,8 +237,7 @@ export function buildDoctorCommand() {
             },
           );
           const cursorPrefix = `factory:${config.chain_id}:`;
-          const configuredCursorKey =
-            `${cursorPrefix}${config.factory_address.toLowerCase()}`;
+          const configuredCursorKey = `${cursorPrefix}${config.factory_address.toLowerCase()}`;
           const { data: cursorRows, error } = await db
             .from("indexer_cursors")
             .select("cursor_key, block_number, updated_at")
@@ -274,15 +277,16 @@ export function buildDoctorCommand() {
             name: "Indexer cursor alignment",
             status: "error",
             detail:
-              error instanceof Error ? error.message : "Indexer cursor query failed",
+              error instanceof Error
+                ? error.message
+                : "Indexer cursor query failed",
           });
         }
       } else {
         checks.push({
           name: "Indexer cursor alignment",
           status: "skip",
-          detail:
-            "Supabase service key, chain id, or factory address missing",
+          detail: "Supabase service key, chain id, or factory address missing",
         });
       }
 
@@ -316,7 +320,9 @@ export function buildDoctorCommand() {
             name: "Challenge factory backfill",
             status: "error",
             detail:
-              error instanceof Error ? error.message : "Challenge backfill query failed",
+              error instanceof Error
+                ? error.message
+                : "Challenge backfill query failed",
           });
         }
       } else {
@@ -324,6 +330,67 @@ export function buildDoctorCommand() {
           name: "Challenge factory backfill",
           status: "skip",
           detail: "Supabase service key missing",
+        });
+      }
+
+      if (config.supabase_url && config.supabase_service_key) {
+        try {
+          const db = createSupabaseClient(
+            config.supabase_url,
+            config.supabase_service_key,
+            {
+              auth: { persistSession: false },
+            },
+          );
+          const failures = await verifyRuntimeDatabaseSchema(db as never);
+          checks.push({
+            name: "Runtime DB schema",
+            status: failures.length === 0 ? "ok" : "error",
+            detail:
+              failures.length === 0
+                ? "required runtime columns are queryable"
+                : failures.map((failure) => failure.checkId).join(", "),
+          });
+        } catch (error) {
+          checks.push({
+            name: "Runtime DB schema",
+            status: "error",
+            detail:
+              error instanceof Error
+                ? error.message
+                : "Runtime schema check failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "Runtime DB schema",
+          status: "skip",
+          detail: "Supabase service key missing",
+        });
+      }
+
+      try {
+        const resolved = await Promise.all(
+          Object.values(OFFICIAL_IMAGES).map((image) =>
+            resolveOfficialImageToDigest(image).then((digest) => ({
+              image,
+              digest,
+            })),
+          ),
+        );
+        checks.push({
+          name: "Official scorer registry",
+          status: "ok",
+          detail: resolved.map((row) => row.digest).join(", "),
+        });
+      } catch (error) {
+        checks.push({
+          name: "Official scorer registry",
+          status: "error",
+          detail:
+            error instanceof Error
+              ? error.message
+              : "Official scorer registry check failed",
         });
       }
 

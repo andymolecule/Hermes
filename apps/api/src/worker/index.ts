@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_WORKER_RUNTIME_HEARTBEAT_MS,
   WORKER_RUNTIME_TYPE,
+  assertRuntimeDatabaseSchema,
   claimNextJob,
   createSupabaseClient,
   heartbeatScoreJobLease,
@@ -320,6 +321,7 @@ export async function startWorker() {
   }
 
   const db = createSupabaseClient(true);
+  await assertRuntimeDatabaseSchema(db);
   const runtimeWorkerId = resolveWorkerRuntimeId(config);
   const prunedRuntimeRows = await pruneWorkerRuntimeStates(db, {
     workerType: WORKER_RUNTIME_TYPE.scoring,

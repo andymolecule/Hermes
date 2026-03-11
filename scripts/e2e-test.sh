@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
-E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-agora/repro-scorer:v1}"
+E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/agora-science/repro-scorer:v1}"
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-0}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
@@ -39,8 +39,10 @@ if [[ ! -f "apps/cli/dist/index.js" ]]; then
 fi
 
 if ! docker image inspect "$E2E_SCORER_IMAGE" >/dev/null 2>&1; then
-  echo "Building local scorer image: $E2E_SCORER_IMAGE"
-  docker build -t "$E2E_SCORER_IMAGE" containers/repro-scorer >/dev/null
+  echo "Pulling scorer image: $E2E_SCORER_IMAGE"
+  if ! docker pull "$E2E_SCORER_IMAGE" >/dev/null; then
+    fail "scorer image is not available locally or pullable (${E2E_SCORER_IMAGE}). Publish the official GHCR image or override AGORA_E2E_SCORER_IMAGE."
+  fi
 fi
 
 TMP_DIR="$(mktemp -d -t agora-e2e-XXXXXX)"

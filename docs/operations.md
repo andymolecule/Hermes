@@ -103,6 +103,13 @@ pnpm turbo build
 ./scripts/preflight-testnet.sh
 ```
 
+Recommended explicit release checks:
+
+```bash
+pnpm schema:verify
+pnpm scorers:verify
+```
+
 ---
 
 ## Service Architecture
@@ -178,6 +185,7 @@ Key handling rules:
 
 - The API advertises exactly one active public key via `GET /api/submissions/public-key`.
 - The active `kid` must exist in the worker private key set.
+- Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`. If those env vars are unset, the loader also checks repo-root `seal-public.pem`, `seal-private.pem`, and `seal-private-keys.json`.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any historical keys whose sealed submissions still need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
 - `GET /api/submissions/public-key` now fails closed unless a live worker heartbeat exists for the active `kid` and that worker has passed sealing self-check + Docker startup checks.
@@ -189,6 +197,8 @@ Verification checklist:
 curl -sS http://localhost:3000/healthz
 curl -sS http://localhost:3000/api/worker-health
 curl -sS http://localhost:3000/api/submissions/public-key
+pnpm schema:verify
+pnpm scorers:verify
 ```
 
 Expected results:
@@ -250,6 +260,7 @@ AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
 Expected flow: post -> indexer pickup -> list -> get -> score-local -> submit -> worker scoring -> verify-public -> finalize -> claim.
 
 Note: `agora finalize` and `agora claim` require the dispute window to elapse after deadline. Use `AGORA_E2E_DISPUTE_WINDOW_HOURS=0` for same-session Base Sepolia testing, or a local Anvil RPC with `evm_increaseTime` for full lifecycle testing.
+The E2E script now expects the scorer image to already be published and pullable. It no longer builds a local official scorer fallback.
 
 ---
 
@@ -420,6 +431,7 @@ agora reindex --from-block <block_number>
 3. Common causes:
    - Docker daemon not running or unreachable -> restart Docker, then `pm2 restart agora-worker`.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
+   - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
    - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker with the same `AGORA_RUNTIME_VERSION`.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
@@ -542,6 +554,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Publish scorer images under the Agora namespace (`ghcr.io/agora-science/*`).
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
+- The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
 - If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API/backfill environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
@@ -555,6 +568,8 @@ This section covers non-code work for deployment across hosted systems.
 
 - `pnpm backfill:challenge-metadata -- --dry-run` previews pinned official scorer digest and `expected_columns` backfills for existing challenge rows. Run `pnpm turbo build` first, then rerun without `-- --dry-run` to apply.
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
+- `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
+- `pnpm scorers:verify` checks that all official scorer images resolve to digests from GHCR.
 
 #### DNS and Domains
 

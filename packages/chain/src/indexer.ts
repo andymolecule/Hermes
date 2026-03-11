@@ -1,5 +1,5 @@
-import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
 import { pathToFileURL } from "node:url";
+import { getAgoraRuntimeIdentity, loadConfig } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
@@ -7,6 +7,7 @@ import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
 };
 import {
+  assertRuntimeDatabaseSchema,
   createSupabaseClient,
   getIndexerCursor,
   listChallenges,
@@ -15,13 +16,13 @@ import {
 import { type Abi, parseEventLogs } from "viem";
 import { getPublicClient } from "./client.js";
 import {
+  type ChallengeListRow,
+  type ParsedLog,
   loadChallengeCursor,
   persistChallengeCursors,
   processChallengeLog,
   processFactoryLog,
   reconcileChallengeProjection,
-  type ChallengeListRow,
-  type ParsedLog,
 } from "./indexer/handlers.js";
 import {
   POLL_INTERVAL_MS,
@@ -40,6 +41,7 @@ export async function runIndexer() {
   const pollingConfig = resolveIndexerPollingConfig(config);
   const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
+  await assertRuntimeDatabaseSchema(db);
 
   const factoryAddress = config.AGORA_FACTORY_ADDRESS;
   const chainId = config.AGORA_CHAIN_ID;
@@ -83,7 +85,9 @@ export async function runIndexer() {
           : BigInt(0);
 
       if (pollCount === 0 || pollCount % 10 === 0) {
-        console.log(`[indexer] poll #${pollCount} from=${fromBlock} to=${toBlock} head=${chainHead}`);
+        console.log(
+          `[indexer] poll #${pollCount} from=${fromBlock} to=${toBlock} head=${chainHead}`,
+        );
       }
       pollCount++;
 
@@ -187,7 +191,9 @@ export async function runIndexer() {
       } catch (challengePollError) {
         console.error(
           "[indexer] challenge polling failed (factory ingestion unaffected)",
-          challengePollError instanceof Error ? challengePollError.message : String(challengePollError),
+          challengePollError instanceof Error
+            ? challengePollError.message
+            : String(challengePollError),
         );
         // Reset tracking so cursor persist still runs cleanly below
         resolvedChallengeKeys = new Set<string>();
@@ -228,7 +234,10 @@ const isEntrypoint =
 
 if (isEntrypoint) {
   runIndexer().catch((error) => {
-    console.error("Indexer failed", error instanceof Error ? error.message : String(error));
+    console.error(
+      "Indexer failed",
+      error instanceof Error ? error.message : String(error),
+    );
     process.exit(1);
   });
 }

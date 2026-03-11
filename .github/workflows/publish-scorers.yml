@@ -8,6 +8,8 @@ on:
     paths:
       - "containers/**"
       - ".github/workflows/publish-scorers.yml"
+      - "packages/common/src/presets.ts"
+      - "scripts/verify-official-scorers.mjs"
 
 permissions:
   contents: read
@@ -51,3 +53,34 @@ jobs:
           tags: |
             ghcr.io/${{ env.GHCR_NAMESPACE }}/${{ matrix.name }}:v1
             ghcr.io/${{ env.GHCR_NAMESPACE }}/${{ matrix.name }}:sha-${{ github.sha }}
+
+  verify:
+    runs-on: ubuntu-latest
+    needs: publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @agora/common
+        run: pnpm --filter @agora/common build
+
+      - name: Verify official scorer digest resolution
+        run: pnpm scorers:verify
+
+      - name: Verify official scorer images are public and pullable
+        run: |
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/repro-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/regression-scorer:v1
+          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/docking-scorer:v1

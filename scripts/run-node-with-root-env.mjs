@@ -1,14 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { applyAgoraRuntimeEnv } from "./runtime-env.mjs";
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const rootEnvPath = path.join(scriptDir, "..", ".env");
-
-if (typeof process.loadEnvFile === "function" && fs.existsSync(rootEnvPath)) {
-  process.loadEnvFile(rootEnvPath);
-}
+applyAgoraRuntimeEnv();
 
 const args = process.argv.slice(2);
 const child = spawn(process.execPath, args, {
