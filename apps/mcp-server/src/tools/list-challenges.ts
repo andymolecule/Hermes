@@ -5,6 +5,8 @@ export interface ListChallengesInput {
   status?: string;
   minReward?: number;
   limit?: number;
+  updatedSince?: string;
+  cursor?: string;
 }
 
 export async function agoraListChallenges(input: ListChallengesInput) {

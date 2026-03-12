@@ -3,8 +3,7 @@ import type { ProofBundle } from "../types/submission.js";
 const proofBundle: ProofBundle = {
   inputHash: "input-hash",
   outputHash: "output-hash",
-  containerImageDigest:
-    "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
+  containerImageDigest: "ghcr.io/andymolecule/repro-scorer@sha256:abc123",
   challengeSpecCid: "ipfs://bafy-spec",
   evaluationBundleCid: "ipfs://bafy-eval",
   replaySubmissionCid: "ipfs://bafy-replay",

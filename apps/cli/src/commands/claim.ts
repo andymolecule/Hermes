@@ -1,10 +1,5 @@
-import {
-  claimPayout,
-  getPublicClient,
-  getWalletClient,
-  balanceOf,
-} from "@agora/chain";
-import { createSupabaseClient, getChallengeById } from "@agora/db";
+import { claimChallengePayout } from "@agora/agent-runtime";
+import { balanceOf, getWalletClient } from "@agora/chain";
 import { Command } from "commander";
 import { formatUnits } from "viem";
 import {
@@ -13,13 +8,7 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
-
-type ChallengeRecord = {
-  id: string;
-  contract_address: string;
-};
 
 export function buildClaimCommand() {
   const cmd = new Command("claim")
@@ -46,37 +35,22 @@ export function buildClaimCommand() {
         ]);
         ensurePrivateKey(opts.key);
 
-        const db = createSupabaseClient(false);
-        const challenge = (await getChallengeById(db, id)) as ChallengeRecord;
-
         const walletClient = getWalletClient();
         const caller = walletClient.account?.address;
         if (!caller) {
-          throw new Error("Wallet client is missing an account address.");
+          throw new Error(
+            "Wallet client is missing an account address. Next step: configure AGORA_PRIVATE_KEY and retry.",
+          );
         }
 
         const beforeBalance = await balanceOf(caller);
-
-        const spinner = createSpinner("Claiming payout...");
-        const txHash = await claimPayout(
-          challenge.contract_address as `0x${string}`,
-        );
-        const publicClient = getPublicClient();
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash: txHash,
-        });
-        if (receipt.status !== "success") {
-          spinner.fail("Claim transaction reverted.");
-          throw new Error("Claim transaction failed.");
-        }
-        spinner.succeed(`Claimed: ${txHash}`);
-
+        const result = await claimChallengePayout({ challengeId: id });
         const afterBalance = await balanceOf(caller);
         const delta = afterBalance - beforeBalance;
         const output = {
-          challengeId: challenge.id,
+          challengeId: result.challengeId,
           caller,
-          txHash,
+          txHash: result.txHash,
           balanceBefore: formatUnits(beforeBalance, 6),
           balanceAfter: formatUnits(afterBalance, 6),
           claimedDelta: formatUnits(delta, 6),
@@ -86,7 +60,7 @@ export function buildClaimCommand() {
           printJson(output);
           return;
         }
-        printSuccess(`Payout claimed for ${challenge.id}`);
+        printSuccess(`Payout claimed for ${result.challengeId}`);
         printWarning(`USDC delta: ${output.claimedDelta}`);
       },
     );

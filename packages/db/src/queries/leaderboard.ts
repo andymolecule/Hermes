@@ -73,11 +73,13 @@ export async function getPublicLeaderboard(
   db: AgoraDbClient,
   limit = 25,
 ): Promise<PublicLeaderboardEntry[]> {
-  const [{ data: submissionsData, error: submissionsError }, { data: payoutsData, error: payoutsError }] =
-    await Promise.all([
-      db
-        .from("submissions")
-        .select(`
+  const [
+    { data: submissionsData, error: submissionsError },
+    { data: payoutsData, error: payoutsError },
+  ] = await Promise.all([
+    db
+      .from("submissions")
+      .select(`
           challenge_id,
           solver_address,
           score,
@@ -96,11 +98,11 @@ export async function getPublicLeaderboard(
             winner_solver_address
           )
         `)
-        .eq("challenges.status", CHALLENGE_STATUS.finalized)
-        .order("submitted_at", { ascending: false }),
-      db
-        .from("challenge_payouts")
-        .select(`
+      .eq("challenges.status", CHALLENGE_STATUS.finalized)
+      .order("submitted_at", { ascending: false }),
+    db
+      .from("challenge_payouts")
+      .select(`
           challenge_id,
           solver_address,
           amount,
@@ -109,8 +111,8 @@ export async function getPublicLeaderboard(
             winner_solver_address
           )
         `)
-        .eq("challenges.status", CHALLENGE_STATUS.finalized),
-    ]);
+      .eq("challenges.status", CHALLENGE_STATUS.finalized),
+  ]);
 
   if (submissionsError) {
     throw new Error(

@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsup",
     "dev": "node --import tsx src/index.ts",
-    "test": "echo 'no tests'"
+    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
   },
   "dependencies": {
+    "@agora/agent-runtime": "workspace:*",
     "@agora/common": "workspace:*",
     "@agora/ipfs": "workspace:*",
     "@agora/db": "workspace:*",
@@ -28,6 +29,7 @@
     "@agora/scorer": "workspace:*"
   },
   "devDependencies": {
-    "tsup": "^8.5.0"
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.2"
   }
 }

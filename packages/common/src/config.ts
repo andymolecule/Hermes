@@ -251,6 +251,9 @@ const apiServerRuntimeConfigSchema = configSchema.pick({
   AGORA_CORS_ORIGINS: true,
   AGORA_CHAIN_ID: true,
 });
+const apiClientRuntimeConfigSchema = configSchema.pick({
+  AGORA_API_URL: true,
+});
 
 const indexerHealthRuntimeConfigSchema = configSchema.pick({
   AGORA_INDEXER_CONFIRMATION_DEPTH: true,
@@ -274,6 +277,10 @@ export interface AgoraApiServerRuntimeConfig {
   apiPort: number;
   chainId: number;
   corsOrigins: string[];
+}
+
+export interface AgoraApiClientRuntimeConfig {
+  apiUrl?: string;
 }
 
 export interface AgoraIndexerHealthRuntimeConfig {
@@ -441,6 +448,15 @@ export function readApiServerRuntimeConfig(
           .map((origin) => origin.trim())
           .filter(Boolean)
       : [],
+  };
+}
+
+export function readApiClientRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraApiClientRuntimeConfig {
+  const parsed = parseConfigSection(apiClientRuntimeConfigSchema, env);
+  return {
+    apiUrl: parsed.AGORA_API_URL,
   };
 }
 

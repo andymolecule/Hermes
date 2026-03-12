@@ -14,9 +14,7 @@ const CID_V1_REGEXES = [
   /^U[A-Za-z0-9_-]{20,}={0,2}$/, // base64urlpad
 ];
 
-const KNOWN_PLACEHOLDER_CIDS = new Set([
-  "qmtestdeploy",
-]);
+const KNOWN_PLACEHOLDER_CIDS = new Set(["qmtestdeploy"]);
 
 export function extractCid(value: string): string {
   const trimmed = value.trim();

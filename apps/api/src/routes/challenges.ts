@@ -23,11 +23,13 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { jsonWithEtag } from "../lib/http-cache.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
+  getChallengeListMeta,
   getChallengeWithLeaderboard,
   listChallengesFromQuery,
   listChallengesQuerySchema,
@@ -48,7 +50,13 @@ const router = new Hono<ApiEnv>();
 router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
   const query = c.req.valid("query");
   const rows = await listChallengesFromQuery(query);
-  return c.json({ data: rows });
+  return jsonWithEtag(c, {
+    data: rows,
+    meta: {
+      ...getChallengeListMeta(rows),
+      applied_updated_since: query.updated_since ?? null,
+    },
+  });
 });
 
 router.post(
@@ -153,7 +161,7 @@ router.post(
 router.get("/:id", async (c) => {
   const challengeId = c.req.param("id");
   const data = await getChallengeWithLeaderboard(challengeId);
-  return c.json({ data });
+  return jsonWithEtag(c, { data });
 });
 
 router.get("/:id/leaderboard", async (c) => {
@@ -166,7 +174,7 @@ router.get("/:id/leaderboard", async (c) => {
     );
   }
 
-  return c.json({
+  return jsonWithEtag(c, {
     data: getChallengeLeaderboardData(data) ?? [],
   });
 });

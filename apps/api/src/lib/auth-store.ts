@@ -1,13 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { PIN_SPEC_AUTH_MAX_AGE_MS } from "@agora/common";
 import {
+  type AuthNoncePurpose,
+  consumeAuthNonce,
   createAuthNonce,
   createAuthSession,
   createSupabaseClient,
-  consumeAuthNonce,
   getAuthSession,
   revokeAuthSession,
-  type AuthNoncePurpose,
 } from "@agora/db";
 
 interface SessionRecord {
@@ -63,7 +63,9 @@ export async function createSession(address: `0x${string}`) {
   return { token, expiresAt };
 }
 
-export async function getSession(token: string | undefined): Promise<SessionRecord | null> {
+export async function getSession(
+  token: string | undefined,
+): Promise<SessionRecord | null> {
   if (!token) return null;
   const session = await getAuthSession(getDb(), hashSessionToken(token));
   if (!session) return null;

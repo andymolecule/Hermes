@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { downloadToPath, getText } from "@agora/ipfs";
 import { Command } from "commander";
+import { getChallengeApi } from "../lib/api";
 import {
   applyConfigToEnv,
   loadCliConfig,
   requireConfigValues,
 } from "../lib/config-store";
-import { fetchApiJson } from "../lib/api";
 import {
   printJson,
   printSuccess,
@@ -35,14 +35,6 @@ type SubmissionRecord = {
   solver_address: string;
 };
 
-type ChallengeDetailsResponse = {
-  data: {
-    challenge: ChallengeRecord;
-    submissions: SubmissionRecord[];
-    leaderboard: SubmissionRecord[];
-  };
-};
-
 function filenameFromUrl(url: string, fallback: string) {
   try {
     const parsed = new URL(url);
@@ -64,39 +56,38 @@ export function buildGetCommand() {
       applyConfigToEnv(config);
       requireConfigValues(config, ["api_url"]);
 
-      const response = await fetchApiJson<ChallengeDetailsResponse>(
-        `/api/challenges/${id}`,
-      );
-      const challenge = response.data.challenge;
-      const submissions = response.data.leaderboard;
+      const response = await getChallengeApi(id);
+      const challenge = response.data.challenge as ChallengeRecord;
+      const datasets = response.data.datasets;
+      const submissions = response.data.leaderboard as SubmissionRecord[];
 
       if (opts.download) {
         const targetDir = path.resolve(process.cwd(), opts.download, id);
         await fs.mkdir(targetDir, { recursive: true });
-        const specText = await getText(challenge.spec_cid);
+        const specText = await getText(datasets.spec_cid ?? challenge.spec_cid);
         await fs.writeFile(
           path.join(targetDir, "challenge.yaml"),
           specText,
           "utf8",
         );
 
-        if (challenge.dataset_train_cid) {
+        if (datasets.train_cid ?? challenge.dataset_train_cid) {
           const trainName = filenameFromUrl(
-            challenge.dataset_train_cid,
+            datasets.train_cid ?? challenge.dataset_train_cid ?? "",
             "train.data",
           );
           await downloadToPath(
-            challenge.dataset_train_cid,
+            datasets.train_cid ?? challenge.dataset_train_cid ?? "",
             path.join(targetDir, trainName),
           );
         }
-        if (challenge.dataset_test_cid) {
+        if (datasets.test_cid ?? challenge.dataset_test_cid) {
           const testName = filenameFromUrl(
-            challenge.dataset_test_cid,
+            datasets.test_cid ?? challenge.dataset_test_cid ?? "",
             "test.data",
           );
           await downloadToPath(
-            challenge.dataset_test_cid,
+            datasets.test_cid ?? challenge.dataset_test_cid ?? "",
             path.join(targetDir, testName),
           );
         }

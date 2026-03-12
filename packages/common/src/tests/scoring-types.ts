@@ -1,5 +1,5 @@
-import type { ProofBundle } from "../types/submission.js";
 import type { ScoreResult } from "../types/scoring.js";
+import type { ProofBundle } from "../types/submission.js";
 
 const scoreResult: ScoreResult = {
   ok: true,

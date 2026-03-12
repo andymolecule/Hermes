@@ -21,6 +21,8 @@ This doc is authoritative for: service startup, deployment procedures, monitorin
 ## Summary
 
 - Four processes: API, Indexer, Worker, MCP
+- The API is the canonical remote agent surface.
+- MCP HTTP is read-only by default; stdio remains the full local tool surface.
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Indexer polls every 30s; Worker polls score_jobs after challenges enter Scoring
 - Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
@@ -516,6 +518,7 @@ Clean v2 cutover:
 MCP route note:
 - remote MCP traffic is served by the MCP server at `/mcp` on port `3001`
 - it is not part of the Hono API route map under `/api/*`
+- canonical machine-readable API discovery lives at `/.well-known/openapi.json`
 
 ### External Cutover Checklist
 

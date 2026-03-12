@@ -10,7 +10,10 @@ export interface ResolvedSubmissionLimits {
   maxSubmissionsPerSolver: number;
 }
 
-function positiveIntOrFallback(value: number | null | undefined, fallback: number) {
+function positiveIntOrFallback(
+  value: number | null | undefined,
+  fallback: number,
+) {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     return fallback;
   }

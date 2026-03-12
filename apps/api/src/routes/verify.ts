@@ -1,13 +1,13 @@
+import { getChallengeLifecycleState } from "@agora/chain";
 import {
-  getChallengeById,
   createSupabaseClient,
   createVerification,
+  getChallengeById,
   getProofBundleBySubmissionId,
   getSubmissionById,
 } from "@agora/db";
-import { getChallengeLifecycleState } from "@agora/chain";
-import type { MiddlewareHandler } from "hono";
 import { zValidator } from "@hono/zod-validator";
+import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
@@ -60,7 +60,10 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
 
       const db = deps.createSupabaseClient(true) as VerifyDbClient;
       const submission = await deps.getSubmissionById(db, submissionId);
-      const challenge = await deps.getChallengeById(db, submission.challenge_id);
+      const challenge = await deps.getChallengeById(
+        db,
+        submission.challenge_id,
+      );
       const lifecycle = await deps.getChallengeLifecycleState(
         challenge.contract_address as `0x${string}`,
       );

@@ -63,7 +63,9 @@ export async function upsertChallengePayoutAllocation(
     .maybeSingle();
 
   if (existingError) {
-    throw new Error(`Failed to load challenge payout: ${existingError.message}`);
+    throw new Error(
+      `Failed to load challenge payout: ${existingError.message}`,
+    );
   }
 
   const payload = {

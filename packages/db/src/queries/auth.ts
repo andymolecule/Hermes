@@ -114,10 +114,7 @@ export async function getAuthSession(
   return (data as AuthSessionRow | null) ?? null;
 }
 
-export async function revokeAuthSession(
-  db: AgoraDbClient,
-  tokenHash: string,
-) {
+export async function revokeAuthSession(db: AgoraDbClient, tokenHash: string) {
   const { error } = await db
     .from("auth_sessions")
     .update({ revoked_at: new Date().toISOString() })

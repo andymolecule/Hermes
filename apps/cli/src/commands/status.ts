@@ -1,10 +1,10 @@
 import { Command } from "commander";
+import { getChallengeApi } from "../lib/api";
 import {
   applyConfigToEnv,
   loadCliConfig,
   requireConfigValues,
 } from "../lib/config-store";
-import { fetchApiJson } from "../lib/api";
 import { printJson, printSuccess, printTable } from "../lib/output";
 
 type ChallengeRecord = {
@@ -15,14 +15,6 @@ type ChallengeRecord = {
 
 type SubmissionRecord = {
   score?: string | null;
-};
-
-type ChallengeStatusResponse = {
-  data: {
-    challenge: ChallengeRecord;
-    submissions: SubmissionRecord[];
-    leaderboard: SubmissionRecord[];
-  };
 };
 
 function formatCountdown(deadline: string) {
@@ -51,11 +43,9 @@ export function buildStatusCommand() {
       applyConfigToEnv(config);
       requireConfigValues(config, ["api_url"]);
 
-      const response = await fetchApiJson<ChallengeStatusResponse>(
-        `/api/challenges/${id}`,
-      );
-      const challenge = response.data.challenge;
-      const submissions = response.data.leaderboard;
+      const response = await getChallengeApi(id);
+      const challenge = response.data.challenge as ChallengeRecord;
+      const submissions = response.data.leaderboard as SubmissionRecord[];
 
       const topScore = submissions[0]?.score ?? null;
       const status = {

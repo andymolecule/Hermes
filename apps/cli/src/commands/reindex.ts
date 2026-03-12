@@ -1,11 +1,13 @@
 import { DEFAULT_CHAIN_ID } from "@agora/common";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
+import { loadCliConfig, requireConfigValues } from "../lib/config-store";
 import {
-  loadCliConfig,
-  requireConfigValues,
-} from "../lib/config-store";
-import { printJson, printSuccess, printTable, printWarning } from "../lib/output";
+  printJson,
+  printSuccess,
+  printTable,
+  printWarning,
+} from "../lib/output";
 
 function parseFromBlock(value: string): bigint {
   if (!/^[0-9]+$/.test(value)) {
@@ -64,10 +66,11 @@ export function buildReindexCommand() {
         );
         const factoryKey = `factory:${chainId}:${factoryAddress}`;
 
-        const { data: challengeCursorRows, error: challengeCursorError } = await db
-          .from("indexer_cursors")
-          .select("cursor_key")
-          .like("cursor_key", `challenge:${chainId}:%`);
+        const { data: challengeCursorRows, error: challengeCursorError } =
+          await db
+            .from("indexer_cursors")
+            .select("cursor_key")
+            .like("cursor_key", `challenge:${chainId}:%`);
         if (challengeCursorError) {
           throw new Error(
             `Failed to list challenge cursors: ${challengeCursorError.message}`,
@@ -128,7 +131,9 @@ export function buildReindexCommand() {
           .from("indexer_cursors")
           .upsert(upsertRows, { onConflict: "cursor_key" });
         if (upsertError) {
-          throw new Error(`Failed to rewind indexer cursors: ${upsertError.message}`);
+          throw new Error(
+            `Failed to rewind indexer cursors: ${upsertError.message}`,
+          );
         }
 
         if (opts.purgeIndexedEvents) {

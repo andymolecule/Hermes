@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import { loadConfig, readFeaturePolicy } from "@agora/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -27,11 +28,36 @@ function asToolResult(payload: unknown) {
   };
 }
 
-function createServer(options?: { allowRemotePrivateKey?: boolean }) {
+type McpServerMode = "stdio" | "http";
+
+export function getServerToolNames(mode: McpServerMode) {
+  const readTools = [
+    "agora-list-challenges",
+    "agora-get-challenge",
+    "agora-get-leaderboard",
+    "agora-get-submission-status",
+  ];
+  if (mode === "http") {
+    return readTools;
+  }
+  return [
+    ...readTools,
+    "agora-score-local",
+    "agora-submit-solution",
+    "agora-claim-payout",
+    "agora-verify-submission",
+  ];
+}
+
+function createServer(options?: {
+  allowRemotePrivateKey?: boolean;
+  mode?: McpServerMode;
+}) {
   const server = new McpServer({
     name: "agora-mcp",
     version: "0.1.0",
   });
+  const mode = options?.mode ?? "stdio";
 
   server.registerTool(
     "agora-list-challenges",
@@ -53,6 +79,18 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
           .number()
           .optional()
           .describe("Minimum USDC reward (e.g. 10 for $10+)"),
+        updatedSince: z
+          .string()
+          .optional()
+          .describe(
+            "Only include challenges created at/after this ISO timestamp",
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            "Continue from the next_cursor returned by a previous list call",
+          ),
         limit: z
           .number()
           .int()
@@ -77,74 +115,6 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
       }),
     },
     async (input) => asToolResult(await agoraGetChallenge(input)),
-  );
-
-  server.registerTool(
-    "agora-score-local",
-    {
-      description:
-        "Dry-run the Docker scorer on your submission file without submitting on-chain. Free and unlimited — use this to test your solution before committing gas. Returns score (0-1), details, and container digest.",
-      inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID"),
-        filePath: z
-          .string()
-          .min(1)
-          .describe("Absolute path to your submission file (e.g. results.csv)"),
-      }),
-    },
-    async (input) => asToolResult(await agoraScoreLocal(input)),
-  );
-
-  server.registerTool(
-    "agora-submit-solution",
-    {
-      description:
-        "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections — keys are transmitted in plaintext and could be intercepted.",
-      inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID"),
-        filePath: z
-          .string()
-          .min(1)
-          .describe("Absolute path to submission file"),
-        privateKey: z
-          .string()
-          .regex(/^0x[a-fA-F0-9]{64}$/)
-          .optional()
-          .describe(
-            "0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP.",
-          ),
-      }),
-    },
-    async (input) =>
-      asToolResult(
-        await agoraSubmitSolution(input, {
-          allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
-        }),
-      ),
-  );
-
-  server.registerTool(
-    "agora-claim-payout",
-    {
-      description:
-        "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status (deadline passed + dispute window elapsed + finalize() called). Returns the claim transaction hash. SECURITY: Only provide privateKey in local stdio mode. Never send private keys over HTTP/network connections.",
-      inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID"),
-        privateKey: z
-          .string()
-          .regex(/^0x[a-fA-F0-9]{64}$/)
-          .optional()
-          .describe(
-            "0x-prefixed 32-byte hex private key. ONLY use in local stdio mode — never send over HTTP.",
-          ),
-      }),
-    },
-    async (input) =>
-      asToolResult(
-        await agoraClaimPayout(input, {
-          allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
-        }),
-      ),
   );
 
   server.registerTool(
@@ -176,22 +146,94 @@ function createServer(options?: { allowRemotePrivateKey?: boolean }) {
     async (input) => asToolResult(await agoraGetSubmissionStatus(input)),
   );
 
-  server.registerTool(
-    "agora-verify-submission",
-    {
-      description:
-        "Re-run the Docker scorer independently and compare against the on-chain score. Returns MATCH if scores agree within tolerance, MISMATCH otherwise. Requires Docker.",
-      inputSchema: z.object({
-        challengeId: z.string().uuid().describe("Challenge UUID"),
-        submissionId: z.string().uuid().describe("Submission UUID"),
-        tolerance: z
-          .number()
-          .optional()
-          .describe("Score comparison tolerance (default 0.001)"),
-      }),
-    },
-    async (input) => asToolResult(await agoraVerifySubmission(input)),
-  );
+  if (mode === "stdio") {
+    server.registerTool(
+      "agora-score-local",
+      {
+        description:
+          "Dry-run the Docker scorer on your submission file without submitting on-chain. Free and unlimited — use this to test your solution before committing gas. Returns score (0-1), details, and container digest.",
+        inputSchema: z.object({
+          challengeId: z.string().uuid().describe("Challenge UUID"),
+          filePath: z
+            .string()
+            .min(1)
+            .describe(
+              "Absolute path to your submission file (e.g. results.csv)",
+            ),
+        }),
+      },
+      async (input) => asToolResult(await agoraScoreLocal(input)),
+    );
+
+    server.registerTool(
+      "agora-submit-solution",
+      {
+        description:
+          "Pin a submission file to IPFS and submit its hash on-chain. Costs gas. Use agora-score-local first to verify your score. The submission is automatically queued for scoring by the oracle worker. In stdio mode, uses the server's configured wallet. SECURITY: Only provide privateKey in trusted local stdio mode.",
+        inputSchema: z.object({
+          challengeId: z.string().uuid().describe("Challenge UUID"),
+          filePath: z
+            .string()
+            .min(1)
+            .describe("Absolute path to submission file"),
+          privateKey: z
+            .string()
+            .regex(/^0x[a-fA-F0-9]{64}$/)
+            .optional()
+            .describe(
+              "0x-prefixed 32-byte hex private key. ONLY use in trusted local stdio mode.",
+            ),
+        }),
+      },
+      async (input) =>
+        asToolResult(
+          await agoraSubmitSolution(input, {
+            allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+          }),
+        ),
+    );
+
+    server.registerTool(
+      "agora-claim-payout",
+      {
+        description:
+          "Claim your USDC payout after a challenge is finalized. Only callable by winning solvers. The challenge must be in 'finalized' status. Returns the claim transaction hash.",
+        inputSchema: z.object({
+          challengeId: z.string().uuid().describe("Challenge UUID"),
+          privateKey: z
+            .string()
+            .regex(/^0x[a-fA-F0-9]{64}$/)
+            .optional()
+            .describe(
+              "0x-prefixed 32-byte hex private key. ONLY use in trusted local stdio mode.",
+            ),
+        }),
+      },
+      async (input) =>
+        asToolResult(
+          await agoraClaimPayout(input, {
+            allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+          }),
+        ),
+    );
+
+    server.registerTool(
+      "agora-verify-submission",
+      {
+        description:
+          "Re-run the Docker scorer independently and compare against the on-chain score. Returns MATCH if scores agree within tolerance, MISMATCH otherwise. Requires Docker.",
+        inputSchema: z.object({
+          challengeId: z.string().uuid().describe("Challenge UUID"),
+          submissionId: z.string().uuid().describe("Submission UUID"),
+          tolerance: z
+            .number()
+            .optional()
+            .describe("Score comparison tolerance (default 0.001)"),
+        }),
+      },
+      async (input) => asToolResult(await agoraVerifySubmission(input)),
+    );
+  }
 
   return server;
 }
@@ -220,6 +262,7 @@ async function createHttpMcpSession(
   const id = randomUUID();
   const server = createServer({
     allowRemotePrivateKey: options.allowRemotePrivateKey,
+    mode: "http",
   });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => id,
@@ -243,9 +286,9 @@ async function createHttpMcpSession(
   return session;
 }
 
-function assertRequiredConfig() {
+function assertRequiredConfig(mode: McpServerMode) {
   const config = loadConfig();
-  if (!config.AGORA_PINATA_JWT) {
+  if (mode === "stdio" && !config.AGORA_PINATA_JWT) {
     throw new Error(
       "AGORA_PINATA_JWT is not set. Submissions require IPFS pinning. Set it in .env or environment.",
     );
@@ -253,14 +296,17 @@ function assertRequiredConfig() {
 }
 
 async function startStdioMode() {
-  assertRequiredConfig();
-  const server = createServer({ allowRemotePrivateKey: true });
+  assertRequiredConfig("stdio");
+  const server = createServer({
+    allowRemotePrivateKey: true,
+    mode: "stdio",
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
 function startHttpMode() {
-  assertRequiredConfig();
+  assertRequiredConfig("http");
   const port = Number(process.env.AGORA_MCP_PORT ?? 3001);
   const allowRemotePrivateKey = readFeaturePolicy().allowMcpRemotePrivateKeys;
   const sessions = new Map<string, HttpMcpSession>();
@@ -371,8 +417,14 @@ function startHttpMode() {
   });
 }
 
-if (process.argv.includes("--stdio")) {
-  void startStdioMode();
-} else {
-  startHttpMode();
+const isEntrypoint =
+  typeof process.argv[1] === "string" &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (isEntrypoint) {
+  if (process.argv.includes("--stdio")) {
+    void startStdioMode();
+  } else {
+    startHttpMode();
+  }
 }

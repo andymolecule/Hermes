@@ -1,0 +1,30 @@
+{
+  "name": "@agora/agent-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort)"
+  },
+  "dependencies": {
+    "@agora/chain": "workspace:*",
+    "@agora/common": "workspace:*",
+    "@agora/db": "workspace:*",
+    "@agora/ipfs": "workspace:*",
+    "@agora/scorer": "workspace:*",
+    "viem": "^2.21.15"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsx": "^4.19.2"
+  }
+}

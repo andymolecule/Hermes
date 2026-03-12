@@ -1,10 +1,12 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { Command } from "commander";
+import { loadCliConfig, requireConfigValues } from "../lib/config-store";
 import {
-  loadCliConfig,
-  requireConfigValues,
-} from "../lib/config-store";
-import { printJson, printSuccess, printTable, printWarning } from "../lib/output";
+  printJson,
+  printSuccess,
+  printTable,
+  printWarning,
+} from "../lib/output";
 
 export function buildRetryFailedJobsCommand() {
   return new Command("retry-failed-jobs")
@@ -31,7 +33,9 @@ export function buildRetryFailedJobsCommand() {
 
         let query = db
           .from("score_jobs")
-          .select("id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at")
+          .select(
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at",
+          )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });
 

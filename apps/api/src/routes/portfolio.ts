@@ -60,7 +60,8 @@ function aggregatePayoutRowsByChallenge(payoutRows: SolverPayoutRow[]) {
       Number(current.amount) + Number(payout.amount ?? 0)
     ).toString();
     current.claimed_at = current.claimed_at ?? payout.claimed_at ?? null;
-    current.claim_tx_hash = current.claim_tx_hash ?? payout.claim_tx_hash ?? null;
+    current.claim_tx_hash =
+      current.claim_tx_hash ?? payout.claim_tx_hash ?? null;
     aggregated.set(key, current);
   }
 
@@ -126,7 +127,9 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
     const claimableAmounts: Record<string, string> = {};
 
     for (const challengeId of new Set(submissions.map((s) => s.challenge_id))) {
-      const submission = submissions.find((s) => s.challenge_id === challengeId);
+      const submission = submissions.find(
+        (s) => s.challenge_id === challengeId,
+      );
       const contractAddress = submission
         ? challengeContractAddress(submission)
         : undefined;
@@ -142,7 +145,12 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
     }
 
     return c.json(
-      buildPortfolioResponse(address, submissions, payoutRows, claimableAmounts),
+      buildPortfolioResponse(
+        address,
+        submissions,
+        payoutRows,
+        claimableAmounts,
+      ),
     );
   });
 

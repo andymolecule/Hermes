@@ -36,7 +36,7 @@ test("throws when preset_id and container mismatch", () => {
 
 test("custom runners use default runner limits", () => {
   const policy = resolveRunnerPolicyForChallenge({
-    image: "ghcr.io/acme/custom-scorer@sha256:" + "a".repeat(64),
+    image: `ghcr.io/acme/custom-scorer@sha256:${"a".repeat(64)}`,
     runner_preset_id: "custom",
   });
   assert.equal(policy.source, "default");

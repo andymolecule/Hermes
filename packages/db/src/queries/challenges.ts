@@ -210,13 +210,18 @@ export interface ChallengeListFilters {
   domain?: string;
   posterAddress?: string;
   limit?: number;
+  updatedSince?: string;
+  cursor?: string;
 }
 
 export async function listChallengesWithDetails(
   db: AgoraDbClient,
   filters: ChallengeListFilters = {},
 ) {
-  let query = db.from("challenges").select("*, submissions(count)");
+  let query = db
+    .from("challenges")
+    .select("*, submissions(count)")
+    .order("created_at", { ascending: false });
 
   if (filters.status) {
     query = query.eq("status", filters.status);
@@ -226,6 +231,12 @@ export async function listChallengesWithDetails(
   }
   if (filters.posterAddress) {
     query = query.eq("poster_address", filters.posterAddress);
+  }
+  if (filters.updatedSince) {
+    query = query.gte("created_at", filters.updatedSince);
+  }
+  if (filters.cursor) {
+    query = query.lt("created_at", filters.cursor);
   }
   if (filters.limit) {
     query = query.limit(filters.limit);

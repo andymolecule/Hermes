@@ -33,6 +33,7 @@ import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { z } from "zod";
 import { getSession } from "../lib/auth-store.js";
+import { jsonWithEtag } from "../lib/http-cache.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
@@ -145,6 +146,40 @@ async function getChallengeSubmissionIntentWindow(input: {
   };
 }
 
+export async function getSubmissionStatusData(submissionId: string) {
+  const db = createSupabaseClient(true);
+  const submission = await getSubmissionById(db, submissionId);
+  const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
+
+  let scoringStatus: "pending" | "complete" | "scored_awaiting_proof";
+  if (!submission.scored) {
+    scoringStatus = "pending";
+  } else if (proofBundle?.cid) {
+    scoringStatus = "complete";
+  } else {
+    scoringStatus = "scored_awaiting_proof";
+  }
+
+  return {
+    submission: {
+      id: submission.id,
+      challenge_id: submission.challenge_id,
+      on_chain_sub_id: submission.on_chain_sub_id,
+      solver_address: submission.solver_address,
+      score: submission.score,
+      scored: submission.scored,
+      submitted_at: submission.submitted_at,
+      scored_at: submission.scored_at ?? null,
+    },
+    proofBundle: proofBundle
+      ? {
+          reproducible: proofBundle.reproducible,
+        }
+      : null,
+    scoringStatus,
+  };
+}
+
 const router = new Hono<ApiEnv>();
 
 router.get("/public-key", async (c) => {
@@ -195,6 +230,12 @@ router.get("/public-key", async (c) => {
       publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
     },
   });
+});
+
+router.get("/:id/status", async (c) => {
+  const submissionId = c.req.param("id");
+  const data = await getSubmissionStatusData(submissionId);
+  return jsonWithEtag(c, { data });
 });
 
 router.get("/:id/public", async (c) => {

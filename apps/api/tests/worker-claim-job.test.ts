@@ -4,7 +4,11 @@ import { claimNextJob } from "@agora/db";
 
 test("claimNextJob is a function that accepts db + workerId", () => {
   assert.equal(typeof claimNextJob, "function");
-  assert.equal(claimNextJob.length, 2, "claimNextJob should accept 2 arguments (db, workerId)");
+  assert.equal(
+    claimNextJob.length,
+    2,
+    "claimNextJob should accept 2 arguments (db, workerId)",
+  );
 });
 
 test("claimNextJob calls db.rpc with correct function name and params", async () => {
@@ -21,7 +25,11 @@ test("claimNextJob calls db.rpc with correct function name and params", async ()
 
   assert.equal(result, null, "should return null when RPC returns empty array");
   assert.equal(calls.length, 1, "should call db.rpc exactly once");
-  assert.equal(calls[0].fn, "claim_next_score_job", "should call the correct RPC function");
+  assert.equal(
+    calls[0].fn,
+    "claim_next_score_job",
+    "should call the correct RPC function",
+  );
   assert.equal(calls[0].params.p_worker_id, "worker-test-123");
   assert.equal(calls[0].params.p_lease_ms, 3_600_000);
 });
@@ -59,7 +67,10 @@ test("claimNextJob returns job row when RPC returns data", async () => {
 test("claimNextJob throws on RPC error", async () => {
   const mockDb = {
     rpc() {
-      return Promise.resolve({ data: null, error: { message: "connection refused" } });
+      return Promise.resolve({
+        data: null,
+        error: { message: "connection refused" },
+      });
     },
   };
 

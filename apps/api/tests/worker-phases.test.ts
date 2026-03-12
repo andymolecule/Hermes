@@ -7,7 +7,11 @@ import {
 import type { WorkerLogFn } from "../src/worker/types.js";
 
 test("runWorkerPhase logs start and success with duration", async () => {
-  const entries: Array<{ level: string; message: string; meta?: Record<string, unknown> }> = [];
+  const entries: Array<{
+    level: string;
+    message: string;
+    meta?: Record<string, unknown>;
+  }> = [];
   const log: WorkerLogFn = (level, message, meta) => {
     entries.push({ level, message, meta });
   };
@@ -28,21 +32,20 @@ test("runWorkerPhase logs start and success with duration", async () => {
 });
 
 test("runWorkerPhase logs failure with duration and rethrows", async () => {
-  const entries: Array<{ level: string; message: string; meta?: Record<string, unknown> }> = [];
+  const entries: Array<{
+    level: string;
+    message: string;
+    meta?: Record<string, unknown>;
+  }> = [];
   const log: WorkerLogFn = (level, message, meta) => {
     entries.push({ level, message, meta });
   };
 
   await assert.rejects(
     () =>
-      runWorkerPhase(
-        log,
-        "wait_confirmation",
-        { jobId: "job-2" },
-        async () => {
-          throw new Error("confirmation timeout");
-        },
-      ),
+      runWorkerPhase(log, "wait_confirmation", { jobId: "job-2" }, async () => {
+        throw new Error("confirmation timeout");
+      }),
     /confirmation timeout/,
   );
 
@@ -54,12 +57,18 @@ test("runWorkerPhase logs failure with duration and rethrows", async () => {
 });
 
 test("createWorkerPhaseObserver emits consistent phase logs", async () => {
-  const entries: Array<{ level: string; message: string; meta?: Record<string, unknown> }> = [];
+  const entries: Array<{
+    level: string;
+    message: string;
+    meta?: Record<string, unknown>;
+  }> = [];
   const log: WorkerLogFn = (level, message, meta) => {
     entries.push({ level, message, meta });
   };
 
-  const observer = createWorkerPhaseObserver(log, { challengeId: "challenge-1" });
+  const observer = createWorkerPhaseObserver(log, {
+    challengeId: "challenge-1",
+  });
   await observer.onPhaseStart?.("fetch_inputs");
   await observer.onPhaseSuccess?.("fetch_inputs", 12);
   await observer.onPhaseError?.("run_scorer", 34, new Error("docker failed"));

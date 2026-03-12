@@ -413,9 +413,11 @@ Manual fallback:
 - API server:
   - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
   - `apps/api/src/routes/*` (challenge/submission/auth/verification endpoints)
+  - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
 - MCP server:
   - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
   - `apps/mcp-server/src/tools/*` (agent tools)
+  - stdio mode is full local execution; HTTP mode is read-only by default
 - Indexer:
   - `packages/chain/src/indexer.ts` (polling, event parsing, idempotent DB writes)
   - exposed health via `/api/indexer-health`
@@ -479,15 +481,9 @@ flowchart TB
         PKG["Private Key Guard<br/>(stdio=allow, HTTP=env flag)"]
     end
 
-    subgraph Tools["8 MCP Tools"]
-        T1["agora-list-challenges"]
-        T2["agora-get-challenge"]
-        T3["agora-score-local"]
-        T4["agora-submit-solution"]
-        T5["agora-claim-payout"]
-        T6["agora-get-leaderboard"]
-        T7["agora-get-submission-status"]
-        T8["agora-verify-submission"]
+    subgraph Tools["MCP Tool Modes"]
+        R1["HTTP: list/get/leaderboard/status"]
+        L1["stdio: list/get/score/submit/claim/verify"]
     end
 
     STDIO --> SM
@@ -495,8 +491,7 @@ flowchart TB
     X402 --> SM
     SM --> GC
     SM --> Tools
-    T4 --> PKG
-    T5 --> PKG
+    L1 --> PKG
 ```
 
 Remote MCP HTTP traffic terminates on the MCP server's `/mcp` route. It is not served by the Hono API under `/api/*`.

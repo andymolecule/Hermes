@@ -5,6 +5,7 @@ import {
 } from "@agora/common";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { buildOpenApiDocument } from "./lib/openapi.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
 import agentChallengeRoutes from "./routes/agent-challenges.js";
 import analyticsRoutes from "./routes/analytics.js";
@@ -39,6 +40,7 @@ export function createApp() {
       allowMethods: ["GET", "POST", "OPTIONS"],
       allowHeaders: [
         "Content-Type",
+        "If-None-Match",
         "X-PAYMENT",
         "X-PAYMENT-RESPONSE",
         "X-402-PAYMENT",
@@ -65,6 +67,9 @@ export function createApp() {
       checkedAt: new Date().toISOString(),
     });
   });
+  app.get("/.well-known/openapi.json", (c) =>
+    c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),
+  );
   app.get("/.well-known/x402", (c) => c.json(buildX402Metadata()));
 
   app.use("*", x402Middleware);

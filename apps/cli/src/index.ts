@@ -2,8 +2,8 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
-import { buildConfigCommand } from "./commands/config";
 import { buildClaimCommand } from "./commands/claim";
+import { buildConfigCommand } from "./commands/config";
 import { buildDoctorCommand } from "./commands/doctor";
 import { buildFinalizeCommand } from "./commands/finalize";
 import { buildGetCommand } from "./commands/get";
@@ -15,9 +15,9 @@ import { buildOracleScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
 import { buildStatusCommand } from "./commands/status";
 import { buildSubmitCommand } from "./commands/submit";
+import { buildValidateCommand } from "./commands/validate";
 import { buildVerifyCommand } from "./commands/verify";
 import { buildVerifyPublicCommand } from "./commands/verify-public";
-import { buildValidateCommand } from "./commands/validate";
 import { handleCommandError } from "./lib/errors";
 
 async function main() {

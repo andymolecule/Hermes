@@ -1,8 +1,11 @@
+import { getChallengeLifecycleState } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
-  getEffectiveChallengeStatus,
   type ChallengeStatus,
+  DEFAULT_IPFS_GATEWAY,
   SUBMISSION_RESULT_FORMAT,
+  agentChallengesQuerySchema,
+  getEffectiveChallengeStatus,
   isChallengeStatus,
 } from "@agora/common";
 import {
@@ -11,8 +14,7 @@ import {
   listChallengesWithDetails,
   listSubmissionsForChallenge,
 } from "@agora/db";
-import { getChallengeLifecycleState } from "@agora/chain";
-import { z } from "zod";
+import type { z } from "zod";
 
 type SubmissionRow = Awaited<
   ReturnType<typeof listSubmissionsForChallenge>
@@ -78,31 +80,7 @@ export function toPrivateProofBundle(row: ProofBundleRow | null) {
   };
 }
 
-export const listChallengesQuerySchema = z.object({
-  status: z
-    .enum([
-      CHALLENGE_STATUS.open,
-      CHALLENGE_STATUS.scoring,
-      CHALLENGE_STATUS.finalized,
-      CHALLENGE_STATUS.disputed,
-      CHALLENGE_STATUS.cancelled,
-    ])
-    .optional(),
-  domain: z.string().optional(),
-  poster_address: z.string().optional(),
-  limit: z
-    .string()
-    .regex(/^\d+$/)
-    .transform((value) => Number(value))
-    .optional(),
-  min_reward: z
-    .string()
-    .transform((value) => Number(value))
-    .refine((value) => !Number.isNaN(value), {
-      message: "min_reward must be a valid number.",
-    })
-    .optional(),
-});
+export const listChallengesQuerySchema = agentChallengesQuerySchema;
 
 export function sortByScoreDesc<T extends { score: unknown; scored?: unknown }>(
   rows: T[],
@@ -149,6 +127,8 @@ export async function listChallengesFromQuery(
     domain: query.domain,
     posterAddress: query.poster_address,
     limit: query.limit,
+    updatedSince: query.updated_since,
+    cursor: query.cursor,
   })) as Array<Record<string, unknown>>;
   const normalizedRows = rows.map((row) => ({
     ...row,
@@ -170,6 +150,23 @@ export async function listChallengesFromQuery(
       );
 }
 
+export function getChallengeListMeta(rows: Array<Record<string, unknown>>) {
+  const lastRow = rows.at(-1);
+  const nextCursor =
+    typeof lastRow?.created_at === "string" && lastRow.created_at.length > 0
+      ? lastRow.created_at
+      : null;
+
+  return {
+    next_cursor: nextCursor,
+  };
+}
+
+function cidToGatewayUrl(cid: string | null | undefined) {
+  if (!cid) return null;
+  return `${DEFAULT_IPFS_GATEWAY}${cid.replace("ipfs://", "")}`;
+}
+
 export async function getChallengeWithLeaderboard(
   challengeId: string,
   deps: ChallengeSharedDeps = defaultDeps,
@@ -183,10 +180,19 @@ export async function getChallengeWithLeaderboard(
     ...challenge,
     status: lifecycle.status,
   };
+  const datasets = {
+    train_cid: challenge.dataset_train_cid ?? null,
+    train_url: cidToGatewayUrl(challenge.dataset_train_cid),
+    test_cid: challenge.dataset_test_cid ?? null,
+    test_url: cidToGatewayUrl(challenge.dataset_test_cid),
+    spec_cid: challenge.spec_cid ?? null,
+    spec_url: cidToGatewayUrl(challenge.spec_cid),
+  };
 
   if (!canExposeChallengeResults(normalizedChallenge.status)) {
     return {
       challenge: normalizedChallenge,
+      datasets,
       submissions: [],
       leaderboard: [],
     };
@@ -202,5 +208,10 @@ export async function getChallengeWithLeaderboard(
       challenge: normalizedChallenge,
       submissions,
     }) ?? [];
-  return { challenge: normalizedChallenge, submissions, leaderboard };
+  return {
+    challenge: normalizedChallenge,
+    datasets,
+    submissions,
+    leaderboard,
+  };
 }

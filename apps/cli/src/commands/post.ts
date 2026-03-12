@@ -6,17 +6,17 @@ import {
   approve,
   balanceOf,
   createChallenge,
-  parseChallengeCreatedReceipt,
   getPublicClient,
   getWalletClient,
+  parseChallengeCreatedReceipt,
 } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
+  type ChallengeSpecOutput,
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
-  type ChallengeSpecOutput,
   validateChallengeSpec,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";

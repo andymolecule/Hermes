@@ -4,6 +4,7 @@ import { CHALLENGE_STATUS } from "@agora/common";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
+  getChallengeListMeta,
   getChallengeWithLeaderboard,
   listChallengesFromQuery,
 } from "../src/routes/challenges-shared.js";
@@ -156,4 +157,48 @@ test("challenge list filters open and scoring after effective-status normalizati
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("challenge list forwards updated_since and cursor to the shared DB query", async () => {
+  let receivedFilters: Record<string, unknown> | null = null;
+
+  await listChallengesFromQuery(
+    {
+      updated_since: "2026-03-10T00:00:00.000Z",
+      cursor: "2026-03-11T00:00:00.000Z",
+      limit: 5,
+    },
+    {
+      createSupabaseClient: () => ({}) as never,
+      getChallengeById: async () => {
+        throw new Error("not used");
+      },
+      getChallengeLifecycleState: async () => ({
+        status: CHALLENGE_STATUS.open,
+      }),
+      listChallengesWithDetails: async (_db, filters) => {
+        receivedFilters = filters as Record<string, unknown>;
+        return [] as never[];
+      },
+      listSubmissionsForChallenge: async () => [] as never[],
+    },
+  );
+
+  assert.deepEqual(receivedFilters, {
+    domain: undefined,
+    status: undefined,
+    posterAddress: undefined,
+    limit: 5,
+    updatedSince: "2026-03-10T00:00:00.000Z",
+    cursor: "2026-03-11T00:00:00.000Z",
+  });
+});
+
+test("challenge list meta returns next_cursor from the last row", () => {
+  const meta = getChallengeListMeta([
+    { id: "challenge-1", created_at: "2026-03-12T00:00:00.000Z" },
+    { id: "challenge-2", created_at: "2026-03-11T00:00:00.000Z" },
+  ]);
+
+  assert.equal(meta.next_cursor, "2026-03-11T00:00:00.000Z");
 });

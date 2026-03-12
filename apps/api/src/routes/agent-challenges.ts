@@ -1,10 +1,12 @@
 import { CHALLENGE_STATUS } from "@agora/common";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { jsonWithEtag } from "../lib/http-cache.js";
 import type { ApiEnv } from "../types.js";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
+  getChallengeListMeta,
   getChallengeWithLeaderboard,
   listChallengesFromQuery,
   listChallengesQuerySchema,
@@ -15,13 +17,19 @@ const router = new Hono<ApiEnv>();
 router.get("/", zValidator("query", listChallengesQuerySchema), async (c) => {
   const query = c.req.valid("query");
   const rows = await listChallengesFromQuery(query);
-  return c.json({ data: rows });
+  return jsonWithEtag(c, {
+    data: rows,
+    meta: {
+      ...getChallengeListMeta(rows),
+      applied_updated_since: query.updated_since ?? null,
+    },
+  });
 });
 
 router.get("/:id", async (c) => {
   const challengeId = c.req.param("id");
   const data = await getChallengeWithLeaderboard(challengeId);
-  return c.json({ data });
+  return jsonWithEtag(c, { data });
 });
 
 router.get("/:id/leaderboard", async (c) => {
@@ -33,7 +41,7 @@ router.get("/:id/leaderboard", async (c) => {
       403,
     );
   }
-  return c.json({
+  return jsonWithEtag(c, {
     data: getChallengeLeaderboardData(data) ?? [],
   });
 });

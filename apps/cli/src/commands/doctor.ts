@@ -76,20 +76,32 @@ export function buildDoctorCommand() {
       applyConfigToEnv(config);
 
       checks.push({
+        name: "API URL",
+        status: config.api_url ? "ok" : "warn",
+        detail: config.api_url ? "configured" : "AGORA_API_URL missing",
+      });
+      checks.push({
+        name: "Remote discovery ready",
+        status: config.api_url ? "ok" : "warn",
+        detail: config.api_url
+          ? "list/get/status can run"
+          : "set AGORA_API_URL to enable discovery and read-only commands",
+      });
+      checks.push({
         name: "RPC URL",
-        status: config.rpc_url ? "ok" : "error",
+        status: config.rpc_url ? "ok" : "warn",
         detail: config.rpc_url ? "configured" : "AGORA_RPC_URL missing",
       });
       checks.push({
         name: "Factory address",
-        status: isHexAddress(config.factory_address) ? "ok" : "error",
+        status: isHexAddress(config.factory_address) ? "ok" : "warn",
         detail: isHexAddress(config.factory_address)
           ? "valid address"
           : "AGORA_FACTORY_ADDRESS missing or invalid",
       });
       checks.push({
         name: "USDC address",
-        status: isHexAddress(config.usdc_address) ? "ok" : "error",
+        status: isHexAddress(config.usdc_address) ? "ok" : "warn",
         detail: isHexAddress(config.usdc_address)
           ? "valid address"
           : "AGORA_USDC_ADDRESS missing or invalid",
@@ -124,6 +136,51 @@ export function buildDoctorCommand() {
           ? "configured"
           : "AGORA_PRIVATE_KEY missing or invalid",
       });
+      checks.push({
+        name: "Local execution ready",
+        status:
+          Boolean(config.rpc_url) &&
+          isHexAddress(config.factory_address) &&
+          isHexAddress(config.usdc_address) &&
+          Boolean(config.pinata_jwt) &&
+          isPrivateKey(config.private_key)
+            ? "ok"
+            : "warn",
+        detail:
+          "requires RPC, factory, USDC, Pinata JWT, and a private key for local scoring/submission",
+      });
+
+      if (config.api_url) {
+        try {
+          const response = await fetch(
+            `${config.api_url.replace(/\/$/, "")}/healthz`,
+            {
+              signal: AbortSignal.timeout(5000),
+            },
+          );
+          if (!response.ok) {
+            throw new Error(`healthz returned ${response.status}`);
+          }
+          checks.push({
+            name: "API connectivity",
+            status: "ok",
+            detail: "healthz ok",
+          });
+        } catch (error) {
+          checks.push({
+            name: "API connectivity",
+            status: "error",
+            detail:
+              error instanceof Error ? error.message : "API request failed",
+          });
+        }
+      } else {
+        checks.push({
+          name: "API connectivity",
+          status: "skip",
+          detail: "API URL not configured",
+        });
+      }
 
       if (config.rpc_url) {
         try {
