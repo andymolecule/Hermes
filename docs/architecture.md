@@ -689,11 +689,12 @@ flowchart TB
     end
 
     subgraph Indexer["Chain Indexer (always-on)"]
-        Poller["getLogs() every 30s"]
-        Parser["Parse active-generation event data<br/>through @agora/chain"]
+        Poller["Factory getLogs() every 30s"]
+        Active["Poll active challenges only"]
+        Parser["Apply challenge events incrementally<br/>through @agora/chain"]
         Dedup["Dedup via indexed_events table"]
         Replay["Replay recent confirmed block window"]
-        Reconcile["Reconcile DB projection against chain"]
+        Repair["Targeted repair only on drift<br/>or explicit CLI command"]
     end
 
     subgraph DB["Supabase"]
@@ -701,23 +702,26 @@ flowchart TB
         ST["submissions table"]
         PT["challenge_payouts table"]
         IE["indexed_events table"]
+        IC["indexer_cursors table<br/>replay + high-water"]
     end
 
     subgraph Monitor["Health Monitoring"]
         Health["GET /api/indexer-health"]
-        Lag["Compare: chain head vs last indexed block"]
+        Lag["Compare: finalized chain head vs factory high-water cursor"]
     end
 
     Events --> Poller
-    Poller --> Parser
+    Poller --> Active
+    Active --> Parser
     Parser --> Dedup
     Dedup --> Replay
-    Replay --> Reconcile
-    Reconcile --> CT
-    Reconcile --> ST
-    Reconcile --> PT
+    Replay --> Repair
+    Repair --> CT
+    Repair --> ST
+    Repair --> PT
+    Repair --> IC
     Dedup --> IE
-    IE --> Lag
+    IC --> Lag
     Lag --> Health
 ```
 
@@ -725,6 +729,7 @@ Projection rules:
 - On-chain contracts are authoritative for lifecycle status, payout entitlements, and claimability.
 - Supabase is a projection and operational cache. Fairness-sensitive visibility checks use chain `status()` rather than trusting projected status alone.
 - Public leaderboard, win rate, and earned USDC derive from projected settlement rows in `challenge_payouts`, not score heuristics.
+- The hot path is event-driven: active challenges are polled continuously, while full challenge reconciliation is reserved for targeted repair and operator commands such as `agora repair-challenge`.
 
 **Health states:**
 - `ok`: ≤ 20 blocks behind chain head

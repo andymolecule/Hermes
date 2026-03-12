@@ -10,6 +10,7 @@ import { buildGetCommand } from "./commands/get";
 import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
 import { buildReindexCommand } from "./commands/reindex";
+import { buildRepairChallengeCommand } from "./commands/repair-challenge";
 import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
 import { buildOracleScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
@@ -30,6 +31,7 @@ async function main() {
 
   program.addCommand(buildConfigCommand());
   program.addCommand(buildPostCommand());
+  program.addCommand(buildRepairChallengeCommand());
   program.addCommand(buildReindexCommand());
   program.addCommand(buildListCommand());
   program.addCommand(buildGetCommand());

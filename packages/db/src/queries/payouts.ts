@@ -101,7 +101,7 @@ export async function markChallengePayoutClaimed(
   claimedAt: string,
   claimTxHash: string,
 ) {
-  const { error } = await db
+  const { data, error } = await db
     .from("challenge_payouts")
     .update({
       claimed_at: claimedAt,
@@ -109,11 +109,14 @@ export async function markChallengePayoutClaimed(
       updated_at: new Date().toISOString(),
     })
     .eq("challenge_id", challengeId)
-    .eq("solver_address", solverAddress.toLowerCase());
+    .eq("solver_address", solverAddress.toLowerCase())
+    .select("challenge_id");
 
   if (error) {
     throw new Error(`Failed to mark payout claimed: ${error.message}`);
   }
+
+  return data?.length ?? 0;
 }
 
 export async function listChallengePayoutsBySolver(

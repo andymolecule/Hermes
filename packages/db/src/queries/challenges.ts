@@ -193,16 +193,88 @@ export async function getChallengeById(db: AgoraDbClient, id: string) {
   return data;
 }
 
-export async function listChallenges(db: AgoraDbClient) {
+export async function getChallengeByContractAddress(
+  db: AgoraDbClient,
+  contractAddress: string,
+) {
   const { data, error } = await db
     .from("challenges")
-    .select(
-      "id, contract_address, factory_address, tx_hash, status, max_submissions_total, max_submissions_per_solver",
-    );
+    .select("*")
+    .eq("contract_address", contractAddress.toLowerCase())
+    .single();
   if (error) {
-    throw new Error(`Failed to list challenges: ${error.message}`);
+    throw new Error(
+      `Failed to fetch challenge by contract address: ${error.message}`,
+    );
   }
-  return data ?? [];
+  return data;
+}
+
+const INDEXING_CHALLENGE_SELECT =
+  "id, contract_address, factory_address, tx_hash, status, max_submissions_total, max_submissions_per_solver";
+
+export async function listChallengesForIndexing(db: AgoraDbClient) {
+  const activeStatuses = [
+    CHALLENGE_STATUS.open,
+    CHALLENGE_STATUS.scoring,
+    CHALLENGE_STATUS.disputed,
+  ];
+
+  const { data: activeChallenges, error: activeError } = await db
+    .from("challenges")
+    .select(INDEXING_CHALLENGE_SELECT)
+    .in("status", activeStatuses);
+  if (activeError) {
+    throw new Error(
+      `Failed to list active challenges for indexing: ${activeError.message}`,
+    );
+  }
+
+  const { data: unclaimedPayoutRows, error: payoutError } = await db
+    .from("challenge_payouts")
+    .select("challenge_id")
+    .is("claimed_at", null);
+  if (payoutError) {
+    throw new Error(
+      `Failed to list unclaimed challenge payouts: ${payoutError.message}`,
+    );
+  }
+
+  const finalizedChallengeIds = Array.from(
+    new Set(
+      (unclaimedPayoutRows ?? [])
+        .map((row) => row.challenge_id)
+        .filter((value): value is string => typeof value === "string"),
+    ),
+  );
+  if (finalizedChallengeIds.length === 0) {
+    return activeChallenges ?? [];
+  }
+
+  const { data: finalizedChallenges, error: finalizedError } = await db
+    .from("challenges")
+    .select(INDEXING_CHALLENGE_SELECT)
+    .eq("status", CHALLENGE_STATUS.finalized)
+    .in("id", finalizedChallengeIds);
+  if (finalizedError) {
+    throw new Error(
+      `Failed to list finalized challenges for indexing: ${finalizedError.message}`,
+    );
+  }
+
+  const merged = new Map<string, (typeof activeChallenges)[number]>();
+  for (const challenge of activeChallenges ?? []) {
+    if (typeof challenge.id === "string") {
+      merged.set(challenge.id, challenge);
+    }
+  }
+  for (const challenge of finalizedChallenges ?? []) {
+    if (typeof challenge.id === "string") {
+      merged.set(challenge.id, challenge);
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 export interface ChallengeListFilters {

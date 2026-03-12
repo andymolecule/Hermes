@@ -263,11 +263,12 @@ flowchart TB
     end
 
     subgraph Indexer["Chain Indexer (always-on)"]
-        Poller["getLogs() every 30s"]
-        Parser["Parse active-generation event data<br/>through @agora/chain"]
+        Poller["Factory getLogs() every 30s"]
+        Active["Poll active challenges only<br/>(open, scoring, disputed,<br/>finalized with unclaimed payouts)"]
+        Parser["Apply challenge events incrementally<br/>through @agora/chain"]
         Dedup["Dedup via indexed_events table"]
         Replay["Replay recent confirmed block window"]
-        Reconcile["Reconcile DB projection against chain"]
+        Repair["Targeted repair only on drift<br/>or explicit operator command"]
     end
 
     subgraph DB["Supabase"]
@@ -275,32 +276,37 @@ flowchart TB
         ST["submissions table"]
         PT["challenge_payouts table"]
         IE["indexed_events table"]
+        IC["indexer_cursors table<br/>replay + high-water"]
     end
 
     subgraph Monitor["Health Monitoring"]
         Health["GET /api/indexer-health"]
-        Lag["Compare: chain head vs last indexed block"]
+        Lag["Compare: finalized chain head vs factory high-water cursor"]
     end
 
     Events --> Poller
-    Poller --> Parser
+    Poller --> Active
+    Active --> Parser
     Parser --> Dedup
     Dedup --> Replay
-    Replay --> Reconcile
-    Reconcile --> CT
-    Reconcile --> ST
-    Reconcile --> PT
+    Replay --> Repair
+    Repair --> CT
+    Repair --> ST
+    Repair --> PT
+    Repair --> IC
     Dedup --> IE
-    IE --> Lag
+    IC --> Lag
     Lag --> Health
 ```
 
 ### How the indexer works
 
-- **Polls every 30 seconds** using `getLogs` against the active factory and all known challenge contracts.
+- **Polls every 30 seconds** using `getLogs` against the active factory and the active challenge set only: `open`, `scoring`, `disputed`, and `finalized` challenges with unclaimed payouts.
 - **Confirmation depth:** Controlled by `AGORA_INDEXER_CONFIRMATION_DEPTH` (default 3). Events are only committed to the DB once they have this many confirmations, reducing reorg risk.
 - **Deduplication** via the `indexed_events` table. Each event is keyed on `(tx_hash, log_index)`. `block_hash` is also stored for replay diagnostics and shallow reorg analysis. If the key already exists, the event handler is skipped.
 - **Idempotent writes** — The indexer is safe to replay. Re-running the same block range produces the same DB state. UPSERTs and conditional writes ensure no duplicate or conflicting rows.
+- **Hot path is event-driven** — submissions, scores, payout allocations, settlement winner fields, and claim state are updated directly from challenge events. Full `reconcileChallengeProjection()` is reserved for targeted drift repair or explicit operator repair.
+- **Replay scope is split** — the factory cursor retains a replay window for reorg safety, while quiet challenge cursors advance to the exact next block by default and only rewind when that challenge actually fails.
 - **`AGORA_INDEXER_START_BLOCK`** must be set for new factory deployments. This tells the indexer where to begin scanning. Without it, the indexer will not know which blocks to poll for the new factory's events.
 
 ---
@@ -325,7 +331,7 @@ flowchart TB
 ## Health Monitoring
 
 - **Endpoint:** `GET /api/indexer-health`
-- Compares chain head block number vs last indexed block in `indexed_events`.
+- Compares the finalized chain head against the factory **high-water cursor**, not the replay cursor. This prevents the replay window from showing up as false lag.
 - **States:**
   - `ok` — 20 blocks or fewer behind chain head
   - `warning` — 20-120 blocks behind
@@ -365,11 +371,17 @@ When the indexer falls behind, processes stale data, or a new factory is deploye
   agora reindex --from-block <block_number> --purge-indexed-events
   ```
 
+- **Repair one projected challenge without replaying the full indexer:**
+  ```bash
+  agora repair-challenge --id <challenge_id>
+  ```
+
 ### What each option does
 
 - `--from-block` rewinds factory + challenge cursors for the active chain to the specified block number. The indexer will re-scan from that point on its next poll cycle.
 - `--dry-run` shows what would be replayed without writing to the database.
 - `--purge-indexed-events` deletes rows from `indexed_events` for the replayed range, forcing event handlers to run again even for previously processed events. Use this when you suspect corrupted projections.
+- `repair-challenge` rebuilds one challenge projection from chain state at the current confirmed tip. Use this for challenge-local drift without replaying the whole factory.
 
 ### When to reindex
 

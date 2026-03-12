@@ -25,7 +25,7 @@ This doc is authoritative for: service startup, deployment procedures, monitorin
 - MCP HTTP is read-only by default; stdio remains the full local tool surface.
 - Historical malformed challenge specs are intentionally unsupported; deploy current-schema challenges only.
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
-- Indexer polls every 30s; Worker polls score_jobs after challenges enter Scoring
+- Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
 - Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
@@ -338,11 +338,18 @@ Per-challenge overrides can be set in the challenge spec:
 
 Reorg safety: `AGORA_INDEXER_CONFIRMATION_DEPTH` (default: `3`).
 
+The indexer now separates:
+
+- **Replay cursor** for reorg/retry safety
+- **Factory high-water cursor** for health and lag reporting
+- **Targeted repair** for challenge-local drift (`agora repair-challenge`)
+
 If the indexer falls behind:
 
 1. Restart indexer.
 2. Check RPC health and `/api/indexer-health`.
-3. If state replay is needed, run reindex.
+3. If one challenge projection drifted, run targeted repair.
+4. If transport/state replay is needed, run reindex.
 
 Reindex procedures:
 
@@ -355,12 +362,16 @@ agora reindex --from-block <block>
 
 # Deep replay (also purge dedupe markers from that block onward)
 agora reindex --from-block <block> --purge-indexed-events
+
+# Repair one projected challenge from chain state
+agora repair-challenge --id <challenge_id>
 ```
 
 Notes:
 
 - Reindex rewinds factory + challenge cursors for the active chain.
 - Purging indexed events forces event handlers to run again from the specified block.
+- `repair-challenge` rebuilds one challenge projection at the current confirmed tip without rewinding the whole indexer.
 
 ```mermaid
 sequenceDiagram
@@ -379,8 +390,9 @@ sequenceDiagram
     Idx->>DB: Write indexed_events (dedup)
 
     loop Every 30 seconds
-        Idx->>Chain: getLogs(cursor → head)
-        Idx->>DB: Process new events
+        Idx->>Chain: getLogs(factory cursor → head)
+        Idx->>Chain: getLogs(active challenge cursors → head)
+        Idx->>DB: Process new events and advance exact challenge cursors
     end
 
     Op->>Op: curl /api/indexer-health
@@ -420,9 +432,14 @@ Rotation sequence:
 
 1. Restart indexer process.
 2. Verify RPC reachability.
-3. Check last row in `indexed_events` and compare with chain head.
-4. Check `GET /api/indexer-health` and alert if status is `critical`.
-5. Rewind cursors with CLI (dry-run first):
+3. Check `GET /api/indexer-health`. It now reports lag from the factory high-water cursor, not the replay cursor.
+4. If the issue is challenge-local drift, repair that challenge first:
+
+```bash
+agora repair-challenge --id <challenge_id>
+```
+
+5. Rewind cursors with CLI (dry-run first) only when transport replay is needed:
 
 ```bash
 agora reindex --from-block <block_number> --dry-run

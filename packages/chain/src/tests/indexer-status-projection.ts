@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
 import {
+  type TransactionReceipt,
   encodeAbiParameters,
   encodeEventTopics,
   parseAbiItem,
-  type TransactionReceipt,
 } from "viem";
 import { parseSubmittedReceipt } from "../challenge.js";
 import { parseChallengeCreatedReceipt } from "../factory.js";
-import { processChallengeLog } from "../indexer/handlers.js";
+import {
+  persistChallengeCursors,
+  processChallengeLog,
+} from "../indexer/handlers.js";
 
 type FakeIndexedEvent = {
   tx_hash: string;
@@ -30,10 +33,12 @@ function createFakeDb() {
   const indexedEvents = new Map<string, FakeIndexedEvent>();
   const challengeRows = new Map<string, FakeChallengeRow>();
   const challengePayouts = new Map<string, Array<Record<string, unknown>>>();
+  const indexerCursors = new Map<string, string>();
 
   return {
     indexedEvents,
     challengeRows,
+    indexerCursors,
     from(table: string) {
       if (table === "indexed_events") {
         return {
@@ -55,7 +60,10 @@ function createFakeDb() {
             };
           },
           async upsert(payload: FakeIndexedEvent) {
-            indexedEvents.set(`${payload.tx_hash}:${payload.log_index}`, payload);
+            indexedEvents.set(
+              `${payload.tx_hash}:${payload.log_index}`,
+              payload,
+            );
             return { error: null };
           },
         };
@@ -89,6 +97,37 @@ function createFakeDb() {
 
       if (table === "challenge_payouts") {
         return {
+          update(payload: Record<string, unknown>) {
+            return {
+              eq(_challengeColumn: string, challengeId: string) {
+                return {
+                  eq(_solverColumn: string, solverAddress: string) {
+                    return {
+                      async select() {
+                        const existing =
+                          challengePayouts.get(challengeId) ?? [];
+                        const updated = existing.map((row) =>
+                          String(row.solver_address) ===
+                          solverAddress.toLowerCase()
+                            ? { ...row, ...payload }
+                            : row,
+                        );
+                        challengePayouts.set(challengeId, updated);
+                        return {
+                          data: updated.filter(
+                            (row) =>
+                              String(row.solver_address) ===
+                              solverAddress.toLowerCase(),
+                          ),
+                          error: null,
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
           delete() {
             return {
               async eq(_column: string, challengeId: string) {
@@ -108,6 +147,19 @@ function createFakeDb() {
                 return { data: payload, error: null };
               },
             };
+          },
+        };
+      }
+
+      if (table === "indexer_cursors") {
+        return {
+          async upsert(payload: {
+            cursor_key: string;
+            block_number: string;
+            updated_at: string;
+          }) {
+            indexerCursors.set(payload.cursor_key, payload.block_number);
+            return { error: null };
           },
         };
       }
@@ -207,15 +259,17 @@ test("parseChallengeCreatedReceipt decodes the canonical factory event", () => {
     logs: [
       buildReceiptLog({
         address: "0x0000000000000000000000000000000000000001",
-        topics: encodeTopics(encodeEventTopics({
-          abi: [challengeCreatedEvent],
-          eventName: "ChallengeCreated",
-          args: {
-            id: 7n,
-            challenge: challengeAddress,
-            poster: posterAddress,
-          },
-        })),
+        topics: encodeTopics(
+          encodeEventTopics({
+            abi: [challengeCreatedEvent],
+            eventName: "ChallengeCreated",
+            args: {
+              id: 7n,
+              challenge: challengeAddress,
+              poster: posterAddress,
+            },
+          }),
+        ),
         data: encodeAbiParameters(
           [{ name: "reward", type: "uint256" }],
           [reward],
@@ -235,8 +289,7 @@ test("parseChallengeCreatedReceipt decodes the canonical factory event", () => {
 test("parseSubmittedReceipt decodes the canonical challenge event", () => {
   const challengeAddress =
     "0x0000000000000000000000000000000000000009" as `0x${string}`;
-  const solver =
-    "0x0000000000000000000000000000000000000004" as `0x${string}`;
+  const solver = "0x0000000000000000000000000000000000000004" as `0x${string}`;
   const resultHash = `0x${"ab".repeat(32)}` as `0x${string}`;
 
   const submittedEvent = parseAbiItem(
@@ -246,14 +299,16 @@ test("parseSubmittedReceipt decodes the canonical challenge event", () => {
     logs: [
       buildReceiptLog({
         address: challengeAddress,
-        topics: encodeTopics(encodeEventTopics({
-          abi: [submittedEvent],
-          eventName: "Submitted",
-          args: {
-            submissionId: 3n,
-            solver,
-          },
-        })),
+        topics: encodeTopics(
+          encodeEventTopics({
+            abi: [submittedEvent],
+            eventName: "Submitted",
+            args: {
+              submissionId: 3n,
+              solver,
+            },
+          }),
+        ),
         data: encodeAbiParameters(
           [{ name: "resultHash", type: "bytes32" }],
           [resultHash],
@@ -265,4 +320,60 @@ test("parseSubmittedReceipt decodes the canonical challenge event", () => {
   assert.deepEqual(parseSubmittedReceipt(receipt, challengeAddress), {
     submissionId: 3n,
   });
+});
+
+test("Claimed flags targeted repair when payout rows are missing", async () => {
+  const db = createFakeDb();
+  const txHash = `0x${"e".repeat(64)}` as `0x${string}`;
+
+  const result = await processChallengeLog({
+    db: db as never,
+    publicClient: {
+      async getBlock() {
+        return { timestamp: 1n };
+      },
+    } as never,
+    challenge: {
+      id: "challenge-claim",
+      contract_address: "0x0000000000000000000000000000000000000007",
+      tx_hash: txHash,
+      status: CHALLENGE_STATUS.finalized,
+    },
+    log: {
+      eventName: "Claimed",
+      args: {
+        claimant: "0x0000000000000000000000000000000000000008",
+      },
+      transactionHash: txHash,
+      logIndex: 9,
+      blockNumber: 456n,
+      blockHash: `0x${"f".repeat(64)}`,
+    },
+    fromBlock: 450n,
+    challengeFromBlock: 450n,
+    challengeCursorKey: "challenge-claim",
+    challengePersistTargets: new Map(),
+  });
+
+  assert.equal(result.needsRepair, true);
+  assert.deepEqual(db.indexedEvents.get(`${txHash}:9`), {
+    tx_hash: txHash,
+    log_index: 9,
+    event_name: "Claimed",
+    block_number: 456,
+    block_hash: `0x${"f".repeat(64)}`,
+  });
+});
+
+test("persistChallengeCursors keeps exact next block for quiet challenges", async () => {
+  const db = createFakeDb();
+
+  await persistChallengeCursors({
+    db: db as never,
+    resolvedChallengeKeys: new Set(["challenge:test:1"]),
+    challengePersistTargets: new Map(),
+    nextBlock: 500n,
+  });
+
+  assert.equal(db.indexerCursors.get("challenge:test:1"), "500");
 });

@@ -15,7 +15,7 @@ import {
   assertRuntimeDatabaseSchema,
   createSupabaseClient,
   getIndexerCursor,
-  listChallenges,
+  listChallengesForIndexing,
   setIndexerCursor,
 } from "@agora/db";
 import { type Abi, parseEventLogs } from "viem";
@@ -140,14 +140,16 @@ export async function runIndexer() {
       }
 
       // ── Non-critical: challenge polling ──────────────────────────────
-      // Wrapped in its own try/catch so a listChallenges failure (e.g.
+      // Wrapped in its own try/catch so an indexing query failure (e.g.
       // missing DB column) never blocks factory event ingestion or cursor
       // persistence.
       let resolvedChallengeKeys = new Set<string>();
       let challengePersistTargets = new Map<string, bigint>();
 
       try {
-        const challenges = (await listChallenges(db)) as ChallengeListRow[];
+        const challenges = (await listChallengesForIndexing(
+          db,
+        )) as ChallengeListRow[];
         for (const challenge of challenges) {
           const { challengeAddress, challengeCursorKey, challengeFromBlock } =
             await loadChallengeCursor({
@@ -171,8 +173,9 @@ export async function runIndexer() {
             strict: false,
           }) as unknown as ParsedLog[];
 
+          let needsRepair = false;
           for (const log of parsedChallengeLogs) {
-            await processChallengeLog({
+            const result = await processChallengeLog({
               db,
               publicClient,
               challenge,
@@ -183,18 +186,28 @@ export async function runIndexer() {
               challengeCursorKey,
               challengePersistTargets,
             });
+            needsRepair ||= result.needsRepair;
           }
 
-          const reconcileResult = await reconcileChallengeProjection({
-            db,
-            publicClient,
-            challenge,
-            challengeFromBlock,
-            blockNumber: toBlock,
-          });
-          if (reconcileResult.deleted) {
-            resolvedChallengeKeys.delete(challengeCursorKey);
-            challengePersistTargets.delete(challengeCursorKey);
+          if (needsRepair) {
+            console.warn(
+              "[indexer] challenge projection drift detected; running targeted repair",
+              {
+                challengeId: challenge.id,
+                challengeAddress,
+              },
+            );
+            const reconcileResult = await reconcileChallengeProjection({
+              db,
+              publicClient,
+              challenge,
+              challengeFromBlock,
+              blockNumber: toBlock,
+            });
+            if (reconcileResult.deleted) {
+              resolvedChallengeKeys.delete(challengeCursorKey);
+              challengePersistTargets.delete(challengeCursorKey);
+            }
           }
         }
       } catch (challengePollError) {
@@ -225,7 +238,7 @@ export async function runIndexer() {
         db,
         resolvedChallengeKeys,
         challengePersistTargets,
-        nextBlock: replayStartBlock,
+        nextBlock,
       });
     } catch (error) {
       console.error(

@@ -45,6 +45,7 @@ import {
   isRetryableError,
   onRetryableEvent,
   retryKey,
+  rewindStartBlock,
   sleep,
 } from "./polling.js";
 
@@ -71,6 +72,10 @@ export interface ChallengeListRow {
   status: string;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
+}
+
+export interface ChallengeLogProcessingResult {
+  needsRepair: boolean;
 }
 
 function eventArg(args: unknown, indexOrName: number | string): unknown {
@@ -695,7 +700,7 @@ export async function processChallengeLog(input: {
   challengeFromBlock: bigint;
   challengeCursorKey: string;
   challengePersistTargets: Map<string, bigint>;
-}) {
+}): Promise<ChallengeLogProcessingResult> {
   const {
     db,
     publicClient,
@@ -708,13 +713,18 @@ export async function processChallengeLog(input: {
     challengePersistTargets,
   } = input;
 
-  if (!log.eventName || !log.transactionHash) return;
+  if (!log.eventName || !log.transactionHash) {
+    return { needsRepair: false };
+  }
   const txHash = log.transactionHash;
   const logIndex = Number(log.logIndex ?? 0);
   const already = await isEventIndexed(db, txHash, logIndex);
-  if (already) return;
+  if (already) {
+    return { needsRepair: false };
+  }
 
   const challengeAddress = challenge.contract_address as `0x${string}`;
+  let needsRepair = false;
 
   try {
     if (log.eventName === "Submitted") {
@@ -873,13 +883,25 @@ export async function processChallengeLog(input: {
         eventArg(log.args, 0) ?? eventArg(log.args, "claimant"),
         "claimant",
       );
-      await markChallengePayoutClaimed(
+      const updatedPayoutRows = await markChallengePayoutClaimed(
         db,
         challenge.id,
         claimant,
         await blockTimestampIso(publicClient, log.blockNumber ?? null),
         txHash,
       );
+      if (updatedPayoutRows === 0) {
+        needsRepair = true;
+        console.warn(
+          "Challenge payout claim arrived without projected payout rows",
+          {
+            challengeId: challenge.id,
+            challengeAddress,
+            claimant,
+            txHash,
+          },
+        );
+      }
     }
 
     await markEventIndexed(
@@ -891,6 +913,7 @@ export async function processChallengeLog(input: {
       log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
+    return { needsRepair };
   } catch (error) {
     if (isRetryableError(error)) {
       const key = retryKey(txHash, logIndex);
@@ -900,7 +923,10 @@ export async function processChallengeLog(input: {
         pollingConfig,
       );
       const currentTarget = challengePersistTargets.get(challengeCursorKey);
-      const fallbackTarget = challengeFromBlock;
+      const fallbackTarget = rewindStartBlock(
+        log.blockNumber ?? challengeFromBlock,
+        pollingConfig,
+      );
       const safeTarget =
         currentTarget === undefined
           ? fallbackTarget
@@ -909,7 +935,7 @@ export async function processChallengeLog(input: {
             : fallbackTarget;
       challengePersistTargets.set(challengeCursorKey, safeTarget);
       if (!retry.shouldRetryNow) {
-        return;
+        return { needsRepair: false };
       }
       if (retry.exhausted) {
         console.error(
@@ -932,7 +958,7 @@ export async function processChallengeLog(input: {
           log.blockHash ?? null,
         );
         challengePersistTargets.delete(challengeCursorKey);
-        return;
+        return { needsRepair: false };
       }
       console.warn(
         "Retryable challenge event processing error; scheduling retry",
@@ -947,7 +973,7 @@ export async function processChallengeLog(input: {
           error: error instanceof Error ? error.message : String(error),
         },
       );
-      return;
+      return { needsRepair: false };
     }
     console.error("Failed to process challenge event", {
       challengeId: challenge.id,
@@ -966,6 +992,7 @@ export async function processChallengeLog(input: {
       log.blockHash ?? null,
     );
     clearRetryableEvent(retryKey(txHash, logIndex));
+    return { needsRepair: false };
   }
 }
 
@@ -1014,7 +1041,11 @@ export async function loadChallengeCursor(input: {
     }
   }
 
-  return { challengeAddress, challengeCursorKey, challengeFromBlock };
+  return {
+    challengeAddress,
+    challengeCursorKey,
+    challengeFromBlock,
+  };
 }
 
 export async function persistChallengeCursors(input: {
