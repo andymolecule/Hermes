@@ -49,11 +49,18 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
       deadline: "2026-03-20T00:00:00.000Z",
       status: "open",
     },
+    datasets: {
+      train_cid: null,
+      train_url: null,
+      test_cid: null,
+      test_url: null,
+      spec_cid: null,
+      spec_url: null,
+    },
     submissions: [],
     leaderboard: [],
   },
 });
-
 assert.equal(detailResponse.data.datasets.spec_cid, null);
 
 const statusResponse = submissionStatusResponseSchema.parse({

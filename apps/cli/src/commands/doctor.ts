@@ -395,7 +395,7 @@ export function buildDoctorCommand() {
           }
           const missingCount = count ?? 0;
           checks.push({
-            name: "Challenge factory backfill",
+            name: "Challenge factory completeness",
             status: missingCount === 0 ? "ok" : "warn",
             detail:
               missingCount === 0
@@ -404,17 +404,17 @@ export function buildDoctorCommand() {
           });
         } catch (error) {
           checks.push({
-            name: "Challenge factory backfill",
+            name: "Challenge factory completeness",
             status: "error",
             detail:
               error instanceof Error
                 ? error.message
-                : "Challenge backfill query failed",
+                : "Challenge factory completeness query failed",
           });
         }
       } else {
         checks.push({
-          name: "Challenge factory backfill",
+          name: "Challenge factory completeness",
           status: "skip",
           detail: "Supabase service key missing",
         });

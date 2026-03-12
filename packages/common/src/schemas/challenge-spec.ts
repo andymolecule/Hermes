@@ -81,6 +81,45 @@ const evalSpecSchema = z.object({
 export { evalSpecSchema };
 export type EvalSpec = z.infer<typeof evalSpecSchema>;
 
+function normalizePresetId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+/**
+ * Resolve the preset policy used to decide whether a challenge must publish a
+ * csv_table submission contract.
+ *
+ * This intentionally mirrors challengeSpecSchema.superRefine so app-layer
+ * fallback logic cannot drift from canonical validation rules.
+ */
+function resolveSubmissionContractPolicyPresetId(input: {
+  type: ChallengeType;
+  preset_id?: string | null;
+  scoring?: { container?: string | null } | null;
+}): string | null {
+  const explicitPresetId = normalizePresetId(input.preset_id);
+  if (explicitPresetId) {
+    return explicitPresetId;
+  }
+
+  const defaultPresetId = defaultPresetIdForChallengeType(input.type);
+  if (defaultPresetId) {
+    return defaultPresetId;
+  }
+
+  const scoringContainer = input.scoring?.container;
+  if (
+    typeof scoringContainer !== "string" ||
+    scoringContainer.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return inferPresetIdByContainer(scoringContainer.trim());
+}
+
 function resolveSpecEvaluationBundle(
   spec: Pick<ChallengeSpecOutput, "type" | "dataset" | "eval_spec">,
 ): string | undefined {
@@ -166,14 +205,11 @@ const _baseSpecShape = z
     }
 
     if (value.type !== "prediction") {
-      const explicitPresetId =
-        typeof value.preset_id === "string" && value.preset_id.trim().length > 0
-          ? value.preset_id.trim()
-          : undefined;
-      const inferredPresetId =
-        explicitPresetId ??
-        defaultPresetIdForChallengeType(value.type) ??
-        inferPresetIdByContainer(value.scoring.container);
+      const inferredPresetId = resolveSubmissionContractPolicyPresetId({
+        type: value.type,
+        preset_id: value.preset_id,
+        scoring: value.scoring,
+      });
 
       if (
         inferredPresetId &&

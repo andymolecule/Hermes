@@ -102,7 +102,7 @@ test("submission endpoints parse canonical API responses", async () => {
   }
 });
 
-test("challenge detail parsing tolerates older API responses without datasets", async () => {
+test("challenge detail parsing requires the canonical datasets block", async () => {
   const originalFetch = global.fetch;
   global.fetch = async () =>
     new Response(
@@ -127,12 +127,14 @@ test("challenge detail parsing tolerates older API responses without datasets", 
     );
 
   try {
-    const detail = await getChallengeFromApi(
-      "11111111-1111-4111-8111-111111111111",
-      "https://api.example",
+    await assert.rejects(
+      () =>
+        getChallengeFromApi(
+          "11111111-1111-4111-8111-111111111111",
+          "https://api.example",
+        ),
+      /datasets/,
     );
-    assert.equal(detail.data.datasets.spec_cid, null);
-    assert.equal(detail.data.challenge.spec_cid, "ipfs://legacy");
   } finally {
     global.fetch = originalFetch;
   }

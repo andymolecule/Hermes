@@ -99,6 +99,7 @@ interface SubmitSolutionProps {
   challengeStatus: string;
   deadline: string;
   submissionContract?: SubmissionContractOutput | null;
+  submissionUnavailableReason?: string | null;
 }
 
 export function SubmitSolution({
@@ -107,6 +108,7 @@ export function SubmitSolution({
   challengeStatus,
   deadline,
   submissionContract,
+  submissionUnavailableReason,
 }: SubmitSolutionProps) {
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient();
@@ -167,6 +169,27 @@ export function SubmitSolution({
               {isPastDeadline
                 ? "Submission deadline has passed."
                 : `This challenge is ${challengeStatus} — submissions are not open.`}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (submissionUnavailableReason) {
+    return (
+      <div className="rounded-lg border border-[var(--border-default)] p-6 bg-white">
+        <div className="flex items-start gap-3">
+          <AlertCircle
+            className="mt-0.5 w-5 h-5 text-[var(--text-muted)] shrink-0"
+            strokeWidth={1.75}
+          />
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold font-mono tracking-wider uppercase mb-2 text-[var(--color-warm-900)]">
+              Submission Unavailable
+            </h3>
+            <p className="text-sm text-[var(--text-muted)] font-medium leading-relaxed">
+              {submissionUnavailableReason}
             </p>
           </div>
         </div>

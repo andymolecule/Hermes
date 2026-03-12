@@ -1,12 +1,8 @@
 import {
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
-  type SubmissionContractOutput,
   agentChallengeDetailResponseSchema,
   challengeSpecSchema,
-  createCsvTableSubmissionContract,
-  createOpaqueFileSubmissionContract,
-  isOfficialContainer,
 } from "@agora/common";
 import { API_BASE_URL } from "./config";
 import type {
@@ -110,86 +106,24 @@ export async function getChallenge(id: string) {
     .data as ChallengeDetails;
 }
 
-/**
- * Infer a default submission contract from the raw spec's own fields.
- * Used when a legacy IPFS spec was pinned before submission_contract existed.
- *
- * The challengeSpecSchema superRefine requires csv_table for any spec using
- * an official Agora scorer preset, so we must check the scoring container.
- */
-function inferSubmissionContractFromSpec(
-  raw: Record<string, unknown>,
-): SubmissionContractOutput | null {
-  const specType = typeof raw.type === "string" ? raw.type : undefined;
-  if (!specType) return null;
-
-  // Check if this spec uses an official scorer — if so, schema mandates csv_table
-  const scoring = raw.scoring as { container?: string } | undefined;
-  const container = typeof scoring?.container === "string" ? scoring.container : "";
-  const usesOfficialScorer = container.length > 0 && isOfficialContainer(container);
-
-  // Official scorers always require csv_table contracts
-  if (usesOfficialScorer) {
-    // Docking has a known column schema
-    if (specType === "docking") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: ["ligand_id", "docking_score"],
-        idColumn: "ligand_id",
-        valueColumn: "docking_score",
-      });
-    }
-    // Prediction has a known generic schema
-    if (specType === "prediction") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: ["id", "prediction"],
-        idColumn: "id",
-        valueColumn: "prediction",
-      });
-    }
-    // All other official-preset types (reproducibility, etc.) get a generic CSV
-    return createCsvTableSubmissionContract({
-      requiredColumns: ["id", "value"],
-    });
-  }
-
-  // Custom/opaque file types — no column structure needed
-  if (
-    specType === "optimization" ||
-    specType === "red_team" ||
-    specType === "custom"
-  ) {
-    return createOpaqueFileSubmissionContract();
-  }
-
-  // Unknown type with non-official scorer — safe opaque fallback
-  return createOpaqueFileSubmissionContract();
+function isLegacySpecMissingSubmissionContract(raw: unknown): boolean {
+  return Boolean(
+    raw &&
+      typeof raw === "object" &&
+      !("submission_contract" in (raw as Record<string, unknown>)),
+  );
 }
 
-export function hydrateChallengeSpec(
-  raw: unknown,
-  fallbackSubmissionContract?: SubmissionContractOutput | null,
-): ChallengeSpecOutput {
+export function hydrateChallengeSpec(raw: unknown): ChallengeSpecOutput {
   const parsed = challengeSpecSchema.safeParse(raw);
   if (parsed.success) {
     return parsed.data;
   }
 
-  // Only attempt repair when submission_contract is missing from the raw spec
-  if (raw && typeof raw === "object" && !("submission_contract" in raw)) {
-    // Prefer caller-provided fallback (from DB expected_columns), then infer
-    const contract =
-      fallbackSubmissionContract ??
-      inferSubmissionContractFromSpec(raw as Record<string, unknown>);
-
-    if (contract) {
-      const reparsed = challengeSpecSchema.safeParse({
-        ...raw,
-        submission_contract: contract,
-      });
-      if (reparsed.success) {
-        return reparsed.data;
-      }
-    }
+  if (isLegacySpecMissingSubmissionContract(raw)) {
+    throw new Error(
+      "Pinned challenge spec does not match the current Agora schema. Next step: use the remaining page metadata only, or post a new challenge with the current schema if you need the full spec.",
+    );
   }
 
   throw parsed.error;
@@ -197,7 +131,6 @@ export function hydrateChallengeSpec(
 
 export async function getChallengeSpec(
   specCid: string,
-  fallbackSubmissionContract?: SubmissionContractOutput | null,
 ): Promise<ChallengeSpecOutput> {
   const url = `${DEFAULT_IPFS_GATEWAY}${specCid.replace("ipfs://", "")}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -205,7 +138,7 @@ export async function getChallengeSpec(
     throw new Error(`Failed to fetch challenge spec (${response.status}).`);
   }
   const json = (await response.json()) as unknown;
-  return hydrateChallengeSpec(json, fallbackSubmissionContract);
+  return hydrateChallengeSpec(json);
 }
 
 export async function accelerateChallengeIndex(input: {

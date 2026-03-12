@@ -1,7 +1,7 @@
 /**
- * Worker compatibility entrypoint.
+ * Stable worker entrypoint.
  *
- * - Keeps existing runtime entrypoint path: apps/api/src/worker.ts
+ * - Keeps the runtime entrypoint path at apps/api/src/worker.ts
  * - Re-exports worker APIs for tests and external callers
  */
 

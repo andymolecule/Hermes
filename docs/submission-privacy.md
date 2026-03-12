@@ -275,12 +275,12 @@ The API and worker split responsibilities:
 - New submissions always use the active API `kid`.
 - The worker may keep a small private key map keyed by `kid`.
 - The active `kid` must exist in the worker key set, or the worker fails startup.
-- Historical keys may remain in `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` so older sealed submissions can still be scored.
+- Previous keys may remain in `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` so still-pending sealed submissions can still be scored.
 
 This keeps rotation simple:
 
 - one active public key for new submissions
-- one worker key set containing the active private key and any temporary historical keys
+- one worker key set containing the active private key and any temporary previous keys
 
 ---
 

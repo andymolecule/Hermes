@@ -23,6 +23,7 @@ This doc is authoritative for: service startup, deployment procedures, monitorin
 - Four processes: API, Indexer, Worker, MCP
 - The API is the canonical remote agent surface.
 - MCP HTTP is read-only by default; stdio remains the full local tool surface.
+- Historical malformed challenge specs are intentionally unsupported; deploy current-schema challenges only.
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Indexer polls every 30s; Worker polls score_jobs after challenges enter Scoring
 - Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
@@ -194,7 +195,7 @@ Key handling rules:
 - The API advertises exactly one active public key via `GET /api/submissions/public-key`.
 - The active `kid` must exist in the worker private key set.
 - Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`. There is no implicit repo-root keyfile fallback.
-- `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any historical keys whose sealed submissions still need to be scored.
+- `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any previous keys whose still-pending sealed submissions need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
 - `GET /api/submissions/public-key` now fails closed unless a live worker heartbeat exists for the active `kid` and that worker has passed sealing self-check + Docker startup checks.
 - Set `AGORA_WORKER_RUNTIME_ID` when you intentionally run multiple scoring workers on the same host. Otherwise the worker derives a stable host-based runtime id automatically.
@@ -566,19 +567,17 @@ This section covers non-code work for deployment across hosted systems.
 - The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
-- If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API/backfill environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
+- If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API or worker environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
 - Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
 - Verify tags/digests referenced by presets are available.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
-- Keep legacy images frozen if historical replay requires them.
-
 #### Worker Recovery Scripts
 
-- `pnpm backfill:challenge-metadata -- --dry-run` previews pinned official scorer digest and `expected_columns` backfills derived from challenge `submission_contract` data. Run `pnpm turbo build` first, then rerun without `-- --dry-run` to apply.
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that the deployed API `/healthz` and web `/api/version` both report the expected `AGORA_RUNTIME_VERSION` (defaults to the current git SHA when unset).
 
 #### DNS and Domains
 
@@ -597,6 +596,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving web and API are both serving the intended revision.
 - API auth flow sets `agora_session`.
 - MCP server registers as `agora-mcp`.
 - CLI help text shows `agora`.

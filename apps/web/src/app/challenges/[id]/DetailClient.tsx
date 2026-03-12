@@ -4,9 +4,6 @@ import {
   CHALLENGE_STATUS,
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
-  type SubmissionContractOutput,
-  createCsvTableSubmissionContract,
-  createOpaqueFileSubmissionContract,
   deriveExpectedColumns,
   describeSubmissionArtifact,
 } from "@agora/common";
@@ -223,41 +220,6 @@ function getEligibilityThresholdPresentation(
     value: String(minimumScore),
     helper: "Scores below this threshold are excluded from ranking and payout.",
   };
-}
-
-function getSubmissionContractFallback(input: {
-  challengeType?: string;
-  expectedColumns?: string[] | null;
-}): SubmissionContractOutput | null {
-  if (
-    !Array.isArray(input.expectedColumns) ||
-    input.expectedColumns.length === 0
-  ) {
-    if (input.challengeType === "docking") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: ["ligand_id", "docking_score"],
-        idColumn: "ligand_id",
-        valueColumn: "docking_score",
-      });
-    }
-
-    if (
-      input.challengeType === "optimization" ||
-      input.challengeType === "red_team" ||
-      input.challengeType === "custom"
-    ) {
-      return createOpaqueFileSubmissionContract();
-    }
-
-    return null;
-  }
-  try {
-    return createCsvTableSubmissionContract({
-      requiredColumns: input.expectedColumns,
-    });
-  } catch {
-    return null;
-  }
 }
 
 function formatChallengeType(value: string) {
@@ -529,19 +491,10 @@ export function DetailClient({ id }: { id: string }) {
     queryKey: ["challenge", id],
     queryFn: () => getChallenge(id),
   });
-  const fallbackSubmissionContract = detailQuery.data
-    ? getSubmissionContractFallback({
-        challengeType: detailQuery.data.challenge.challenge_type,
-        expectedColumns: detailQuery.data.challenge.expected_columns,
-      })
-    : null;
   const specQuery = useQuery({
     queryKey: ["challenge-spec", detailQuery.data?.challenge.spec_cid],
     queryFn: () =>
-      getChallengeSpec(
-        detailQuery.data?.challenge.spec_cid as string,
-        fallbackSubmissionContract,
-      ),
+      getChallengeSpec(detailQuery.data?.challenge.spec_cid as string),
     enabled: Boolean(detailQuery.data?.challenge.spec_cid),
     staleTime: 5 * 60 * 1000,
   });
@@ -593,10 +546,17 @@ export function DetailClient({ id }: { id: string }) {
 
   const { challenge, submissions } = detailQuery.data;
   const spec = specQuery.data;
-  const submissionContract =
-    spec?.submission_contract ?? fallbackSubmissionContract;
-  const submissionArtifact = describeSubmissionArtifact(submissionContract);
+  const submissionContract = spec?.submission_contract ?? null;
+  const submissionArtifact = submissionContract
+    ? describeSubmissionArtifact(submissionContract)
+    : "submission contract unavailable";
   const expectedColumns = deriveExpectedColumns(submissionContract);
+  const submissionUnavailableReason =
+    challenge.spec_cid && !spec && technicalSpecsErrorMessage
+      ? "Challenge submissions are disabled because the pinned challenge spec does not match the current Agora schema."
+      : !submissionContract
+        ? "Challenge submissions are disabled because no current-schema submission contract is available."
+        : null;
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);
   const rewardDistribution = titleCase(
     challenge.distribution_type ?? "winner_take_all",
@@ -687,19 +647,27 @@ export function DetailClient({ id }: { id: string }) {
                 {technicalSpecsErrorMessage && (
                   <WarningCallout
                     title="Challenge Spec Unavailable"
-                    message={`Detailed IPFS-backed spec data could not be loaded, so this page is showing fallback contract and database metadata. ${technicalSpecsErrorMessage}`}
+                    message={`Detailed IPFS-backed spec data could not be loaded, so this page is showing challenge metadata only. ${technicalSpecsErrorMessage}`}
                   />
                 )}
                 <Section title="What To Submit" icon={FileText}>
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
                     <div className="space-y-4">
-                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                        Submit{" "}
-                        <span className="font-semibold text-[var(--color-warm-900)]">
-                          {submissionArtifact}
-                        </span>
-                        .
-                      </p>
+                      {submissionContract ? (
+                        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                          Submit{" "}
+                          <span className="font-semibold text-[var(--color-warm-900)]">
+                            {submissionArtifact}
+                          </span>
+                          .
+                        </p>
+                      ) : (
+                        <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                          Submission format details are unavailable because the
+                          pinned challenge spec could not be validated against
+                          the current Agora schema.
+                        </p>
+                      )}
                       <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {evaluationCriteria}
                       </p>
@@ -926,6 +894,7 @@ export function DetailClient({ id }: { id: string }) {
               challengeStatus={challenge.status}
               deadline={challenge.deadline}
               submissionContract={submissionContract}
+              submissionUnavailableReason={submissionUnavailableReason}
             />
 
             <TechnicalDetailsSection challenge={challenge} />

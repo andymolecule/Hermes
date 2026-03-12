@@ -24,7 +24,9 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
 - One active contract generation at a time; @agora/chain owns ABI/event details
 - Docker scorer: no network, read-only, non-root; official presets run with 1–20 min timeouts, base runner fallback is 30 min
-- MCP server: stdio + HTTP modes, session management, 8 agent tools
+- API is the canonical remote agent surface; CLI is the canonical local execution surface
+- MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
+- Historical malformed specs are intentionally unsupported and are not reconstructed at read time
 
 > Last updated: 8 Mar 2026
 
@@ -80,9 +82,9 @@ flowchart TB
     CLI --> API
     CLI --> Factory
     CLI --> IPFS
+    Agent --> API
     Agent --> MCP
-    MCP --> DB
-    MCP --> Factory
+    MCP --> API
     API --> DB
     API --> IPFS
     API --> Scorer
@@ -332,30 +334,30 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Agent
-    participant MCP/CLI
-    participant DB as Supabase
+    participant API/CLI
+    participant API
     participant IPFS as Pinata (IPFS)
     participant Docker as Scorer Container
     participant Chain as Base (on-chain)
 
-    Agent->>MCP/CLI: agora-list-challenges
-    MCP/CLI->>DB: SELECT * FROM challenges
-    DB-->>Agent: Challenge list
+    Agent->>API/CLI: list challenges
+    API/CLI->>API: GET /api/challenges
+    API-->>Agent: Challenge list
 
-    Agent->>MCP/CLI: agora-get-challenge(id)
-    MCP/CLI->>DB: Get details + leaderboard
-    MCP/CLI->>IPFS: Download datasets
-    DB-->>Agent: Full challenge data
+    Agent->>API/CLI: get challenge(id)
+    API/CLI->>API: GET /api/challenges/:id
+    API/CLI->>IPFS: Download datasets
+    API-->>Agent: Full challenge data
 
     Note over Agent: Agent runs analysis pipeline
 
-    Agent->>MCP/CLI: score-local (free, no limit)
-    MCP/CLI->>Docker: Run scorer container
+    Agent->>API/CLI: score-local (free, no limit)
+    API/CLI->>Docker: Run scorer container
     Docker-->>Agent: Preview score
 
-    Agent->>MCP/CLI: agora-submit-solution
-    MCP/CLI->>IPFS: Pin result file → resultCid
-    MCP/CLI->>Chain: Challenge.submit(keccak256(resultCid))
+    Agent->>API/CLI: agora-submit-solution
+    API/CLI->>IPFS: Pin result file → resultCid
+    API/CLI->>Chain: Challenge.submit(keccak256(resultCid))
     Chain-->>Chain: emit Submitted(subId)
 ```
 
@@ -416,8 +418,8 @@ Manual fallback:
   - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
 - MCP server:
   - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
-  - `apps/mcp-server/src/tools/*` (agent tools)
-  - stdio mode is full local execution; HTTP mode is read-only by default
+  - `apps/mcp-server/src/tools/*` (adapter tools)
+  - stdio mode is full local execution; HTTP mode is read-only by default and should mirror the API, not replace it
 - Indexer:
   - `packages/chain/src/indexer.ts` (polling, event parsing, idempotent DB writes)
   - exposed health via `/api/indexer-health`
@@ -482,8 +484,8 @@ flowchart TB
     end
 
     subgraph Tools["MCP Tool Modes"]
-        R1["HTTP: list/get/leaderboard/status"]
-        L1["stdio: list/get/score/submit/claim/verify"]
+        R1["HTTP: read-only discovery/status"]
+        L1["stdio: local execution adapter"]
     end
 
     STDIO --> SM
@@ -495,6 +497,10 @@ flowchart TB
 ```
 
 Remote MCP HTTP traffic terminates on the MCP server's `/mcp` route. It is not served by the Hono API under `/api/*`.
+
+Historical spec policy:
+- malformed old challenge specs are not reconstructed in the web or API read path
+- the active product contract is the current challenge schema only
 
 ### Docker Scorer Security Model
 

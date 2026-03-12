@@ -8,7 +8,7 @@ Accepted
 
 - The API is the canonical remote agent surface for discovery, detail reads, status reads, and submission-prep endpoints.
 - The CLI is the canonical local execution surface for Docker scoring and on-chain writes.
-- MCP remains supported, but only as a compatibility adapter.
+- MCP remains supported, but only as a thin adapter.
 - MCP stdio keeps the full local tool surface.
 - MCP HTTP is read-only by default and exposes discovery/status tools only.
 

@@ -36,7 +36,7 @@ export type Submission = {
 
 export type ChallengeDetails = {
   challenge: Challenge;
-  datasets?: {
+  datasets: {
     train_cid: string | null;
     train_url: string | null;
     test_cid: string | null;
