@@ -97,7 +97,7 @@ pnpm --filter @agora/web dev -- --port 3100
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure API, worker, indexer, and web resolve to the same runtime revision. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
+9. Ensure each deploy surface resolves to the latest relevant runtime revision. API and worker must match exactly; web may legitimately differ on pushes that only touch web-only or ops-only files. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
 10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the worker host can still `docker pull` them.
 11. Build and run preflight:
 
@@ -629,7 +629,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that the deployed API `/healthz` and web `/api/version` both report the expected runtime revision (defaults to the current git SHA when `AGORA_RUNTIME_VERSION` is unset).
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web each match the latest relevant git revision for their own deploy surface, and that the worker is healthy on the active API runtime. Use `--expected` only when you intentionally want to force one exact revision across both services.
 
 #### DNS and Domains
 
@@ -648,7 +648,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving web and API are both serving the intended revision.
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision for their own surface and that the worker is aligned with the API runtime.
 - API auth flow sets `agora_session`.
 - MCP server registers as `agora-mcp`.
 - CLI help text shows `agora`.

@@ -32,8 +32,30 @@ function parseArgs(argv) {
       options.expectedRuntimeVersion = arg.slice("--expected=".length);
       continue;
     }
+    if (arg === "--expected-api") {
+      options.expectedApiRuntimeVersion = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === "--expected-web") {
+      options.expectedWebRuntimeVersion = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--expected-api=")) {
+      options.expectedApiRuntimeVersion = arg.slice("--expected-api=".length);
+      continue;
+    }
+    if (arg.startsWith("--expected-web=")) {
+      options.expectedWebRuntimeVersion = arg.slice("--expected-web=".length);
+      continue;
+    }
+    if (arg === "--skip-worker") {
+      options.skipWorker = true;
+      continue;
+    }
     throw new Error(
-      `Unknown argument: ${arg}. Next step: use --api-url, --web-url, and optional --expected.`,
+      `Unknown argument: ${arg}. Next step: use --api-url, --web-url, optional --expected/--expected-api/--expected-web, and optional --skip-worker.`,
     );
   }
 
@@ -70,6 +92,46 @@ function resolveGitRuntimeVersion() {
 
   throw new Error(
     "Could not resolve the current git SHA. Next step: run this command from the Agora repo or pass --expected explicitly.",
+  );
+}
+
+function resolveSharedExpectedRuntimeVersion(options) {
+  if (options.expectedRuntimeVersion?.trim()) {
+    return options.expectedRuntimeVersion.trim();
+  }
+
+  const envRuntimeVersion = process.env.AGORA_RUNTIME_VERSION?.trim();
+  if (!envRuntimeVersion) {
+    return null;
+  }
+
+  try {
+    const headRuntimeVersion = resolveGitRuntimeVersion();
+    return envRuntimeVersion === headRuntimeVersion ? null : envRuntimeVersion;
+  } catch {
+    return envRuntimeVersion;
+  }
+}
+
+function resolveGitRuntimeVersionForPaths(label, pathspecs) {
+  const result = spawnSync(
+    "git",
+    ["log", "-1", "--format=%H", "HEAD", "--", ...pathspecs],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  if (result.status === 0) {
+    const commit = result.stdout.trim();
+    if (commit.length >= 12) {
+      return commit.slice(0, 12);
+    }
+  }
+
+  throw new Error(
+    `Could not resolve the latest git SHA for ${label}. Next step: run this command from the Agora repo or pass an explicit expected SHA for that service.`,
   );
 }
 
@@ -116,6 +178,22 @@ function compareRuntimeVersion(input) {
   return false;
 }
 
+const API_RUNTIME_PATHS = [
+  "apps/api",
+  "packages/common",
+  "packages/db",
+  "packages/chain",
+  "packages/ipfs",
+  "packages/scorer",
+  "scripts/run-node-with-root-env.mjs",
+  "scripts/runtime-env.mjs",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "turbo.json",
+  "tsconfig.base.json",
+];
+
 const options = parseArgs(process.argv.slice(2));
 const apiUrl = normalizeBaseUrl(
   options.apiUrl ?? process.env.AGORA_API_URL,
@@ -125,13 +203,22 @@ const webUrl = normalizeBaseUrl(
   options.webUrl ?? process.env.AGORA_WEB_URL,
   "Web URL",
 );
-const expectedRuntimeVersion =
-  options.expectedRuntimeVersion?.trim() ||
-  process.env.AGORA_RUNTIME_VERSION?.trim() ||
+const sharedExpectedRuntimeVersion =
+  resolveSharedExpectedRuntimeVersion(options);
+const expectedApiRuntimeVersion =
+  options.expectedApiRuntimeVersion?.trim() ||
+  sharedExpectedRuntimeVersion ||
+  resolveGitRuntimeVersionForPaths("API", API_RUNTIME_PATHS);
+const expectedWebRuntimeVersion =
+  options.expectedWebRuntimeVersion?.trim() ||
+  sharedExpectedRuntimeVersion ||
   resolveGitRuntimeVersion();
 
 const apiHealth = await fetchJson(`${apiUrl}/healthz`, "API /healthz");
 const webVersion = await fetchJson(`${webUrl}/api/version`, "Web /api/version");
+const workerHealth = options.skipWorker
+  ? null
+  : await fetchJson(`${apiUrl}/api/worker-health`, "API /api/worker-health");
 
 const apiRuntimeVersion =
   typeof apiHealth?.runtimeVersion === "string"
@@ -156,27 +243,63 @@ if (!webRuntimeVersion) {
 
 let ok = true;
 
-console.log(`[INFO] Expected runtime version: ${expectedRuntimeVersion}`);
+console.log(
+  `[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`,
+);
+console.log(
+  `[INFO] Expected Web runtime version: ${expectedWebRuntimeVersion}`,
+);
 ok =
   compareRuntimeVersion({
     label: "API",
-    expected: expectedRuntimeVersion,
+    expected: expectedApiRuntimeVersion,
     actual: apiRuntimeVersion,
   }) && ok;
 ok =
   compareRuntimeVersion({
     label: "Web",
-    expected: expectedRuntimeVersion,
+    expected: expectedWebRuntimeVersion,
     actual: webRuntimeVersion,
   }) && ok;
 
 if (apiRuntimeVersion === webRuntimeVersion) {
   console.log(`[OK] Web and API are aligned on runtime ${apiRuntimeVersion}`);
 } else {
-  console.error(
-    `[FAIL] Web/API runtime mismatch: web=${webRuntimeVersion} api=${apiRuntimeVersion}. Next step: redeploy the stale service so both point at the same revision.`,
+  console.log(
+    `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This is acceptable when only one deploy surface changed and each service matches its own expected revision.`,
   );
-  ok = false;
+}
+
+if (workerHealth) {
+  const workerApiRuntimeVersion =
+    typeof workerHealth?.runtime?.apiVersion === "string"
+      ? workerHealth.runtime.apiVersion
+      : null;
+  const healthyWorkersForActiveRuntimeVersion = Number(
+    workerHealth?.workers?.healthyWorkersForActiveRuntimeVersion ?? 0,
+  );
+
+  if (workerApiRuntimeVersion !== apiRuntimeVersion) {
+    console.error(
+      `[FAIL] Worker health runtime reports apiVersion=${workerApiRuntimeVersion}, expected API runtime ${apiRuntimeVersion}. Next step: redeploy the stale API/worker service and retry.`,
+    );
+    ok = false;
+  } else {
+    console.log(
+      `[OK] Worker health is aligned with API runtime ${apiRuntimeVersion}`,
+    );
+  }
+
+  if (healthyWorkersForActiveRuntimeVersion > 0) {
+    console.log(
+      `[OK] Worker health reports ${healthyWorkersForActiveRuntimeVersion} healthy worker(s) on the active runtime`,
+    );
+  } else {
+    console.error(
+      "[FAIL] Worker health reports zero healthy workers on the active runtime. Next step: inspect the worker host, then retry.",
+    );
+    ok = false;
+  }
 }
 
 if (!ok) {
