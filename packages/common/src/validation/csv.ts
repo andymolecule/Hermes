@@ -16,9 +16,15 @@ export interface CsvHeaderValidationResult {
  * Handles quoted headers and trims whitespace.
  */
 export function parseCsvHeaders(csvText: string): string[] {
-  const firstLine = csvText.split("\n")[0]?.trim();
+  const firstLine = csvText
+    .split(/\r?\n/u)[0]
+    ?.replace(/^\uFEFF/u, "")
+    .trim();
   if (!firstLine) return [];
-  return firstLine.split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+  return firstLine
+    .split(",")
+    .map((header) => header.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
 }
 
 /**
@@ -30,11 +36,13 @@ export function validateCsvHeaders(
   expectedHeaders: string[],
 ): CsvHeaderValidationResult {
   const submissionHeaders = parseCsvHeaders(submissionText);
+  const submissionHeaderSet = new Set(submissionHeaders);
+  const expectedHeaderSet = new Set(expectedHeaders);
   const missing = expectedHeaders.filter(
-    (h) => !submissionHeaders.includes(h),
+    (header) => !submissionHeaderSet.has(header),
   );
   const extra = submissionHeaders.filter(
-    (h) => !expectedHeaders.includes(h),
+    (header) => !expectedHeaderSet.has(header),
   );
   return {
     valid: missing.length === 0,

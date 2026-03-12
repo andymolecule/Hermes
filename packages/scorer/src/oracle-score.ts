@@ -23,7 +23,7 @@ import {
 import { pinFile } from "@agora/ipfs";
 import { keccak256, toBytes } from "viem";
 import { executeScoringPipeline } from "./pipeline.js";
-import { resolveScoringEnvironmentFromSpecCid } from "./pipeline.js";
+import { resolveScoringSpecRuntimeConfigFromSpecCid } from "./pipeline.js";
 import { buildProofBundle } from "./proof.js";
 import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
@@ -79,6 +79,9 @@ export async function oracleScore(
 
   // 2. Run scorer container
   const config = loadConfig();
+  const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
+    challenge.spec_cid,
+  );
   const submissionSource = await resolveSubmissionSource({
     resultCid: submission.result_cid,
     resultFormat: submission.result_format,
@@ -90,7 +93,8 @@ export async function oracleScore(
     image: evalPlan.image,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
     submission: submissionSource,
-    env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
+    submissionContract: scoringSpecConfig.submissionContract,
+    env: scoringSpecConfig.env,
     keepWorkspace: true,
   });
 

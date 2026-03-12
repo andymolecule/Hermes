@@ -1,10 +1,11 @@
 import {
+  challengeSpecSchema,
+  deriveExpectedColumns,
   isOfficialContainer,
-  parseCsvHeaders,
   resolveOfficialImageToDigest,
 } from "../packages/common/dist/index.js";
 import { createSupabaseClient } from "../packages/db/dist/index.js";
-import { getText } from "../packages/ipfs/dist/index.js";
+import { getJSON } from "../packages/ipfs/dist/index.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const db = createSupabaseClient(true);
@@ -12,9 +13,7 @@ const failures = [];
 
 const { data: challenges, error } = await db
   .from("challenges")
-  .select(
-    "id, title, eval_image, runner_preset_id, eval_bundle_cid, expected_columns",
-  )
+  .select("id, title, eval_image, spec_cid, expected_columns")
   .order("created_at", { ascending: true });
 
 if (error) {
@@ -46,15 +45,14 @@ for (const challenge of challenges ?? []) {
   }
 
   if (
-    challenge.runner_preset_id === "csv_comparison_v1" &&
     (!Array.isArray(challenge.expected_columns) ||
       challenge.expected_columns.length === 0) &&
-    typeof challenge.eval_bundle_cid === "string" &&
-    challenge.eval_bundle_cid.length > 0
+    typeof challenge.spec_cid === "string" &&
+    challenge.spec_cid.length > 0
   ) {
     try {
-      const csvText = await getText(challenge.eval_bundle_cid);
-      const headers = parseCsvHeaders(csvText);
+      const spec = challengeSpecSchema.parse(await getJSON(challenge.spec_cid));
+      const headers = deriveExpectedColumns(spec.submission_contract);
       if (headers.length > 0) {
         patch.expected_columns = headers;
       }
@@ -62,7 +60,7 @@ for (const challenge of challenges ?? []) {
       failures.push({
         challengeId: challenge.id,
         title: challenge.title,
-        step: "parseCsvHeaders",
+        step: "deriveExpectedColumns",
         error: error instanceof Error ? error.message : String(error),
       });
     }

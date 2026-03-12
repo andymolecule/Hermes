@@ -2,7 +2,6 @@ import {
   type AgoraConfig,
   CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
-  parseCsvHeaders,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
@@ -26,7 +25,6 @@ import {
   upsertChallengePayoutAllocation,
   upsertSubmissionOnChain,
 } from "@agora/db";
-import { getText } from "@agora/ipfs";
 import { type Abi, parseEventLogs } from "viem";
 import {
   fetchValidatedChallengeSpec,
@@ -613,36 +611,6 @@ export async function processFactoryLog(input: {
       });
 
       await upsertChallenge(db, challengeInsert);
-
-      // Populate expected_columns for official CSV-comparison challenges.
-      const testCid =
-        challengeInsert.runner_preset_id === "csv_comparison_v1"
-          ? (challengeInsert.eval_bundle_cid ?? spec.dataset?.test)
-          : null;
-      if (testCid && typeof testCid === "string" && testCid.length > 0) {
-        try {
-          const gtText = await getText(testCid);
-          const headers = parseCsvHeaders(gtText);
-          if (headers.length > 0) {
-            await db
-              .from("challenges")
-              .update({ expected_columns: headers })
-              .eq("contract_address", challengeAddr);
-          }
-        } catch (headerErr) {
-          console.warn(
-            "[indexer] Failed to extract expected_columns (non-critical)",
-            {
-              challengeAddr,
-              testCid,
-              error:
-                headerErr instanceof Error
-                  ? headerErr.message
-                  : String(headerErr),
-            },
-          );
-        }
-      }
     }
 
     await markEventIndexed(

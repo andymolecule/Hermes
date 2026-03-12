@@ -211,6 +211,7 @@ The authoritative schema for challenge specification files.
 | `dataset` | object | Dataset configuration object. All sub-fields (`train`, `test`, `hidden_labels`) are optional. |
 | `scoring.container` | string | Docker image reference for scoring. Official Agora scorers use stable public version tags in authored YAML and are resolved to pinned digests before persistence; custom scorers must already use a pinned digest. |
 | `scoring.metric` | enum | One of: `rmse`, `mae`, `r2`, `pearson`, `spearman`, `custom`. |
+| `submission_contract` | object | Canonical machine-readable submission artifact contract. This is the only source of truth for what solvers must upload. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
 | `reward.distribution` | enum | One of: `winner_take_all`, `top_3`, `proportional`. |
 | `deadline` | string | RFC3339 UTC timestamp. |
@@ -230,6 +231,7 @@ The authoritative schema for challenge specification files.
 | `max_submissions_per_solver` | integer | Maximum submissions per solver per challenge (1–1000). |
 | `preset_id` | string | Scorer preset ID (e.g. `csv_comparison_v1`, `regression_v1`). |
 | `eval_spec` | object | Structured evaluation spec with `engine_id`, `engine_digest`, `evaluation_bundle`. |
+| `evaluation` | object | Optional human-facing scoring notes such as `criteria`, `success_definition`, and numeric `tolerance`. It is not the submission artifact contract. |
 
 ### Example
 
@@ -246,6 +248,21 @@ dataset:
 scoring:
   container: ghcr.io/andymolecule/repro-scorer:v1
   metric: custom
+submission_contract:
+  version: v1
+  kind: csv_table
+  file:
+    extension: .csv
+    mime: text/csv
+    max_bytes: 26214400
+  columns:
+    required:
+      - sample_id
+      - normalized_signal
+      - condition
+    id: sample_id
+    value: normalized_signal
+    allow_extra: true
 reward:
   total: 500 USDC
   distribution: winner_take_all

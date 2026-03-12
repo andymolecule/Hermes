@@ -22,7 +22,7 @@ import {
   SealedSubmissionError,
   buildProofBundle,
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
   resolveSubmissionSource,
   scoreToWad,
 } from "@agora/scorer";
@@ -173,7 +173,7 @@ export async function scoreSubmissionAndBuildProof(
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
-  const scoringEnv = await resolveScoringEnvironmentFromSpecCid(
+  const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
     challenge.spec_cid,
   );
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
@@ -201,7 +201,8 @@ export async function scoreSubmissionAndBuildProof(
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
     submission: submissionSource,
-    env: scoringEnv,
+    submissionContract: scoringSpecConfig.submissionContract,
+    env: scoringSpecConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
     strictPull: isProduction,

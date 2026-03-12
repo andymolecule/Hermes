@@ -1,7 +1,14 @@
 "use client";
 
-import { CHALLENGE_STATUS, DEFAULT_IPFS_GATEWAY } from "@agora/common";
-import type { ChallengeSpecOutput } from "@agora/common";
+import {
+  CHALLENGE_STATUS,
+  type ChallengeSpecOutput,
+  DEFAULT_IPFS_GATEWAY,
+  type SubmissionContractOutput,
+  createCsvTableSubmissionContract,
+  deriveExpectedColumns,
+  describeSubmissionArtifact,
+} from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -217,23 +224,21 @@ function getEligibilityThresholdPresentation(
   };
 }
 
-function inferSubmissionArtifact(spec?: ChallengeSpecOutput | null) {
-  const submissionFormat = spec?.evaluation?.submission_format?.trim();
-  if (submissionFormat) return submissionFormat;
-
-  switch (spec?.type) {
-    case "prediction":
-      return "submission.csv";
-    case "reproducibility":
-      return "reproduced_output";
-    case "optimization":
-      return "parameter_set.json";
-    case "docking":
-      return "ranked_predictions.csv";
-    case "red_team":
-      return "adversarial_cases.json";
-    default:
-      return "solution file";
+function getSubmissionContractFallback(input: {
+  expectedColumns?: string[] | null;
+}): SubmissionContractOutput | null {
+  if (
+    !Array.isArray(input.expectedColumns) ||
+    input.expectedColumns.length === 0
+  ) {
+    return null;
+  }
+  try {
+    return createCsvTableSubmissionContract({
+      requiredColumns: input.expectedColumns,
+    });
+  } catch {
+    return null;
   }
 }
 
@@ -254,11 +259,11 @@ function formatDateTime(value: string) {
 function SubmissionColumnsTable({
   expectedColumns,
   idColumn,
-  labelColumn,
+  valueColumn,
 }: {
   expectedColumns: string[];
   idColumn?: string;
-  labelColumn?: string;
+  valueColumn?: string;
 }) {
   if (expectedColumns.length === 0) return null;
 
@@ -279,8 +284,7 @@ function SubmissionColumnsTable({
           {expectedColumns.map((column) => {
             let role = "Required";
             if (idColumn && column === idColumn) role = "Identifier";
-            if (labelColumn && column === labelColumn)
-              role = "Prediction target";
+            if (valueColumn && column === valueColumn) role = "Scored value";
 
             return (
               <tr
@@ -562,13 +566,13 @@ export function DetailClient({ id }: { id: string }) {
 
   const { challenge, submissions } = detailQuery.data;
   const spec = specQuery.data;
-  const submissionArtifact = inferSubmissionArtifact(spec);
-  const expectedColumns = [
-    ...(challenge.expected_columns ?? []),
-    ...[spec?.evaluation?.id_column, spec?.evaluation?.label_column].filter(
-      (value): value is string => Boolean(value),
-    ),
-  ].filter((value, index, array) => array.indexOf(value) === index);
+  const submissionContract =
+    spec?.submission_contract ??
+    getSubmissionContractFallback({
+      expectedColumns: challenge.expected_columns,
+    });
+  const submissionArtifact = describeSubmissionArtifact(submissionContract);
+  const expectedColumns = deriveExpectedColumns(submissionContract);
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);
   const rewardDistribution = titleCase(
     challenge.distribution_type ?? "winner_take_all",
@@ -671,16 +675,6 @@ export function DetailClient({ id }: { id: string }) {
                           {submissionArtifact}
                         </span>
                         .
-                        {spec?.evaluation?.submission_format && (
-                          <>
-                            {" "}
-                            Expected format:{" "}
-                            <span className="font-semibold text-[var(--color-warm-900)]">
-                              {spec.evaluation.submission_format}
-                            </span>
-                            .
-                          </>
-                        )}
                       </p>
                       <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                         {evaluationCriteria}
@@ -702,8 +696,16 @@ export function DetailClient({ id }: { id: string }) {
                       </div>
                       <SubmissionColumnsTable
                         expectedColumns={expectedColumns}
-                        idColumn={spec?.evaluation?.id_column}
-                        labelColumn={spec?.evaluation?.label_column}
+                        idColumn={
+                          submissionContract?.kind === "csv_table"
+                            ? submissionContract.columns.id
+                            : undefined
+                        }
+                        valueColumn={
+                          submissionContract?.kind === "csv_table"
+                            ? submissionContract.columns.value
+                            : undefined
+                        }
                       />
                     </div>
                   )}
@@ -899,7 +901,7 @@ export function DetailClient({ id }: { id: string }) {
               challengeAddress={challenge.contract_address}
               challengeStatus={challenge.status}
               deadline={challenge.deadline}
-              expectedColumns={challenge.expected_columns}
+              submissionContract={submissionContract}
             />
 
             <TechnicalDetailsSection challenge={challenge} />

@@ -2,14 +2,13 @@ import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import {
+  defaultPresetIdForChallengeType,
   inferPresetIdByContainer,
   isOfficialContainer,
   resolveOfficialImageToDigest,
 } from "../presets.js";
-import {
-  CHALLENGE_TYPES,
-  type ChallengeType,
-} from "../types/challenge.js";
+import { CHALLENGE_TYPES, type ChallengeType } from "../types/challenge.js";
+import { submissionContractSchema } from "./submission-contract.js";
 
 const domainEnum = z.enum([
   "longevity",
@@ -52,10 +51,12 @@ const rewardTotal = z
       return Number.isNaN(parsed) ? value : parsed;
     }
     return value;
-  }, z.number().min(CHALLENGE_LIMITS.rewardMinUsdc).max(CHALLENGE_LIMITS.rewardMaxUsdc))
+  }, z
+    .number()
+    .min(CHALLENGE_LIMITS.rewardMinUsdc)
+    .max(CHALLENGE_LIMITS.rewardMaxUsdc))
   .refine(
-    (value) =>
-      Number.isInteger(value * 10 ** CHALLENGE_LIMITS.rewardDecimals),
+    (value) => Number.isInteger(value * 10 ** CHALLENGE_LIMITS.rewardDecimals),
     `reward.total must have at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places`,
   );
 
@@ -94,106 +95,136 @@ function resolveSpecEvaluationBundle(
 
 // Shared challenge spec shape. dispute_window_hours is range-validated only;
 // callers decide which UI options to offer.
-const _baseSpecShape = z.object({
-  schema_version: z.literal(2),
-  id: z.string().min(1),
-  preset_id: z.string().min(1).optional(),
-  title: z.string().min(1),
-  domain: domainEnum,
-  type: typeEnum,
-  description: z.string().min(1),
-  reference_url: z.string().url().optional(),
-  dataset: z
-    .object({
-      train: datasetSource.optional(),
-      test: datasetSource.optional(),
-      // Prediction: ground truth labels for scoring (separate from test inputs)
-      hidden_labels: datasetSource.optional(),
-    })
-    .optional(),
-  // Author-facing scoring section. When eval_spec is omitted, the runtime
-  // resolves the canonical evaluation plan from this block plus dataset.test.
-  scoring: z.object({
-    container: z.string().min(1),
-    metric: scoringMetricEnum,
-  }),
-  // New: structured evaluation spec (optional; when absent, derived from scoring + dataset.test)
-  eval_spec: evalSpecSchema.optional(),
-  reward: z.object({
-    total: rewardTotal,
-    distribution: rewardDistributionEnum,
-  }),
-  deadline: z.string().datetime({ offset: true }),
-  tags: z.array(z.string().min(1)).optional(),
-  minimum_score: z.number().optional(),
-  max_submissions_total: z.number().int().min(1).max(10000).optional(),
-  max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
-  dispute_window_hours: z
-    .number()
-    .int()
-    .min(0)
-    .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
-    .optional(),
-  evaluation: z
-    .object({
-      submission_format: z.string().min(1).optional(),
-      criteria: z.string().min(1).optional(),
-      success_definition: z.string().min(1).optional(),
-      // Prediction-specific: column names for the scorer
-      id_column: z.string().min(1).optional(),
-      label_column: z.string().min(1).optional(),
-      // Reproducibility: numeric tolerance for comparison (e.g. "1e-4")
-      tolerance: z.string().min(1).optional(),
-    })
-    .optional(),
-  lab_tba: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
-    .optional(),
-}).superRefine((value, ctx) => {
-  if (
-    typeof value.max_submissions_total === "number" &&
-    typeof value.max_submissions_per_solver === "number" &&
-    value.max_submissions_per_solver > value.max_submissions_total
-  ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["max_submissions_per_solver"],
-      message:
-        "max_submissions_per_solver cannot exceed max_submissions_total",
-    });
-  }
+const _baseSpecShape = z
+  .object({
+    schema_version: z.literal(2),
+    id: z.string().min(1),
+    preset_id: z.string().min(1).optional(),
+    title: z.string().min(1),
+    domain: domainEnum,
+    type: typeEnum,
+    description: z.string().min(1),
+    reference_url: z.string().url().optional(),
+    dataset: z
+      .object({
+        train: datasetSource.optional(),
+        test: datasetSource.optional(),
+        // Prediction: ground truth labels for scoring (separate from test inputs)
+        hidden_labels: datasetSource.optional(),
+      })
+      .optional(),
+    // Author-facing scoring section. When eval_spec is omitted, the runtime
+    // resolves the canonical evaluation plan from this block plus dataset.test.
+    scoring: z.object({
+      container: z.string().min(1),
+      metric: scoringMetricEnum,
+    }),
+    // New: structured evaluation spec (optional; when absent, derived from scoring + dataset.test)
+    eval_spec: evalSpecSchema.optional(),
+    // Canonical submission artifact contract consumed by web/API/worker.
+    submission_contract: submissionContractSchema,
+    reward: z.object({
+      total: rewardTotal,
+      distribution: rewardDistributionEnum,
+    }),
+    deadline: z.string().datetime({ offset: true }),
+    tags: z.array(z.string().min(1)).optional(),
+    minimum_score: z.number().optional(),
+    max_submissions_total: z.number().int().min(1).max(10000).optional(),
+    max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
+    dispute_window_hours: z
+      .number()
+      .int()
+      .min(0)
+      .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
+      .optional(),
+    evaluation: z
+      .object({
+        criteria: z.string().min(1).optional(),
+        success_definition: z.string().min(1).optional(),
+        // Reproducibility: numeric tolerance for comparison (e.g. "1e-4")
+        tolerance: z.string().min(1).optional(),
+      })
+      .optional(),
+    lab_tba: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      typeof value.max_submissions_total === "number" &&
+      typeof value.max_submissions_per_solver === "number" &&
+      value.max_submissions_per_solver > value.max_submissions_total
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["max_submissions_per_solver"],
+        message:
+          "max_submissions_per_solver cannot exceed max_submissions_total",
+      });
+    }
 
-  if (value.type !== "prediction") {
-    return;
-  }
+    if (value.type !== "prediction") {
+      const explicitPresetId =
+        typeof value.preset_id === "string" && value.preset_id.trim().length > 0
+          ? value.preset_id.trim()
+          : undefined;
+      const inferredPresetId =
+        explicitPresetId ??
+        defaultPresetIdForChallengeType(value.type) ??
+        inferPresetIdByContainer(value.scoring.container);
 
-  const evaluationBundle = value.eval_spec?.evaluation_bundle;
-  const hiddenLabels = value.dataset?.hidden_labels;
-  const testDataset = value.dataset?.test;
+      if (
+        inferredPresetId &&
+        inferredPresetId !== "custom" &&
+        value.submission_contract.kind !== "csv_table"
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["submission_contract"],
+          message:
+            "Official Agora scorer presets require a csv_table submission_contract.",
+        });
+      }
+      return;
+    }
 
-  if (!evaluationBundle && !hiddenLabels && !testDataset) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["dataset"],
-      message:
-        "Prediction challenges require eval_spec.evaluation_bundle, dataset.hidden_labels, or dataset.test.",
-    });
-  }
+    if (value.submission_contract.kind !== "csv_table") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submission_contract"],
+        message:
+          "Prediction challenges require a csv_table submission_contract.",
+      });
+    }
 
-  if (
-    typeof evaluationBundle === "string" &&
-    typeof hiddenLabels === "string" &&
-    evaluationBundle !== hiddenLabels
-  ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["dataset", "hidden_labels"],
-      message:
-        "Prediction challenges must use the same CID for dataset.hidden_labels and eval_spec.evaluation_bundle when both are provided.",
-    });
-  }
-});
+    const evaluationBundle = value.eval_spec?.evaluation_bundle;
+    const hiddenLabels = value.dataset?.hidden_labels;
+    const testDataset = value.dataset?.test;
+
+    if (!evaluationBundle && !hiddenLabels && !testDataset) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset"],
+        message:
+          "Prediction challenges require eval_spec.evaluation_bundle, dataset.hidden_labels, or dataset.test.",
+      });
+    }
+
+    if (
+      typeof evaluationBundle === "string" &&
+      typeof hiddenLabels === "string" &&
+      evaluationBundle !== hiddenLabels
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset", "hidden_labels"],
+        message:
+          "Prediction challenges must use the same CID for dataset.hidden_labels and eval_spec.evaluation_bundle when both are provided.",
+      });
+    }
+  });
 
 /** Adds a dispute-window minimum refinement to the base shape. */
 function _withDisputeMin(minHours: number) {
@@ -268,10 +299,11 @@ export async function canonicalizeChallengeSpec(
     spec.type === "custom" || spec.type === "optimization";
   const inferredPresetId =
     explicitPresetId ??
-    (usesCustomScorer ? "custom" : inferPresetIdByContainer(scoringContainer) ?? undefined);
+    (usesCustomScorer
+      ? "custom"
+      : (inferPresetIdByContainer(scoringContainer) ?? undefined));
 
-  let resolvedImage =
-    spec.eval_spec?.engine_digest?.trim() || scoringContainer;
+  let resolvedImage = spec.eval_spec?.engine_digest?.trim() || scoringContainer;
   if (
     options.resolveOfficialPresetDigests === true &&
     inferredPresetId &&
@@ -366,8 +398,7 @@ export const CHALLENGE_TYPE_SCOREABILITY = {
     requiresScoringImage: true,
     requiresEvaluationBundle: false,
     requiresMetric: false,
-    missingImageMessage:
-      "Optimization challenges require a scoring container.",
+    missingImageMessage: "Optimization challenges require a scoring container.",
     missingEvaluationBundleMessage:
       "Optimization challenges require an evaluation bundle.",
     missingMetricMessage: "Optimization challenges require a scoring metric.",

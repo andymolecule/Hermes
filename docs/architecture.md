@@ -21,6 +21,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - Monorepo with 4 apps (CLI, API, MCP, Web) and 6 packages (common, contracts, chain, db, ipfs, scorer)
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, datasets, submissions, scoring compute, search indexes
+- `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
 - One active contract generation at a time; @agora/chain owns ABI/event details
 - Docker scorer: no network, read-only, non-root; official presets run with 1–20 min timeouts, base runner fallback is 30 min
 - MCP server: stdio + HTTP modes, session management, 8 agent tools

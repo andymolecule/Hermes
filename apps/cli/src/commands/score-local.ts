@@ -1,8 +1,8 @@
+import { type ChallengeEvalRow, resolveEvalSpec } from "@agora/common";
 import { createSupabaseClient, getChallengeById } from "@agora/db";
-import { resolveEvalSpec, type ChallengeEvalRow } from "@agora/common";
 import {
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
 } from "@agora/scorer";
 import { Command } from "commander";
 import {
@@ -43,17 +43,23 @@ export function buildScoreLocalCommand() {
         if (!evalPlan.evaluationBundleCid) {
           throw new Error("Challenge missing evaluation bundle CID.");
         }
-        const scoringEnv = await resolveScoringEnvironmentFromSpecCid(
-          challenge.spec_cid,
-        );
+        const scoringSpecConfig =
+          await resolveScoringSpecRuntimeConfigFromSpecCid(challenge.spec_cid);
 
         const runSpinner = createSpinner("Running scorer container...");
         const run = await executeScoringPipeline({
           image: evalPlan.image,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: { localPath: opts.submission },
-          env: scoringEnv,
+          submissionContract: scoringSpecConfig.submissionContract,
+          env: scoringSpecConfig.env,
         });
+        if (!run.result.ok) {
+          runSpinner.fail("Scorer rejected submission");
+          throw new Error(
+            run.result.error ?? "Scorer rejected submission as invalid.",
+          );
+        }
         runSpinner.succeed("Scorer finished");
 
         const output = {

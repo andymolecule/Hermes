@@ -5,11 +5,13 @@ import {
   CHALLENGE_STATUS,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
+  type SubmissionContractOutput,
+  deriveExpectedColumns,
   importSubmissionSealPublicKey,
   isValidPinnedSpecCid,
   sealSubmission,
   serializeSealedSubmissionEnvelope,
-  validateCsvHeaders,
+  validateSubmissionTextAgainstContract,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -26,7 +28,7 @@ import {
   Upload,
   Wallet,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Abi } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import {
@@ -87,12 +89,16 @@ function getSubmissionSealingErrorMessage(error: unknown) {
   return "Unable to confirm private answer protection right now. Retry in a moment before submitting.";
 }
 
+function formatExpectedColumns(columns: string[]) {
+  return columns.join(", ");
+}
+
 interface SubmitSolutionProps {
   challengeId: string;
   challengeAddress: string;
   challengeStatus: string;
   deadline: string;
-  expectedColumns?: string[] | null;
+  submissionContract?: SubmissionContractOutput | null;
 }
 
 export function SubmitSolution({
@@ -100,7 +106,7 @@ export function SubmitSolution({
   challengeAddress,
   challengeStatus,
   deadline,
-  expectedColumns,
+  submissionContract,
 }: SubmitSolutionProps) {
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient();
@@ -126,6 +132,15 @@ export function SubmitSolution({
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
+  const requiredColumns = deriveExpectedColumns(submissionContract);
+  const requiresCsvSubmission = submissionContract?.kind === "csv_table";
+  const requiresFileSubmission = Boolean(submissionContract);
+
+  useEffect(() => {
+    if (requiresFileSubmission) {
+      setInputMode("file");
+    }
+  }, [requiresFileSubmission]);
 
   const submissionPublicKey = submissionKeyQuery.data;
   const isCheckingSealing = submissionKeyQuery.isLoading;
@@ -272,7 +287,21 @@ export function SubmitSolution({
       return;
     }
     if (!hasResult) {
-      setStatus("Upload a result file or enter your answer.");
+      setStatus(
+        requiresCsvSubmission
+          ? `Upload a CSV file with columns: ${formatExpectedColumns(requiredColumns)}.`
+          : requiresFileSubmission
+            ? "Upload a result file before submitting."
+            : "Upload a result file or enter your answer.",
+      );
+      return;
+    }
+    if (requiresFileSubmission && inputMode !== "file") {
+      setStatus(
+        requiresCsvSubmission
+          ? `This challenge requires a CSV file upload with columns: ${formatExpectedColumns(requiredColumns)}.`
+          : "This challenge requires a file upload.",
+      );
       return;
     }
 
@@ -280,18 +309,17 @@ export function SubmitSolution({
       setIsSubmitting(true);
 
       // Pre-flight CSV header validation (saves gas on malformed files)
-      if (
-        inputMode === "file" &&
-        resultFile &&
-        expectedColumns?.length &&
-        resultFile.name.endsWith(".csv")
-      ) {
+      if (inputMode === "file" && resultFile && requiresCsvSubmission) {
         setStatus("Validating CSV format...");
         const fileText = await resultFile.text();
-        const validation = validateCsvHeaders(fileText, expectedColumns);
+        const validation = validateSubmissionTextAgainstContract(
+          fileText,
+          submissionContract,
+        );
         if (!validation.valid) {
           setStatus(
-            `Missing required columns: ${validation.missingColumns.join(", ")}`,
+            validation.message ??
+              "Submission does not match the challenge CSV contract.",
           );
           setIsSubmitting(false);
           return;
@@ -502,18 +530,35 @@ export function SubmitSolution({
                 >
                   Upload File
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setInputMode("text")}
-                  className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
-                    inputMode === "text"
-                      ? "bg-[var(--color-warm-900)] text-white"
-                      : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
-                  }`}
-                >
-                  Text Answer
-                </button>
+                {!requiresFileSubmission && (
+                  <button
+                    type="button"
+                    onClick={() => setInputMode("text")}
+                    className={`px-4 py-2 text-xs font-bold font-mono uppercase tracking-wider transition-colors rounded-md ${
+                      inputMode === "text"
+                        ? "bg-[var(--color-warm-900)] text-white"
+                        : "text-[var(--text-muted)] hover:text-[var(--color-warm-900)]"
+                    }`}
+                  >
+                    Text Answer
+                  </button>
+                )}
               </div>
+
+              {requiresCsvSubmission && (
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-4">
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                    Required CSV columns
+                  </div>
+                  <div className="mt-2 font-mono text-xs font-bold text-[var(--color-warm-900)] break-all">
+                    {formatExpectedColumns(requiredColumns)}
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                    Agora checks these headers locally before sealing and before
+                    you confirm the wallet transaction.
+                  </p>
+                </div>
+              )}
 
               {/* File upload with drag-and-drop */}
               {inputMode === "file" && (
@@ -579,7 +624,9 @@ export function SubmitSolution({
                           </span>
                         </span>
                         <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-[var(--text-muted)]">
-                          CSV, JSON, or any file format
+                          {requiresCsvSubmission
+                            ? "CSV file with the required columns"
+                            : "CSV, JSON, or any file format"}
                         </span>
                       </>
                     )}

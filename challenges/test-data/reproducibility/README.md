@@ -20,6 +20,11 @@ The reproducibility scorer currently expects:
 - `submission.csv`: the solver's reproduced output
 - identical column names between both files
 
+In the current platform architecture, that requirement should be authored as a
+`submission_contract.kind = csv_table` challenge spec. The web submit flow and
+worker runtime both validate against that same machine-readable contract before
+scoring.
+
 The built-in preset is:
 - `CSV Comparison`
 - official container: `ghcr.io/andymolecule/repro-scorer:v1`
@@ -113,6 +118,7 @@ Use:
 
 Expected current behavior:
 - rejected because the submission is missing a required column from the expected artifact
+- the web submit flow should now catch this before wallet confirmation when challenge metadata includes the expected column set
 
 ### Extra rows
 Use:

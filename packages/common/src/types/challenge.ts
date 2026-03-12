@@ -1,3 +1,5 @@
+import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
+
 export type ChallengeDomain =
   | "longevity"
   | "drug_discovery"
@@ -80,13 +82,16 @@ export interface ChallengeEvalSpec {
 export interface ChallengeSpec {
   schema_version: 2;
   id: string;
+  preset_id?: string;
   title: string;
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
+  reference_url?: string;
   dataset?: ChallengeDataset;
   scoring: ChallengeScoring;
   eval_spec?: ChallengeEvalSpec;
+  submission_contract: SubmissionContractOutput;
   reward: ChallengeReward;
   deadline: string;
   tags?: string[];
@@ -94,5 +99,10 @@ export interface ChallengeSpec {
   max_submissions_total?: number;
   max_submissions_per_solver?: number;
   dispute_window_hours?: number;
+  evaluation?: {
+    criteria?: string;
+    success_definition?: string;
+    tolerance?: string;
+  };
   lab_tba?: string;
 }

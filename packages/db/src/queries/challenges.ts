@@ -5,6 +5,7 @@ import {
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForChallengeType,
+  deriveExpectedColumns,
   findPresetIdsByContainer,
   inferPresetIdByContainer,
   resolveEvalSpec,
@@ -122,6 +123,9 @@ export async function buildChallengeInsert(
   }
   const runnerPresetId = inferredPresetId ?? "custom";
   const resolvedEvalPlan = resolveEvalSpec(canonicalSpec);
+  const expectedColumns = deriveExpectedColumns(
+    canonicalSpec.submission_contract,
+  );
 
   return {
     chain_id: input.chainId,
@@ -141,6 +145,7 @@ export async function buildChallengeInsert(
     eval_metric: resolvedEvalPlan.metric,
     runner_preset_id: runnerPresetId,
     eval_bundle_cid: resolvedEvalPlan.evaluationBundleCid ?? null,
+    expected_columns: expectedColumns.length > 0 ? expectedColumns : null,
     minimum_score:
       canonicalSpec.minimum_score ??
       defaultMinimumScoreForChallengeType(canonicalSpec.type) ??

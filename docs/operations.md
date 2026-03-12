@@ -572,7 +572,7 @@ This section covers non-code work for deployment across hosted systems.
 
 #### Worker Recovery Scripts
 
-- `pnpm backfill:challenge-metadata -- --dry-run` previews pinned official scorer digest and `expected_columns` backfills for existing challenge rows. Run `pnpm turbo build` first, then rerun without `-- --dry-run` to apply.
+- `pnpm backfill:challenge-metadata -- --dry-run` previews pinned official scorer digest and `expected_columns` backfills derived from challenge `submission_contract` data. Run `pnpm turbo build` first, then rerun without `-- --dry-run` to apply.
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.

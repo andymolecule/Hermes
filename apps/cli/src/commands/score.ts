@@ -19,7 +19,7 @@ import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
   resolveSubmissionSource,
 } from "@agora/scorer";
 import { Command } from "commander";
@@ -101,6 +101,8 @@ export function buildOracleScoreCommand() {
 
         const runSpinner = createSpinner("Running scorer container...");
         const runtimeConfig = loadConfig();
+        const scoringSpecConfig =
+          await resolveScoringSpecRuntimeConfigFromSpecCid(challenge.spec_cid);
         const submissionSource = await resolveSubmissionSource({
           resultCid: submission.result_cid,
           resultFormat: submission.result_format,
@@ -112,12 +114,19 @@ export function buildOracleScoreCommand() {
           image: evalPlan.image,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: submissionSource,
-          env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
+          submissionContract: scoringSpecConfig.submissionContract,
+          env: scoringSpecConfig.env,
           keepWorkspace: true,
         });
-        runSpinner.succeed(`Scored submission: ${run.result.score}`);
 
         try {
+          if (!run.result.ok) {
+            runSpinner.fail("Scorer rejected submission");
+            throw new Error(
+              run.result.error ?? "Scorer rejected submission as invalid.",
+            );
+          }
+          runSpinner.succeed(`Scored submission: ${run.result.score}`);
           const replaySubmissionCid =
             submission.result_format ===
             SUBMISSION_RESULT_FORMAT.sealedSubmissionV2

@@ -3,8 +3,22 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   challengeSpecSchema,
+  createCsvTableSubmissionContract,
+  createOpaqueFileSubmissionContract,
 } from "@agora/common";
 import { buildChallengeInsert } from "../queries/challenges";
+
+const predictionSubmissionContract = createCsvTableSubmissionContract({
+  requiredColumns: ["id", "prediction"],
+  idColumn: "id",
+  valueColumn: "prediction",
+});
+
+const reproSubmissionContract = createCsvTableSubmissionContract({
+  requiredColumns: ["sample_id", "normalized_signal", "condition"],
+  idColumn: "sample_id",
+  valueColumn: "normalized_signal",
+});
 
 const baseInput = {
   chainId: DEFAULT_CHAIN_ID,
@@ -15,7 +29,7 @@ const baseInput = {
   specCid: "ipfs://bafybeigdyrztz4x",
   rewardAmountUsdc: 10,
   disputeWindowHours: 168,
-  txHash: "0x" + "1".repeat(64),
+  txHash: `0x${"1".repeat(64)}`,
 };
 
 const regressionSpec = challengeSpecSchema.parse({
@@ -33,6 +47,7 @@ const regressionSpec = challengeSpecSchema.parse({
     container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
+  submission_contract: predictionSubmissionContract,
   reward: {
     total: 10,
     distribution: "winner_take_all",
@@ -61,6 +76,7 @@ assert.equal(
 assert.equal(insertWithPreset.minimum_score, 0);
 assert.equal(insertWithPreset.eval_bundle_cid, "ipfs://QmHiddenLabelsOnly");
 assert.equal(insertWithPreset.dataset_test_cid, null);
+assert.deepEqual(insertWithPreset.expected_columns, ["id", "prediction"]);
 
 const inferredSpec = challengeSpecSchema.parse({
   schema_version: 2,
@@ -76,6 +92,7 @@ const inferredSpec = challengeSpecSchema.parse({
     container: "ghcr.io/andymolecule/regression-scorer:v1",
     metric: "rmse",
   },
+  submission_contract: predictionSubmissionContract,
   reward: {
     total: 10,
     distribution: "winner_take_all",
@@ -90,6 +107,7 @@ const insertInferred = await buildChallengeInsert({
 });
 assert.equal(insertInferred.runner_preset_id, "regression_v1");
 assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
+assert.deepEqual(insertInferred.expected_columns, ["id", "prediction"]);
 
 const insertWithOnChainDeadline = await buildChallengeInsert({
   ...baseInput,
@@ -128,6 +146,9 @@ const customUnpinnedSpec = challengeSpecSchema.parse({
     container: "ghcr.io/acme/custom-scorer:latest",
     metric: "custom",
   },
+  submission_contract: createOpaqueFileSubmissionContract({
+    extension: ".json",
+  }),
   reward: {
     total: 10,
     distribution: "winner_take_all",
@@ -149,7 +170,7 @@ const customPinnedSpec = challengeSpecSchema.parse({
   ...customUnpinnedSpec,
   id: "ch-5",
   scoring: {
-    container: "ghcr.io/acme/custom-scorer@sha256:" + "a".repeat(64),
+    container: `ghcr.io/acme/custom-scorer@sha256:${"a".repeat(64)}`,
     metric: "custom",
   },
 });
@@ -159,6 +180,7 @@ const customInsert = await buildChallengeInsert({
   spec: customPinnedSpec,
 });
 assert.equal(customInsert.runner_preset_id, "custom");
+assert.equal(customInsert.expected_columns, null);
 
 const customLimitsSpec = challengeSpecSchema.parse({
   ...regressionSpec,
@@ -185,6 +207,7 @@ const reproMissingBundleSpec = challengeSpecSchema.parse({
     container: "ghcr.io/andymolecule/repro-scorer:v1",
     metric: "custom",
   },
+  submission_contract: reproSubmissionContract,
   reward: {
     total: 10,
     distribution: "winner_take_all",
@@ -202,6 +225,22 @@ await assert.rejects(
   /Reproducibility challenges require an evaluation bundle/,
 );
 
+const reproInsert = await buildChallengeInsert({
+  ...baseInput,
+  spec: challengeSpecSchema.parse({
+    ...reproMissingBundleSpec,
+    id: "ch-7b",
+    dataset: {
+      test: "ipfs://QmReproBundle",
+    },
+  }),
+});
+assert.deepEqual(reproInsert.expected_columns, [
+  "sample_id",
+  "normalized_signal",
+  "condition",
+]);
+
 const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;
 try {
@@ -211,7 +250,7 @@ try {
     return new Response("{}", {
       status: 200,
       headers: {
-        "docker-content-digest": "sha256:" + "b".repeat(64),
+        "docker-content-digest": `sha256:${"b".repeat(64)}`,
       },
     });
   }) as typeof fetch;
@@ -223,7 +262,7 @@ try {
   });
   assert.equal(
     pinnedInsert.eval_image,
-    "ghcr.io/andymolecule/regression-scorer@sha256:" + "b".repeat(64),
+    `ghcr.io/andymolecule/regression-scorer@sha256:${"b".repeat(64)}`,
   );
   assert.equal(pinnedInsert.runner_preset_id, "regression_v1");
 
@@ -234,14 +273,14 @@ try {
   });
   assert.equal(
     cachedInsert.eval_image,
-    "ghcr.io/andymolecule/regression-scorer@sha256:" + "b".repeat(64),
+    `ghcr.io/andymolecule/regression-scorer@sha256:${"b".repeat(64)}`,
   );
-  assert.equal(fetchCalls, 1);
+  assert.equal(fetchCalls, 2);
 
   Date.now = () => originalDateNow() + 10 * 60 * 1000;
 
   const reproOfficialSpec = challengeSpecSchema.parse({
-  schema_version: 2,
+    schema_version: 2,
     id: "ch-8",
     preset_id: "csv_comparison_v1",
     title: "Repro official digest resolution",
@@ -255,6 +294,7 @@ try {
       container: "ghcr.io/andymolecule/repro-scorer:v1",
       metric: "custom",
     },
+    submission_contract: reproSubmissionContract,
     reward: {
       total: 10,
       distribution: "winner_take_all",
@@ -325,7 +365,7 @@ try {
     return new Response("{}", {
       status: 200,
       headers: {
-        "docker-content-digest": "sha256:" + "c".repeat(64),
+        "docker-content-digest": `sha256:${"c".repeat(64)}`,
       },
     });
   }) as typeof fetch;

@@ -2,7 +2,7 @@ import { getOnChainSubmission } from "@agora/chain";
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
 } from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
@@ -53,21 +53,20 @@ export function buildVerifyPublicCommand() {
     .requiredOption("--sub <submissionId>", "Submission UUID")
     .option("--format <format>", "table or json", "table")
     .action(
-      async (
-        challengeId: string,
-        opts: { sub: string; format: string },
-      ) => {
+      async (challengeId: string, opts: { sub: string; format: string }) => {
         const config = loadCliConfig();
         applyConfigToEnv(config);
         requireConfigValues(config, ["api_url", "rpc_url"]);
 
-        const verification = await fetchApiJson<{ data: PublicSubmissionVerification }>(
-          `/api/submissions/${opts.sub}/public`,
-        );
+        const verification = await fetchApiJson<{
+          data: PublicSubmissionVerification;
+        }>(`/api/submissions/${opts.sub}/public`);
         const payload = verification.data;
 
         if (payload.challengeId !== challengeId) {
-          throw new Error("Submission does not belong to the provided challenge.");
+          throw new Error(
+            "Submission does not belong to the provided challenge.",
+          );
         }
         if (!payload.scored) {
           throw new Error("Submission has not been scored yet.");
@@ -76,7 +75,9 @@ export function buildVerifyPublicCommand() {
           throw new Error("Submission has no public proof bundle yet.");
         }
         if (!payload.evaluationBundleCid) {
-          throw new Error("Submission is missing a public evaluation bundle CID.");
+          throw new Error(
+            "Submission is missing a public evaluation bundle CID.",
+          );
         }
         if (!payload.replaySubmissionCid) {
           throw new Error(
@@ -87,15 +88,20 @@ export function buildVerifyPublicCommand() {
         const expectedProofHash = keccak256(
           toBytes(payload.proofBundleCid.replace("ipfs://", "")),
         );
-        if (expectedProofHash.toLowerCase() !== payload.proofBundleHash.toLowerCase()) {
-          throw new Error("Proof bundle CID hash does not match recorded proof bundle hash.");
+        if (
+          expectedProofHash.toLowerCase() !==
+          payload.proofBundleHash.toLowerCase()
+        ) {
+          throw new Error(
+            "Proof bundle CID hash does not match recorded proof bundle hash.",
+          );
         }
 
         const proofSpinner = createSpinner("Loading public proof bundle...");
         const proof = await getJSON<PublicProofBundle>(payload.proofBundleCid);
         if (
-          payload.containerImageDigest
-          && proof.containerImageDigest !== payload.containerImageDigest
+          payload.containerImageDigest &&
+          proof.containerImageDigest !== payload.containerImageDigest
         ) {
           throw new Error("Proof bundle container digest mismatch.");
         }
@@ -106,9 +112,9 @@ export function buildVerifyPublicCommand() {
           throw new Error("Proof bundle output hash mismatch.");
         }
         if (
-          payload.replaySubmissionCid
-          && proof.replaySubmissionCid
-          && proof.replaySubmissionCid !== payload.replaySubmissionCid
+          payload.replaySubmissionCid &&
+          proof.replaySubmissionCid &&
+          proof.replaySubmissionCid !== payload.replaySubmissionCid
         ) {
           throw new Error("Proof bundle replay submission CID mismatch.");
         }
@@ -122,22 +128,37 @@ export function buildVerifyPublicCommand() {
         if (!onChainSub.scored) {
           throw new Error("On-chain submission has not been scored yet.");
         }
-        if (onChainSub.proofBundleHash.toLowerCase() !== payload.proofBundleHash.toLowerCase()) {
+        if (
+          onChainSub.proofBundleHash.toLowerCase() !==
+          payload.proofBundleHash.toLowerCase()
+        ) {
           throw new Error("On-chain proof bundle hash mismatch.");
         }
         const onChainScore = wadToScore(onChainSub.score.toString());
         chainSpinner.succeed(`On-chain score: ${onChainScore}`);
 
-        const runSpinner = createSpinner("Running scorer for public verification...");
+        const runSpinner = createSpinner(
+          "Running scorer for public verification...",
+        );
+        const scoringSpecConfig =
+          await resolveScoringSpecRuntimeConfigFromSpecCid(
+            payload.challengeSpecCid,
+          );
         const run = await executeScoringPipeline({
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },
           submission: { cid: payload.replaySubmissionCid },
-          env: await resolveScoringEnvironmentFromSpecCid(
-            payload.challengeSpecCid,
-          ),
+          submissionContract: scoringSpecConfig.submissionContract,
+          env: scoringSpecConfig.env,
           strictPull: true,
         });
+        if (!run.result.ok) {
+          runSpinner.fail("Public verification scorer rejected submission");
+          throw new Error(
+            run.result.error ??
+              "Public verification scorer rejected submission.",
+          );
+        }
         runSpinner.succeed("Public verification scoring finished");
 
         const delta = Math.abs(run.result.score - onChainScore);

@@ -1,12 +1,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveScoringEnvironmentFromSpec } from "@agora/common";
+import {
+  type SubmissionContractOutput,
+  challengeSpecSchema,
+  resolveScoringEnvironmentFromSpec,
+  validateSubmissionBytesAgainstContract,
+} from "@agora/common";
 import { downloadToPath } from "@agora/ipfs";
 import { getJSON } from "@agora/ipfs";
 import {
-  runScorer,
   type RunScorerInput,
   type RunnerScoreResult,
+  runScorer,
 } from "./runner.js";
 import { cleanupWorkspace, createScoringWorkspace } from "./staging.js";
 
@@ -36,6 +41,7 @@ export interface ExecuteScoringPipelineInput {
   image: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
+  submissionContract?: SubmissionContractOutput;
   env?: Record<string, string>;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
@@ -55,17 +61,23 @@ export interface ScoringPipelineResult {
   cleanup: () => Promise<void>;
 }
 
-export async function resolveScoringEnvironmentFromSpecCid(
+export interface ScoringSpecRuntimeConfig {
+  env?: Record<string, string>;
+  submissionContract?: SubmissionContractOutput;
+}
+
+export async function resolveScoringSpecRuntimeConfigFromSpecCid(
   specCid?: string | null,
-): Promise<Record<string, string> | undefined> {
+): Promise<ScoringSpecRuntimeConfig> {
   if (!specCid) {
-    return undefined;
+    return {};
   }
   try {
-    const spec = await getJSON<{ evaluation?: { tolerance?: string | null } }>(
-      specCid,
-    );
-    return resolveScoringEnvironmentFromSpec(spec);
+    const spec = challengeSpecSchema.parse(await getJSON(specCid));
+    return {
+      env: resolveScoringEnvironmentFromSpec(spec),
+      submissionContract: spec.submission_contract,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -85,7 +97,9 @@ async function stageSourceToPath(
     typeof source.content === "string" && source.content.length > 0;
   const hasBytes =
     source.bytes instanceof Uint8Array && source.bytes.byteLength > 0;
-  const sourceCount = [hasCid, hasLocalPath, hasContent, hasBytes].filter(Boolean).length;
+  const sourceCount = [hasCid, hasLocalPath, hasContent, hasBytes].filter(
+    Boolean,
+  ).length;
 
   if (sourceCount !== 1) {
     throw new Error(
@@ -160,6 +174,43 @@ export async function executeScoringPipeline(
         return { evaluationBundlePath, submissionPath };
       },
     );
+
+    if (input.submissionContract) {
+      const submissionBytes = await fs.readFile(submissionPath);
+      const validation = validateSubmissionBytesAgainstContract(
+        submissionBytes,
+        input.submissionContract,
+      );
+      if (!validation.valid) {
+        const output: ScoringPipelineResult = {
+          result: {
+            ok: false,
+            score: 0,
+            error:
+              validation.message ??
+              "Submission does not match the challenge submission contract.",
+            details: {},
+            log: "",
+            outputPath: path.join(workspace.root, "output", "score.json"),
+            containerImageDigest: "",
+          },
+          workspaceRoot: workspace.root,
+          inputDir: workspace.inputDir,
+          evaluationBundlePath,
+          submissionPath,
+          inputPaths: [evaluationBundlePath, submissionPath].filter(
+            (value): value is string => typeof value === "string",
+          ),
+          cleanup,
+        };
+
+        if (!input.keepWorkspace) {
+          await cleanup();
+        }
+
+        return output;
+      }
+    }
 
     const result = await runObservedPhase(
       input.phaseObserver,

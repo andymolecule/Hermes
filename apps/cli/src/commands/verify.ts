@@ -16,7 +16,7 @@ import {
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
   resolveSubmissionSource,
 } from "@agora/scorer";
 import { Command } from "commander";
@@ -190,6 +190,8 @@ export function buildVerifyCommand() {
 
         const runSpinner = createSpinner("Running scorer for verification...");
         const runtimeConfig = loadConfig();
+        const scoringSpecConfig =
+          await resolveScoringSpecRuntimeConfigFromSpecCid(challenge.spec_cid);
         const submissionSource = await resolveSubmissionSource({
           resultCid: submission.result_cid,
           resultFormat: submission.result_format,
@@ -202,8 +204,15 @@ export function buildVerifyCommand() {
             proofPayload.containerImageDigest ?? proof.container_image_hash,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
           submission: submissionSource,
-          env: await resolveScoringEnvironmentFromSpecCid(challenge.spec_cid),
+          submissionContract: scoringSpecConfig.submissionContract,
+          env: scoringSpecConfig.env,
         });
+        if (!run.result.ok) {
+          runSpinner.fail("Verification scorer rejected submission");
+          throw new Error(
+            run.result.error ?? "Verification scorer rejected submission.",
+          );
+        }
         runSpinner.succeed("Verification scoring finished");
 
         // Compare local rescore against ON-CHAIN score (not DB score)

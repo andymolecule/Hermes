@@ -22,6 +22,7 @@ import {
 } from "@agora/chain";
 import {
   SUBMISSION_RESULT_FORMAT,
+  createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
@@ -165,13 +166,15 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       container: "ghcr.io/andymolecule/repro-scorer:v1",
       metric: "custom" as const,
     },
+    submission_contract: createCsvTableSubmissionContract({
+      requiredColumns: ["sample_id", "normalized_signal", "condition"],
+    }),
     reward: {
       total: E2E_REWARD_USDC,
       distribution: "top_3" as const,
     },
     deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     evaluation: {
-      submission_format: "CSV file",
       success_definition: "Row-by-row CSV match against expected output",
       tolerance: "0.001",
     },

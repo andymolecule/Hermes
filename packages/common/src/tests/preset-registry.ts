@@ -148,18 +148,22 @@ const ghcrFetch = async () => {
   });
 };
 
-await resolveOfficialImageToDigest(OFFICIAL_IMAGES.repro, {
+await resolveOfficialImageToDigest(OFFICIAL_IMAGES.docking, {
   env: { AGORA_GHCR_TOKEN: "secret-token" },
   fetchImpl: ghcrFetch,
 });
-await resolveOfficialImageToDigest(OFFICIAL_IMAGES.repro, {
+await resolveOfficialImageToDigest(OFFICIAL_IMAGES.docking, {
+  env: { AGORA_GHCR_TOKEN: "secret-token" },
+  fetchImpl: ghcrFetch,
+});
+await resolveOfficialImageToDigest(OFFICIAL_IMAGES.docking, {
   env: {},
   fetchImpl: ghcrFetch,
 });
 assert.equal(
   ghcrFetchCount,
-  2,
-  "authenticated and anonymous GHCR resolution should not share the same cache entry",
+  3,
+  "authenticated and anonymous GHCR resolution should not share the same cache entry, and anonymous resolution may perform its own GHCR token exchange",
 );
 
 console.log("preset registry validation passed");

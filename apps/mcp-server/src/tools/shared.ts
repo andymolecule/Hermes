@@ -32,7 +32,7 @@ import {
 import { pinJSON, unpinCid } from "@agora/ipfs";
 import {
   executeScoringPipeline,
-  resolveScoringEnvironmentFromSpecCid,
+  resolveScoringSpecRuntimeConfigFromSpecCid,
   resolveSubmissionSource,
   wadToScore,
 } from "@agora/scorer";
@@ -444,17 +444,24 @@ export async function scoreLocal(input: {
     if (!evalPlan.evaluationBundleCid) {
       throw new Error("Challenge missing evaluation bundle CID.");
     }
+    const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
+      (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+    );
 
     const run = await executeScoringPipeline({
       image: evalPlan.image,
       evaluationBundle: { cid: evalPlan.evaluationBundleCid },
       submission: { localPath: input.filePath },
-      env: await resolveScoringEnvironmentFromSpecCid(
-        (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-      ),
+      submissionContract: scoringSpecConfig.submissionContract,
+      env: scoringSpecConfig.env,
     });
 
     try {
+      if (!run.result.ok) {
+        throw new Error(
+          run.result.error ?? "Scorer rejected submission as invalid.",
+        );
+      }
       return {
         score: run.result.score,
         details: run.result.details,
@@ -484,6 +491,9 @@ export async function verifySubmission(input: {
       throw new Error("Submission missing result_cid.");
     if (submission.on_chain_sub_id == null)
       throw new Error("Submission missing on_chain_sub_id.");
+    const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
+      (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+    );
 
     const run = await executeScoringPipeline({
       image: proof.container_image_hash,
@@ -495,11 +505,15 @@ export async function verifySubmission(input: {
         solverAddress: submission.solver_address,
         privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(loadConfig()),
       }),
-      env: await resolveScoringEnvironmentFromSpecCid(
-        (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-      ),
+      submissionContract: scoringSpecConfig.submissionContract,
+      env: scoringSpecConfig.env,
     });
     try {
+      if (!run.result.ok) {
+        throw new Error(
+          run.result.error ?? "Verification scorer rejected submission.",
+        );
+      }
       const onChain = await getOnChainSubmission(
         challenge.contract_address as `0x${string}`,
         BigInt(submission.on_chain_sub_id),
