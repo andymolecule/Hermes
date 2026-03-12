@@ -2,6 +2,7 @@ import { getChallengeLifecycleState, getPublicClient } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_CID_MISSING_ERROR,
+  isTerminalScoreJobError,
 } from "@agora/common";
 import {
   completeJob,
@@ -173,12 +174,13 @@ export async function processJob(
           challengeId: challenge.id,
         },
       );
-      await resolvedDeps.failJob(
+      await resolvedDeps.markScoreJobSkipped(
         db,
-        job.id,
+        {
+          submission_id: submission.id,
+          challenge_id: challenge.id,
+        },
         SUBMISSION_RESULT_CID_MISSING_ERROR,
-        job.max_attempts,
-        job.max_attempts,
       );
       return;
     }
@@ -213,12 +215,13 @@ export async function processJob(
         challengeId: challenge.id,
         error: scoringOutcome.reason,
       });
-      await resolvedDeps.failJob(
+      await resolvedDeps.markScoreJobSkipped(
         db,
-        job.id,
+        {
+          submission_id: submission.id,
+          challenge_id: challenge.id,
+        },
         `invalid_submission: ${scoringOutcome.reason}`,
-        job.max_attempts,
-        job.max_attempts,
       );
       return;
     }
@@ -296,6 +299,22 @@ export async function processJob(
         job.attempts,
         `scorer_infrastructure: ${message}`,
         getWorkerInfraRetryDelayMs(),
+      );
+      return;
+    }
+    if (isTerminalScoreJobError(message)) {
+      log("warn", "Skipping terminal score job error", {
+        jobId: job.id,
+        submissionId: job.submission_id,
+        error: message,
+      });
+      await resolvedDeps.markScoreJobSkipped(
+        db,
+        {
+          submission_id: job.submission_id,
+          challenge_id: job.challenge_id,
+        },
+        message,
       );
       return;
     }

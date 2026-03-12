@@ -6,7 +6,9 @@ import {
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   getEffectiveChallengeStatus,
+  isMetadataBlockedScoreJobError,
   isProductionRuntime,
+  isTerminalScoreJobError,
   loadConfig,
   loadIpfsConfig,
   readApiServerRuntimeConfig,
@@ -40,6 +42,30 @@ assert.deepEqual(
 assert.ok(
   SCORE_JOB_STATUSES.includes(SCORE_JOB_STATUS.skipped),
   "score job statuses should include skipped",
+);
+assert.equal(
+  isMetadataBlockedScoreJobError("missing_result_cid_onchain_submission"),
+  true,
+  "metadata-blocked score job detection should match the canonical error",
+);
+assert.equal(
+  isTerminalScoreJobError(
+    "invalid_submission: Submission missing required columns: sample_id",
+  ),
+  true,
+  "invalid submissions should count as terminal score job errors",
+);
+assert.equal(
+  isTerminalScoreJobError(
+    "Invalid scoring preset configuration: Container mismatch for preset csv_comparison_v1",
+  ),
+  true,
+  "invalid challenge scoring configuration should count as terminal",
+);
+assert.equal(
+  isTerminalScoreJobError("scorer_infrastructure: docker pull timeout"),
+  false,
+  "infrastructure problems should remain retryable rather than terminal",
 );
 
 assert.equal(

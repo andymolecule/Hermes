@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   CHALLENGE_STATUS,
+  SCORE_JOB_STATUS,
   SUBMISSION_RESULT_CID_MISSING_ERROR,
   SUBMISSION_RESULT_FORMAT,
 } from "@agora/common";
@@ -246,6 +247,14 @@ async function testReconcileSubmissionIntentQueuesJobAfterMetadataAttach() {
               eq() {
                 return this;
               },
+              in(field: string, values: string[]) {
+                assert.equal(field, "status");
+                assert.deepEqual(values, [
+                  SCORE_JOB_STATUS.failed,
+                  SCORE_JOB_STATUS.skipped,
+                ]);
+                return this;
+              },
               like(field: string, value: string) {
                 assert.equal(field, "last_error");
                 assert.equal(value, `${SUBMISSION_RESULT_CID_MISSING_ERROR}%`);
@@ -311,6 +320,233 @@ async function testReconcileSubmissionIntentQueuesJobAfterMetadataAttach() {
   assert.equal(state.createdJobPayload?.submission_id, "sub-1");
 }
 
+async function testReconcileSubmissionIntentRevivesSkippedMetadataBlockedJob() {
+  const db = {
+    from(table: string) {
+      if (table === "submission_intents") {
+        return {
+          select() {
+            return {
+              eq() {
+                return this;
+              },
+              is() {
+                return this;
+              },
+              gt() {
+                return this;
+              },
+              order() {
+                return this;
+              },
+              limit() {
+                return this;
+              },
+              async maybeSingle() {
+                return {
+                  data: {
+                    id: "intent-1",
+                    challenge_id: "challenge-1",
+                    solver_address: "0xsolver",
+                    result_hash: "0xhash",
+                    result_cid: "ipfs://bafy-test",
+                    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                    matched_submission_id: null,
+                    matched_at: null,
+                    expires_at: "2026-03-11T00:00:00.000Z",
+                    created_at: "2026-03-10T00:00:00.000Z",
+                  },
+                  error: null,
+                };
+              },
+            };
+          },
+          update() {
+            return {
+              eq() {
+                return this;
+              },
+              is() {
+                return this;
+              },
+              select() {
+                return {
+                  async maybeSingle() {
+                    return {
+                      data: {
+                        id: "intent-1",
+                        challenge_id: "challenge-1",
+                        solver_address: "0xsolver",
+                        result_hash: "0xhash",
+                        result_cid: "ipfs://bafy-test",
+                        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                        matched_submission_id: "sub-1",
+                        matched_at: "2026-03-10T00:00:00.000Z",
+                        expires_at: "2026-03-11T00:00:00.000Z",
+                        created_at: "2026-03-10T00:00:00.000Z",
+                      },
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "submissions") {
+        return {
+          select(
+            _selection: string,
+            options?: { count?: string; head?: boolean },
+          ) {
+            if (options?.head) {
+              return {
+                eq() {
+                  return this;
+                },
+                async lte() {
+                  return { count: 1, error: null };
+                },
+              };
+            }
+
+            return {
+              eq() {
+                return this;
+              },
+              is() {
+                return this;
+              },
+              order() {
+                return this;
+              },
+              limit() {
+                return this;
+              },
+              async maybeSingle() {
+                return {
+                  data: {
+                    id: "sub-1",
+                    challenge_id: "challenge-1",
+                    on_chain_sub_id: 1,
+                    solver_address: "0xsolver",
+                    result_hash: "0xhash",
+                    result_cid: null,
+                    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                    scored: false,
+                  },
+                  error: null,
+                };
+              },
+            };
+          },
+          update() {
+            return {
+              eq() {
+                return this;
+              },
+              is() {
+                return this;
+              },
+              select() {
+                return {
+                  async maybeSingle() {
+                    return {
+                      data: {
+                        id: "sub-1",
+                        challenge_id: "challenge-1",
+                        on_chain_sub_id: 1,
+                        solver_address: "0xsolver",
+                        result_hash: "0xhash",
+                        result_cid: "ipfs://bafy-test",
+                        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                        scored: false,
+                      },
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+
+      if (table === "score_jobs") {
+        return {
+          update() {
+            return {
+              eq(field: string, value: string) {
+                assert.equal(field, "submission_id");
+                assert.equal(value, "sub-1");
+                return this;
+              },
+              in(field: string, values: string[]) {
+                assert.equal(field, "status");
+                assert.deepEqual(values, [
+                  SCORE_JOB_STATUS.failed,
+                  SCORE_JOB_STATUS.skipped,
+                ]);
+                return this;
+              },
+              like(field: string, value: string) {
+                assert.equal(field, "last_error");
+                assert.equal(value, `${SUBMISSION_RESULT_CID_MISSING_ERROR}%`);
+                return this;
+              },
+              select(selection: string) {
+                assert.equal(selection, "*");
+                return {
+                  async maybeSingle() {
+                    return {
+                      data: {
+                        id: "job-1",
+                        submission_id: "sub-1",
+                        challenge_id: "challenge-1",
+                        status: SCORE_JOB_STATUS.queued,
+                      },
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+          select() {
+            return {
+              eq() {
+                return this;
+              },
+              async maybeSingle() {
+                return { data: null, error: null };
+              },
+            };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    },
+  } as never;
+
+  const result = await reconcileSubmissionIntentMatch(db, {
+    challenge: {
+      id: "challenge-1",
+      status: CHALLENGE_STATUS.open,
+      max_submissions_total: 5,
+      max_submissions_per_solver: 2,
+    },
+    solverAddress: "0xsolver",
+    resultHash: "0xhash",
+  });
+
+  assert.equal(result.matched, true);
+  assert.equal(result.scoreJobAction, "revived");
+}
+
 await testCreateSubmissionIntentNormalizesSolverAddress();
 await testReconcileSubmissionIntentQueuesJobAfterMetadataAttach();
+await testReconcileSubmissionIntentRevivesSkippedMetadataBlockedJob();
 console.log("submission intent tests passed");

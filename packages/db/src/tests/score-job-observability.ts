@@ -3,6 +3,7 @@ import {
   completeJob,
   failJob,
   getOldestRunningStartedAt,
+  markScoreJobSkipped,
   requeueJobWithoutAttemptPenalty,
   runningOverThresholdCount,
 } from "../queries/score-jobs.js";
@@ -83,6 +84,44 @@ async function testRequeueClearsRunStartedAt() {
   await requeueJobWithoutAttemptPenalty(db, "job-3", 2, "pending");
   assert.equal(payload?.run_started_at, null);
   assert.equal(typeof payload?.next_attempt_at, "string");
+}
+
+async function testMarkScoreJobSkippedKeepsNextAttemptAtNonNull() {
+  let payload: Record<string, unknown> | undefined;
+
+  const db = {
+    from(table: string) {
+      assert.equal(table, "score_jobs");
+      return {
+        upsert(nextPayload: Record<string, unknown>) {
+          payload = nextPayload;
+          return {
+            select(selection: string) {
+              assert.equal(selection, "*");
+              return {
+                async maybeSingle() {
+                  return { data: { id: "job-4", ...nextPayload }, error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  await markScoreJobSkipped(
+    db,
+    {
+      submission_id: "submission-4",
+      challenge_id: "challenge-4",
+    },
+    "invalid_submission: bad csv",
+  );
+
+  assert.equal(payload?.status, "skipped");
+  assert.equal(typeof payload?.next_attempt_at, "string");
+  assert.equal(payload?.run_started_at, null);
 }
 
 async function testRunningOverThresholdCountUsesRunStartedAt() {
@@ -169,6 +208,7 @@ async function testGetOldestRunningStartedAtReturnsTimestamp() {
 await testCompleteJobClearsRunStartedAt();
 await testFailJobClearsRunStartedAt();
 await testRequeueClearsRunStartedAt();
+await testMarkScoreJobSkippedKeepsNextAttemptAtNonNull();
 await testRunningOverThresholdCountUsesRunStartedAt();
 await testGetOldestRunningStartedAtReturnsTimestamp();
 console.log("score job observability tests passed");

@@ -1,3 +1,5 @@
+import { SUBMISSION_RESULT_CID_MISSING_ERROR } from "./submission.js";
+
 export const SCORE_JOB_STATUS = {
   queued: "queued",
   running: "running",
@@ -19,6 +21,38 @@ export const SCORE_JOB_STATUSES: readonly ScoreJobStatus[] = [
 
 const SCORE_JOB_STATUS_SET = new Set<string>(SCORE_JOB_STATUSES);
 
+const TERMINAL_SCORE_JOB_ERROR_PATTERNS = [
+  /^invalid_submission:/i,
+  /^Invalid scoring preset configuration:/i,
+  /^Unknown runner_preset_id on challenge:/i,
+  /submission missing required columns/i,
+] as const;
+
 export function isScoreJobStatus(value: unknown): value is ScoreJobStatus {
   return typeof value === "string" && SCORE_JOB_STATUS_SET.has(value);
+}
+
+export function isMetadataBlockedScoreJobError(
+  value: string | null | undefined,
+): boolean {
+  return (
+    typeof value === "string" &&
+    value.startsWith(SUBMISSION_RESULT_CID_MISSING_ERROR)
+  );
+}
+
+export function isTerminalScoreJobError(
+  value: string | null | undefined,
+): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  if (isMetadataBlockedScoreJobError(value)) {
+    return true;
+  }
+
+  return TERMINAL_SCORE_JOB_ERROR_PATTERNS.some((pattern) =>
+    pattern.test(value),
+  );
 }

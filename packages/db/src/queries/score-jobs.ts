@@ -128,7 +128,7 @@ export async function markScoreJobSkipped(
         status: SCORE_JOB_STATUS.skipped,
         attempts: 0,
         max_attempts: 0,
-        next_attempt_at: null,
+        next_attempt_at: nowIso,
         last_error: reason,
         locked_at: null,
         run_started_at: null,
@@ -183,7 +183,7 @@ export async function reviveMetadataBlockedScoreJob(
       updated_at: nowIso,
     })
     .eq("submission_id", submissionId)
-    .eq("status", SCORE_JOB_STATUS.failed)
+    .in("status", [SCORE_JOB_STATUS.failed, SCORE_JOB_STATUS.skipped])
     .like("last_error", `${SUBMISSION_RESULT_CID_MISSING_ERROR}%`)
     .select("*")
     .maybeSingle();

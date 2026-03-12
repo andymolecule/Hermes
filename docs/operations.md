@@ -493,9 +493,10 @@ agora reindex --from-block <block_number>
    - Docker daemon not running or unreachable -> restart Docker, then `pm2 restart agora-worker`.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker with the same `AGORA_RUNTIME_VERSION`.
+   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then redeploy API + worker from the same git revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
+   - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
 4. If the worker process itself crashed: `pm2 restart agora-worker`. PM2 uses exponential backoff (3s base).
 
 ### Oracle Key Issue
@@ -595,7 +596,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
-- `AGORA_RUNTIME_VERSION` matches the deployed worker runtime version.
+- `AGORA_RUNTIME_VERSION` is optional; hosted deploys should auto-detect the git SHA and still match the deployed worker runtime version.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
@@ -627,6 +628,7 @@ This section covers non-code work for deployment across hosted systems.
 #### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
+- `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web each match the latest relevant git revision for their own deploy surface, and that the worker is healthy on the active API runtime. Use `--expected` only when you intentionally want to force one exact revision across both services.

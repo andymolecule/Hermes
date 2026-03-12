@@ -10,7 +10,9 @@ import {
 
 export function buildRetryFailedJobsCommand() {
   return new Command("retry-failed-jobs")
-    .description("Retry failed scoring jobs (dry-run by default)")
+    .description(
+      "Retry failed scoring jobs after an infra incident (dry-run by default)",
+    )
     .option("--yes", "Actually execute the retry (default is dry-run)", false)
     .option("--challenge <id>", "Scope to a specific challenge ID")
     .option("--format <format>", "table or json", "table")

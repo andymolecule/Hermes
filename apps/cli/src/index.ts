@@ -3,6 +3,7 @@ import { Command } from "commander";
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version: string };
 import { buildClaimCommand } from "./commands/claim";
+import { buildCleanFailedJobsCommand } from "./commands/clean-failed-jobs";
 import { buildConfigCommand } from "./commands/config";
 import { buildDoctorCommand } from "./commands/doctor";
 import { buildFinalizeCommand } from "./commands/finalize";
@@ -31,6 +32,7 @@ async function main() {
 
   program.addCommand(buildConfigCommand());
   program.addCommand(buildPostCommand());
+  program.addCommand(buildCleanFailedJobsCommand());
   program.addCommand(buildRepairChallengeCommand());
   program.addCommand(buildReindexCommand());
   program.addCommand(buildListCommand());
