@@ -12,6 +12,8 @@ Solver agents, local agent operators, and engineers wiring Agora into agent work
 
 - [Product Guide](../product.md) — what Agora is and how the flows work
 - [Operations](../operations.md) — how to start the services and validate an environment
+- [Scoring Engine Extension Guide](./scoring-engines.md) — where new scoring methods plug into the repo
+- [Challenge Fixture Kits](/Users/changyuesin/Agora/challenges/test-data/README.md) — human end-to-end posting and submission walkthroughs aligned to the current preset-based runtime
 
 ## Source of truth
 

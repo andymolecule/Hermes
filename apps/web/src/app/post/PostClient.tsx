@@ -3,16 +3,18 @@
 import {
   ACTIVE_CONTRACT_VERSION,
   CHALLENGE_LIMITS,
+  type ChallengeSpec,
+  type ChallengeType,
   PRESET_REGISTRY,
   PROTOCOL_FEE_PERCENT,
   SUBMISSION_LIMITS,
+  buildChallengeSpecDraft,
   computeSpecHash,
-  createCsvTableSubmissionContract,
-  createOpaqueFileSubmissionContract,
-  defaultPresetIdForChallengeType,
+  getChallengeTypeTemplate,
   getPinSpecAuthorizationTypedData,
   isTestnetChain,
   parseCsvHeaders,
+  resolveChallengePresetId,
   validateChallengeScoreability,
   validateChallengeSpec,
   validatePresetIntegrity,
@@ -257,13 +259,7 @@ async function loadPostingFundingState({
   };
 }
 
-type PostChallengeType =
-  | "prediction"
-  | "optimization"
-  | "reproducibility"
-  | "docking"
-  | "red_team"
-  | "custom";
+type PostChallengeType = ChallengeType;
 
 // ─── Icon mapping for presets ───────────────────────
 const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
@@ -310,97 +306,15 @@ function getMetricDisplaySummary(metric: string) {
   return option.hint ? `${option.label} (${option.hint})` : option.label;
 }
 
-function requirePresetForType(type: string) {
-  const id = defaultPresetIdForChallengeType(
-    type as Parameters<typeof defaultPresetIdForChallengeType>[0],
-  );
-  if (!id || id === "custom") return undefined;
-  const preset = PRESET_REGISTRY[id];
-  if (!preset)
-    throw new Error(`Required preset "${id}" missing from PRESET_REGISTRY.`);
-  return preset;
-}
-
-function mustRequirePresetForType(type: string) {
-  const preset = requirePresetForType(type);
-  if (!preset) {
-    throw new Error(
-      `Required preset for challenge type "${type}" is missing from PRESET_REGISTRY.`,
-    );
-  }
-  return preset;
-}
-
-const reproducibilityPreset = mustRequirePresetForType("reproducibility");
-const predictionPreset = mustRequirePresetForType("prediction");
-const dockingPreset = mustRequirePresetForType("docking");
-
 const REGISTRY_PRESETS = Object.values(PRESET_REGISTRY);
 
 const TYPE_CONFIG = {
-  prediction: {
-    label: "Prediction",
-    description:
-      "Solvers predict held-out outcomes from a labeled training dataset",
-    defaultDomain: "omics",
-    metricHint: "r2",
-    container: predictionPreset.container,
-    defaultMinimumScore: predictionPreset.defaultMinimumScore,
-    presetId: predictionPreset.id,
-    scoringTemplate: predictionPreset.scoringDescription,
-  },
-  optimization: {
-    label: "Optimization",
-    description: "Solvers submit parameters; your scorer runs the simulation",
-    defaultDomain: "drug_discovery",
-    metricHint: "custom",
-    container: "",
-    defaultMinimumScore: 0,
-    presetId: "custom",
-    scoringTemplate: "",
-  },
-  reproducibility: {
-    label: "Reproducibility",
-    description:
-      "Solvers reproduce a posted reference artifact from shared source data",
-    defaultDomain: "other",
-    metricHint: "custom",
-    container: reproducibilityPreset.container,
-    defaultMinimumScore: reproducibilityPreset.defaultMinimumScore,
-    presetId: reproducibilityPreset.id,
-    scoringTemplate: reproducibilityPreset.scoringDescription,
-  },
-  docking: {
-    label: "Docking",
-    description:
-      "Solvers rank molecules by docking score against a protein target",
-    defaultDomain: "drug_discovery",
-    metricHint: "spearman",
-    container: dockingPreset.container,
-    defaultMinimumScore: dockingPreset.defaultMinimumScore,
-    presetId: dockingPreset.id,
-    scoringTemplate: dockingPreset.scoringDescription,
-  },
-  red_team: {
-    label: "Red Team",
-    description: "Solvers find adversarial inputs that break a model or claim",
-    defaultDomain: "other",
-    metricHint: "custom",
-    container: "",
-    defaultMinimumScore: 0,
-    presetId: "custom",
-    scoringTemplate: "",
-  },
-  custom: {
-    label: "Custom",
-    description: "Bring your own scorer and rules",
-    defaultDomain: "other",
-    metricHint: "custom",
-    container: "",
-    defaultMinimumScore: 0,
-    presetId: "custom",
-    scoringTemplate: "",
-  },
+  prediction: getChallengeTypeTemplate("prediction"),
+  optimization: getChallengeTypeTemplate("optimization"),
+  reproducibility: getChallengeTypeTemplate("reproducibility"),
+  docking: getChallengeTypeTemplate("docking"),
+  red_team: getChallengeTypeTemplate("red_team"),
+  custom: getChallengeTypeTemplate("custom"),
 } as const;
 
 const AVAILABLE_TYPE_OPTIONS: PostChallengeType[] = [
@@ -800,8 +714,8 @@ const initialState: FormState = {
   train: "",
   test: "",
   hiddenLabels: "",
-  metric: defaultPreset.metricHint,
-  container: defaultPreset.container,
+  metric: defaultPreset.defaultMetric,
+  container: defaultPreset.defaultContainer,
   reward: "10",
   distribution: "winner_take_all",
   deadlineDays: "7",
@@ -811,7 +725,7 @@ const initialState: FormState = {
   successDefinition: "",
   idColumn: "id",
   labelColumn: "prediction",
-  reproPresetId: "csv_comparison_v1",
+  reproPresetId: TYPE_CONFIG.reproducibility.defaultPresetId,
   tolerance: "0.001",
   tags: [],
   detectedColumns: [],
@@ -830,68 +744,60 @@ function buildSpec(state: FormState) {
         }
       : undefined;
 
-  // For reproducibility, use the selected sub-preset; otherwise use TYPE_CONFIG default
-  const presetId =
-    state.type === "reproducibility"
-      ? state.reproPresetId
-      : TYPE_CONFIG[state.type].presetId;
+  const presetId = resolveChallengePresetId({
+    type: state.type,
+    presetId:
+      state.type === "reproducibility"
+        ? state.reproPresetId
+        : TYPE_CONFIG[state.type].defaultPresetId,
+  });
 
   const minimumScore = state.minimumScore.trim();
   const disputeWindow = state.disputeWindow.trim();
-  const referenceLink = state.referenceLink.trim();
-  const submissionContract = (() => {
-    if (state.type === "prediction") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: [state.idColumn, state.labelColumn].filter(Boolean),
-        idColumn: state.idColumn || undefined,
-        valueColumn: state.labelColumn || undefined,
-      });
-    }
 
-    if (state.type === "reproducibility") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: state.detectedColumns,
-      });
-    }
-
-    if (state.type === "docking") {
-      return createCsvTableSubmissionContract({
-        requiredColumns: ["ligand_id", "docking_score"],
-        idColumn: "ligand_id",
-        valueColumn: "docking_score",
-      });
-    }
-
-    return createOpaqueFileSubmissionContract();
-  })();
-
-  return {
-    schema_version: 2 as const,
+  return buildChallengeSpecDraft({
     id: `web-${Date.now()}`,
-    preset_id: presetId,
     title: state.title,
-    domain: state.domain,
+    domain: state.domain as ChallengeSpec["domain"],
     type: state.type,
     description: state.description,
-    ...(referenceLink ? { reference_url: referenceLink } : {}),
+    referenceUrl: state.referenceLink,
     dataset,
-    scoring: { container: state.container, metric: state.metric },
-    submission_contract: submissionContract,
+    scoring: {
+      container: state.container,
+      metric: state.metric as ChallengeSpec["scoring"]["metric"],
+    },
     reward: {
       total: Number(state.reward),
       distribution: state.distribution,
     },
     deadline: computeDeadlineIso(state.deadlineDays),
-    ...(minimumScore ? { minimum_score: Number(minimumScore) } : {}),
-    ...(disputeWindow ? { dispute_window_hours: Number(disputeWindow) } : {}),
+    submission:
+      state.type === "prediction"
+        ? {
+            type: "prediction",
+            idColumn: state.idColumn,
+            valueColumn: state.labelColumn,
+          }
+        : state.type === "reproducibility"
+          ? {
+              type: "reproducibility",
+              requiredColumns: state.detectedColumns,
+            }
+          : state.type === "docking"
+            ? { type: "docking" }
+            : { type: state.type },
+    minimumScore: minimumScore ? Number(minimumScore) : undefined,
+    disputeWindowHours: disputeWindow ? Number(disputeWindow) : undefined,
     evaluation: {
-      criteria: state.evaluationCriteria || undefined,
-      success_definition: state.successDefinition || undefined,
-      ...(state.tolerance ? { tolerance: state.tolerance } : {}),
+      criteria: state.evaluationCriteria,
+      success_definition: state.successDefinition,
+      tolerance: state.tolerance,
     },
-    ...(state.tags.length > 0 ? { tags: state.tags } : {}),
-    lab_tba: "0x0000000000000000000000000000000000000000",
-  };
+    tags: state.tags,
+    labTba: ZERO_ADDRESS,
+    presetId,
+  });
 }
 
 // ─── Deadline Helpers ────────────────────────────────
@@ -1344,8 +1250,8 @@ export function PostClient() {
     setState((s) => ({
       ...s,
       type: t,
-      container: preset.container,
-      metric: preset.metricHint,
+      container: preset.defaultContainer,
+      metric: preset.defaultMetric,
       domain: preset.defaultDomain,
       minimumScore: String(preset.defaultMinimumScore),
       evaluationCriteria: preset.scoringTemplate || s.evaluationCriteria,
@@ -1358,7 +1264,7 @@ export function PostClient() {
       // Reset repro sub-preset to default when switching to reproducibility
       ...(t === "reproducibility"
         ? {
-            reproPresetId: "csv_comparison_v1",
+            reproPresetId: TYPE_CONFIG.reproducibility.defaultPresetId,
           }
         : {}),
       // Prediction: default to CSV submission with id + prediction columns
@@ -1433,7 +1339,7 @@ export function PostClient() {
     const presetId =
       state.type === "reproducibility"
         ? state.reproPresetId
-        : TYPE_CONFIG[state.type].presetId;
+        : TYPE_CONFIG[state.type].defaultPresetId;
     const presetIntegrityError = validatePresetIntegrity(
       presetId,
       state.container,

@@ -4,6 +4,11 @@ Generic posting fixtures for the Agora custom category.
 
 Use this folder when you want to test the broadest bring-your-own-scorer path in the web UI.
 
+This folder is aligned to the new model too:
+- no official preset/runtime adapter is involved
+- the poster defines the custom scorer contract and artifact shape
+- the current example uses a JSON payload carried via `opaque_file`
+
 ## Files
 
 | File | Use | Purpose |

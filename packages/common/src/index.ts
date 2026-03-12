@@ -2,6 +2,7 @@ export * from "./types/challenge.js";
 export * from "./types/score-job.js";
 export * from "./types/submission.js";
 export * from "./types/scoring.js";
+export * from "./challenges/index.js";
 export * from "./schemas/challenge-spec.js";
 export * from "./schemas/agent-api.js";
 export * from "./schemas/submission-contract.js";

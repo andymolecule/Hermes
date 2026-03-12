@@ -24,6 +24,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - The indexer polls chain events every 30s and writes idempotent projections to Supabase
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
+- Worker scoring reads cached `submission_contract_json` and `scoring_env_json` from the DB first; IPFS spec fetch is legacy fallback only
 
 ---
 
@@ -53,7 +54,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Leaderboard display | DB (`challenge_payouts` from finalized) | Not score heuristics |
 | UI status labels | API domain types derived from chain | — |
 | Verification gate | Chain truth | Fairness-sensitive routes re-check |
-| Challenge metadata | IPFS (immutable) + DB (searchable cache) | — |
+| Challenge metadata | IPFS (immutable) + DB (searchable cache) | DB also caches resolved scoring config for worker hot-path reads |
 | Submission fetch metadata (`result_cid`, `result_format`) | DB reconciliation (`submission_intents` + `submissions`) | Chain stores only `result_hash` |
 | Submission content | IPFS | Hash anchored on-chain |
 
@@ -88,6 +89,8 @@ erDiagram
         string runner_preset_id
         string eval_bundle_cid
         string[] expected_columns
+        jsonb submission_contract_json
+        jsonb scoring_env_json
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
@@ -228,7 +231,7 @@ erDiagram
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `eval_image` (Docker scorer image reference). Additional columns: `contract_version` (on-chain contract version for generation tracking), `spec_schema_version` (YAML schema version), `dataset_train_cid` and `dataset_test_cid` (IPFS CIDs for training/test data), `expected_columns` (denormalized cache derived from `submission_contract.columns.required` for CSV-table challenges), `distribution_type` (payout distribution: `winner_take_all`, `top_3`, or `proportional`), `runner_preset_id` (scorer runner preset), `eval_bundle_cid` (IPFS CID for evaluation bundle).
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `eval_image` (Docker scorer image reference). Additional columns: `contract_version` (on-chain contract version for generation tracking), `spec_schema_version` (YAML schema version), `dataset_train_cid` and `dataset_test_cid` (IPFS CIDs for training/test data), `expected_columns` (denormalized cache derived from `submission_contract.columns.required` for CSV-table challenges), `distribution_type` (payout distribution: `winner_take_all`, `top_3`, or `proportional`), `runner_preset_id` (scorer runner preset), `eval_bundle_cid` (IPFS CID for evaluation bundle), `submission_contract_json` (cached artifact contract for scoring), and `scoring_env_json` (cached resolved scoring env such as tolerance).
 
 - **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `result_cid` (IPFS pointer to submission file once metadata is reconciled), `score` (WAD-scaled score string), `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 

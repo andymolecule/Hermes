@@ -4,6 +4,7 @@ import { getPublicClient, postScore } from "@agora/chain";
 import {
   type ChallengeEvalRow,
   SUBMISSION_RESULT_FORMAT,
+  type SubmissionContractOutput,
   loadConfig,
   resolveEvalSpec,
   resolveSubmissionOpenPrivateKeys,
@@ -19,8 +20,9 @@ import { pinFile } from "@agora/ipfs";
 import {
   buildProofBundle,
   executeScoringPipeline,
-  resolveScoringSpecRuntimeConfigFromSpecCid,
+  resolveScoringRuntimeConfig,
   resolveSubmissionSource,
+  scoreToWad,
 } from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
@@ -30,7 +32,6 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import { scoreToWad } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 import { ensurePrivateKey } from "../lib/wallet";
 
@@ -47,6 +48,8 @@ type ChallengeRecord = ChallengeEvalRow & {
   id: string;
   contract_address: string;
   spec_cid?: string | null;
+  submission_contract_json?: SubmissionContractOutput | null;
+  scoring_env_json?: Record<string, string> | null;
 };
 
 export function buildOracleScoreCommand() {
@@ -101,8 +104,11 @@ export function buildOracleScoreCommand() {
 
         const runSpinner = createSpinner("Running scorer container...");
         const runtimeConfig = loadConfig();
-        const scoringSpecConfig =
-          await resolveScoringSpecRuntimeConfigFromSpecCid(challenge.spec_cid);
+        const scoringSpecConfig = await resolveScoringRuntimeConfig({
+          env: challenge.scoring_env_json,
+          submissionContract: challenge.submission_contract_json,
+          specCid: challenge.spec_cid,
+        });
         const submissionSource = await resolveSubmissionSource({
           resultCid: submission.result_cid,
           resultFormat: submission.result_format,
@@ -113,6 +119,7 @@ export function buildOracleScoreCommand() {
         const run = await executeScoringPipeline({
           image: evalPlan.image,
           evaluationBundle: { cid: evalPlan.evaluationBundleCid },
+          mount: evalPlan.mount,
           submission: submissionSource,
           submissionContract: scoringSpecConfig.submissionContract,
           env: scoringSpecConfig.env,

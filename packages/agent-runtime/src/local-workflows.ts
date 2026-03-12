@@ -13,6 +13,7 @@ import {
 import {
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
+  type SubmissionContractOutput,
   importSubmissionSealPublicKey,
   loadConfig,
   resolveEvalSpec,
@@ -30,7 +31,7 @@ import {
 import { getJSON, pinJSON, unpinCid } from "@agora/ipfs";
 import {
   executeScoringPipeline,
-  resolveScoringSpecRuntimeConfigFromSpecCid,
+  resolveScoringRuntimeConfig,
   resolveSubmissionSource,
   wadToScore,
 } from "@agora/scorer";
@@ -249,13 +250,21 @@ export async function scoreLocal(input: {
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
       );
     }
-    const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
-      (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-    );
+    const scoringSpecConfig = await resolveScoringRuntimeConfig({
+      env: (challenge as { scoring_env_json?: Record<string, string> | null })
+        .scoring_env_json,
+      submissionContract: (
+        challenge as {
+          submission_contract_json?: SubmissionContractOutput | null;
+        }
+      ).submission_contract_json,
+      specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+    });
 
     const run = await executeScoringPipeline({
       image: evalPlan.image,
       evaluationBundle: { cid: evalPlan.evaluationBundleCid },
+      mount: evalPlan.mount,
       submission: { localPath: input.filePath },
       submissionContract: scoringSpecConfig.submissionContract,
       env: scoringSpecConfig.env,
@@ -367,12 +376,20 @@ export async function verifySubmission(input: {
       );
     }
 
-    const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
-      (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-    );
+    const scoringSpecConfig = await resolveScoringRuntimeConfig({
+      env: (challenge as { scoring_env_json?: Record<string, string> | null })
+        .scoring_env_json,
+      submissionContract: (
+        challenge as {
+          submission_contract_json?: SubmissionContractOutput | null;
+        }
+      ).submission_contract_json,
+      specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
+    });
     const run = await executeScoringPipeline({
       image: proofPayload.containerImageDigest ?? proof.container_image_hash,
       evaluationBundle: { cid: evalPlan.evaluationBundleCid },
+      mount: evalPlan.mount,
       submission: await resolveSubmissionSource({
         resultCid: submission.result_cid,
         resultFormat: submission.result_format,

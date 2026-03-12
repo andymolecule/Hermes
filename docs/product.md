@@ -26,6 +26,7 @@ This doc is authoritative for: product concepts, actor roles, user-facing workfl
 - 3 primary interfaces: API, CLI, Web dashboard
 - MCP remains optional as a local/interop adapter, not the canonical remote surface
 - 2 challenge types are turnkey from this repo today: reproducibility and prediction
+- Official scoring methods are configured as preset entries plus scorer images; a new official method should not require worker/indexer branching
 - Historical malformed specs are intentionally unsupported; Agora does not reconstruct old submission formats at read time
 
 > How Agora works, explained simply.
@@ -90,7 +91,7 @@ flowchart TB
 **What the poster provides:**
 - Title and description of the problem
 - Training + test datasets (CSV, SDF, PDB files)
-- Scoring container (Docker image)
+- Either an official preset or a custom scoring container (Docker image)
 - Reward amount (USDC)
 - Deadline
 - Distribution type (winner-take-all, top 3, or proportional)

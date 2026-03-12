@@ -9,6 +9,7 @@ import {
   findPresetIdsByContainer,
   inferPresetIdByContainer,
   resolveEvalSpec,
+  resolveScoringEnvironmentFromSpec,
   validateChallengeScoreability,
   validatePresetIntegrity,
 } from "@agora/common";
@@ -33,6 +34,8 @@ export interface ChallengeInsert {
   runner_preset_id: string;
   eval_bundle_cid?: string | null;
   expected_columns?: string[] | null;
+  submission_contract_json?: ChallengeSpecOutput["submission_contract"] | null;
+  scoring_env_json?: Record<string, string> | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
@@ -126,6 +129,7 @@ export async function buildChallengeInsert(
   const expectedColumns = deriveExpectedColumns(
     canonicalSpec.submission_contract,
   );
+  const scoringEnv = resolveScoringEnvironmentFromSpec(canonicalSpec);
 
   return {
     chain_id: input.chainId,
@@ -146,6 +150,8 @@ export async function buildChallengeInsert(
     runner_preset_id: runnerPresetId,
     eval_bundle_cid: resolvedEvalPlan.evaluationBundleCid ?? null,
     expected_columns: expectedColumns.length > 0 ? expectedColumns : null,
+    submission_contract_json: canonicalSpec.submission_contract,
+    scoring_env_json: scoringEnv ?? null,
     minimum_score:
       canonicalSpec.minimum_score ??
       defaultMinimumScoreForChallengeType(canonicalSpec.type) ??

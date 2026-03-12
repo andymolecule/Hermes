@@ -1,12 +1,15 @@
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
-export type ChallengeDomain =
-  | "longevity"
-  | "drug_discovery"
-  | "protein_design"
-  | "omics"
-  | "neuroscience"
-  | "other";
+export const CHALLENGE_DOMAINS = [
+  "longevity",
+  "drug_discovery",
+  "protein_design",
+  "omics",
+  "neuroscience",
+  "other",
+] as const;
+
+export type ChallengeDomain = (typeof CHALLENGE_DOMAINS)[number];
 
 export const CHALLENGE_TYPES = [
   "reproducibility",
@@ -74,7 +77,7 @@ export interface ChallengeReward {
 }
 
 export interface ChallengeEvalSpec {
-  engine_id: string;
+  engine_id?: string;
   engine_digest?: string;
   evaluation_bundle?: string;
 }

@@ -9,6 +9,7 @@ import { getPublicClient, postScore } from "@agora/chain";
 import {
   type ChallengeEvalRow,
   SUBMISSION_RESULT_FORMAT,
+  type SubmissionContractOutput,
   loadConfig,
   resolveEvalSpec,
   resolveSubmissionOpenPrivateKeys,
@@ -23,7 +24,7 @@ import {
 import { pinFile } from "@agora/ipfs";
 import { keccak256, toBytes } from "viem";
 import { executeScoringPipeline } from "./pipeline.js";
-import { resolveScoringSpecRuntimeConfigFromSpecCid } from "./pipeline.js";
+import { resolveScoringRuntimeConfig } from "./pipeline.js";
 import { buildProofBundle } from "./proof.js";
 import { resolveSubmissionSource } from "./sealed-submission.js";
 import { scoreToWad } from "./staging.js";
@@ -69,6 +70,8 @@ export async function oracleScore(
     id: string;
     contract_address: string;
     spec_cid?: string | null;
+    submission_contract_json?: SubmissionContractOutput | null;
+    scoring_env_json?: Record<string, string> | null;
   };
   const evalPlan = resolveEvalSpec(challenge);
   if (!evalPlan.evaluationBundleCid) {
@@ -79,9 +82,16 @@ export async function oracleScore(
 
   // 2. Run scorer container
   const config = loadConfig();
-  const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
-    challenge.spec_cid,
-  );
+  const scoringSpecConfig = await resolveScoringRuntimeConfig({
+    env: challenge.scoring_env_json,
+    submissionContract: challenge.submission_contract_json,
+    specCid: challenge.spec_cid,
+    onLegacyFallback: (specCid) => {
+      console.warn(
+        `Challenge ${challenge.id} is missing cached scoring config; falling back to IPFS spec fetch for ${specCid}.`,
+      );
+    },
+  });
   const submissionSource = await resolveSubmissionSource({
     resultCid: submission.result_cid,
     resultFormat: submission.result_format,
@@ -92,6 +102,7 @@ export async function oracleScore(
   const run = await executeScoringPipeline({
     image: evalPlan.image,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
+    mount: evalPlan.mount,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
     env: scoringSpecConfig.env,

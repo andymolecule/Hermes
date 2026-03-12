@@ -1,11 +1,10 @@
 /**
- * Scoring workspace and IPFS staging utilities.
- * Shared by the worker and CLI.
+ * Generic scoring workspace utilities.
+ * Mount-specific file staging now lives in the pipeline via preset mount config.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { downloadToPath } from "@agora/ipfs";
 
 const WAD_SCALE = 1_000_000_000_000_000_000n;
 
@@ -18,35 +17,6 @@ export async function createScoringWorkspace() {
     const inputDir = path.join(root, "input");
     await fs.mkdir(inputDir, { recursive: true });
     return { root, inputDir };
-}
-
-// ---------------------------------------------------------------------------
-// IPFS staging
-// ---------------------------------------------------------------------------
-
-export async function stageGroundTruth(inputDir: string, datasetCid: string) {
-    const destination = path.join(inputDir, "ground_truth.csv");
-    await downloadToPath(datasetCid, destination);
-    return destination;
-}
-
-export async function stageSubmissionFromCid(
-    inputDir: string,
-    resultCid: string,
-) {
-    const destination = path.join(inputDir, "submission.csv");
-    await downloadToPath(resultCid, destination);
-    return destination;
-}
-
-export async function stageSubmissionFile(
-    inputDir: string,
-    submissionPath: string,
-) {
-    const destination = path.join(inputDir, "submission.csv");
-    const content = await fs.readFile(submissionPath);
-    await fs.writeFile(destination, content);
-    return destination;
 }
 
 // ---------------------------------------------------------------------------

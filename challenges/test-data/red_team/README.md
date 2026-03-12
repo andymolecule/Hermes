@@ -4,6 +4,10 @@ Realistic posting fixtures for the Agora red-team category.
 
 This category currently relies on a poster-supplied custom scorer image. The folder is therefore aimed at human posting quality and solver-format clarity rather than built-in executable scoring.
 
+In the current refactored model, this is a custom-scorer path:
+- no official preset/runtime adapter is involved
+- the poster owns the scoring contract and file semantics
+
 ## Files
 
 | File | Use | Purpose |

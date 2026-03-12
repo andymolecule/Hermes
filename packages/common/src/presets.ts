@@ -1,9 +1,4 @@
-/**
- * Shared challenge-type presets — single source of truth.
- * Consumed by: web PostClient, CLI init, API validation.
- */
-
-import type { ChallengeType } from "./types/challenge.js";
+import type { SubmissionContractOutput } from "./schemas/submission-contract.js";
 
 // ---------------------------------------------------------------------------
 // Official images — match containers/ directory names exactly.
@@ -18,7 +13,7 @@ export const OFFICIAL_IMAGES = {
 } as const;
 
 // ===========================================================================
-// Preset Registry v2 — the formal preset-to-engine coupling layer
+// Preset Registry v2 — scoring runtime config
 // ===========================================================================
 
 export interface RunnerLimits {
@@ -27,6 +22,16 @@ export interface RunnerLimits {
   pids: number; // e.g. 64
   timeoutMs: number; // e.g. 300_000
 }
+
+export interface ScoringMountConfig {
+  evaluationBundleName?: string;
+  submissionFileName: string;
+}
+
+export const DEFAULT_SCORER_MOUNT: ScoringMountConfig = {
+  evaluationBundleName: "ground_truth.csv",
+  submissionFileName: "submission.csv",
+};
 
 export interface ScorerPresetV2 {
   /** Versioned ID — NEVER mutate, add _v2 instead */
@@ -47,6 +52,10 @@ export interface ScorerPresetV2 {
   runnerLimits: RunnerLimits;
   /** Recommended minimum score threshold */
   defaultMinimumScore: number;
+  /** Optional format requirement enforced by shared spec validation. */
+  expectedSubmissionKind?: SubmissionContractOutput["kind"];
+  /** Optional scorer input layout override. Defaults to DEFAULT_SCORER_MOUNT. */
+  mount?: ScoringMountConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +72,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
       "Evaluated deterministically by the Repro Scorer. Submissions are compared row-by-row against the reference CSV. Score = matched_rows / total_rows.",
     runnerLimits: { memory: "512m", cpus: "1", pids: 64, timeoutMs: 300_000 },
     defaultMinimumScore: 0,
+    expectedSubmissionKind: "csv_table",
   },
   regression_v1: {
     id: "regression_v1",
@@ -73,6 +83,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
       "Evaluated by the Regression Scorer engine using the selected metric against the reference dataset.",
     runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
     defaultMinimumScore: 0,
+    expectedSubmissionKind: "csv_table",
   },
   docking_v1: {
     id: "docking_v1",
@@ -83,6 +94,7 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
       "Evaluated by the Docking Scorer engine. Submissions are ranked by correlation to reference docking scores.",
     runnerLimits: { memory: "4g", cpus: "2", pids: 64, timeoutMs: 1_200_000 },
     defaultMinimumScore: 0,
+    expectedSubmissionKind: "csv_table",
   },
 };
 
@@ -98,6 +110,26 @@ export function lookupPreset(id: string): ScorerPresetV2 | undefined {
 /** Get all registered preset IDs. */
 export function getPresetIds(): string[] {
   return Object.keys(PRESET_REGISTRY);
+}
+
+export function resolvePresetMount(
+  presetId?: string | null,
+): ScoringMountConfig {
+  const preset =
+    typeof presetId === "string" && presetId.trim().length > 0
+      ? PRESET_REGISTRY[presetId.trim()]
+      : undefined;
+  return preset?.mount ?? DEFAULT_SCORER_MOUNT;
+}
+
+export function getPresetExpectedSubmissionKind(
+  presetId?: string | null,
+): SubmissionContractOutput["kind"] | null {
+  const preset =
+    typeof presetId === "string" && presetId.trim().length > 0
+      ? PRESET_REGISTRY[presetId.trim()]
+      : undefined;
+  return preset?.expectedSubmissionKind ?? null;
 }
 
 type ParsedGhcrImageRef = {
@@ -177,31 +209,6 @@ export function inferPresetIdByContainer(container: string): string | null {
   const ids = findPresetIdsByContainer(container);
   const only = ids[0];
   return ids.length === 1 && typeof only === "string" ? only : null;
-}
-
-const DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE: Partial<
-  Record<ChallengeType, string>
-> = {
-  reproducibility: "csv_comparison_v1",
-  prediction: "regression_v1",
-  docking: "docking_v1",
-  optimization: "custom",
-  red_team: "custom",
-  custom: "custom",
-};
-
-export function defaultPresetIdForChallengeType(
-  challengeType: ChallengeType,
-): string | null {
-  return DEFAULT_PRESET_ID_BY_CHALLENGE_TYPE[challengeType] ?? null;
-}
-
-export function defaultMinimumScoreForChallengeType(
-  challengeType: ChallengeType,
-): number {
-  const presetId = defaultPresetIdForChallengeType(challengeType);
-  if (!presetId || presetId === "custom") return 0;
-  return lookupPreset(presetId)?.defaultMinimumScore ?? 0;
 }
 
 // ---------------------------------------------------------------------------

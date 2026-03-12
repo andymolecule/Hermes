@@ -230,7 +230,7 @@ The authoritative schema for challenge specification files.
 | `max_submissions_total` | integer | Maximum submissions per challenge (1–10000). |
 | `max_submissions_per_solver` | integer | Maximum submissions per solver per challenge (1–1000). |
 | `preset_id` | string | Scorer preset ID (e.g. `csv_comparison_v1`, `regression_v1`). |
-| `eval_spec` | object | Structured evaluation spec with `engine_id`, `engine_digest`, `evaluation_bundle`. |
+| `eval_spec` | object | Structured evaluation spec with optional `engine_id` metadata, plus `engine_digest` and `evaluation_bundle`. |
 | `evaluation` | object | Optional human-facing scoring notes such as `criteria`, `success_definition`, and numeric `tolerance`. It is not the submission artifact contract. |
 
 ### Example

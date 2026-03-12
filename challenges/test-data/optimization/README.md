@@ -4,6 +4,11 @@ Realistic posting fixtures for the Agora optimization category.
 
 This category is intentionally flexible and currently depends on a poster-supplied custom scorer image. That means this folder is primarily a human posting and submission-contract kit.
 
+In the current refactored model, that means:
+- no official preset/runtime adapter is required
+- the poster owns the scorer image and its contract
+- the example submission stays on the `opaque_file` path for now
+
 ## What This Folder Helps You Test
 
 - whether the optimization UI reads like a plausible parameter-search bounty

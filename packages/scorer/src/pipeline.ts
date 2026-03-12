@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  DEFAULT_SCORER_MOUNT,
+  type ScoringMountConfig,
   type SubmissionContractOutput,
   challengeSpecSchema,
   resolveScoringEnvironmentFromSpec,
@@ -41,6 +43,7 @@ export interface ExecuteScoringPipelineInput {
   image: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
+  mount?: ScoringMountConfig;
   submissionContract?: SubmissionContractOutput;
   env?: Record<string, string>;
   timeoutMs?: number;
@@ -66,6 +69,32 @@ export interface ScoringSpecRuntimeConfig {
   submissionContract?: SubmissionContractOutput;
 }
 
+export interface ResolveScoringRuntimeConfigInput {
+  env?: Record<string, string> | null;
+  submissionContract?: SubmissionContractOutput | null;
+  specCid?: string | null;
+  onLegacyFallback?: (specCid: string) => void | Promise<void>;
+}
+
+interface ScoringMountPlan {
+  evaluationBundlePath?: string;
+  submissionPath: string;
+}
+
+function buildScoringMountPlan(
+  mount: ScoringMountConfig,
+  inputDir: string,
+): ScoringMountPlan {
+  return {
+    ...(mount.evaluationBundleName
+      ? {
+          evaluationBundlePath: path.join(inputDir, mount.evaluationBundleName),
+        }
+      : {}),
+    submissionPath: path.join(inputDir, mount.submissionFileName),
+  };
+}
+
 export async function resolveScoringSpecRuntimeConfigFromSpecCid(
   specCid?: string | null,
 ): Promise<ScoringSpecRuntimeConfig> {
@@ -84,6 +113,31 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
       `Failed to load challenge spec ${specCid} for scorer configuration. Next step: confirm the spec CID is pinned and reachable. ${message}`,
     );
   }
+}
+
+export async function resolveScoringRuntimeConfig(
+  input: ResolveScoringRuntimeConfigInput,
+): Promise<ScoringSpecRuntimeConfig> {
+  const resolved: ScoringSpecRuntimeConfig = {
+    env: input.env ?? undefined,
+    submissionContract: input.submissionContract ?? undefined,
+  };
+
+  const needsEnv = resolved.env === undefined;
+  const needsSubmissionContract = resolved.submissionContract === undefined;
+  if ((!needsEnv && !needsSubmissionContract) || !input.specCid) {
+    return resolved;
+  }
+
+  await input.onLegacyFallback?.(input.specCid);
+  const legacy = await resolveScoringSpecRuntimeConfigFromSpecCid(
+    input.specCid,
+  );
+  return {
+    env: resolved.env ?? legacy.env,
+    submissionContract:
+      resolved.submissionContract ?? legacy.submissionContract,
+  };
 }
 
 async function stageSourceToPath(
@@ -160,18 +214,22 @@ export async function executeScoringPipeline(
       input.phaseObserver,
       "fetch_inputs",
       async () => {
-        // Current scorer family still expects the evaluation bundle staged
-        // under the historical ground_truth.csv filename.
+        const stagingPlan = buildScoringMountPlan(
+          input.mount ?? DEFAULT_SCORER_MOUNT,
+          workspace.inputDir,
+        );
         const evaluationBundlePath = input.evaluationBundle
-          ? path.join(workspace.inputDir, "ground_truth.csv")
+          ? stagingPlan.evaluationBundlePath
           : undefined;
         if (evaluationBundlePath && input.evaluationBundle) {
           await stageSourceToPath(input.evaluationBundle, evaluationBundlePath);
         }
 
-        const submissionPath = path.join(workspace.inputDir, "submission.csv");
-        await stageSourceToPath(input.submission, submissionPath);
-        return { evaluationBundlePath, submissionPath };
+        await stageSourceToPath(input.submission, stagingPlan.submissionPath);
+        return {
+          evaluationBundlePath,
+          submissionPath: stagingPlan.submissionPath,
+        };
       },
     );
 

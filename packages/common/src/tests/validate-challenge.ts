@@ -1,3 +1,4 @@
+import { DEFAULT_SCORER_MOUNT, PRESET_REGISTRY } from "../presets.js";
 import {
   CHALLENGE_TYPE_SCOREABILITY,
   canonicalizeChallengeSpec,
@@ -87,7 +88,54 @@ const officialPresetWrongContract = challengeSpecSchema.safeParse({
 });
 if (officialPresetWrongContract.success) {
   console.error(
-    "official scorer presets must require csv_table submission_contract",
+    "official scorer presets must enforce their expected submission contract",
+  );
+  process.exit(1);
+}
+
+PRESET_REGISTRY.protein_rmsd_test_v1 = {
+  id: "protein_rmsd_test_v1",
+  label: "Protein RMSD",
+  description: "Test preset for opaque-file challenges.",
+  container: "ghcr.io/andymolecule/protein-rmsd-scorer:v1",
+  scoringDescription: "Test-only preset.",
+  runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
+  defaultMinimumScore: 0,
+  expectedSubmissionKind: "opaque_file",
+  mount: {
+    evaluationBundleName: "reference.pdb",
+    submissionFileName: "submission.pdb",
+  },
+};
+
+const inferredOpaquePreset = challengeSpecSchema.safeParse({
+  ...sample,
+  id: "ch-001d",
+  preset_id: undefined,
+  scoring: {
+    container: "ghcr.io/andymolecule/protein-rmsd-scorer:v1",
+    metric: "custom",
+  },
+  submission_contract: opaqueContract({
+    extension: ".pdb",
+    mime: "chemical/x-pdb",
+  }),
+});
+if (!inferredOpaquePreset.success) {
+  console.error(
+    "challenge specs should infer preset requirements from scoring.container before falling back to challenge-type defaults",
+    inferredOpaquePreset.error.format(),
+  );
+  process.exit(1);
+}
+
+const inferredOpaqueEvalPlan = resolveEvalSpec(inferredOpaquePreset.data);
+if (
+  inferredOpaqueEvalPlan.mount.evaluationBundleName !== "reference.pdb" ||
+  inferredOpaqueEvalPlan.mount.submissionFileName !== "submission.pdb"
+) {
+  console.error(
+    "resolveEvalSpec should use the inferred preset mount when scoring.container matches a registered preset",
   );
   process.exit(1);
 }
@@ -147,6 +195,15 @@ if (resolvedNew.image !== "ghcr.io/andymolecule/repro-scorer@sha256:abc123") {
   console.error("resolveEvalSpec should use eval_spec.engine_digest as image");
   process.exit(1);
 }
+if (
+  resolvedNew.mount.evaluationBundleName !==
+    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
+  resolvedNew.mount.submissionFileName !==
+    DEFAULT_SCORER_MOUNT.submissionFileName
+) {
+  console.error("resolveEvalSpec should resolve the preset/default mount");
+  process.exit(1);
+}
 if (resolvedNew.evaluationBundleCid !== "ipfs://QmEvalBundle") {
   console.error("resolveEvalSpec should use eval_spec.evaluation_bundle");
   process.exit(1);
@@ -163,6 +220,15 @@ if (resolvedScoringOnly.evaluationBundleCid !== "ipfs://QmTest") {
 }
 if (resolvedScoringOnly.image !== "ghcr.io/andymolecule/repro-scorer:v1") {
   console.error("resolveEvalSpec should use scoring.container");
+  process.exit(1);
+}
+if (
+  resolvedScoringOnly.mount.evaluationBundleName !==
+    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
+  resolvedScoringOnly.mount.submissionFileName !==
+    DEFAULT_SCORER_MOUNT.submissionFileName
+) {
+  console.error("resolveEvalSpec should infer mount config from the preset");
   process.exit(1);
 }
 if (resolvedScoringOnly.metric !== "custom") {
@@ -191,9 +257,19 @@ const resolvedRow = resolveEvalSpec({
   eval_image: "ghcr.io/andymolecule/repro-scorer@sha256:def456",
   eval_metric: "custom",
   eval_bundle_cid: "ipfs://QmResolvedBundle",
+  runner_preset_id: "csv_comparison_v1",
 });
 if (resolvedRow.image !== "ghcr.io/andymolecule/repro-scorer@sha256:def456") {
   console.error("resolveEvalSpec should use eval_image for DB rows");
+  process.exit(1);
+}
+if (
+  resolvedRow.mount.evaluationBundleName !==
+    DEFAULT_SCORER_MOUNT.evaluationBundleName ||
+  resolvedRow.mount.submissionFileName !==
+    DEFAULT_SCORER_MOUNT.submissionFileName
+) {
+  console.error("resolveEvalSpec should use runner_preset_id for stored rows");
   process.exit(1);
 }
 if (resolvedRow.evaluationBundleCid !== "ipfs://QmResolvedBundle") {

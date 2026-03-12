@@ -2,6 +2,13 @@
 
 Human-oriented fixture kits for posting and testing Agora challenge types through the web UI.
 
+These folders are aligned to the **current preset-based scoring model**:
+- challenge-family defaults come from `@agora/common/challenges/templates.ts`
+- official scoring runtime config comes from `@agora/common/presets.ts`
+- the worker reads cached scoring config from the DB first, with IPFS fallback only for legacy rows
+
+They are **not** written for the removed runtime engine-adapter layer.
+
 For end-to-end stabilization work, also use:
 - [PHASE1-HARDENING-CHECKLIST.md](/Users/changyuesin/Agora/challenges/test-data/PHASE1-HARDENING-CHECKLIST.md)
 
@@ -35,12 +42,20 @@ test-data/
 
 | Category | Current status | Notes |
 |----------|----------------|-------|
-| Prediction | Executable | Uses the regression scorer already in `containers/regression-scorer` |
-| Reproducibility | Executable | Uses the repro scorer already in `containers/repro-scorer` |
-| Docking | Posting scaffold | Official preset exists, but `containers/docking-scorer` is still a placeholder |
-| Optimization | Posting scaffold | Relies on a poster-supplied custom scorer image |
-| Red Team | Posting scaffold | Relies on a poster-supplied custom scorer image |
-| Custom | Posting scaffold | Fully bring-your-own scoring contract |
+| Prediction | Executable, aligned to new model | Uses the official `regression_v1` preset and its current default mount layout |
+| Reproducibility | Executable, aligned to new model | Uses the official `csv_comparison_v1` preset and its current default mount layout |
+| Docking | Posting scaffold on new model | Official `docking_v1` preset exists, but `containers/docking-scorer` is still a placeholder |
+| Optimization | Posting scaffold on new model | Uses the custom-scorer path with `opaque_file` submissions |
+| Red Team | Posting scaffold on new model | Uses the custom-scorer path with poster-defined scorer behavior |
+| Custom | Posting scaffold on new model | Fully bring-your-own scoring contract and artifact shape |
+
+## What To Use Tomorrow
+
+If you are walking the stack end to end tomorrow:
+
+1. Start with `reproducibility/`
+2. Then run `prediction/`
+3. Treat `docking/`, `optimization/`, `red_team/`, and `custom/` as posting-contract and UX walkthroughs unless you also have a real custom scorer image ready
 
 ## Why This Structure Exists
 

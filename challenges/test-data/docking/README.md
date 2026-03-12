@@ -12,6 +12,10 @@ Important current limitation:
 - but `containers/docking-scorer/score.py` is still a placeholder in the current repo
 - so this folder is a realistic posting kit, not yet a meaningful executable scoring benchmark
 
+This folder is still aligned to the new model:
+- the official `docking_v1` preset is the runtime config surface
+- the current example assumes the preset's default mount layout until a real docking scorer is published
+
 ## Files
 
 ### Challenge posting inputs

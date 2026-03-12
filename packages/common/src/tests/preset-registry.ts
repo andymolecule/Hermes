@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import {
-  OFFICIAL_IMAGES,
   defaultMinimumScoreForChallengeType,
   defaultPresetIdForChallengeType,
+} from "../challenges/templates.js";
+import {
+  DEFAULT_SCORER_MOUNT,
+  OFFICIAL_IMAGES,
   findPresetIdsByContainer,
+  getPresetExpectedSubmissionKind,
   getUnpinnedOfficialImages,
   inferPresetIdByContainer,
   lookupPreset,
   resolveOfficialImageToDigest,
+  resolvePresetMount,
   validatePresetIntegrity,
   validateScoringContainer,
 } from "../presets";
@@ -61,6 +66,17 @@ const csvPreset = lookupPreset("csv_comparison_v1");
 if (!csvPreset) {
   throw new Error("csv_comparison_v1 must exist");
 }
+
+assert.equal(
+  getPresetExpectedSubmissionKind("csv_comparison_v1"),
+  "csv_table",
+  "official CSV preset should declare the csv_table submission kind",
+);
+assert.deepEqual(
+  resolvePresetMount("csv_comparison_v1"),
+  DEFAULT_SCORER_MOUNT,
+  "official presets should use the default scorer mount when no override is declared",
+);
 
 assert.equal(
   inferPresetIdByContainer(csvPreset.container),

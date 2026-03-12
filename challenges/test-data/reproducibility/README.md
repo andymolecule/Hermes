@@ -15,6 +15,12 @@ Important realism note:
 
 ## Current Runtime Contract
 
+The reproducibility fixtures are aligned to the current preset-based runtime.
+
+The official `csv_comparison_v1` preset currently resolves to:
+- evaluation bundle -> `ground_truth.csv`
+- solver artifact -> `submission.csv`
+
 The reproducibility scorer currently expects:
 - `ground_truth.csv`: the reference output artifact
 - `submission.csv`: the solver's reproduced output
@@ -23,7 +29,7 @@ The reproducibility scorer currently expects:
 In the current platform architecture, that requirement should be authored as a
 `submission_contract.kind = csv_table` challenge spec. The web submit flow and
 worker runtime both validate against that same machine-readable contract before
-scoring.
+scoring, and the worker reads that contract from the DB cache first.
 
 The built-in preset is:
 - `CSV Comparison`

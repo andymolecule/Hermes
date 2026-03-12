@@ -77,6 +77,8 @@ assert.equal(insertWithPreset.minimum_score, 0);
 assert.equal(insertWithPreset.eval_bundle_cid, "ipfs://QmHiddenLabelsOnly");
 assert.equal(insertWithPreset.dataset_test_cid, null);
 assert.deepEqual(insertWithPreset.expected_columns, ["id", "prediction"]);
+assert.equal(insertWithPreset.submission_contract_json?.kind, "csv_table");
+assert.equal(insertWithPreset.scoring_env_json, null);
 
 const inferredSpec = challengeSpecSchema.parse({
   schema_version: 2,
@@ -108,6 +110,7 @@ const insertInferred = await buildChallengeInsert({
 assert.equal(insertInferred.runner_preset_id, "regression_v1");
 assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
 assert.deepEqual(insertInferred.expected_columns, ["id", "prediction"]);
+assert.equal(insertInferred.submission_contract_json?.kind, "csv_table");
 
 const insertWithOnChainDeadline = await buildChallengeInsert({
   ...baseInput,
@@ -181,6 +184,7 @@ const customInsert = await buildChallengeInsert({
 });
 assert.equal(customInsert.runner_preset_id, "custom");
 assert.equal(customInsert.expected_columns, null);
+assert.equal(customInsert.submission_contract_json?.kind, "opaque_file");
 
 const customLimitsSpec = challengeSpecSchema.parse({
   ...regressionSpec,
@@ -233,6 +237,9 @@ const reproInsert = await buildChallengeInsert({
     dataset: {
       test: "ipfs://QmReproBundle",
     },
+    evaluation: {
+      tolerance: "0.001",
+    },
   }),
 });
 assert.deepEqual(reproInsert.expected_columns, [
@@ -240,6 +247,10 @@ assert.deepEqual(reproInsert.expected_columns, [
   "normalized_signal",
   "condition",
 ]);
+assert.equal(reproInsert.submission_contract_json?.kind, "csv_table");
+assert.deepEqual(reproInsert.scoring_env_json, {
+  AGORA_TOLERANCE: "0.001",
+});
 
 const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;

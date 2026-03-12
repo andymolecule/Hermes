@@ -1,23 +1,26 @@
 import { z } from "zod";
+import { defaultPresetIdForChallengeType } from "../challenges/templates.js";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import {
-  defaultPresetIdForChallengeType,
+  type ScoringMountConfig,
+  getPresetExpectedSubmissionKind,
   inferPresetIdByContainer,
   isOfficialContainer,
   resolveOfficialImageToDigest,
+  resolvePresetMount,
 } from "../presets.js";
-import { CHALLENGE_TYPES, type ChallengeType } from "../types/challenge.js";
-import { submissionContractSchema } from "./submission-contract.js";
+import {
+  CHALLENGE_DOMAINS,
+  CHALLENGE_TYPES,
+  type ChallengeType,
+} from "../types/challenge.js";
+import {
+  type SubmissionContractOutput,
+  submissionContractSchema,
+} from "./submission-contract.js";
 
-const domainEnum = z.enum([
-  "longevity",
-  "drug_discovery",
-  "protein_design",
-  "omics",
-  "neuroscience",
-  "other",
-]);
+const domainEnum = z.enum(CHALLENGE_DOMAINS);
 
 const typeEnum = z.enum(CHALLENGE_TYPES);
 
@@ -67,13 +70,13 @@ const rewardTotal = z
 /**
  * EvalSpec: how a submission is evaluated.
  *
- * - engine_id:          preset name (e.g. "csv_comparison_v1") or "custom"
+ * - engine_id:          optional descriptive metadata for the scoring family
  * - engine_digest:      pinned container digest (@sha256:...), required in production
  * - evaluation_bundle:  CID pointing to everything the engine needs
  *                        (ground truth, config, schema — engine-specific)
  */
 const evalSpecSchema = z.object({
-  engine_id: z.string().min(1),
+  engine_id: z.string().min(1).optional(),
   engine_digest: z.string().min(1).optional(),
   evaluation_bundle: datasetSource.optional(),
 });
@@ -88,11 +91,10 @@ function normalizePresetId(value: unknown): string | undefined {
 }
 
 /**
- * Resolve the preset policy used to decide whether a challenge must publish a
- * csv_table submission contract.
+ * Resolve the effective preset id for validation and runtime defaults.
  *
- * This intentionally mirrors challengeSpecSchema.superRefine so app-layer
- * fallback logic cannot drift from canonical validation rules.
+ * This intentionally mirrors challengeSpecSchema.superRefine so runtime and
+ * authoring helpers cannot drift from canonical validation rules.
  */
 function resolveSubmissionContractPolicyPresetId(input: {
   type: ChallengeType;
@@ -104,20 +106,18 @@ function resolveSubmissionContractPolicyPresetId(input: {
     return explicitPresetId;
   }
 
-  const defaultPresetId = defaultPresetIdForChallengeType(input.type);
-  if (defaultPresetId) {
-    return defaultPresetId;
-  }
-
   const scoringContainer = input.scoring?.container;
   if (
-    typeof scoringContainer !== "string" ||
-    scoringContainer.trim().length === 0
+    typeof scoringContainer === "string" &&
+    scoringContainer.trim().length > 0
   ) {
-    return null;
+    const inferredPresetId = inferPresetIdByContainer(scoringContainer.trim());
+    if (inferredPresetId) {
+      return inferredPresetId;
+    }
   }
 
-  return inferPresetIdByContainer(scoringContainer.trim());
+  return defaultPresetIdForChallengeType(input.type);
 }
 
 function resolveSpecEvaluationBundle(
@@ -210,17 +210,17 @@ const _baseSpecShape = z
         preset_id: value.preset_id,
         scoring: value.scoring,
       });
+      const expectedSubmissionKind =
+        getPresetExpectedSubmissionKind(inferredPresetId);
 
       if (
-        inferredPresetId &&
-        inferredPresetId !== "custom" &&
-        value.submission_contract.kind !== "csv_table"
+        expectedSubmissionKind &&
+        value.submission_contract.kind !== expectedSubmissionKind
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["submission_contract"],
-          message:
-            "Official Agora scorer presets require a csv_table submission_contract.",
+          message: `Preset ${inferredPresetId} requires a ${expectedSubmissionKind} submission_contract.`,
         });
       }
       return;
@@ -297,6 +297,9 @@ export interface ChallengeEvalRow {
   eval_image: string;
   eval_metric: string;
   eval_bundle_cid?: string | null;
+  runner_preset_id?: string | null;
+  submission_contract_json?: SubmissionContractOutput | null;
+  scoring_env_json?: Record<string, string> | null;
 }
 
 /**
@@ -386,13 +389,14 @@ export async function canonicalizeChallengeSpec(
 }
 
 // ---------------------------------------------------------------------------
-// Resolve effective eval spec from a parsed challenge spec
+// Resolve effective scoring runtime config from a parsed challenge spec
 // ---------------------------------------------------------------------------
 
 export interface ResolvedEvalSpec {
   image: string;
   evaluationBundleCid?: string;
   metric: string;
+  mount: ScoringMountConfig;
 }
 
 export interface ChallengeScoreabilityValidation {
@@ -484,17 +488,27 @@ export function resolveEvalSpec(
   spec: ChallengeSpecOutput | ChallengeEvalRow,
 ): ResolvedEvalSpec {
   if ("scoring" in spec) {
+    const presetId = resolveSubmissionContractPolicyPresetId({
+      type: spec.type,
+      preset_id: spec.preset_id,
+      scoring: spec.scoring,
+    });
     return {
       image: spec.eval_spec?.engine_digest ?? spec.scoring.container,
       evaluationBundleCid: resolveSpecEvaluationBundle(spec),
       metric: spec.scoring.metric,
+      mount: resolvePresetMount(presetId),
     };
   }
 
+  const presetId =
+    (typeof spec.runner_preset_id === "string" && spec.runner_preset_id) ||
+    inferPresetIdByContainer(spec.eval_image);
   return {
     image: spec.eval_image,
     evaluationBundleCid: spec.eval_bundle_cid ?? undefined,
     metric: spec.eval_metric,
+    mount: resolvePresetMount(presetId),
   };
 }
 

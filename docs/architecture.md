@@ -22,6 +22,8 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, datasets, submissions, scoring compute, search indexes
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
+- Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and scorer runtime config in `packages/common/src/presets.ts`
+- Challenge type and domain catalogs stay centralized in `packages/common/src/types/challenge.ts`
 - One active contract generation at a time; @agora/chain owns ABI/event details
 - Docker scorer: no network, read-only, non-root; official presets run with 1–20 min timeouts, base runner fallback is 30 min
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
@@ -41,6 +43,16 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 - Chain: Factory/challenge contracts (`packages/contracts`)
 - Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
 - Ops: deployment scripts and runbook (`scripts/*`, `docs/operations.md`)
+
+### Navigation By Extension Point
+
+- New challenge-family defaults: `packages/common/src/challenges/*`
+- New official scorer preset runtime config: `packages/common/src/presets.ts`
+- Challenge spec parsing and scoreability validation: `packages/common/src/schemas/challenge-spec.ts`
+- Submission artifact contracts: `packages/common/src/schemas/submission-contract.ts`
+- Runtime scorer staging and Docker execution: `packages/scorer/src/pipeline.ts`
+- Worker scoring orchestration: `apps/api/src/worker/scoring.ts`
+- Web posting UI: `apps/web/src/app/post/PostClient.tsx`
 
 ### Active Generation Boundary
 
@@ -507,8 +519,8 @@ Historical spec policy:
 ```mermaid
 flowchart LR
     subgraph Input["Inputs (read-only)"]
-        GT["ground_truth.csv"]
-        SUB["submission.csv"]
+        GT["Preset mount<br/>evaluation bundle"]
+        SUB["Preset mount<br/>submission artifact"]
     end
 
     subgraph Container["Docker Container"]
@@ -537,6 +549,7 @@ Key properties:
 - **No network access** — container cannot exfiltrate data
 - **Read-only filesystem** — only `/output` is writable
 - **Non-root user** — runs as UID 65532
+- **Mount layout is preset-driven** — the official presets currently use the default `ground_truth.csv` + `submission.csv` layout, but the runtime now reads that from `packages/common/src/presets.ts`
 - **Resource limits are per-preset** — official presets currently span 128MB–4GB memory, 0.5–2 CPUs, 32–64 PIDs, and 1–20 minute timeouts
 - **Deterministic** — same input → same score, every time
 - **Fallback timeout** — 30 minutes when no preset override applies

@@ -23,6 +23,11 @@ Current turnkey categories:
 - `reproducibility`
 - `prediction`
 
+These fixture runs now target the current preset-based scoring model:
+- challenge-family defaults come from `@agora/common/challenges/templates.ts`
+- official scoring runtime config comes from `@agora/common/presets.ts`
+- worker scoring reads cached DB config first and only falls back to IPFS for legacy rows
+
 ## Before You Start
 
 Confirm the environment is aligned:
@@ -30,7 +35,7 @@ Confirm the environment is aligned:
 - fresh active factory is deployed
 - `AGORA_FACTORY_ADDRESS` is the same across API, indexer, worker, web, and local CLI
 - `AGORA_INDEXER_START_BLOCK` matches the new factory deploy block
-- Supabase was reset and only [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql) was applied
+- Supabase was reset and all current migrations were applied, including [007_cache_challenge_scoring_config.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/007_cache_challenge_scoring_config.sql)
 - Docker is running
 - Pinata is configured
 - worker is healthy
@@ -147,7 +152,7 @@ Expected behavior:
 This is the replay sanity test.
 
 1. reset Supabase
-2. apply only [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql)
+2. apply all current migrations
 3. restart indexer against the active factory
 4. confirm the DB rebuilds correctly from chain truth
 

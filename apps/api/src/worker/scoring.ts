@@ -22,7 +22,7 @@ import {
   SealedSubmissionError,
   buildProofBundle,
   executeScoringPipeline,
-  resolveScoringSpecRuntimeConfigFromSpecCid,
+  resolveScoringRuntimeConfig,
   resolveSubmissionSource,
   scoreToWad,
 } from "@agora/scorer";
@@ -173,9 +173,21 @@ export async function scoreSubmissionAndBuildProof(
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
-  const scoringSpecConfig = await resolveScoringSpecRuntimeConfigFromSpecCid(
-    challenge.spec_cid,
-  );
+  const scoringSpecConfig = await resolveScoringRuntimeConfig({
+    env: challenge.scoring_env_json,
+    submissionContract: challenge.submission_contract_json,
+    specCid: challenge.spec_cid,
+    onLegacyFallback: async (specCid) => {
+      log(
+        "warn",
+        "Challenge is missing cached scoring config; falling back to IPFS spec fetch",
+        {
+          ...phaseMeta,
+          specCid,
+        },
+      );
+    },
+  });
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
     submissionSource = await resolveSubmissionSource({
@@ -200,6 +212,7 @@ export async function scoreSubmissionAndBuildProof(
     evaluationBundle: evalPlan.evaluationBundleCid
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
+    mount: evalPlan.mount,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
     env: scoringSpecConfig.env,

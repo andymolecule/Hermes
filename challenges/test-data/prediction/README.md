@@ -30,11 +30,13 @@ It is not meant to simulate a full production-scale benchmark. It is meant to lo
 
 ## Current Runtime Contract
 
-These fixtures are aligned to the current scorer implementation.
+These fixtures are aligned to the current preset-based runtime.
 
 Important current constraint:
-- the prediction scorer expects `ground_truth.csv` with columns `id,label`
-- the submission scorer expects `submission.csv` with columns `id,prediction`
+- the official `regression_v1` preset currently resolves to the default mount layout:
+  - evaluation bundle -> `ground_truth.csv`
+  - solver artifact -> `submission.csv`
+- the current regression scorer still expects those mounted filenames with columns `id,label` and `id,prediction`
 - the current web UI exposes `Row ID column` and `Target column`, but the scorer does not actually honor arbitrary custom column names yet
 
 For human UI testing, use the default prediction field names:
@@ -111,7 +113,7 @@ Why this matters:
   `Predictions are matched to the held-out test set by id and evaluated against private labels using R².`
 
 Why this matters:
-- matches the actual scorer contract
+- matches the actual preset + scorer contract
 - avoids the current runtime mismatch around custom column names
 - gives solvers a realistic, explicit submission contract
 

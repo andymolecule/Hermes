@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_CHAIN_ID,
+  resolveEvalSpec,
   resolveScoringEnvironmentFromSpec,
   validateChallengeSpec,
 } from "@agora/common";
@@ -57,9 +58,11 @@ export function buildValidateCommand() {
         `Pulling and testing scorer container: ${container}`,
       );
       try {
+        const evalPlan = resolveEvalSpec(parsed.data);
         const run = await executeScoringPipeline({
-          image: container,
+          image: evalPlan.image,
           evaluationBundle: { content: "id,value\n1,0.5\n" },
+          mount: evalPlan.mount,
           submission: { content: "id,value\n1,0.5\n" },
           env: resolveScoringEnvironmentFromSpec(parsed.data),
           timeoutMs: 5 * 60 * 1000, // 5 min for dry-run

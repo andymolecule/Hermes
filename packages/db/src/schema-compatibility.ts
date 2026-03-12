@@ -37,6 +37,13 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     nextStep:
       "Apply migration 006_add_worker_runtime_version.sql, then reload the PostgREST schema cache before restarting services.",
   },
+  {
+    id: "challenge_scoring_config_columns",
+    table: "challenges",
+    select: "submission_contract_json,scoring_env_json",
+    nextStep:
+      "Apply migration 007_cache_challenge_scoring_config.sql, then reload the PostgREST schema cache before restarting services.",
+  },
 ];
 
 export async function verifyRuntimeDatabaseSchema(

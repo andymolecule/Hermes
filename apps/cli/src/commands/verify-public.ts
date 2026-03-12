@@ -1,8 +1,10 @@
 import { getOnChainSubmission } from "@agora/chain";
+import { challengeSpecSchema, resolveEvalSpec } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
 import {
   executeScoringPipeline,
   resolveScoringSpecRuntimeConfigFromSpecCid,
+  wadToScore,
 } from "@agora/scorer";
 import { Command } from "commander";
 import { keccak256, toBytes } from "viem";
@@ -13,7 +15,6 @@ import {
   requireConfigValues,
 } from "../lib/config-store";
 import { printJson, printSuccess, printWarning } from "../lib/output";
-import { wadToScore } from "../lib/scoring";
 import { createSpinner } from "../lib/spinner";
 
 type PublicSubmissionVerification = {
@@ -84,6 +85,11 @@ export function buildVerifyPublicCommand() {
             "Submission has no public replay artifact yet. This usually means it predates public verification publishing.",
           );
         }
+        if (!payload.challengeSpecCid) {
+          throw new Error(
+            "Submission is missing a public challenge spec CID. This usually means it predates public verification publishing.",
+          );
+        }
 
         const expectedProofHash = keccak256(
           toBytes(payload.proofBundleCid.replace("ipfs://", "")),
@@ -144,9 +150,14 @@ export function buildVerifyPublicCommand() {
           await resolveScoringSpecRuntimeConfigFromSpecCid(
             payload.challengeSpecCid,
           );
+        const challengeSpec = challengeSpecSchema.parse(
+          await getJSON(payload.challengeSpecCid),
+        );
+        const evalPlan = resolveEvalSpec(challengeSpec);
         const run = await executeScoringPipeline({
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },
+          mount: evalPlan.mount,
           submission: { cid: payload.replaySubmissionCid },
           submissionContract: scoringSpecConfig.submissionContract,
           env: scoringSpecConfig.env,
