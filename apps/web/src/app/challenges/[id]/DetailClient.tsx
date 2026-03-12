@@ -792,7 +792,21 @@ export function DetailClient({ id }: { id: string }) {
                                     />
                                   </a>
                                 ))}
-                                {scorerPackageUrl && (
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                                Scorer image ref
+                              </div>
+                              <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
+                                Exact OCI container image reference used by the
+                                worker for official scoring.
+                              </p>
+                              <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
+                                {challenge.eval_image ?? "—"}
+                              </div>
+                              {scorerPackageUrl && (
+                                <div className="mt-3">
                                   <a
                                     href={scorerPackageUrl}
                                     target="_blank"
@@ -805,27 +819,8 @@ export function DetailClient({ id }: { id: string }) {
                                       strokeWidth={1.75}
                                     />
                                   </a>
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                                Scorer image ref
-                              </div>
-                              <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
-                                Exact OCI container image reference used by the
-                                worker for official scoring.
-                              </p>
-                              <div className="mt-3 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                                {challenge.eval_image ? (
-                                  <LinkedValue
-                                    href={scorerPackageUrl}
-                                    value={challenge.eval_image}
-                                  />
-                                ) : (
-                                  "—"
-                                )}
-                              </div>
+                                </div>
+                              )}
                               {resultsVisible && (
                                 <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
                                   After scoring begins, the{" "}
@@ -848,15 +843,24 @@ export function DetailClient({ id }: { id: string }) {
                               worker for official scoring.
                             </p>
                             <div className="break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                              {challenge.eval_image ? (
-                                <LinkedValue
-                                  href={scorerPackageUrl}
-                                  value={challenge.eval_image}
-                                />
-                              ) : (
-                                "—"
-                              )}
+                              {challenge.eval_image ?? "—"}
                             </div>
+                            {scorerPackageUrl && (
+                              <div>
+                                <a
+                                  href={scorerPackageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                                >
+                                  <span>GHCR package</span>
+                                  <ExternalLink
+                                    className="h-3.5 w-3.5 shrink-0"
+                                    strokeWidth={1.75}
+                                  />
+                                </a>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -984,13 +988,30 @@ export function DetailClient({ id }: { id: string }) {
                           Scorer Image
                         </div>
                         <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--color-warm-900)]">
-                          <LinkedValue
-                            href={getScorerPackageUrl(
-                              verification.containerImageDigest,
-                            )}
-                            value={verification.containerImageDigest ?? "—"}
-                          />
+                          {verification.containerImageDigest ?? "—"}
                         </div>
+                        {getScorerPackageUrl(
+                          verification.containerImageDigest,
+                        ) && (
+                          <div className="mt-3">
+                            <a
+                              href={
+                                getScorerPackageUrl(
+                                  verification.containerImageDigest,
+                                ) ?? undefined
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-warm-900)] transition-colors hover:border-[var(--color-warm-900)]"
+                            >
+                              <span>GHCR package</span>
+                              <ExternalLink
+                                className="h-3.5 w-3.5 shrink-0"
+                                strokeWidth={1.75}
+                              />
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
 
