@@ -3,8 +3,8 @@ module.exports = {
     {
       name: "agora-api",
       cwd: process.cwd(),
-      script: "node",
-      args: "scripts/run-node-with-root-env.mjs apps/api/dist/index.js",
+      script: "pnpm",
+      args: "--filter @agora/api start",
       env: {
         NODE_ENV: "production",
       },
@@ -17,8 +17,8 @@ module.exports = {
     {
       name: "agora-indexer",
       cwd: process.cwd(),
-      script: "node",
-      args: "scripts/run-node-with-root-env.mjs packages/chain/dist/indexer.js",
+      script: "pnpm",
+      args: "--filter @agora/chain indexer",
       env: {
         NODE_ENV: "production",
       },
@@ -31,8 +31,8 @@ module.exports = {
     {
       name: "agora-worker",
       cwd: process.cwd(),
-      script: "node",
-      args: "scripts/run-node-with-root-env.mjs apps/api/dist/worker.js",
+      script: "pnpm",
+      args: "--filter @agora/api worker",
       env: {
         NODE_ENV: "production",
       },
@@ -45,8 +45,8 @@ module.exports = {
     {
       name: "agora-mcp",
       cwd: process.cwd(),
-      script: "node",
-      args: "scripts/run-node-with-root-env.mjs apps/mcp-server/dist/index.js",
+      script: "pnpm",
+      args: "--filter @agora/mcp-server start",
       env: {
         NODE_ENV: "production",
       },

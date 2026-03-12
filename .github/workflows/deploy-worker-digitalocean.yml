@@ -1,0 +1,64 @@
+name: Deploy Worker (DigitalOcean)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/api/**"
+      - "packages/common/**"
+      - "packages/db/**"
+      - "packages/chain/**"
+      - "packages/ipfs/**"
+      - "packages/scorer/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - "tsconfig.base.json"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-digitalocean-worker
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DO_WORKER_HOST: ${{ secrets.DO_WORKER_HOST }}
+      DO_WORKER_USER: ${{ secrets.DO_WORKER_USER }}
+      DO_WORKER_PORT: ${{ vars.DO_WORKER_PORT }}
+      DO_WORKER_PATH: ${{ vars.DO_WORKER_PATH }}
+      DO_WORKER_PM2_NAME: ${{ vars.DO_WORKER_PM2_NAME }}
+      AGORA_DEPLOY_EXPECTED_SHA: ${{ github.sha }}
+    steps:
+      - name: Validate deploy secrets
+        run: |
+          set -euo pipefail
+          test -n "$DO_WORKER_HOST"
+          test -n "$DO_WORKER_USER"
+          test -n "${{ secrets.DO_WORKER_SSH_KEY }}"
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DO_WORKER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DO_WORKER_PORT" -H "$DO_WORKER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy worker on droplet
+        run: |
+          set -euo pipefail
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
+          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
+          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
+            "export AGORA_DEPLOY_EXPECTED_SHA='$AGORA_DEPLOY_EXPECTED_SHA' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; cd '$DO_WORKER_PATH' && bash scripts/ops/deploy-worker.sh"

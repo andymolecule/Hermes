@@ -21,6 +21,7 @@ This doc is authoritative for: service startup, deployment procedures, monitorin
 ## Summary
 
 - Four processes: API, Indexer, Worker, MCP
+- Typical hosted split today: web on Vercel, API + indexer on Railway, worker on a self-hosted PM2 machine (for example, a DigitalOcean droplet)
 - The API is the canonical remote agent surface.
 - MCP HTTP is read-only by default; stdio remains the full local tool surface.
 - Historical malformed challenge specs are intentionally unsupported; deploy current-schema challenges only.
@@ -249,6 +250,40 @@ pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
 pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp
 ```
+
+### Split Hosted Production
+
+Current production is intentionally split across hosts:
+
+- Vercel: `agora-web`
+- Railway: `@agora/api`, `agora-indexer`
+- Self-hosted PM2 machine: `agora-worker`
+
+This is why web/API/indexer can auto-redeploy through hosted Git integrations while the worker needs its own deploy path.
+
+### DigitalOcean Worker Auto-Deploy
+
+For the self-hosted worker, this repo now ships a GitHub Actions deploy workflow plus a reusable droplet script:
+
+- Workflow: [deploy-worker-digitalocean.yml](/Users/changyuesin/Agora/.github/workflows/deploy-worker-digitalocean.yml)
+- Droplet script: [deploy-worker.sh](/Users/changyuesin/Agora/scripts/ops/deploy-worker.sh)
+
+Expected GitHub configuration:
+
+- Secret: `DO_WORKER_HOST`
+- Secret: `DO_WORKER_USER`
+- Secret: `DO_WORKER_SSH_KEY`
+- Variable: `DO_WORKER_PORT` (optional, defaults to `22`)
+- Variable: `DO_WORKER_PATH` (optional, defaults to `/opt/agora`)
+- Variable: `DO_WORKER_PM2_NAME` (optional, defaults to `agora-worker`)
+
+Deploy flow:
+
+1. Push to `main`
+2. GitHub Actions SSHes into the worker host
+3. The droplet runs `scripts/ops/deploy-worker.sh`
+4. The script fast-forwards `main`, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
+5. The worker reports the new runtime SHA automatically through `/api/worker-health`
 
 ---
 
