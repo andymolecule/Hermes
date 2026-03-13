@@ -343,6 +343,20 @@ const PAYOUT_RULE_OPTIONS: Array<{
   },
 ];
 
+const SUBMISSION_WINDOW_OPTIONS: Array<{
+  value: FormState["deadlineDays"];
+  label: string;
+  testnetOnly?: true;
+}> = [
+  { value: "15m", label: "15 min", testnetOnly: true },
+  { value: "0", label: "30 min", testnetOnly: true },
+  { value: "7", label: "7 days" },
+  { value: "14", label: "14 days" },
+  { value: "30", label: "30 days" },
+  { value: "60", label: "60 days" },
+  { value: "90", label: "90 days" },
+];
+
 // ─── Pipeline diagrams per type ──────────────────────
 
 type PipelineFlow = {
@@ -3067,25 +3081,36 @@ export function PostClient() {
               label="Submission window"
               hint="How long solvers have to submit before scoring begins"
             >
-              <select
-                className="form-select"
-                value={state.deadlineDays}
-                onChange={(e) =>
-                  setState((s) => ({ ...s, deadlineDays: e.target.value }))
-                }
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.5rem",
+                }}
               >
-                {isTestnetChain(CHAIN_ID) && (
-                  <option value="15m">Quick test (15 min)</option>
-                )}
-                {isTestnetChain(CHAIN_ID) && (
-                  <option value="0">Quick test (30 min)</option>
-                )}
-                <option value="7">7 days</option>
-                <option value="14">14 days</option>
-                <option value="30">30 days</option>
-                <option value="60">60 days</option>
-                <option value="90">90 days</option>
-              </select>
+                {SUBMISSION_WINDOW_OPTIONS.filter(
+                  (option) => !option.testnetOnly || isTestnetChain(CHAIN_ID),
+                ).map((option) => {
+                  const active = option.value === state.deadlineDays;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={active}
+                      className={`choice-card compact ${active ? "active" : ""}`}
+                      style={{ minWidth: "5.75rem", width: "auto" }}
+                      onClick={() =>
+                        setState((s) => ({
+                          ...s,
+                          deadlineDays: option.value,
+                        }))
+                      }
+                    >
+                      <span className="choice-card-title">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </FormField>
             <FormField
               label="Review window before settlement"
