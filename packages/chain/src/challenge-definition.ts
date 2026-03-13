@@ -1,19 +1,56 @@
 import {
   ACTIVE_CONTRACT_VERSION,
+  type ChallengeSpecOutput,
   isValidPinnedSpecCid,
   validateChallengeSpec,
-  type ChallengeSpecOutput,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
   type: "json",
 };
 import { getText } from "@agora/ipfs";
-import { type Abi } from "viem";
+import type { Abi } from "viem";
 import yaml from "yaml";
 import { getPublicClient } from "./client.js";
-import { getChallengeContractVersion } from "./challenge.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
+
+function isMissingHistoricalBlockError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /header not found|block not found|unknown block/i.test(message);
+}
+
+async function readChallengeDefinitionValue<T>(input: {
+  publicClient: ReturnType<typeof getPublicClient>;
+  challengeAddress: `0x${string}`;
+  functionName: "specCid" | "deadline" | "contractVersion";
+  blockNumber?: bigint;
+}): Promise<T> {
+  const request = {
+    address: input.challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: input.functionName,
+  } as const;
+
+  try {
+    return (await input.publicClient.readContract({
+      ...request,
+      ...(input.blockNumber !== undefined
+        ? { blockNumber: input.blockNumber }
+        : {}),
+    })) as T;
+  } catch (error) {
+    if (
+      input.blockNumber === undefined ||
+      !isMissingHistoricalBlockError(error)
+    ) {
+      throw error;
+    }
+
+    // These constructor-set fields are immutable, so the latest-state read is equivalent
+    // when the RPC has the receipt but not the historical header yet.
+    return (await input.publicClient.readContract(request)) as T;
+  }
+}
 
 export async function fetchValidatedChallengeSpec(
   specCid: string,
@@ -45,23 +82,8 @@ export async function loadChallengeDefinitionFromChain(input: {
   chainId: number;
   blockNumber?: bigint;
 }) {
-  const publicClient = input.publicClient ?? getPublicClient();
-
-  const [specCid, onChainDeadline, contractVersion] = await Promise.all([
-    publicClient.readContract({
-      address: input.challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "specCid",
-      ...(input.blockNumber !== undefined ? { blockNumber: input.blockNumber } : {}),
-    }) as Promise<string>,
-    publicClient.readContract({
-      address: input.challengeAddress,
-      abi: AgoraChallengeAbi,
-      functionName: "deadline",
-      ...(input.blockNumber !== undefined ? { blockNumber: input.blockNumber } : {}),
-    }) as Promise<bigint>,
-    getChallengeContractVersion(input.challengeAddress, input.blockNumber),
-  ]);
+  const { specCid, onChainDeadline, contractVersion } =
+    await readChallengeDefinitionMetadataFromChain(input);
 
   const spec = await fetchValidatedChallengeSpec(specCid, input.chainId);
   if (contractVersion !== ACTIVE_CONTRACT_VERSION) {
@@ -76,5 +98,40 @@ export async function loadChallengeDefinitionFromChain(input: {
     contractVersion,
     onChainDeadline,
     onChainDeadlineIso: new Date(Number(onChainDeadline) * 1000).toISOString(),
+  };
+}
+
+export async function readChallengeDefinitionMetadataFromChain(input: {
+  publicClient?: ReturnType<typeof getPublicClient>;
+  challengeAddress: `0x${string}`;
+  blockNumber?: bigint;
+}) {
+  const publicClient = input.publicClient ?? getPublicClient();
+
+  const [specCid, onChainDeadline, contractVersion] = await Promise.all([
+    readChallengeDefinitionValue<string>({
+      publicClient,
+      challengeAddress: input.challengeAddress,
+      functionName: "specCid",
+      blockNumber: input.blockNumber,
+    }),
+    readChallengeDefinitionValue<bigint>({
+      publicClient,
+      challengeAddress: input.challengeAddress,
+      functionName: "deadline",
+      blockNumber: input.blockNumber,
+    }),
+    readChallengeDefinitionValue<bigint>({
+      publicClient,
+      challengeAddress: input.challengeAddress,
+      functionName: "contractVersion",
+      blockNumber: input.blockNumber,
+    }),
+  ]);
+
+  return {
+    specCid,
+    onChainDeadline,
+    contractVersion: Number(contractVersion),
   };
 }
