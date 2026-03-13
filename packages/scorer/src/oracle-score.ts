@@ -144,17 +144,7 @@ export async function oracleScore(
     const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
     const scoreWad = scoreToWad(run.result.score);
 
-    // 5. Post score on-chain
-    const txHash = await postScore(
-      challenge.contract_address as `0x${string}`,
-      BigInt(submission.on_chain_sub_id),
-      scoreWad,
-      proofHash,
-    );
-    const publicClient = getPublicClient();
-    await publicClient.waitForTransactionReceipt({ hash: txHash });
-
-    // 6. Update DB
+    // 5. Persist proof bundle before posting so recovery can reconcile
     await upsertProofBundle(db, {
       submission_id: submission.id,
       cid: proofCid,
@@ -165,6 +155,17 @@ export async function oracleScore(
       reproducible: true,
     });
 
+    // 6. Post score on-chain
+    const txHash = await postScore(
+      challenge.contract_address as `0x${string}`,
+      BigInt(submission.on_chain_sub_id),
+      scoreWad,
+      proofHash,
+    );
+    const publicClient = getPublicClient();
+    await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+    // 7. Update scored submission state
     await updateScore(db, {
       submission_id: submission.id,
       score: scoreWad.toString(),

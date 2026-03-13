@@ -227,6 +227,14 @@ async function prepareScorerImage(
   };
 }
 
+export async function recreateWritableOutputDir(outputDir: string) {
+  await fs.rm(outputDir, { recursive: true, force: true });
+  await fs.mkdir(outputDir, { recursive: true, mode: 0o777 });
+  // mkdir respects the host umask, so force the final mode to keep the
+  // bind mount writable for Docker's non-root scorer user.
+  await fs.chmod(outputDir, 0o777);
+}
+
 function parseScorePayload(raw: string) {
   let parsed: Record<string, unknown>;
   try {
@@ -284,8 +292,7 @@ export async function runScorer(
   // Keep output under the scoring workspace so executeScoringPipeline cleanup
   // removes it reliably (prevents /tmp leak across runs).
   const outputDir = path.join(path.dirname(inputDir), "output");
-  await fs.rm(outputDir, { recursive: true, force: true });
-  await fs.mkdir(outputDir, { recursive: true, mode: 0o777 });
+  await recreateWritableOutputDir(outputDir);
   const containerName = `agora-score-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const preparedImage = await prepareScorerImage(input.image, timeoutMs);

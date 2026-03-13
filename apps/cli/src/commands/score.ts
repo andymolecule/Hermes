@@ -172,6 +172,16 @@ export function buildOracleScoreCommand() {
           const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
           const scoreWad = scoreToWad(run.result.score);
 
+          await upsertProofBundle(db, {
+            submission_id: submission.id,
+            cid: proofCid,
+            input_hash: proof.inputHash,
+            output_hash: proof.outputHash,
+            container_image_hash: proof.containerImageDigest,
+            scorer_log: null,
+            reproducible: true,
+          });
+
           const chainSpinner = createSpinner("Posting score on-chain...");
           const txHash = await postScore(
             challenge.contract_address as `0x${string}`,
@@ -182,16 +192,6 @@ export function buildOracleScoreCommand() {
           const publicClient = getPublicClient();
           await publicClient.waitForTransactionReceipt({ hash: txHash });
           chainSpinner.succeed(`Score posted: ${txHash}`);
-
-          await upsertProofBundle(db, {
-            submission_id: submission.id,
-            cid: proofCid,
-            input_hash: proof.inputHash,
-            output_hash: proof.outputHash,
-            container_image_hash: proof.containerImageDigest,
-            scorer_log: null,
-            reproducible: true,
-          });
 
           await updateScore(db, {
             submission_id: submission.id,

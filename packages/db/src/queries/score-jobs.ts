@@ -236,14 +236,15 @@ export async function completeJob(
   jobId: string,
   scoreTxHash?: string | null,
 ) {
+  const nowIso = new Date().toISOString();
   const payload: Record<string, unknown> = {
     status: SCORE_JOB_STATUS.scored,
-    next_attempt_at: null,
+    next_attempt_at: nowIso,
     last_error: null,
     locked_at: null,
     run_started_at: null,
     locked_by: null,
-    updated_at: new Date().toISOString(),
+    updated_at: nowIso,
   };
   if (scoreTxHash) {
     payload.score_tx_hash = scoreTxHash;
@@ -272,7 +273,7 @@ export async function failJob(
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const nextAttemptAt = exhausted
-    ? null
+    ? nowIso
     : new Date(now + Math.max(0, delayMs)).toISOString();
   const { error } = await db
     .from("score_jobs")

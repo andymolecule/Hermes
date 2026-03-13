@@ -274,6 +274,16 @@ export async function processJob(
       return;
     }
 
+    await resolvedDeps.upsertProofBundle(db, {
+      submission_id: submission.id,
+      cid: scoringOutcome.proofCid,
+      input_hash: scoringOutcome.proof.inputHash,
+      output_hash: scoringOutcome.proof.outputHash,
+      container_image_hash: scoringOutcome.proof.containerImageDigest,
+      scorer_log: null,
+      reproducible: true,
+    });
+
     const txHash = await resolvedDeps.postScoreAndWaitForConfirmation(
       db,
       job,
@@ -284,16 +294,6 @@ export async function processJob(
       publicClient,
       log,
     );
-
-    await resolvedDeps.upsertProofBundle(db, {
-      submission_id: submission.id,
-      cid: scoringOutcome.proofCid,
-      input_hash: scoringOutcome.proof.inputHash,
-      output_hash: scoringOutcome.proof.outputHash,
-      container_image_hash: scoringOutcome.proof.containerImageDigest,
-      scorer_log: null,
-      reproducible: true,
-    });
 
     await resolvedDeps.updateScore(db, {
       submission_id: submission.id,

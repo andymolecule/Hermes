@@ -13,6 +13,7 @@ import {
   completeJob,
   type createSupabaseClient,
   getChallengeScoreJobCounts,
+  getProofBundleBySubmissionId,
   markJobPosted,
   requeueJobWithoutAttemptPenalty,
   updateScore,
@@ -22,6 +23,29 @@ import { getWorkerPostTxRetryDelayMs } from "./policy.js";
 import type { ScoreJobRow, SubmissionRow, WorkerLogFn } from "./types.js";
 
 type DbClient = ReturnType<typeof createSupabaseClient>;
+
+export function resolveReconciledProofBundleCid(input: {
+  submissionProofBundleCid?: string | null;
+  persistedProofBundleCid?: string | null;
+}) {
+  const candidates = [
+    input.submissionProofBundleCid,
+    input.persistedProofBundleCid,
+  ];
+  const proofBundleCid =
+    candidates.find(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0,
+    ) ?? null;
+
+  if (!proofBundleCid) {
+    throw new Error(
+      "Submission is scored on-chain but no proof bundle CID is persisted. Next step: inspect the proof_bundles row or rerun official scoring recovery before completing the job.",
+    );
+  }
+
+  return proofBundleCid;
+}
 
 export function shouldAttemptChallengeFinalize(
   lifecycle: {
@@ -68,10 +92,16 @@ export async function reconcileScoredSubmission(
   );
   if (!onChain.scored) return false;
 
+  const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
+  const proofBundleCid = resolveReconciledProofBundleCid({
+    submissionProofBundleCid: submission.proof_bundle_cid,
+    persistedProofBundleCid: proofBundle?.cid ?? null,
+  });
+
   await updateScore(db, {
     submission_id: submission.id,
     score: onChain.score.toString(),
-    proof_bundle_cid: submission.proof_bundle_cid ?? "",
+    proof_bundle_cid: proofBundleCid,
     proof_bundle_hash: onChain.proofBundleHash,
     scored_at: new Date().toISOString(),
   });

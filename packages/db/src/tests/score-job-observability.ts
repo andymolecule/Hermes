@@ -10,6 +10,7 @@ import {
 
 async function testCompleteJobClearsRunStartedAt() {
   let payload: Record<string, unknown> | undefined;
+  const before = Date.now();
 
   const db = {
     from(table: string) {
@@ -31,7 +32,8 @@ async function testCompleteJobClearsRunStartedAt() {
 
   await completeJob(db, "job-1", "0xabc");
   assert.equal(payload?.run_started_at, null);
-  assert.equal(payload?.next_attempt_at, null);
+  assert.equal(typeof payload?.next_attempt_at, "string");
+  assert.ok(new Date(String(payload?.next_attempt_at)).getTime() >= before);
 }
 
 async function testFailJobClearsRunStartedAt() {
@@ -62,6 +64,35 @@ async function testFailJobClearsRunStartedAt() {
   assert.ok(
     new Date(String(payload?.next_attempt_at)).getTime() >= before + 55_000,
   );
+}
+
+async function testExhaustedFailJobKeepsNextAttemptAtNonNull() {
+  let payload: Record<string, unknown> | undefined;
+  const before = Date.now();
+
+  const db = {
+    from(table: string) {
+      assert.equal(table, "score_jobs");
+      return {
+        update(nextPayload: Record<string, unknown>) {
+          payload = nextPayload;
+          return {
+            eq(field: string, value: unknown) {
+              assert.equal(field, "id");
+              assert.equal(value, "job-exhausted");
+              return Promise.resolve({ error: null });
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  await failJob(db, "job-exhausted", "boom", 5, 5, 60_000);
+  assert.equal(payload?.status, "failed");
+  assert.equal(payload?.run_started_at, null);
+  assert.equal(typeof payload?.next_attempt_at, "string");
+  assert.ok(new Date(String(payload?.next_attempt_at)).getTime() >= before);
 }
 
 async function testRequeueClearsRunStartedAt() {
@@ -211,6 +242,7 @@ async function testGetOldestRunningStartedAtReturnsTimestamp() {
 
 await testCompleteJobClearsRunStartedAt();
 await testFailJobClearsRunStartedAt();
+await testExhaustedFailJobKeepsNextAttemptAtNonNull();
 await testRequeueClearsRunStartedAt();
 await testMarkScoreJobSkippedKeepsNextAttemptAtNonNull();
 await testRunningOverThresholdCountUsesRunStartedAt();
