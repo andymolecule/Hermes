@@ -62,8 +62,8 @@ Notes:
 
 Railway config-as-code checks before production cutover:
 
-- API service should use [apps/api/railway.toml](/Users/changyuesin/Agora/apps/api/railway.toml)
-- Indexer service should use [packages/chain/railway.toml](/Users/changyuesin/Agora/packages/chain/railway.toml)
+- API service should use [apps/api/railway.toml](../apps/api/railway.toml)
+- Indexer service should use [packages/chain/railway.toml](../packages/chain/railway.toml)
 - Keep `Root Directory` unset
 - Keep `watchPatterns` out of these Railway service configs unless you have a measured build-cost problem. For Agora's current size, always rebuilding on `main` is simpler and more reliable than selective deploy filtering.
 - If a service is connected to `main` but does not redeploy on new commits, first verify that Railway is reading the correct `railway.toml` path. Railway only auto-detects config files during initial import; existing services often need the file path set explicitly in the dashboard.

@@ -232,8 +232,8 @@ Railway should treat API and indexer deploy settings as code, not hand-maintaine
 
 Repo-owned service configs:
 
-- API: [apps/api/railway.toml](/Users/changyuesin/Agora/apps/api/railway.toml)
-- Indexer: [packages/chain/railway.toml](/Users/changyuesin/Agora/packages/chain/railway.toml)
+- API: [apps/api/railway.toml](../apps/api/railway.toml)
+- Indexer: [packages/chain/railway.toml](../packages/chain/railway.toml)
 
 These files define:
 
@@ -255,8 +255,8 @@ Important Railway behavior:
 
 For the self-hosted worker, this repo ships a GitHub Actions deploy workflow plus a reusable droplet script:
 
-- Workflow: [deploy-worker-digitalocean.yml](/Users/changyuesin/Agora/.github/workflows/deploy-worker-digitalocean.yml)
-- Droplet script: [deploy-worker.sh](/Users/changyuesin/Agora/scripts/ops/deploy-worker.sh)
+- Workflow: [deploy-worker-digitalocean.yml](../.github/workflows/deploy-worker-digitalocean.yml)
+- Droplet script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
 
 Expected GitHub configuration:
 
