@@ -16,17 +16,18 @@ import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { getChallengeClaimableInfo } from "../lib/api";
 import { formatDateTime, formatUsdc } from "../lib/format";
 import type { ChallengeClaimableInfo } from "../lib/types";
-import { assertSupportedContractVersion } from "../lib/wallet/challenge-version";
 import {
   getExplorerTxUrl,
   getWrongChainMessage,
   isWrongWalletChain,
 } from "../lib/wallet/network";
-import { getErrorMessage, isUserRejectedError } from "../lib/wallet/tx-errors";
 import {
+  assertSupportedContractVersion,
+  getErrorMessage,
+  isUserRejectedError,
   simulateAndWriteContract,
   waitForTransactionReceiptWithTimeout,
-} from "../lib/wallet/tx-flow";
+} from "../lib/wallet/tx";
 
 const abi = AgoraChallengeAbi as unknown as Abi;
 

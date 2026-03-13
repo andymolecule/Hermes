@@ -64,20 +64,18 @@ import {
   formatFinalizationCheckDate,
   formatSubmissionWindowLabel,
 } from "../../lib/post-submission-window";
-import { assertSupportedContractVersion } from "../../lib/wallet/challenge-version";
 import {
   APP_CHAIN_NAME,
   getWrongChainMessage,
   isWrongWalletChain,
 } from "../../lib/wallet/network";
 import {
+  assertSupportedContractVersion,
   getErrorMessage,
   isUserRejectedError,
-} from "../../lib/wallet/tx-errors";
-import {
   simulateAndWriteContract,
   waitForTransactionReceiptWithTimeout,
-} from "../../lib/wallet/tx-flow";
+} from "../../lib/wallet/tx";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const DEFAULT_PERMIT_VERSION = "1";

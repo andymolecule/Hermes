@@ -34,18 +34,19 @@ import {
   getSubmissionPublicKey,
 } from "../lib/api";
 import { formatUsdc, shortAddress } from "../lib/format";
-import { assertSupportedContractVersion } from "../lib/wallet/challenge-version";
 import {
   APP_CHAIN_NAME,
   getExplorerTxUrl,
   getWrongChainMessage,
   isWrongWalletChain,
 } from "../lib/wallet/network";
-import { getErrorMessage, isUserRejectedError } from "../lib/wallet/tx-errors";
 import {
+  assertSupportedContractVersion,
+  getErrorMessage,
+  isUserRejectedError,
   simulateAndWriteContract,
   waitForTransactionReceiptWithTimeout,
-} from "../lib/wallet/tx-flow";
+} from "../lib/wallet/tx";
 import { ScoringTrustNotice } from "./ScoringTrustNotice";
 import { WalletButton } from "./WalletButton";
 

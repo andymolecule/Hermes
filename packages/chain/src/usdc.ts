@@ -1,37 +1,7 @@
-import { loadConfig } from "@agora/common";
+import { erc20Abi, loadConfig } from "@agora/common";
 import { parseUnits } from "viem";
 import { getPublicClient, getWalletClient } from "./client.js";
 import { readContractStrict } from "./contract-read.js";
-
-const erc20Abi = [
-  {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "allowance",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
 
 export async function approve(spender: `0x${string}`, amount: number) {
   const config = loadConfig();
