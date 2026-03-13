@@ -38,14 +38,29 @@ jobs:
       DO_WORKER_PATH: ${{ vars.DO_WORKER_PATH }}
       DO_WORKER_PM2_NAME: ${{ vars.DO_WORKER_PM2_NAME }}
       AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL }}
-      AGORA_DEPLOY_EXPECTED_SHA: ${{ github.sha }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Validate deploy secrets
         run: |
           set -euo pipefail
           test -n "$DO_WORKER_HOST"
           test -n "$DO_WORKER_USER"
           test -n "${{ secrets.DO_WORKER_SSH_KEY }}"
+
+      - name: Resolve expected API runtime version
+        id: runtime
+        run: |
+          set -euo pipefail
+          EXPECTED_RUNTIME_VERSION="$(
+            node --input-type=module -e "import { resolveGitRuntimeVersionForSurface } from './scripts/runtime-surfaces.mjs'; process.stdout.write(resolveGitRuntimeVersionForSurface('api'));"
+          )"
+          test -n "$EXPECTED_RUNTIME_VERSION"
+          echo "expected_runtime_version=$EXPECTED_RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Expected API runtime version: $EXPECTED_RUNTIME_VERSION"
 
       - name: Configure SSH
         run: |
@@ -60,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
-          EXPECTED_RUNTIME_VERSION="${AGORA_DEPLOY_EXPECTED_SHA:0:12}"
+          EXPECTED_RUNTIME_VERSION="${{ steps.runtime.outputs.expected_runtime_version }}"
 
           for attempt in $(seq 1 40); do
             RUNTIME_VERSION="$(
@@ -86,4 +101,53 @@ jobs:
           DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
           DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
           ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
-            "set -euo pipefail; cd '$DO_WORKER_PATH'; if [ ! -x scripts/ops/deploy-worker.sh ]; then git fetch origin main && git checkout main && git pull --ff-only origin main; fi; export AGORA_DEPLOY_EXPECTED_SHA='$AGORA_DEPLOY_EXPECTED_SHA' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; bash scripts/ops/deploy-worker.sh"
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; if [ ! -x scripts/ops/deploy-worker.sh ]; then git fetch origin main && git checkout main && git pull --ff-only origin main; fi; export AGORA_DEPLOY_EXPECTED_SHA='${{ steps.runtime.outputs.expected_runtime_version }}' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; bash scripts/ops/deploy-worker.sh"
+
+      - name: Verify worker health after deploy
+        run: |
+          set -euo pipefail
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
+          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
+          AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
+          EXPECTED_RUNTIME_VERSION="${{ steps.runtime.outputs.expected_runtime_version }}"
+
+          for attempt in $(seq 1 20); do
+            worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
+
+            HEALTHY="$(
+              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" python3 - <<'PY'
+import json
+import os
+
+worker = json.loads(os.environ["WORKER_JSON"])
+workers = worker.get("workers") or {}
+sealing = worker.get("sealing") or {}
+expected_runtime = os.environ["EXPECTED_RUNTIME_VERSION"]
+
+active_runtime = str(workers.get("activeRuntimeVersion") or "")
+healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+sealing_configured = bool(sealing.get("configured"))
+sealing_ready = bool(sealing.get("workerReady"))
+
+healthy = (
+    active_runtime == expected_runtime
+    and healthy_active > 0
+    and healthy_stale_runtime == 0
+    and (not sealing_configured or sealing_ready)
+)
+print("true" if healthy else "false")
+PY
+            )"
+
+            if [ "$HEALTHY" = "true" ]; then
+              echo "Worker deploy verified on runtime $EXPECTED_RUNTIME_VERSION."
+              exit 0
+            fi
+
+            echo "Worker not healthy on expected runtime yet ($attempt/20). Waiting 15s..."
+            sleep 15
+          done
+
+          echo "Worker did not become healthy after deploy."
+          exit 1
