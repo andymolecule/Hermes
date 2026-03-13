@@ -62,8 +62,7 @@ export function deriveWorkerHealthStatus(
 
   if (
     input.workerRuntime?.activeRuntimeVersion &&
-    ((input.workerRuntime.healthyWorkersForActiveRuntimeVersion ?? 0) === 0 ||
-      (input.workerRuntime.healthyWorkersNotOnActiveRuntimeVersion ?? 0) > 0) &&
+    (input.workerRuntime.healthyWorkersForActiveRuntimeVersion ?? 0) === 0 &&
     (input.workerRuntime.healthyWorkers ?? 0) > 0
   ) {
     return "warning";

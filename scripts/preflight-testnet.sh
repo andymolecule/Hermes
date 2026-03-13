@@ -266,9 +266,6 @@ const workerVersion = String(payload?.workers?.activeRuntimeVersion ?? "");
 const alignedHealthyWorkers = Number(
   payload?.workers?.healthyWorkersForActiveRuntimeVersion ?? 0,
 );
-const mismatchedHealthyWorkers = Number(
-  payload?.workers?.healthyWorkersNotOnActiveRuntimeVersion ?? 0,
-);
 const healthyWorkers = Number(payload?.workers?.healthy ?? 0);
 
 if (!apiVersion) {
@@ -276,7 +273,7 @@ if (!apiVersion) {
   process.exit(1);
 }
 
-if (healthyWorkers > 0 && (alignedHealthyWorkers === 0 || mismatchedHealthyWorkers > 0)) {
+if (healthyWorkers > 0 && alignedHealthyWorkers === 0) {
   console.error(
     `[FAIL] Worker runtime version mismatch: api=${apiVersion} workerVersions=${JSON.stringify(payload?.workers?.runtimeVersions ?? [])}`,
   );

@@ -311,8 +311,8 @@ Expected signals:
 
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` only while the worker heartbeat for that `kid` is healthy.
 - `/healthz` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
-- `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `workers.healthyWorkersNotOnActiveRuntimeVersion = 0`, `sealing.workerReady=true`, and the same active `keyId`.
-- File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader. There is no implicit repo-root keyfile fallback.
+- `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, and the same active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader. The DigitalOcean worker start script still supports repo-root PEM fallbacks for backward compatibility.
 
 If the public key endpoint returns `503`, the web UI should block private submissions rather than falling back to a fake privacy claim.
 

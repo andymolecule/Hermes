@@ -1,8 +1,4 @@
 import { spawnSync } from "node:child_process";
-import {
-  API_RUNTIME_PATHS,
-  resolveGitRuntimeVersionForPaths,
-} from "./runtime-surfaces.mjs";
 
 function parseArgs(argv) {
   const options = {};
@@ -174,11 +170,7 @@ const sharedExpectedRuntimeVersion =
 const expectedApiRuntimeVersion =
   options.expectedApiRuntimeVersion?.trim() ||
   sharedExpectedRuntimeVersion ||
-  resolveGitRuntimeVersionForPaths({
-    label: "API",
-    pathspecs: API_RUNTIME_PATHS,
-    cwd: process.cwd(),
-  });
+  resolveGitRuntimeVersion();
 const expectedWebRuntimeVersion =
   options.expectedWebRuntimeVersion?.trim() ||
   sharedExpectedRuntimeVersion ||
@@ -236,7 +228,7 @@ if (apiRuntimeVersion === webRuntimeVersion) {
   console.log(`[OK] Web and API are aligned on runtime ${apiRuntimeVersion}`);
 } else {
   console.log(
-    `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This is acceptable when only one deploy surface changed and each service matches its own expected revision.`,
+    `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This can be acceptable during rollout when each service still matches the revision you intended to deploy.`,
   );
 }
 

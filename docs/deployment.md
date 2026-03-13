@@ -37,7 +37,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure each deploy surface resolves to the latest relevant runtime revision. API and worker must match exactly; web may legitimately differ on pushes that only touch web-only or ops-only files. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
+9. Ensure each deployed service reports the commit SHA it is actually running. API and worker must match exactly for scoring; web may differ temporarily during rollout. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
 10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the worker host can still `docker pull` them.
 11. Build and run preflight:
 
@@ -151,7 +151,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
-- `AGORA_RUNTIME_VERSION` is optional. API, worker, and indexer processes launched through `scripts/run-node-with-root-env.mjs` derive a service-specific runtime version from the latest commit that touched that deploy surface, so web-only pushes do not invalidate the worker runtime gate.
+- `AGORA_RUNTIME_VERSION` is optional. API, worker, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use platform commit metadata when available and otherwise fall back to the local git SHA.
 - On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, so deploy order matters: bring up the new API runtime before expecting new workers to claim work.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
@@ -189,7 +189,7 @@ This section covers non-code work for deployment across hosted systems.
 - `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web each match the latest relevant git revision for their own deploy surface, and that the worker is healthy on the active API runtime. Use `--expected` only when you intentionally want to force one exact revision across both services.
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
 - `Auto-heal Worker (DigitalOcean)` GitHub Actions runs on a schedule and redeploys the worker droplet automatically when `/api/worker-health` reports zero healthy workers on the active runtime or the active submission-seal key is unavailable.
 
 ### DNS and Domains
@@ -209,7 +209,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision for their own surface and that the worker is aligned with the API runtime.
+- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
 - API auth flow sets `agora_session`.
 - MCP server registers as `agora-mcp`.
 - CLI help text shows `agora`.

@@ -2,12 +2,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  REPO_ROOT,
-  resolveGitRuntimeVersionForSurface,
-} from "./runtime-surfaces.mjs";
-
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.join(scriptDir, "..");
 const rootEnvPath = path.join(REPO_ROOT, ".env");
 
 const FILE_BACKED_ENV_RULES = [
@@ -113,20 +109,7 @@ function resolveGitRuntimeVersion() {
   return "dev";
 }
 
-function resolveSurfaceRuntimeVersion(runtimeSurface) {
-  if (!runtimeSurface) return null;
-
-  try {
-    return resolveGitRuntimeVersionForSurface(runtimeSurface, REPO_ROOT);
-  } catch {
-    return null;
-  }
-}
-
-export function applyAgoraRuntimeEnv(options = {}) {
-  const runtimeSurface =
-    options.runtimeSurface?.trim() || process.env.AGORA_RUNTIME_SURFACE?.trim();
-
+export function applyAgoraRuntimeEnv() {
   if (typeof process.loadEnvFile === "function" && fs.existsSync(rootEnvPath)) {
     process.loadEnvFile(rootEnvPath);
   }
@@ -135,17 +118,11 @@ export function applyAgoraRuntimeEnv(options = {}) {
     applyFileBackedEnvRule(rule);
   }
 
-  const surfaceRuntimeVersion = resolveSurfaceRuntimeVersion(runtimeSurface);
-
   if (!process.env.AGORA_RUNTIME_VERSION?.trim()) {
     process.env.AGORA_RUNTIME_VERSION =
-      surfaceRuntimeVersion ??
-      resolveHostedRuntimeVersion() ??
-      resolveGitRuntimeVersion();
+      resolveHostedRuntimeVersion() ?? resolveGitRuntimeVersion();
   } else if (process.env.AGORA_RUNTIME_VERSION.trim().toLowerCase() === "dev") {
     process.env.AGORA_RUNTIME_VERSION =
-      surfaceRuntimeVersion ??
-      resolveHostedRuntimeVersion() ??
-      process.env.AGORA_RUNTIME_VERSION;
+      resolveHostedRuntimeVersion() ?? process.env.AGORA_RUNTIME_VERSION;
   }
 }

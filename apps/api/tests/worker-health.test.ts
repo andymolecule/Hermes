@@ -187,3 +187,39 @@ test("worker health warns when healthy workers run a different runtime version",
   assert.deepEqual(payload.workers?.runtimeVersions, ["sha-old"]);
   assert.equal(payload.workers?.activeRuntimeVersion, "sha-new");
 });
+
+test("worker health stays idle when an active healthy worker exists alongside stale runtime noise", () => {
+  const payload = buildWorkerHealthResponse({
+    jobs: {
+      queued: 0,
+      eligibleQueued: 0,
+      running: 0,
+      scored: 0,
+      failed: 0,
+      skipped: 0,
+    },
+    oldestPendingAt: null,
+    lastScoredAt: null,
+    oldestRunningStartedAt: null,
+    runningOverThresholdCount: 0,
+    workerRuntime: {
+      healthyWorkers: 2,
+      readyWorkers: 2,
+      staleWorkers: 0,
+      latestHeartbeatAt: "2026-03-06T11:59:30.000Z",
+      latestError: null,
+      runtimeVersions: ["sha-new", "sha-old"],
+      activeRuntimeVersion: "sha-new",
+      healthyWorkersForActiveRuntimeVersion: 1,
+      healthyWorkersNotOnActiveRuntimeVersion: 1,
+      requireReadySealWorker: false,
+      healthyWorkersForActiveSealKey: 0,
+      staleAfterMs: 90_000,
+    },
+    nowMs: Date.parse("2026-03-06T12:00:00.000Z"),
+  });
+
+  assert.equal(payload.status, "idle");
+  assert.equal(payload.workers?.healthy, 2);
+  assert.equal(payload.workers?.healthyWorkersForActiveRuntimeVersion, 1);
+});
