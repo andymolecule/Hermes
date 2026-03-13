@@ -52,11 +52,24 @@ import { WalletButton } from "./WalletButton";
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 const MAX_UPLOAD_MB = SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024;
 const PRIVATE_SUBMISSION_COPY =
-  "Submission contents are sealed in your browser before upload, so other solvers cannot read them while the challenge is open.";
+  "Submission contents will be sealed in your browser before upload, so other solvers cannot read them while the challenge is open.";
+const PRIVATE_SUBMISSION_FLOW_COPY =
+  "Encrypted locally, then uploaded to IPFS as a sealed envelope.";
+const PRIVATE_SUBMISSION_KEY_COPY =
+  "Encrypted with Agora's active scorer public key, not your wallet key.";
+const PRIVATE_SUBMISSION_IPFS_COPY =
+  "Anyone with the IPFS link can fetch the sealed envelope, but not the plaintext answer.";
+const PRIVATE_SUBMISSION_METADATA_COPY =
+  "Visible metadata includes challenge id, solver wallet, file name, MIME type, version, and key id.";
+const PRIVATE_SUBMISSION_DECRYPTION_COPY =
+  "Only Agora's scoring worker, which holds the matching private key, can decrypt it after scoring starts.";
+const PRIVATE_SUBMISSION_BOUNDARY_COPY =
+  "This protects against public copying during the open phase. It is not permanent secrecy.";
 const PRIVATE_SUBMISSION_DISCLOSURE_COPY =
   "Your wallet address and transaction remain visible on-chain. After scoring begins, replay artifacts may be published for public verification.";
 const PRIVATE_SUBMISSION_UNAVAILABLE_COPY =
   "Private answer protection is currently unavailable. Agora requires sealed submissions to keep submission contents hidden while a challenge is open. Retry later after sealed submissions are restored.";
+const READY_TO_SEAL_BADGE_COPY = "Will seal on submit";
 
 function getFileSelectionError(file: { size: number }) {
   return getSubmissionSizeError(
@@ -101,6 +114,37 @@ function getSubmissionSealingErrorMessage(error: unknown) {
 
 function formatExpectedColumns(columns: string[]) {
   return columns.join(", ");
+}
+
+function SubmissionPrivacyNotice() {
+  return (
+    <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
+      <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
+      <div className="space-y-2">
+        <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
+          {PRIVATE_SUBMISSION_COPY}
+        </p>
+        <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--color-warm-900)] leading-relaxed">
+          {PRIVATE_SUBMISSION_FLOW_COPY}
+        </p>
+        <div className="rounded-md border border-[var(--border-subtle)] bg-white/70 p-3">
+          <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)]">
+            Privacy boundary
+          </p>
+          <ul className="mt-2 space-y-1.5 text-[10px] font-mono tracking-wider uppercase leading-relaxed text-[var(--text-muted)]">
+            <li>{PRIVATE_SUBMISSION_KEY_COPY}</li>
+            <li>{PRIVATE_SUBMISSION_IPFS_COPY}</li>
+            <li>{PRIVATE_SUBMISSION_METADATA_COPY}</li>
+            <li>{PRIVATE_SUBMISSION_DECRYPTION_COPY}</li>
+            <li>{PRIVATE_SUBMISSION_BOUNDARY_COPY}</li>
+          </ul>
+        </div>
+        <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
+          {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 interface SubmitSolutionProps {
@@ -210,6 +254,7 @@ export function SubmitSolution({
 
   const isSuccess = status.startsWith("success:");
   const isError = status && !isSuccess && !isSubmitting && !uploading;
+  const isWorking = Boolean(status) && (isSubmitting || uploading);
   const hasResult = inputMode === "file" ? !!resultFile : !!resultText.trim();
 
   function resetDragState() {
@@ -385,7 +430,7 @@ export function SubmitSolution({
         sourceFile = new File([blob], "result.txt", { type: "text/plain" });
       }
 
-      setStatus("Sealing submission locally...");
+      setStatus("Encrypting and sealing your answer locally...");
       const sealedEnvelope = await sealSubmission({
         challengeId,
         solverAddress: normalizedAddress,
@@ -631,7 +676,7 @@ export function SubmitSolution({
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[#5A7D4F] bg-[#E8F0E4] border border-[#C4D9BC] px-2 py-0.5 rounded-sm flex items-center gap-1">
                             <Lock className="w-3 h-3" />
-                            Sealed locally
+                            {READY_TO_SEAL_BADGE_COPY}
                           </span>
                           <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--border-subtle)] px-2 py-0.5 rounded-sm">
                             {(resultFile.size / 1024).toFixed(1)} KB — click to
@@ -659,18 +704,7 @@ export function SubmitSolution({
                       </>
                     )}
                   </button>
-                  {/* Consolidated sealing notice */}
-                  <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
-                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                    <div className="space-y-0.5">
-                      <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
-                        {PRIVATE_SUBMISSION_COPY}
-                      </p>
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
-                        {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
-                      </p>
-                    </div>
-                  </div>
+                  <SubmissionPrivacyNotice />
                 </div>
               )}
 
@@ -695,18 +729,7 @@ export function SubmitSolution({
                     }}
                     disabled={isSubmitting}
                   />
-                  {/* Consolidated sealing notice */}
-                  <div className="flex items-start gap-2.5 mt-3 p-3 rounded-lg bg-[var(--surface-inset)] border border-[var(--border-subtle)]">
-                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                    <div className="space-y-0.5">
-                      <p className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-secondary)] leading-relaxed">
-                        {PRIVATE_SUBMISSION_COPY}
-                      </p>
-                      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] leading-relaxed">
-                        {PRIVATE_SUBMISSION_DISCLOSURE_COPY}
-                      </p>
-                    </div>
-                  </div>
+                  <SubmissionPrivacyNotice />
                 </div>
               )}
 
@@ -717,10 +740,10 @@ export function SubmitSolution({
                 disabled={isSubmitting || uploading || !hasResult || wrongChain}
                 className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-xs font-bold font-mono uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                {isSubmitting ? (
+                {isWorking ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    {status}
+                    Submission in progress
                   </>
                 ) : (
                   <>
@@ -733,6 +756,20 @@ export function SubmitSolution({
           )}
 
           {/* Status messages */}
+          {isWorking && (
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
+              <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin" />
+              <div className="space-y-2">
+                <p className="font-bold text-base font-display">
+                  Submission in progress
+                </p>
+                <p className="break-all font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
+                  {status}
+                </p>
+              </div>
+            </div>
+          )}
+
           {isSuccess && (
             <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-[var(--surface-inset)] text-[var(--color-warm-900)] text-sm rounded-lg">
               <CheckCircle
