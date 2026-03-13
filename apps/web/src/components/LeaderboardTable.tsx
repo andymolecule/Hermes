@@ -1,5 +1,5 @@
 import { Trophy } from "lucide-react";
-import { formatWadToScore, shortAddress } from "../lib/format";
+import { formatDateTime, formatWadToScore, shortAddress } from "../lib/format";
 import type { Submission } from "../lib/types";
 import { HatchedDivider } from "./HatchedDivider";
 
@@ -74,7 +74,7 @@ export function LeaderboardTable({ rows }: { rows: Submission[] }) {
                 )}
               </td>
               <td className="py-3 px-4 text-right font-mono text-xs font-bold text-black/60 tabular-nums">
-                {new Date(row.submitted_at).toLocaleString()}
+                {formatDateTime(row.submitted_at)}
               </td>
             </tr>
           ))}

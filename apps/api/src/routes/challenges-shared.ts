@@ -154,6 +154,7 @@ export async function listChallengesFromQuery(
   })) as Array<Record<string, unknown>>;
   const normalizedRows = rows.map((row) => ({
     ...row,
+    reward_amount: Number(row.reward_amount),
     status: getEffectiveChallengeStatus(
       normalizeChallengeStatus(row.status),
       typeof row.deadline === "string" ? row.deadline : null,

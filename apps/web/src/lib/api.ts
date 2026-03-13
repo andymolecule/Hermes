@@ -2,6 +2,7 @@ import {
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
   agentChallengeDetailResponseSchema,
+  agentChallengesListResponseSchema,
   challengeRegistrationResponseSchema,
   challengeSpecSchema,
 } from "@agora/common";
@@ -103,7 +104,18 @@ export async function listChallenges(filters: {
   if (filters.limit !== undefined) params.set("limit", String(filters.limit));
 
   const query = params.toString();
-  return request<Challenge[]>(`/api/challenges${query ? `?${query}` : ""}`);
+  const response = await fetch(
+    resolveApiRequestUrl(`/api/challenges${query ? `?${query}` : ""}`),
+    {
+      headers: { "content-type": "application/json" },
+    },
+  );
+  if (!response.ok) {
+    const message = await getApiErrorMessage(response);
+    throw new Error(`API request failed (${response.status}): ${message}`);
+  }
+  const json = (await response.json()) as unknown;
+  return agentChallengesListResponseSchema.parse(json).data as Challenge[];
 }
 
 export async function getChallenge(id: string) {

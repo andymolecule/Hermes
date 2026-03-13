@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveApiRequestUrl } from "../src/lib/api";
+import { listChallenges, resolveApiRequestUrl } from "../src/lib/api";
 
 test("browser requests keep /api routes same-origin", () => {
   const originalWindow = globalThis.window;
@@ -36,5 +36,67 @@ test("browser requests still send non-api routes to the configured backend", () 
       value: originalWindow,
       configurable: true,
     });
+  }
+});
+
+test("listChallenges validates the API response shape before returning rows", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          {
+            id: "d1a47e01-8154-40b2-8f9e-13e7a4dd3f83",
+            title: "Challenge",
+            description: "desc",
+            domain: "other",
+            challenge_type: "reproducibility",
+            reward_amount: 20,
+            deadline: "2026-03-20T00:00:00.000Z",
+            status: "open",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    const rows = await listChallenges({});
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.reward_amount, 20);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("listChallenges rejects malformed API response shapes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          {
+            id: "not-a-uuid",
+            title: "Challenge",
+            domain: "other",
+            reward_amount: 20,
+            deadline: "2026-03-20T00:00:00.000Z",
+            status: "open",
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    )) as typeof fetch;
+
+  try {
+    await assert.rejects(() => listChallenges({}));
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });

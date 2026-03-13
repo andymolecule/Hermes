@@ -195,8 +195,15 @@ export function HomeClient() {
       ) : null}
 
       {query.error ? (
-        <div className="border border-black p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-black/60">
-          Unable to connect to API — check that the backend is running.
+        <div className="border border-black p-8 text-center">
+          <div className="font-mono font-bold text-sm uppercase tracking-wider text-black/60">
+            Unable to connect to API.
+          </div>
+          {query.error instanceof Error ? (
+            <div className="mt-3 text-xs font-mono text-black/50 normal-case tracking-normal">
+              {query.error.message}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

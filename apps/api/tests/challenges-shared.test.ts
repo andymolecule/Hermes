@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  listChallengesFromQuery,
   toPrivateSubmission,
   toPublicSubmission,
 } from "../src/routes/challenges-shared.js";
@@ -30,4 +31,32 @@ test("toPrivateSubmission normalizes numeric scores to strings", () => {
 
   assert.equal(result.score, "1000000000000000000");
   assert.equal(result.result_format, "plain_v0");
+});
+
+test("listChallengesFromQuery normalizes numeric reward fields for API consumers", async () => {
+  const rows = await listChallengesFromQuery(
+    {},
+    {
+      createSupabaseClient: (() => ({}) as never) as never,
+      getChallengeById: (async () => ({}) as never) as never,
+      getChallengeLifecycleState: (async () => ({}) as never) as never,
+      listChallengesWithDetails: (async () => [
+        {
+          id: "d1a47e01-8154-40b2-8f9e-13e7a4dd3f83",
+          title: "Repro challenge",
+          description: "desc",
+          domain: "other",
+          reward_amount: "500.000000",
+          deadline: "2026-03-20T00:00:00.000Z",
+          status: "open",
+          created_at: "2026-03-10T00:00:00.000Z",
+        },
+      ]) as never,
+      listSubmissionsForChallenge: (async () => []) as never,
+    },
+  );
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.reward_amount, 500);
+  assert.equal(typeof rows[0]?.reward_amount, "number");
 });

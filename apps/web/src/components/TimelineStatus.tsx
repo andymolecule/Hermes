@@ -7,7 +7,7 @@ import {
 } from "@agora/common";
 import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
 import { getChallengeTimelineFlow } from "../lib/challenge-status-copy";
-import { shortAddress } from "../lib/format";
+import { formatDateTime, shortAddress } from "../lib/format";
 import type { Challenge, Submission } from "../lib/types";
 import { getExplorerAddressUrl } from "../lib/wallet/network";
 
@@ -77,7 +77,7 @@ export function TimelineStatus({
             Submission deadline
           </span>
           <span className="ml-auto font-mono font-bold text-[var(--color-warm-900)] uppercase tracking-wider text-xs">
-            {new Date(challenge.deadline).toLocaleString()}
+            {formatDateTime(challenge.deadline)}
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -139,7 +139,7 @@ export function TimelineStatus({
                 Challenge Created
               </div>
               <div className="text-[var(--text-muted)] font-mono mt-0.5">
-                {new Date(challenge.created_at).toLocaleString()}
+                {formatDateTime(challenge.created_at)}
               </div>
             </div>
             {challenge.contract_address && (
@@ -170,7 +170,7 @@ export function TimelineStatus({
               </div>
               <div className="text-[var(--text-muted)] font-mono mt-0.5">
                 {shortAddress(sub.solver_address)} ·{" "}
-                {new Date(sub.submitted_at).toLocaleString()}
+                {formatDateTime(sub.submitted_at)}
               </div>
             </div>
           </div>
