@@ -58,6 +58,12 @@ import {
 } from "../../lib/challenge-post";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { computeProtocolFee, formatUsdc } from "../../lib/format";
+import {
+  computeDeadlineIso,
+  formatDeadlineDate,
+  formatFinalizationCheckDate,
+  formatSubmissionWindowLabel,
+} from "../../lib/post-submission-window";
 import { assertSupportedContractVersion } from "../../lib/wallet/challenge-version";
 import {
   APP_CHAIN_NAME,
@@ -757,22 +763,8 @@ function buildSpec(state: FormState) {
 
 // ─── Deadline Helpers ────────────────────────────────
 
-/** Compute a fresh deadline ISO from days. Always computed live, never stored stale.
- *  Quick-test (0 days) adds a 2-min buffer beyond the displayed 30 min to
- *  absorb IPFS pinning, wallet confirmations, and slow RPC round-trips. */
-const QUICK_TEST_MINUTES = 30;
-const QUICK_TEST_BUFFER_MINUTES = 2;
 const APPROVAL_REFRESH_ATTEMPTS = 6;
 const APPROVAL_REFRESH_DELAY_MS = 750;
-
-function computeDeadlineIso(days: string): string {
-  const d = Number(days);
-  if (d === 0)
-    return new Date(
-      Date.now() + (QUICK_TEST_MINUTES + QUICK_TEST_BUFFER_MINUTES) * 60 * 1000,
-    ).toISOString();
-  return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
-}
 
 function isPermitUnsupportedError(message: string) {
   const normalized = message.toLowerCase();
@@ -789,30 +781,6 @@ function isPermitUnsupportedError(message: string) {
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Format a deadline date for display. */
-function formatDeadlineDate(days: string): string {
-  return new Date(computeDeadlineIso(days)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/** Format the earliest deterministic point where review can end. */
-function formatFinalizationCheckDate(
-  days: string,
-  disputeWindowHours: string,
-): string {
-  const deadlineMs = new Date(computeDeadlineIso(days)).getTime();
-  const earliestFinalizeCheckMs =
-    deadlineMs + Number(disputeWindowHours) * 3600000;
-  return new Date(earliestFinalizeCheckMs).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 // ─── CSV Header Detection ───────────────────────────
@@ -3107,6 +3075,9 @@ export function PostClient() {
                 }
               >
                 {isTestnetChain(CHAIN_ID) && (
+                  <option value="15m">Quick test (15 min)</option>
+                )}
+                {isTestnetChain(CHAIN_ID) && (
                   <option value="0">Quick test (30 min)</option>
                 )}
                 <option value="7">7 days</option>
@@ -3516,10 +3487,7 @@ export function PostClient() {
                   {[
                     {
                       label: "Submissions open",
-                      detail:
-                        state.deadlineDays === "0"
-                          ? "Duration: 30 min"
-                          : `Duration: ${state.deadlineDays} days`,
+                      detail: `Duration: ${formatSubmissionWindowLabel(state.deadlineDays)}`,
                       note: "Solvers can start submitting as soon as the contract is deployed.",
                       active: true,
                     },
@@ -3773,9 +3741,7 @@ export function PostClient() {
               <div className="preview-row">
                 <span className="preview-label">Submission window</span>
                 <span className="preview-value">
-                  {state.deadlineDays === "0"
-                    ? "30 min"
-                    : `${state.deadlineDays} days`}
+                  {formatSubmissionWindowLabel(state.deadlineDays)}
                 </span>
               </div>
               <div className="preview-row">
