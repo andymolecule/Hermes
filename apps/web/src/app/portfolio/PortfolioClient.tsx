@@ -14,7 +14,7 @@ import {
 } from "../../lib/api";
 import { getChallengeBadgeLabel } from "../../lib/challenge-status-copy";
 import { CHAIN_ID } from "../../lib/config";
-import { formatDate, formatUsdc } from "../../lib/format";
+import { formatDate, formatUsdc, formatWadToScore } from "../../lib/format";
 import { getStatusStyle } from "../../lib/status-styles";
 import type { SolverSubmission } from "../../lib/types";
 import { APP_CHAIN_NAME } from "../../lib/wallet/network";
@@ -24,13 +24,6 @@ import {
   resetWalletSessionQueries,
 } from "../../lib/wallet/session-state";
 import { getPortfolioAccessState } from "./portfolio-access";
-
-function formatScore(score: string | null) {
-  if (score === null || score === undefined) return "--";
-  const num = Number(score);
-  if (!Number.isFinite(num)) return score;
-  return num.toFixed(4);
-}
 
 function buildSiweMessage(input: {
   address: `0x${string}`;
@@ -87,7 +80,7 @@ function SubmissionRow({ submission }: { submission: SolverSubmission }) {
         <span className="font-mono text-xs font-bold tabular-nums">
           {challenge.status === CHALLENGE_STATUS.open
             ? "Hidden"
-            : formatScore(submission.score)}
+            : formatWadToScore(submission.score)}
         </span>
       </td>
       <td className="py-3 px-4 border-r border-black">
