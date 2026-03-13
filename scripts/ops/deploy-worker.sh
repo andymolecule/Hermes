@@ -50,6 +50,9 @@ if ! pm2 describe "$APP_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Keep the worker gate aligned with the live API deploy revision even when
+# the process wrapper derives a narrower runtime surface SHA.
+export AGORA_RUNTIME_VERSION="$DEPLOYED_SHA"
 pm2 restart "$APP_NAME" --update-env
 
 echo "Worker deploy complete."

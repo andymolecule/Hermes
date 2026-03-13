@@ -117,7 +117,7 @@ jobs:
             worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
             HEALTHY="$(
-              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" python3 - <<'PY'
+              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" python3 -c '
               import json
               import os
 
@@ -139,7 +139,7 @@ jobs:
                   and (not sealing_configured or sealing_ready)
               )
               print("true" if healthy else "false")
-              PY
+              '
             )"
 
             if [ "$HEALTHY" = "true" ]; then

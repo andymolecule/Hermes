@@ -51,7 +51,7 @@ jobs:
           api_json="$(curl -fsS "$AGORA_API_HEALTH_URL")"
           worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
-          API_JSON="$api_json" WORKER_JSON="$worker_json" python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          API_JSON="$api_json" WORKER_JSON="$worker_json" python3 -c '
           import json
           import os
           import sys
@@ -91,7 +91,7 @@ jobs:
                   print(f"latest_error={latest_error}")
           else:
               print("needs_heal=false")
-          PY
+          ' >> "$GITHUB_OUTPUT"
 
       - name: Report health status
         run: |
@@ -128,7 +128,7 @@ jobs:
             worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
 
             HEALTHY="$(
-              WORKER_JSON="$worker_json" python3 - <<'PY'
+              WORKER_JSON="$worker_json" python3 -c '
               import json
               import os
 
@@ -147,7 +147,7 @@ jobs:
                   and (not sealing_configured or sealing_ready)
               )
               print("true" if healthy else "false")
-              PY
+              '
             )"
 
             if [ "$HEALTHY" = "true" ]; then
