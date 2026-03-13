@@ -15,7 +15,7 @@ permissions:
 jobs:
   heal:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DO_WORKER_HOST: ${{ secrets.DO_WORKER_HOST }}
       DO_WORKER_USER: ${{ secrets.DO_WORKER_USER }}
@@ -47,23 +47,26 @@ jobs:
           AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
           AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
-
-          api_json="$(curl -fsS "$AGORA_API_HEALTH_URL")"
-          worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
-
-          API_JSON="$api_json" WORKER_JSON="$worker_json" node -e 'const api = JSON.parse(process.env.API_JSON ?? "{}"); const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const apiRuntime = String(api.runtimeVersion ?? "").trim(); if (!apiRuntime) { console.error("Live API health did not include runtimeVersion."); process.exit(1); } const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const latestError = String(workers.latestError ?? "").trim(); const runningOverThreshold = Number(worker.runningOverThresholdCount ?? 0); const reasons = []; if (healthyActive <= 0) reasons.push("zero healthy workers on the active API runtime"); if (sealingConfigured && !sealingReady) reasons.push("sealed-submission worker readiness is false"); console.log(`api_runtime=${apiRuntime}`); console.log(`running_over_threshold=${runningOverThreshold}`); if (reasons.length > 0) { console.log("needs_heal=true"); console.log(`reasons=${reasons.join(" ; ")}`); if (latestError) console.log(`latest_error=${latestError}`); } else { console.log("needs_heal=false"); }' >> "$GITHUB_OUTPUT"
+          node scripts/ops/check-worker-health.mjs summary \
+            --api-health-url "$AGORA_API_HEALTH_URL" \
+            --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
+            --starting-grace-ms 300000
 
       - name: Report health status
         run: |
           set -euo pipefail
           echo "API runtime: ${{ steps.health.outputs.api_runtime }}"
-          if [ "${{ steps.health.outputs.needs_heal }}" = "true" ]; then
-            echo "Auto-heal required: ${{ steps.health.outputs.reasons }}"
+          if [ "${{ steps.health.outputs.healthy }}" = "true" ]; then
+            echo "Worker runtime is healthy; no action required."
+          elif [ "${{ steps.health.outputs.starting_within_grace }}" = "true" ]; then
+            echo "Worker startup is still within grace: ${{ steps.health.outputs.summary }}"
+          elif [ "${{ steps.health.outputs.needs_heal }}" = "true" ]; then
+            echo "Auto-heal required: ${{ steps.health.outputs.summary }}"
             if [ -n "${{ steps.health.outputs.latest_error }}" ]; then
               echo "Latest worker error: ${{ steps.health.outputs.latest_error }}"
             fi
           else
-            echo "Worker runtime is healthy; no action required."
+            echo "Worker runtime check completed: ${{ steps.health.outputs.summary }}"
           fi
 
       - name: Redeploy worker on droplet
@@ -85,23 +88,41 @@ jobs:
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           EXPECTED_RUNTIME_VERSION="${{ steps.health.outputs.api_runtime }}"
 
-          for attempt in $(seq 1 20); do
-            worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
+          for attempt in $(seq 1 30); do
+            set +e
+            node scripts/ops/check-worker-health.mjs wait \
+              --api-health-url "$AGORA_API_HEALTH_URL" \
+              --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
+              --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" \
+              --starting-grace-ms 300000
+            status=$?
+            set -e
 
-            HEALTHY="$(
-              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" node -e 'const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const expected = String(process.env.EXPECTED_RUNTIME_VERSION ?? ""); const activeRuntime = String(workers.activeRuntimeVersion ?? ""); const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const healthy = activeRuntime === expected && healthyActive > 0 && (!sealingConfigured || sealingReady); process.stdout.write(healthy ? "true" : "false");'
-            )"
-
-            if [ "$HEALTHY" = "true" ]; then
+            if [ "$status" -eq 0 ]; then
               echo "Worker recovered and is aligned with the live API runtime."
               exit 0
             fi
 
-            echo "Worker still unhealthy after auto-heal attempt ($attempt/20). Waiting 15s..."
-            sleep 15
+            if [ "$status" -eq 10 ]; then
+              echo "Worker is still starting after auto-heal ($attempt/30). Waiting 20s..."
+            else
+              echo "Worker still unhealthy after auto-heal attempt ($attempt/30). Waiting 20s..."
+            fi
+            sleep 20
           done
 
           echo "Worker did not recover after auto-heal."
+          node scripts/ops/check-worker-health.mjs dump \
+            --api-health-url "$AGORA_API_HEALTH_URL" \
+            --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
+            --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" || true
+          echo
+          echo "Remote PM2 status and recent worker logs:"
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
+          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
+          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; pm2 status '$DO_WORKER_PM2_NAME' || true; pm2 logs '$DO_WORKER_PM2_NAME' --lines 100 --nostream || true"
           exit 1
 
       - name: Recover stale score jobs after heal

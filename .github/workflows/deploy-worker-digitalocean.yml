@@ -16,7 +16,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       DO_WORKER_HOST: ${{ secrets.DO_WORKER_HOST }}
       DO_WORKER_USER: ${{ secrets.DO_WORKER_USER }}
@@ -95,25 +95,35 @@ jobs:
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           EXPECTED_RUNTIME_VERSION="${{ steps.runtime.outputs.expected_runtime_version }}"
 
-          for attempt in $(seq 1 20); do
-            worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
+          for attempt in $(seq 1 30); do
+            set +e
+            node scripts/ops/check-worker-health.mjs wait \
+              --api-health-url "$AGORA_API_HEALTH_URL" \
+              --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
+              --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" \
+              --starting-grace-ms 300000
+            status=$?
+            set -e
 
-            HEALTHY="$(
-              EXPECTED_RUNTIME_VERSION="$EXPECTED_RUNTIME_VERSION" WORKER_JSON="$worker_json" node -e 'const worker = JSON.parse(process.env.WORKER_JSON ?? "{}"); const workers = worker.workers ?? {}; const sealing = worker.sealing ?? {}; const expected = String(process.env.EXPECTED_RUNTIME_VERSION ?? ""); const activeRuntime = String(workers.activeRuntimeVersion ?? ""); const healthyActive = Number(workers.healthyWorkersForActiveRuntimeVersion ?? 0); const sealingConfigured = Boolean(sealing.configured); const sealingReady = Boolean(sealing.workerReady); const healthy = activeRuntime === expected && healthyActive > 0 && (!sealingConfigured || sealingReady); process.stdout.write(healthy ? "true" : "false");'
-            )"
-
-            if [ "$HEALTHY" = "true" ]; then
+            if [ "$status" -eq 0 ]; then
               echo "Worker deploy verified on runtime $EXPECTED_RUNTIME_VERSION."
               exit 0
             fi
 
-            echo "Worker not healthy on expected runtime yet ($attempt/20). Waiting 15s..."
-            sleep 15
+            if [ "$status" -eq 10 ]; then
+              echo "Worker is still starting on the expected runtime ($attempt/30). Waiting 20s..."
+            else
+              echo "Worker not healthy on expected runtime yet ($attempt/30). Waiting 20s..."
+            fi
+            sleep 20
           done
 
           echo "Worker did not become healthy after deploy."
-          echo "Latest /api/worker-health payload:"
-          curl -fsS "$AGORA_WORKER_HEALTH_URL" || true
+          echo "Latest API/worker health payloads:"
+          node scripts/ops/check-worker-health.mjs dump \
+            --api-health-url "$AGORA_API_HEALTH_URL" \
+            --worker-health-url "$AGORA_WORKER_HEALTH_URL" \
+            --expected-runtime-version "$EXPECTED_RUNTIME_VERSION" || true
           echo
           echo "Remote PM2 status and recent worker logs:"
           DO_WORKER_PORT="${DO_WORKER_PORT:-22}"

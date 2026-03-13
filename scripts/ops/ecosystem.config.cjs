@@ -2,6 +2,8 @@ const workerName = process.env.AGORA_WORKER_PM2_NAME || "agora-worker";
 
 module.exports = {
   apps: [
+    // Shared for local ops, but the DigitalOcean droplet starts only the worker
+    // app via `--only agora-worker`.
     {
       name: "agora-api",
       cwd: process.cwd(),

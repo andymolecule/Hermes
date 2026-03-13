@@ -40,7 +40,9 @@ export interface WorkerHealthSnapshotInput {
     readyWorkers: number;
     staleWorkers: number;
     latestHeartbeatAt: string | null;
+    latestStartedAt?: string | null;
     latestError: string | null;
+    latestRuntimeVersion?: string | null;
     runtimeVersions: string[];
     activeRuntimeVersion: string | null;
     healthyWorkersForActiveRuntimeVersion: number;
@@ -130,7 +132,9 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
           ready: input.workerRuntime.readyWorkers,
           stale: input.workerRuntime.staleWorkers,
           latestHeartbeatAt: input.workerRuntime.latestHeartbeatAt,
+          latestStartedAt: input.workerRuntime.latestStartedAt ?? null,
           latestError: input.workerRuntime.latestError,
+          latestRuntimeVersion: input.workerRuntime.latestRuntimeVersion ?? null,
           runtimeVersions: input.workerRuntime.runtimeVersions,
           activeRuntimeVersion: input.workerRuntime.activeRuntimeVersion,
           healthyWorkersForActiveRuntimeVersion:
@@ -193,7 +197,9 @@ router.get("/", async (c) => {
           readyWorkers: workerRuntime.readyWorkers,
           staleWorkers: workerRuntime.staleWorkers,
           latestHeartbeatAt: workerRuntime.latestHeartbeatAt,
+          latestStartedAt: workerRuntimeStates[0]?.started_at ?? null,
           latestError: workerRuntimeStates[0]?.last_error ?? null,
+          latestRuntimeVersion: workerRuntimeStates[0]?.runtime_version ?? null,
           runtimeVersions: workerRuntime.runtimeVersions,
           activeRuntimeVersion: workerRuntime.activeRuntimeVersion,
           healthyWorkersForActiveRuntimeVersion:

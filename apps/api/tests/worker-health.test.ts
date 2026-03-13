@@ -223,3 +223,41 @@ test("worker health stays idle when an active healthy worker exists alongside st
   assert.equal(payload.workers?.healthy, 2);
   assert.equal(payload.workers?.healthyWorkersForActiveRuntimeVersion, 1);
 });
+
+test("worker health exposes latest worker startup metadata", () => {
+  const payload = buildWorkerHealthResponse({
+    jobs: {
+      queued: 0,
+      eligibleQueued: 0,
+      running: 0,
+      scored: 0,
+      failed: 0,
+      skipped: 0,
+    },
+    oldestPendingAt: null,
+    lastScoredAt: null,
+    oldestRunningStartedAt: null,
+    runningOverThresholdCount: 0,
+    workerRuntime: {
+      healthyWorkers: 0,
+      readyWorkers: 0,
+      staleWorkers: 0,
+      latestHeartbeatAt: "2026-03-06T11:59:30.000Z",
+      latestStartedAt: "2026-03-06T11:58:00.000Z",
+      latestError: "Worker starting readiness checks.",
+      latestRuntimeVersion: "sha-new",
+      runtimeVersions: ["sha-new"],
+      activeRuntimeVersion: "sha-new",
+      healthyWorkersForActiveRuntimeVersion: 0,
+      healthyWorkersNotOnActiveRuntimeVersion: 0,
+      requireReadySealWorker: false,
+      healthyWorkersForActiveSealKey: 0,
+      staleAfterMs: 90_000,
+    },
+    nowMs: Date.parse("2026-03-06T12:00:00.000Z"),
+  });
+
+  assert.equal(payload.workers?.latestStartedAt, "2026-03-06T11:58:00.000Z");
+  assert.equal(payload.workers?.latestRuntimeVersion, "sha-new");
+  assert.equal(payload.workers?.latestError, "Worker starting readiness checks.");
+});

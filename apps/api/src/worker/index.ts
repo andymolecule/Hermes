@@ -39,6 +39,8 @@ const LOG_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
 const WORKER_READINESS_RECHECK_MS = 60_000;
 export const WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS = 3;
+export const WORKER_STARTING_READINESS_ERROR =
+  "Worker starting readiness checks.";
 const WORKER_HOST = os.hostname();
 
 class WorkerFatalExitError extends Error {}
@@ -227,8 +229,58 @@ function updateRuntimeState(
   return changed;
 }
 
+async function persistRuntimeState(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+) {
+  await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
+    runtime_version: runtimeState.runtime_version,
+    ready: runtimeState.ready,
+    docker_ready: runtimeState.docker_ready,
+    seal_enabled: runtimeState.seal_enabled,
+    seal_key_id: runtimeState.seal_key_id,
+    seal_self_check_ok: runtimeState.seal_self_check_ok,
+    last_error: runtimeState.last_error,
+  });
+}
+
+async function updateRuntimeStateAndPersist(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
+  runtimeState: {
+    ready: boolean;
+    docker_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+  nextState: {
+    ready: boolean;
+    docker_ready: boolean;
+    last_error: string | null;
+  },
+) {
+  const changed = updateRuntimeState(runtimeState, nextState);
+  if (changed) {
+    await persistRuntimeState(db, runtimeWorkerId, runtimeState);
+  }
+  return changed;
+}
+
 async function ensureWorkerRuntimeIsActive(
   db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
     docker_ready: boolean;
@@ -245,11 +297,16 @@ async function ensureWorkerRuntimeIsActive(
     activeRuntimeVersion &&
     runtimeState.runtime_version !== activeRuntimeVersion
   ) {
-    const changed = updateRuntimeState(runtimeState, {
+    const changed = await updateRuntimeStateAndPersist(
+      db,
+      runtimeWorkerId,
+      runtimeState,
+      {
       ready: false,
       docker_ready: runtimeState.docker_ready,
       last_error: `Worker runtime ${runtimeState.runtime_version} is inactive. Next step: stop this worker or deploy the active runtime ${activeRuntimeVersion}.`,
-    });
+      },
+    );
     if (changed) {
       log("warn", "Worker runtime is no longer active for scoring", {
         runtimeVersion: runtimeState.runtime_version,
@@ -264,6 +321,7 @@ async function ensureWorkerRuntimeIsActive(
 
 async function refreshWorkerRuntimeReadiness(
   db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
   runtimeState: {
     ready: boolean;
     docker_ready: boolean;
@@ -275,7 +333,7 @@ async function refreshWorkerRuntimeReadiness(
   },
   log: WorkerLogFn,
 ) {
-  if (!(await ensureWorkerRuntimeIsActive(db, runtimeState, log))) {
+  if (!(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))) {
     return 0;
   }
 
@@ -284,11 +342,16 @@ async function refreshWorkerRuntimeReadiness(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Docker health check failed";
-    const changed = updateRuntimeState(runtimeState, {
+    const changed = await updateRuntimeStateAndPersist(
+      db,
+      runtimeWorkerId,
+      runtimeState,
+      {
       ready: false,
       docker_ready: false,
       last_error: message,
-    });
+      },
+    );
     if (changed) {
       log("warn", "Worker runtime degraded", {
         reason: "docker_unavailable",
@@ -300,11 +363,16 @@ async function refreshWorkerRuntimeReadiness(
 
   try {
     const preflightedOfficialImages = await preflightOfficialScoringImages(db);
-    const changed = updateRuntimeState(runtimeState, {
+    const changed = await updateRuntimeStateAndPersist(
+      db,
+      runtimeWorkerId,
+      runtimeState,
+      {
       ready: true,
       docker_ready: true,
       last_error: null,
-    });
+      },
+    );
     if (changed) {
       log("info", "Worker runtime ready", {
         preflightedOfficialImages,
@@ -316,11 +384,16 @@ async function refreshWorkerRuntimeReadiness(
       error instanceof Error
         ? error.message
         : "Official scorer image preflight failed";
-    const changed = updateRuntimeState(runtimeState, {
+    const changed = await updateRuntimeStateAndPersist(
+      db,
+      runtimeWorkerId,
+      runtimeState,
+      {
       ready: false,
       docker_ready: true,
       last_error: message,
-    });
+      },
+    );
     if (changed) {
       log("warn", "Worker runtime degraded", {
         reason: "image_preflight_failed",
@@ -386,7 +459,7 @@ export async function startWorker() {
     seal_key_id: sealKeyId,
     seal_self_check_ok: sealEnabled,
     runtime_version: getAgoraRuntimeVersion(config),
-    last_error: "Worker starting readiness checks.",
+    last_error: WORKER_STARTING_READINESS_ERROR,
   };
   await upsertWorkerRuntimeState(db, {
     worker_id: runtimeWorkerId,
@@ -404,6 +477,7 @@ export async function startWorker() {
 
   let preflightedOfficialImages = await refreshWorkerRuntimeReadiness(
     db,
+    runtimeWorkerId,
     runtimeState,
     log,
   );
@@ -434,13 +508,21 @@ export async function startWorker() {
         if (now - lastReadinessCheckAt >= WORKER_READINESS_RECHECK_MS) {
           preflightedOfficialImages = await refreshWorkerRuntimeReadiness(
             db,
+            runtimeWorkerId,
             runtimeState,
             log,
           );
           lastReadinessCheckAt = now;
         }
 
-        if (!(await ensureWorkerRuntimeIsActive(db, runtimeState, log))) {
+        if (
+          !(await ensureWorkerRuntimeIsActive(
+            db,
+            runtimeWorkerId,
+            runtimeState,
+            log,
+          ))
+        ) {
           consecutiveRuntimeMismatchChecks += 1;
           if (shouldExitForRuntimeMismatch(consecutiveRuntimeMismatchChecks)) {
             log("error", "Worker exiting after sustained runtime mismatch", {
