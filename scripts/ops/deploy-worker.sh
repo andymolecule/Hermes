@@ -44,16 +44,11 @@ fi
 pnpm install --frozen-lockfile
 pnpm turbo build --filter=@agora/api
 
-if ! pm2 describe "$APP_NAME" >/dev/null 2>&1; then
-  echo "Worker deploy aborted: PM2 app '$APP_NAME' was not found."
-  echo "Next step: create the PM2 worker process first, then rerun the deploy."
-  exit 1
-fi
-
 # Keep the worker gate aligned with the live API deploy revision even when
-# the process wrapper derives a narrower runtime surface SHA.
+# PM2 restarts do not preserve shell exports reliably.
 export AGORA_RUNTIME_VERSION="$DEPLOYED_SHA"
-pm2 restart "$APP_NAME" --update-env
+export AGORA_WORKER_PM2_NAME="$APP_NAME"
+pm2 startOrRestart scripts/ops/ecosystem.config.cjs --only "$APP_NAME" --update-env
 
 echo "Worker deploy complete."
 echo "Commit: $DEPLOYED_SHA"

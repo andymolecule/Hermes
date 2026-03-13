@@ -4,22 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "apps/api/**"
-      - "packages/common/**"
-      - "packages/db/**"
-      - "packages/chain/**"
-      - "packages/ipfs/**"
-      - "packages/scorer/**"
-      - "scripts/ops/deploy-worker.sh"
-      - "scripts/run-node-with-root-env.mjs"
-      - "scripts/runtime-env.mjs"
-      - "scripts/runtime-surfaces.mjs"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "turbo.json"
-      - "tsconfig.base.json"
   workflow_dispatch:
 
 concurrency:
@@ -53,16 +37,14 @@ jobs:
           test -n "$DO_WORKER_USER"
           test -n "${{ secrets.DO_WORKER_SSH_KEY }}"
 
-      - name: Resolve expected API runtime version
+      - name: Resolve expected deploy revision
         id: runtime
         run: |
           set -euo pipefail
-          EXPECTED_RUNTIME_VERSION="$(
-            node --input-type=module -e "import { resolveGitRuntimeVersionForSurface } from './scripts/runtime-surfaces.mjs'; process.stdout.write(resolveGitRuntimeVersionForSurface('api'));"
-          )"
+          EXPECTED_RUNTIME_VERSION="$(git rev-parse --short=12 HEAD)"
           test -n "$EXPECTED_RUNTIME_VERSION"
           echo "expected_runtime_version=$EXPECTED_RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Expected API runtime version: $EXPECTED_RUNTIME_VERSION"
+          echo "Expected deploy revision: $EXPECTED_RUNTIME_VERSION"
 
       - name: Configure SSH
         run: |

@@ -1,3 +1,5 @@
+const workerName = process.env.AGORA_WORKER_PM2_NAME || "agora-worker";
+
 module.exports = {
   apps: [
     {
@@ -29,10 +31,10 @@ module.exports = {
       time: true,
     },
     {
-      name: "agora-worker",
+      name: workerName,
       cwd: process.cwd(),
-      script: "pnpm",
-      args: "--filter @agora/api worker",
+      script: "bash",
+      args: "scripts/ops/start-worker.sh",
       env: {
         NODE_ENV: "production",
       },
