@@ -8,6 +8,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
+import { normalizeSubmissionScore } from "./challenges-shared.js";
 
 type PortfolioRouteDeps = {
   createSupabaseClient: typeof createSupabaseClient;
@@ -98,7 +99,7 @@ export function buildPortfolioResponse(
           challenge_id: submission.challenge_id,
           on_chain_sub_id: submission.on_chain_sub_id,
           solver_address: submission.solver_address,
-          score: submission.score,
+          score: normalizeSubmissionScore(submission.score),
           scored: submission.scored,
           submitted_at: submission.submitted_at,
           scored_at: submission.scored_at,

@@ -43,12 +43,18 @@ const defaultDeps: ChallengeSharedDeps = {
   listSubmissionsForChallenge,
 };
 
+export function normalizeSubmissionScore(
+  value: string | number | bigint | null | undefined,
+) {
+  return value === null || value === undefined ? null : String(value);
+}
+
 export function toPublicSubmission(row: SubmissionRow) {
   return {
     id: row.id,
     on_chain_sub_id: row.on_chain_sub_id,
     solver_address: row.solver_address,
-    score: row.score,
+    score: normalizeSubmissionScore(row.score),
     scored: row.scored,
     submitted_at: row.submitted_at,
     has_public_verification: Boolean(row.proof_bundle_cid),
@@ -61,7 +67,7 @@ export function toPrivateSubmission(row: SubmissionRow) {
     challenge_id: row.challenge_id,
     on_chain_sub_id: row.on_chain_sub_id,
     solver_address: row.solver_address,
-    score: row.score,
+    score: normalizeSubmissionScore(row.score),
     scored: row.scored,
     submitted_at: row.submitted_at,
     scored_at: row.scored_at ?? null,

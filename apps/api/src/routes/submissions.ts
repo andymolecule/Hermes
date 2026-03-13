@@ -40,6 +40,7 @@ import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
 import {
+  normalizeSubmissionScore,
   toPrivateProofBundle,
   toPrivateSubmission,
 } from "./challenges-shared.js";
@@ -168,7 +169,7 @@ export async function getSubmissionStatusData(submissionId: string) {
       challenge_id: submission.challenge_id,
       on_chain_sub_id: submission.on_chain_sub_id,
       solver_address: submission.solver_address,
-      score: submission.score,
+      score: normalizeSubmissionScore(submission.score),
       scored: submission.scored,
       submitted_at: submission.submitted_at,
       scored_at: submission.scored_at ?? null,
@@ -279,7 +280,7 @@ router.get("/:id/public", async (c) => {
     submissionId: submission.id,
     onChainSubId: submission.on_chain_sub_id,
     solverAddress: submission.solver_address,
-    score: submission.score,
+    score: normalizeSubmissionScore(submission.score),
     scored: submission.scored,
     submittedAt: submission.submitted_at,
     scoredAt: submission.scored_at ?? null,
