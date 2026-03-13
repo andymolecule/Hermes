@@ -60,13 +60,22 @@ Notes:
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
 - The shipped official preset catalog is intentionally narrow: `csv_comparison_v1`, `regression_v1`, and `docking_v1`. Placeholder presets should not be reintroduced unless a real published scorer artifact exists for them.
 
-Railway config-as-code checks before production cutover:
+Railway deployment checks before production cutover:
 
-- API service should use [apps/api/railway.toml](../apps/api/railway.toml)
-- Indexer service should use [packages/chain/railway.toml](../packages/chain/railway.toml)
-- Keep `Root Directory` unset
-- Keep `watchPatterns` out of these Railway service configs unless you have a measured build-cost problem. For Agora's current size, always rebuilding on `main` is simpler and more reliable than selective deploy filtering.
-- If a service is connected to `main` but does not redeploy on new commits, first verify that Railway is reading the correct `railway.toml` path. Railway only auto-detects config files during initial import; existing services often need the file path set explicitly in the dashboard.
+- Railway API and indexer are dashboard-managed, not config-as-code.
+- Keep each service connected to repo `andymolecule/Agora`, branch `main`.
+- Keep native Railway auto-deploy enabled for both services.
+- Do not use repo-local `railway.toml` files for these services.
+- Do not use dashboard watch-path filtering unless you have a measured need for it. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
+- Keep the dashboard build/start commands stable:
+  - API build: `pnpm turbo build --filter=@agora/api`
+  - API start: `pnpm --filter @agora/api start`
+  - Indexer build: `pnpm turbo build --filter=@agora/chain`
+  - Indexer start: `pnpm --filter @agora/chain indexer`
+- If Railway stops auto-deploying after a config change, the first recovery step is to disconnect and reconnect:
+  - `Source Repo`
+  - `Branch connected to production`
+  then redeploy latest once and verify the next push advances production.
 
 ---
 

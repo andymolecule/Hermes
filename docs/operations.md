@@ -224,32 +224,31 @@ Current production is intentionally split across hosts:
 - Railway: `@agora/api`, `agora-indexer`
 - Self-hosted PM2 machine: `agora-worker`
 
-Vercel and Railway are expected to redeploy directly from GitHub `main`. The self-hosted worker still needs its own deploy path because it does not live on a Git-integrated host.
+Vercel redeploys directly from GitHub `main` via its native integration. Railway API and indexer should also redeploy natively from GitHub `main`. The self-hosted worker has its own deploy workflow because it does not live on a Git-integrated host.
 
-### Railway Config as Code
+### Railway Dashboard Settings
 
-Railway should treat API and indexer deploy settings as code, not hand-maintained dashboard state.
+Railway API and indexer are intentionally dashboard-managed.
 
-Repo-owned service configs:
+Recommended steady-state settings:
 
-- API: [apps/api/railway.toml](../apps/api/railway.toml)
-- Indexer: [packages/chain/railway.toml](../packages/chain/railway.toml)
+- `Source Repo`: `andymolecule/Agora`
+- `Branch connected to production`: `main`
+- Native Railway auto-deploy: enabled
+- No dashboard watch-path filtering
+- Build/start commands:
+  - API build: `pnpm turbo build --filter=@agora/api`
+  - API start: `pnpm --filter @agora/api start`
+  - Indexer build: `pnpm turbo build --filter=@agora/chain`
+  - Indexer start: `pnpm --filter @agora/chain indexer`
 
-These files define:
+Operational rule:
 
-- build command
-- start command
-- restart policy
-
-Important Railway behavior:
-
-- Keep `Root Directory` unset for this pnpm/turbo monorepo.
-- Railway config files do not follow `Root Directory`.
-- If Railway does not auto-detect the package-local `railway.toml`, set the service config path explicitly to:
-  - API: `/apps/api/railway.toml`
-  - Indexer: `/packages/chain/railway.toml`
-- Do not add `watchPatterns` unless you have a measured build-cost problem. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
-- If auto-deploy appears connected to `main` but new commits do not trigger deploys, first verify that the service is actually reading the correct `railway.toml` path.
+- Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
+- If native Railway auto-deploy stops advancing, first reset the dashboard integration by disconnecting and reconnecting:
+  - `Source Repo`
+  - `Branch connected to production`
+  then redeploy latest once and verify the next push advances production.
 
 ### DigitalOcean Worker Auto-Deploy
 
@@ -271,8 +270,8 @@ Expected GitHub configuration:
 Deploy flow:
 
 1. Push to `main`
-2. Railway redeploys API + indexer from `main`
-3. GitHub Actions waits for the API `/healthz` runtime version to match the pushed commit
+2. Railway API and indexer redeploy natively from GitHub `main`
+3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the pushed commit
 4. GitHub Actions SSHes into the worker host
 5. The droplet runs `scripts/ops/deploy-worker.sh`
 6. The script fast-forwards `main`, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker

@@ -1,9 +1,0 @@
-[build]
-builder = "RAILPACK"
-buildCommand = "pnpm turbo build --filter=@agora/api"
-
-[deploy]
-startCommand = "pnpm --filter @agora/api start"
-healthcheckPath = "/healthz"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
