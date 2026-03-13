@@ -54,6 +54,12 @@ if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
   pm2 delete "$APP_NAME"
 fi
 
+# Make sure no orphaned worker process keeps heartbeating on an old runtime
+# outside the current PM2 app record.
+pkill -f "pnpm --filter @agora/api worker" >/dev/null 2>&1 || true
+pkill -f "scripts/ops/start-worker.sh" >/dev/null 2>&1 || true
+sleep 2
+
 pm2 start scripts/ops/ecosystem.config.cjs --only "$APP_NAME" --update-env
 
 for attempt in $(seq 1 20); do

@@ -112,4 +112,13 @@ jobs:
           done
 
           echo "Worker did not become healthy after deploy."
+          echo "Latest /api/worker-health payload:"
+          curl -fsS "$AGORA_WORKER_HEALTH_URL" || true
+          echo
+          echo "Remote PM2 status and recent worker logs:"
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
+          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
+          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; pm2 status '$DO_WORKER_PM2_NAME' || true; pm2 logs '$DO_WORKER_PM2_NAME' --lines 100 --nostream || true"
           exit 1
