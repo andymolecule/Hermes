@@ -51,6 +51,8 @@ import {
 import { ScoringTrustNotice } from "../../components/ScoringTrustNotice";
 import { accelerateChallengeIndex } from "../../lib/api";
 import {
+  createChallengePostStatus,
+  type ChallengePostStatus,
   getChallengePostIndexingFailureStatus,
   getChallengePostSuccessStatus,
 } from "../../lib/challenge-post";
@@ -1082,7 +1084,7 @@ function DataUploadField({
 
 export function PostClient() {
   const [state, setState] = useState<FormState>(initialState);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<ChallengePostStatus | null>(null);
   const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
     null,
   );
@@ -1108,6 +1110,7 @@ export function PostClient() {
   const isWrongChain = isConnected && chainId !== CHAIN_ID;
   const walletReady = isConnected && !isWrongChain;
   const isBusy = pendingAction !== "idle";
+  const hasPostedOnChain = status?.postedOnChain ?? false;
 
   const rewardValue = Number(state.reward || 0);
   const { feeUsdc: protocolFeeValue, payoutUsdc: winnerPayoutValue } =
@@ -1186,7 +1189,7 @@ export function PostClient() {
     field: "train" | "test" | "hiddenLabels",
   ) {
     setUploadingField(field);
-    setStatus("");
+    setStatus(null);
     try {
       // Pin to IPFS + detect CSV columns in parallel (zero added latency)
       const shouldDetectColumns =
@@ -1227,7 +1230,11 @@ export function PostClient() {
       setFileNames((prev) => ({ ...prev, [field]: file.name }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unknown error";
-      setStatus(`Upload failed: ${msg}`);
+      setStatus(
+        createChallengePostStatus(`Upload failed: ${msg}`, {
+          tone: "error",
+        }),
+      );
     } finally {
       setUploadingField(null);
     }
@@ -1446,7 +1453,7 @@ export function PostClient() {
     const validationError = validateInput();
     if (validationError) throw new Error(validationError);
 
-    setStatus("Pinning spec to IPFS...");
+    setStatus(createChallengePostStatus("Pinning spec to IPFS..."));
     const spec = {
       ...buildSpec(state),
       deadline: computeDeadlineIso(state.deadlineDays),
@@ -1505,7 +1512,14 @@ export function PostClient() {
         "Wallet client is not ready. Reconnect wallet and retry.",
       );
     await publicClient.waitForTransactionReceipt({ hash: createTx });
-    setStatus("Challenge confirmed on-chain. Accelerating indexer sync...");
+    setStatus(
+      createChallengePostStatus(
+        "Challenge posted on-chain. Registering it in Agora now...",
+        {
+          postedOnChain: true,
+        },
+      ),
+    );
     try {
       const registration = await accelerateChallengeIndex({ txHash: createTx });
       setPostedChallengeId(registration.challengeId);
@@ -1514,25 +1528,32 @@ export function PostClient() {
       const message = error instanceof Error ? error.message : String(error);
       setPostedChallengeId(null);
       setStatus(getChallengePostIndexingFailureStatus(createTx, message));
-    } finally {
-      setShowPreview(false);
     }
   }
 
   function clearPostStatus() {
-    setStatus("");
+    setStatus(null);
     setPostedChallengeId(null);
   }
 
   function renderPostStatus(className: string, iconSize: number) {
     if (!status) return null;
+    const isSuccess = status.tone === "success";
+    const isWarning = status.tone === "warning";
+    const iconColor = isSuccess
+      ? "var(--color-success)"
+      : isWarning
+        ? "var(--color-warning)"
+        : "var(--text-tertiary)";
     return (
-      <div className={`${className} ${isSuccess ? "success" : ""}`}>
+      <div
+        className={`${className} ${isSuccess ? "success" : ""} ${isWarning ? "warning" : ""}`}
+      >
         {isSuccess ? (
           <CheckCircle
             size={iconSize}
             style={{
-              color: "var(--color-success)",
+              color: iconColor,
               flexShrink: 0,
               marginTop: 2,
             }}
@@ -1541,14 +1562,14 @@ export function PostClient() {
           <AlertCircle
             size={iconSize}
             style={{
-              color: "var(--text-tertiary)",
+              color: iconColor,
               flexShrink: 0,
               marginTop: 2,
             }}
           />
         )}
         <div style={{ display: "grid", gap: "0.35rem" }}>
-          <p>{isSuccess ? status.replace("success: ", "") : status}</p>
+          <p>{status.message}</p>
           {isSuccess && postedChallengeId ? (
             <a
               href={`/challenges/${postedChallengeId}`}
@@ -1568,6 +1589,7 @@ export function PostClient() {
 
   async function handleApprove() {
     if (
+      hasPostedOnChain ||
       !walletReady ||
       !publicClient ||
       !address ||
@@ -1590,12 +1612,14 @@ export function PostClient() {
       }
       if (latestFunding.allowance >= rewardUnits) {
         setStatus(
-          "USDC allowance already confirmed. Click Create Challenge to continue.",
+          createChallengePostStatus(
+            "USDC allowance already confirmed. Click Create Challenge to continue.",
+          ),
         );
         return;
       }
 
-      setStatus("Approve USDC in your wallet...");
+      setStatus(createChallengePostStatus("Approve USDC in your wallet..."));
       const { request } = await publicClient.simulateContract({
         account: address,
         address: USDC_ADDRESS,
@@ -1604,17 +1628,25 @@ export function PostClient() {
         args: [FACTORY_ADDRESS, rewardUnits],
       });
       const approveTx = await writeContractAsync(request);
-      setStatus("Approval submitted. Waiting for confirmation...");
+      setStatus(
+        createChallengePostStatus(
+          "Approval submitted. Waiting for confirmation...",
+        ),
+      );
       await publicClient.waitForTransactionReceipt({ hash: approveTx });
 
       await waitForAllowanceUpdate(rewardUnits);
-      setStatus("USDC approved. Click Create Challenge to post on-chain.");
+      setStatus(
+        createChallengePostStatus(
+          "USDC approved. Click Create Challenge to post on-chain.",
+        ),
+      );
     } catch (approveError) {
       const message =
         approveError instanceof Error
           ? approveError.message
           : "Approval failed.";
-      setStatus(message);
+      setStatus(createChallengePostStatus(message, { tone: "error" }));
     } finally {
       setPendingAction("idle");
     }
@@ -1622,6 +1654,7 @@ export function PostClient() {
 
   async function handleCreate() {
     if (
+      hasPostedOnChain ||
       !walletReady ||
       !publicClient ||
       !address ||
@@ -1658,7 +1691,11 @@ export function PostClient() {
         latestFunding.allowance < rewardUnits
       ) {
         setPendingAction("signingPermit");
-        setStatus(`Sign ${latestFunding.tokenName} permit in your wallet...`);
+        setStatus(
+          createChallengePostStatus(
+            `Sign ${latestFunding.tokenName} permit in your wallet...`,
+          ),
+        );
         const permitDeadline = BigInt(
           Math.floor(Date.now() / 1000) + PERMIT_LIFETIME_SECONDS,
         );
@@ -1712,7 +1749,12 @@ export function PostClient() {
                 "Wallet cannot sign token permits. Approve USDC first, then create the challenge.",
             }));
             setStatus(
-              "Wallet cannot sign token permits. Approve USDC first, then create the challenge.",
+              createChallengePostStatus(
+                "Wallet cannot sign token permits. Approve USDC first, then create the challenge.",
+                {
+                  tone: "warning",
+                },
+              ),
             );
             return;
           }
@@ -1726,7 +1768,7 @@ export function PostClient() {
         );
 
         setPendingAction("creating");
-        setStatus("Creating challenge on-chain...");
+        setStatus(createChallengePostStatus("Creating challenge on-chain..."));
         const { request } = await publicClient.simulateContract({
           account: address,
           address: FACTORY_ADDRESS,
@@ -1759,7 +1801,7 @@ export function PostClient() {
 
       const prepared = await prepareChallengeCreation();
       setPendingAction("creating");
-      setStatus("Creating challenge on-chain...");
+      setStatus(createChallengePostStatus("Creating challenge on-chain..."));
       const { request } = await publicClient.simulateContract({
         account: address,
         address: FACTORY_ADDRESS,
@@ -1789,10 +1831,15 @@ export function PostClient() {
         message.includes("TransferFromFailed")
       ) {
         setStatus(
-          "createChallenge reverted during USDC transfer. Confirm the connected wallet still has enough USDC and allowance for the factory.",
+          createChallengePostStatus(
+            "createChallenge reverted during USDC transfer. Confirm the connected wallet still has enough USDC and allowance for the factory.",
+            {
+              tone: "error",
+            },
+          ),
         );
       } else {
-        setStatus(message);
+        setStatus(createChallengePostStatus(message, { tone: "error" }));
       }
       setPostedChallengeId(null);
     } finally {
@@ -1800,7 +1847,6 @@ export function PostClient() {
     }
   }
 
-  const isSuccess = status.startsWith("success:");
   const postingCtaLabel = !isConnected
     ? "Connect Wallet to Deploy"
     : isWrongChain
@@ -1823,7 +1869,7 @@ export function PostClient() {
     }
     const error = validateInput();
     if (error) {
-      setStatus(error);
+      setStatus(createChallengePostStatus(error, { tone: "error" }));
       return;
     }
     setShowPreview(true);
@@ -3817,74 +3863,91 @@ export function PostClient() {
                 className="dash-btn dash-btn-secondary"
                 style={{ fontSize: "0.8rem" }}
               >
-                ← Edit
+                {hasPostedOnChain ? "Close" : "← Edit"}
               </button>
-              <div className="preview-actions-main">
-                {fundingState.status === "ready" &&
-                  fundingState.method === "approve" && (
+              {hasPostedOnChain ? (
+                <div className="preview-actions-main">
+                  {postedChallengeId ? (
+                    <a
+                      href={`/challenges/${postedChallengeId}`}
+                      className="dash-btn dash-btn-primary"
+                      style={{ fontSize: "0.8rem" }}
+                    >
+                      <ArrowRight size={14} />
+                      View challenge
+                    </a>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="preview-actions-main">
+                  {fundingState.status === "ready" &&
+                    fundingState.method === "approve" && (
+                      <button
+                        type="button"
+                        disabled={
+                          isBusy ||
+                          fundingState.status !== "ready" ||
+                          allowanceReady ||
+                          !balanceReady
+                        }
+                        onClick={() => {
+                          void handleApprove();
+                        }}
+                        className={`dash-btn ${!allowanceReady && balanceReady ? "dash-btn-primary" : ""}`}
+                        style={{ fontSize: "0.8rem" }}
+                      >
+                        {pendingAction === "approving" ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : allowanceReady ? (
+                          <Check size={14} />
+                        ) : (
+                          <Wallet size={14} />
+                        )}
+                        {allowanceReady ? "USDC Approved" : "Approve USDC"}
+                        <span className="preview-action-step">Step 1 of 2</span>
+                      </button>
+                    )}
+                  <div className="preview-action-stack">
                     <button
                       type="button"
                       disabled={
                         isBusy ||
                         fundingState.status !== "ready" ||
-                        allowanceReady ||
-                        !balanceReady
+                        !balanceReady ||
+                        (fundingState.method === "approve" && !allowanceReady)
                       }
                       onClick={() => {
-                        void handleApprove();
+                        void handleCreate();
                       }}
-                      className={`dash-btn ${!allowanceReady && balanceReady ? "dash-btn-primary" : ""}`}
+                      className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
                       style={{ fontSize: "0.8rem" }}
                     >
-                      {pendingAction === "approving" ? (
+                      {isBusy ? (
                         <Loader2 size={14} className="animate-spin" />
-                      ) : allowanceReady ? (
-                        <Check size={14} />
                       ) : (
-                        <Wallet size={14} />
+                        <ArrowRight size={14} />
                       )}
-                      {allowanceReady ? "USDC Approved" : "Approve USDC"}
-                      <span className="preview-action-step">Step 1 of 2</span>
+                      {fundingState.method === "permit" && !allowanceReady
+                        ? "Sign Permit & Create"
+                        : "Create Challenge"}
+                      {fundingState.status === "ready" &&
+                        fundingState.method === "approve" && (
+                          <span className="preview-action-step">
+                            Step 2 of 2
+                          </span>
+                        )}
                     </button>
-                  )}
-                <div className="preview-action-stack">
-                  <button
-                    type="button"
-                    disabled={
-                      isBusy ||
-                      fundingState.status !== "ready" ||
-                      !balanceReady ||
-                      (fundingState.method === "approve" && !allowanceReady)
-                    }
-                    onClick={() => {
-                      void handleCreate();
-                    }}
-                    className={`dash-btn ${(fundingState.method === "permit" || allowanceReady) && balanceReady ? "dash-btn-primary" : "dash-btn-secondary"}`}
-                    style={{ fontSize: "0.8rem" }}
-                  >
-                    {isBusy ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <ArrowRight size={14} />
-                    )}
-                    {fundingState.method === "permit" && !allowanceReady
-                      ? "Sign Permit & Create"
-                      : "Create Challenge"}
                     {fundingState.status === "ready" &&
-                      fundingState.method === "approve" && (
-                        <span className="preview-action-step">Step 2 of 2</span>
-                      )}
-                  </button>
-                  {fundingState.status === "ready" &&
-                  fundingState.method === "approve" &&
-                  !allowanceReady &&
-                  balanceReady ? (
-                    <p className="preview-action-helper">
-                      Available after approval
-                    </p>
-                  ) : null}
+                    fundingState.method === "approve" &&
+                    !allowanceReady &&
+                    balanceReady ? (
+                      <p className="preview-action-helper">
+                        Available after approval
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

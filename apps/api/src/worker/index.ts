@@ -35,7 +35,7 @@ import {
 } from "./scoring.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
-const PROCESS_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
+const LOG_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
 const WORKER_READINESS_RECHECK_MS = 60_000;
 const WORKER_HOST = os.hostname();
@@ -43,7 +43,7 @@ const WORKER_HOST = os.hostname();
 const log: WorkerLogFn = (level, message, meta) => {
   const ts = new Date().toISOString();
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
-  console[level](`[${ts}] [${PROCESS_WORKER_ID}] ${message}${metaStr}`);
+  console[level](`[${ts}] [${LOG_WORKER_ID}] ${message}${metaStr}`);
 };
 
 export { resolveRunnerPolicyForChallenge };
@@ -52,6 +52,7 @@ export type { ResolvedRunnerPolicy };
 function startJobLeaseHeartbeat(
   db: ReturnType<typeof createSupabaseClient>,
   job: ScoreJobRow,
+  claimWorkerId: string,
   log: WorkerLogFn,
 ) {
   let stopped = false;
@@ -59,16 +60,12 @@ function startJobLeaseHeartbeat(
   const tick = async () => {
     if (stopped) return;
     try {
-      const refreshed = await heartbeatScoreJobLease(
-        db,
-        job.id,
-        PROCESS_WORKER_ID,
-      );
+      const refreshed = await heartbeatScoreJobLease(db, job.id, claimWorkerId);
       if (!refreshed && !stopped) {
         log("warn", "Job lease heartbeat lost ownership", {
           jobId: job.id,
           submissionId: job.submission_id,
-          workerId: PROCESS_WORKER_ID,
+          workerId: claimWorkerId,
         });
       }
     } catch (error) {
@@ -399,7 +396,8 @@ export async function startWorker() {
     readinessCheckIntervalMs: WORKER_READINESS_RECHECK_MS,
     finalizeSweepIntervalMs: timing.finalizeSweepIntervalMs,
     heartbeatIntervalMs: timing.heartbeatIntervalMs,
-    workerId: PROCESS_WORKER_ID,
+    workerId: LOG_WORKER_ID,
+    claimWorkerId: runtimeWorkerId,
     runtimeWorkerId,
     host: WORKER_HOST,
     prunedRuntimeRows,
@@ -450,7 +448,7 @@ export async function startWorker() {
           lastFinalizeSweepAt = now;
         }
 
-        const job = await claimNextJob(db, PROCESS_WORKER_ID);
+        const job = await claimNextJob(db, runtimeWorkerId);
 
         if (job) {
           claimedJob = true;
@@ -459,11 +457,13 @@ export async function startWorker() {
             challengeId: job.challenge_id,
             attempt: job.attempts,
             maxAttempts: job.max_attempts,
+            claimWorkerId: runtimeWorkerId,
           });
 
           const stopHeartbeat = startJobLeaseHeartbeat(
             db,
             job as ScoreJobRow,
+            runtimeWorkerId,
             log,
           );
           try {

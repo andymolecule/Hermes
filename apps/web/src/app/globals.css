@@ -2241,6 +2241,11 @@ a:hover {
   background: var(--color-success-bg);
 }
 
+.post-status.warning {
+  border-color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
 .post-status p {
   font-size: 0.82rem;
   word-break: break-all;
@@ -2766,6 +2771,11 @@ a:hover {
 .preview-status.success {
   border-color: var(--color-success);
   background: var(--color-success-bg);
+}
+
+.preview-status.warning {
+  border-color: var(--color-warning);
+  background: var(--color-warning-bg);
 }
 
 .preview-status p {
