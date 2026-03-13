@@ -12,6 +12,7 @@ import {
   deleteSession,
   getSession,
 } from "../lib/auth-store.js";
+import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
 const verifyBodySchema = z.object({
@@ -21,7 +22,9 @@ const verifyBodySchema = z.object({
 
 const router = new Hono<ApiEnv>();
 
-router.get("/nonce", async (c) => c.json({ nonce: await createNonce("siwe") }));
+router.get("/nonce", requireWriteQuota("/api/auth/nonce"), async (c) =>
+  c.json({ nonce: await createNonce("siwe") }),
+);
 
 router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
   const { message, signature } = c.req.valid("json");
@@ -40,12 +43,13 @@ router.post("/verify", zValidator("json", verifyBodySchema), async (c) => {
   const requestProtocol =
     forwardedProto ?? new URL(c.req.url).protocol.replace(":", "");
   const requestHost = c.req.header("x-forwarded-host") ?? c.req.header("host");
-  const expectedOrigin = apiUrl
-    ? new URL(apiUrl).origin
-    : requestHost
-      ? `${requestProtocol}://${requestHost}`
+  const expectedOrigin = requestHost
+    ? `${requestProtocol}://${requestHost}`
+    : apiUrl
+      ? new URL(apiUrl).origin
       : undefined;
-  const expectedDomain = apiUrl ? new URL(apiUrl).host : requestHost;
+  const expectedDomain =
+    requestHost ?? (apiUrl ? new URL(apiUrl).host : undefined);
   const expectedChainId = runtimeConfig.chainId;
 
   if (expectedDomain && siweMessage.domain !== expectedDomain) {

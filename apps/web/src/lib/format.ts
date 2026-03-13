@@ -40,6 +40,25 @@ export function shortAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+export function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function formatDateTime(value: string | null) {
+  if (!value) return "unavailable";
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function deadlineCountdown(deadline: string) {
   const ms = new Date(deadline).getTime() - Date.now();
   if (Number.isNaN(ms)) return "Unknown";

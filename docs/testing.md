@@ -93,7 +93,7 @@ pnpm --filter @agora/web test
 | `@agora/api` | Health endpoints, worker job claiming, fairness visibility, submission limits, scoring lifecycle, secret redaction, HTTP caching |
 | `@agora/cli` | Command parsing, output formatting |
 | `@agora/mcp-server` | Tool catalog, challenge listing |
-| `@agora/web` | Component rendering |
+| `@agora/web` | Component rendering, browser API client behavior, wallet/session state helpers |
 
 ---
 
@@ -134,6 +134,13 @@ Verifies ABI sync between Foundry output and `@agora/common` ABI exports.
 ### `pnpm verify`
 
 Runs the full pipeline: `abi:check` + `build` + `test`.
+
+Wallet/session hardening checks now live in:
+
+- `apps/web/tests/api-client.test.ts` — browser auth/session requests stay same-origin under `/api/*`
+- `apps/web/tests/wallet-session-state.test.ts` — stale SIWE sessions are cleared on disconnect or wallet switch
+- `apps/web/tests/portfolio-access.test.ts` — portfolio access requires both the right chain and a matching SIWE session
+- `apps/api/tests/session-policy.test.ts` — optional-auth API routes ignore stale mismatched SIWE sessions instead of treating them as authoritative
 
 ---
 

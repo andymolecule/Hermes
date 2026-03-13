@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ACTIVE_CONTRACT_VERSION,
   CHALLENGE_LIMITS,
   type ChallengeSpec,
   type ChallengeType,
@@ -10,6 +9,7 @@ import {
   SUBMISSION_LIMITS,
   buildChallengeSpecDraft,
   computeSpecHash,
+  erc20Abi,
   getChallengeTypeTemplate,
   getPinSpecAuthorizationTypedData,
   isTestnetChain,
@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { Fragment, useEffect, useId, useRef, useState } from "react";
-import { type Abi, parseSignature, parseUnits } from "viem";
+import { type Abi, parseSignature, parseUnits, zeroAddress } from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -51,16 +51,29 @@ import {
 import { ScoringTrustNotice } from "../../components/ScoringTrustNotice";
 import { accelerateChallengeIndex } from "../../lib/api";
 import {
-  createChallengePostStatus,
   type ChallengePostStatus,
+  createChallengePostStatus,
   getChallengePostIndexingFailureStatus,
   getChallengePostSuccessStatus,
 } from "../../lib/challenge-post";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { computeProtocolFee, formatUsdc } from "../../lib/format";
+import { assertSupportedContractVersion } from "../../lib/wallet/challenge-version";
+import {
+  APP_CHAIN_NAME,
+  getWrongChainMessage,
+  isWrongWalletChain,
+} from "../../lib/wallet/network";
+import {
+  getErrorMessage,
+  isUserRejectedError,
+} from "../../lib/wallet/tx-errors";
+import {
+  simulateAndWriteContract,
+  waitForTransactionReceiptWithTimeout,
+} from "../../lib/wallet/tx-flow";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const DEFAULT_PERMIT_VERSION = "1";
 const PERMIT_LIFETIME_SECONDS = 60 * 60;
 
@@ -69,64 +82,6 @@ const DISTRIBUTION_TO_ENUM = {
   top_3: 1,
   proportional: 2,
 } as const;
-
-const erc20Abi = [
-  {
-    type: "function",
-    name: "approve",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "allowance",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "owner", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "name",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "string" }],
-  },
-  {
-    type: "function",
-    name: "version",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "string" }],
-  },
-  {
-    type: "function",
-    name: "nonces",
-    stateMutability: "view",
-    inputs: [{ name: "owner", type: "address" }],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "DOMAIN_SEPARATOR",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "bytes32" }],
-  },
-] as const;
 
 type FundingMethod = "permit" | "approve";
 type FundingStatus = "idle" | "checking" | "ready" | "error";
@@ -261,10 +216,8 @@ async function loadPostingFundingState({
   };
 }
 
-type PostChallengeType = ChallengeType;
-
 // ─── Icon mapping for presets ───────────────────────
-const TYPE_ICONS: Record<PostChallengeType, typeof FlaskConical> = {
+const TYPE_ICONS: Record<ChallengeType, typeof FlaskConical> = {
   prediction: BarChart3,
   optimization: FlaskConical,
   reproducibility: FlaskConical,
@@ -319,11 +272,11 @@ const TYPE_CONFIG = {
   custom: getChallengeTypeTemplate("custom"),
 } as const;
 
-const AVAILABLE_TYPE_OPTIONS: PostChallengeType[] = [
+const AVAILABLE_TYPE_OPTIONS: ChallengeType[] = [
   "reproducibility",
   "prediction",
 ];
-const COMING_SOON_TYPE_OPTIONS: PostChallengeType[] = [
+const COMING_SOON_TYPE_OPTIONS: ChallengeType[] = [
   "optimization",
   "docking",
   "red_team",
@@ -398,7 +351,7 @@ type PipelineFlow = {
   systemNote?: string;
 };
 
-const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
+const PIPELINE_FLOWS: Record<ChallengeType, PipelineFlow> = {
   prediction: {
     stages: [
       {
@@ -575,7 +528,7 @@ const PIPELINE_FLOWS: Record<PostChallengeType, PipelineFlow> = {
   },
 };
 
-function PipelineVisual({ type }: { type: PostChallengeType }) {
+function PipelineVisual({ type }: { type: ChallengeType }) {
   const flow = PIPELINE_FLOWS[type];
   const icons = {
     poster: Upload,
@@ -684,7 +637,7 @@ type FormState = {
   description: string;
   referenceLink: string;
   domain: string;
-  type: PostChallengeType;
+  type: ChallengeType;
   train: string;
   test: string;
   hiddenLabels: string;
@@ -797,7 +750,7 @@ function buildSpec(state: FormState) {
       tolerance: state.tolerance,
     },
     tags: state.tags,
-    labTba: ZERO_ADDRESS,
+    labTba: zeroAddress,
     presetId,
   });
 }
@@ -819,16 +772,6 @@ function computeDeadlineIso(days: string): string {
       Date.now() + (QUICK_TEST_MINUTES + QUICK_TEST_BUFFER_MINUTES) * 60 * 1000,
     ).toISOString();
   return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function isUserRejectedError(message: string) {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("user rejected") ||
-    normalized.includes("user denied") ||
-    normalized.includes("rejected the request") ||
-    normalized.includes("denied transaction signature")
-  );
 }
 
 function isPermitUnsupportedError(message: string) {
@@ -1107,7 +1050,7 @@ export function PostClient() {
   const { openConnectModal } = useConnectModal();
   const { openChainModal } = useChainModal();
 
-  const isWrongChain = isConnected && chainId !== CHAIN_ID;
+  const isWrongChain = isConnected && isWrongWalletChain(chainId);
   const walletReady = isConnected && !isWrongChain;
   const isBusy = pendingAction !== "idle";
   const hasPostedOnChain = status?.postedOnChain ?? false;
@@ -1251,7 +1194,7 @@ export function PostClient() {
     setState((s) => ({ ...s, tags: s.tags.filter((t) => t !== tag) }));
   }
 
-  function selectType(t: PostChallengeType) {
+  function selectType(t: ChallengeType) {
     if (!AVAILABLE_TYPE_OPTIONS.includes(t)) return;
     const preset = TYPE_CONFIG[t];
     setState((s) => ({
@@ -1511,7 +1454,10 @@ export function PostClient() {
       throw new Error(
         "Wallet client is not ready. Reconnect wallet and retry.",
       );
-    await publicClient.waitForTransactionReceipt({ hash: createTx });
+    await waitForTransactionReceiptWithTimeout({
+      publicClient,
+      hash: createTx,
+    });
     setStatus(
       createChallengePostStatus(
         "Challenge posted on-chain. Registering it in Agora now...",
@@ -1597,6 +1543,14 @@ export function PostClient() {
       !USDC_ADDRESS
     )
       return;
+    if (isWrongChain) {
+      setStatus(
+        createChallengePostStatus(getWrongChainMessage(chainId), {
+          tone: "error",
+        }),
+      );
+      return;
+    }
 
     try {
       setPendingAction("approving");
@@ -1620,20 +1574,24 @@ export function PostClient() {
       }
 
       setStatus(createChallengePostStatus("Approve USDC in your wallet..."));
-      const { request } = await publicClient.simulateContract({
+      const approveTx = await simulateAndWriteContract({
+        publicClient,
+        writeContractAsync,
         account: address,
         address: USDC_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
         args: [FACTORY_ADDRESS, rewardUnits],
       });
-      const approveTx = await writeContractAsync(request);
       setStatus(
         createChallengePostStatus(
           "Approval submitted. Waiting for confirmation...",
         ),
       );
-      await publicClient.waitForTransactionReceipt({ hash: approveTx });
+      await waitForTransactionReceiptWithTimeout({
+        publicClient,
+        hash: approveTx,
+      });
 
       await waitForAllowanceUpdate(rewardUnits);
       setStatus(
@@ -1642,10 +1600,9 @@ export function PostClient() {
         ),
       );
     } catch (approveError) {
-      const message =
-        approveError instanceof Error
-          ? approveError.message
-          : "Approval failed.";
+      const message = isUserRejectedError(approveError)
+        ? "Transaction cancelled."
+        : getErrorMessage(approveError, "Approval failed.");
       setStatus(createChallengePostStatus(message, { tone: "error" }));
     } finally {
       setPendingAction("idle");
@@ -1662,6 +1619,14 @@ export function PostClient() {
       !USDC_ADDRESS
     )
       return;
+    if (isWrongChain) {
+      setStatus(
+        createChallengePostStatus(getWrongChainMessage(chainId), {
+          tone: "error",
+        }),
+      );
+      return;
+    }
 
     try {
       clearPostStatus();
@@ -1675,16 +1640,12 @@ export function PostClient() {
         throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
       }
 
-      const factoryVersion = (await publicClient.readContract({
+      await assertSupportedContractVersion({
+        publicClient,
         address: FACTORY_ADDRESS,
         abi: AgoraFactoryAbi,
-        functionName: "contractVersion",
-      })) as bigint;
-      if (Number(factoryVersion) !== ACTIVE_CONTRACT_VERSION) {
-        throw new Error(
-          `Unsupported factory contract version ${factoryVersion}. Update NEXT_PUBLIC_AGORA_FACTORY_ADDRESS to the active v${ACTIVE_CONTRACT_VERSION} factory and retry.`,
-        );
-      }
+        contractLabel: "factory",
+      });
 
       if (
         latestFunding.method === "permit" &&
@@ -1735,11 +1696,11 @@ export function PostClient() {
             },
           });
         } catch (permitError) {
-          const permitMessage =
-            permitError instanceof Error
-              ? permitError.message
-              : "Permit signature failed.";
-          if (isUserRejectedError(permitMessage)) throw permitError;
+          const permitMessage = getErrorMessage(
+            permitError,
+            "Permit signature failed.",
+          );
+          if (isUserRejectedError(permitError)) throw permitError;
           if (isPermitUnsupportedError(permitMessage)) {
             setFundingState((current) => ({
               ...current,
@@ -1769,7 +1730,9 @@ export function PostClient() {
 
         setPendingAction("creating");
         setStatus(createChallengePostStatus("Creating challenge on-chain..."));
-        const { request } = await publicClient.simulateContract({
+        const createTx = await simulateAndWriteContract({
+          publicClient,
+          writeContractAsync,
           account: address,
           address: FACTORY_ADDRESS,
           abi: AgoraFactoryAbi,
@@ -1781,7 +1744,7 @@ export function PostClient() {
             prepared.disputeWindowHours,
             prepared.minimumScoreWad,
             prepared.distributionType,
-            ZERO_ADDRESS,
+            zeroAddress,
             BigInt(SUBMISSION_LIMITS.maxPerChallenge),
             BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
             permitDeadline,
@@ -1790,7 +1753,6 @@ export function PostClient() {
             parsedSignature.s,
           ],
         });
-        const createTx = await writeContractAsync(request);
         await finalizeChallengePost(createTx);
         return;
       }
@@ -1802,7 +1764,9 @@ export function PostClient() {
       const prepared = await prepareChallengeCreation();
       setPendingAction("creating");
       setStatus(createChallengePostStatus("Creating challenge on-chain..."));
-      const { request } = await publicClient.simulateContract({
+      const createTx = await simulateAndWriteContract({
+        publicClient,
+        writeContractAsync,
         account: address,
         address: FACTORY_ADDRESS,
         abi: AgoraFactoryAbi,
@@ -1814,18 +1778,16 @@ export function PostClient() {
           prepared.disputeWindowHours,
           prepared.minimumScoreWad,
           prepared.distributionType,
-          ZERO_ADDRESS,
+          zeroAddress,
           BigInt(SUBMISSION_LIMITS.maxPerChallenge),
           BigInt(SUBMISSION_LIMITS.maxPerSolverPerChallenge),
         ],
       });
-      const createTx = await writeContractAsync(request);
       await finalizeChallengePost(createTx);
     } catch (createError) {
-      const message =
-        createError instanceof Error
-          ? createError.message
-          : "Failed to post challenge.";
+      const message = isUserRejectedError(createError)
+        ? "Transaction cancelled."
+        : getErrorMessage(createError, "Failed to post challenge.");
       if (
         message.includes("USDC_TRANSFER_FAILED") ||
         message.includes("TransferFromFailed")
@@ -1850,7 +1812,7 @@ export function PostClient() {
   const postingCtaLabel = !isConnected
     ? "Connect Wallet to Deploy"
     : isWrongChain
-      ? "Switch to Base Sepolia"
+      ? `Switch to ${APP_CHAIN_NAME}`
       : "Confirm & Publish Challenge";
   const postingCtaDisabled =
     isBusy ||
@@ -1876,7 +1838,7 @@ export function PostClient() {
   };
 
   const renderTypeCard = (
-    key: PostChallengeType,
+    key: ChallengeType,
     { disabled = false }: { disabled?: boolean } = {},
   ) => {
     const preset = TYPE_CONFIG[key];

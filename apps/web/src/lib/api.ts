@@ -8,8 +8,10 @@ import {
 import { API_BASE_URL } from "./config";
 import type {
   AnalyticsData,
+  ApiHealth,
   AuthSession,
   Challenge,
+  ChallengeClaimableInfo,
   ChallengeDetails,
   PublicLeaderboardEntry,
   SolverPortfolio,
@@ -19,6 +21,13 @@ import type {
 } from "./types";
 
 const BASE = API_BASE_URL.replace(/\/$/, "");
+
+export function resolveApiRequestUrl(path: string) {
+  if (typeof window !== "undefined" && path.startsWith("/api/")) {
+    return path;
+  }
+  return `${BASE}${path}`;
+}
 
 async function getApiErrorMessage(response: Response): Promise<string> {
   const text = await response.text();
@@ -34,7 +43,7 @@ async function getApiErrorMessage(response: Response): Promise<string> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetch(resolveApiRequestUrl(path), {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -70,10 +79,13 @@ export async function getAnalytics(): Promise<AnalyticsData> {
 }
 
 export async function getWorkerHealth(): Promise<WorkerHealth> {
-  const response = await fetch(`${BASE}/api/worker-health`, {
+  return request<WorkerHealth>("/api/worker-health", {
     signal: AbortSignal.timeout(5000),
   });
-  return (await response.json()) as WorkerHealth;
+}
+
+export async function getApiHealth() {
+  return request<ApiHealth>("/api/healthz");
 }
 
 export async function listChallenges(filters: {
@@ -95,7 +107,7 @@ export async function listChallenges(filters: {
 }
 
 export async function getChallenge(id: string) {
-  const response = await fetch(`${BASE}/api/challenges/${id}`, {
+  const response = await fetch(resolveApiRequestUrl(`/api/challenges/${id}`), {
     headers: { "content-type": "application/json" },
   });
   if (!response.ok) {
@@ -145,7 +157,7 @@ export async function getChallengeSpec(
 export async function accelerateChallengeIndex(input: {
   txHash: `0x${string}`;
 }) {
-  const response = await fetch(`${BASE}/api/challenges`, {
+  const response = await fetch(resolveApiRequestUrl("/api/challenges"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
@@ -174,7 +186,7 @@ export async function createSubmissionRecord(input: {
   txHash: `0x${string}`;
   resultFormat?: "plain_v0" | "sealed_submission_v2";
 }) {
-  const response = await fetch(`${BASE}/api/submissions`, {
+  const response = await fetch(resolveApiRequestUrl("/api/submissions"), {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
@@ -226,21 +238,30 @@ export async function getPublicSubmissionVerification(
   );
 }
 
+export async function getChallengeClaimableInfo(input: {
+  challengeId: string;
+  address?: string;
+  refresh?: number;
+}) {
+  const params = new URLSearchParams();
+  if (input.address) params.set("address", input.address);
+  if (typeof input.refresh === "number" && input.refresh > 0) {
+    params.set("refresh", String(input.refresh));
+  }
+  const query = params.toString();
+  return request<ChallengeClaimableInfo>(
+    `/api/challenges/${input.challengeId}/claimable${query ? `?${query}` : ""}`,
+  );
+}
+
 export async function getAuthSession(): Promise<AuthSession> {
-  const response = await fetch(`${BASE}/api/auth/session`, {
-    credentials: "include",
-  });
-  return (await response.json()) as AuthSession;
+  return requestWithCredentials<AuthSession>("/api/auth/session");
 }
 
 export async function getAuthNonce(): Promise<string> {
-  const response = await fetch(`${BASE}/api/auth/nonce`, {
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch SIWE nonce (${response.status}).`);
-  }
-  const json = (await response.json()) as { nonce?: string };
+  const json = await requestWithCredentials<{ nonce?: string }>(
+    "/api/auth/nonce",
+  );
   if (!json.nonce) {
     throw new Error("SIWE nonce response missing nonce.");
   }
@@ -251,32 +272,18 @@ export async function verifySiweSession(input: {
   message: string;
   signature: `0x${string}`;
 }) {
-  const response = await fetch(`${BASE}/api/auth/verify`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) {
-    const message = await getApiErrorMessage(response);
-    throw new Error(
-      `SIWE verification failed (${response.status}): ${message}`,
-    );
-  }
-  return (await response.json()) as {
+  return requestWithCredentials<{
     ok: boolean;
     address: string;
     expiresAt: string;
-  };
+  }>("/api/auth/verify", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export async function logoutSiweSession() {
-  const response = await fetch(`${BASE}/api/auth/logout`, {
+  return requestWithCredentials<{ ok: boolean }>("/api/auth/logout", {
     method: "POST",
-    credentials: "include",
   });
-  if (!response.ok) {
-    throw new Error(`Failed to clear session (${response.status}).`);
-  }
-  return (await response.json()) as { ok: boolean };
 }

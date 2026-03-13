@@ -622,23 +622,37 @@ erDiagram
 
 ### Authentication Flow (SIWE)
 
+Browser auth/session traffic is same-origin from the browser's perspective:
+
+- browser code calls relative `/api/*` routes on the web origin
+- Next's `/api/[...path]` proxy forwards those requests to the backend API origin
+- the API verifies SIWE against the forwarded web origin and issues the `agora_session` cookie
+- a global wallet session bridge clears stale SIWE sessions if the connected wallet disconnects or changes addresses
+- optional-auth submission routes ignore stale mismatched sessions instead of treating them as authoritative
+
 ```mermaid
 sequenceDiagram
     actor User
     participant Browser
+    participant Web as "Next /api proxy"
     participant API
     participant Wallet as MetaMask
 
     User->>Browser: Click "Connect Wallet"
-    Browser->>API: GET /api/auth/nonce
-    API-->>Browser: {nonce: "abc123"}
+    Browser->>Web: GET /api/auth/nonce
+    Web->>API: Forward request with x-forwarded-host/proto
+    API-->>Web: {nonce: "abc123"}
+    Web-->>Browser: {nonce: "abc123"}
     Browser->>Wallet: Sign SIWE message
     Wallet-->>Browser: signature
-    Browser->>API: POST /api/auth/verify {message, signature}
+    Browser->>Web: POST /api/auth/verify {message, signature}
+    Web->>API: Forward request with x-forwarded-host/proto
     API->>API: Verify SIWE signature
     API->>API: Create session (auth_sessions row)
-    API-->>Browser: Set-Cookie: agora_session
-    Note over Browser,API: Subsequent requests use cookie
+    API-->>Web: Set-Cookie: agora_session
+    Web-->>Browser: Set-Cookie: agora_session
+    Note over Browser,Web: Browser keeps auth/session requests same-origin
+    Note over Browser,API: WalletSessionBridge logs out stale sessions on disconnect or wallet switch
 ```
 
 ---

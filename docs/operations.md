@@ -25,6 +25,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Typical hosted split today: web on Vercel, API + indexer on Railway, worker on a self-hosted PM2 machine (for example, a DigitalOcean droplet)
 - The API is the canonical remote agent surface
 - MCP HTTP is read-only by default; stdio remains the full local tool surface
+- Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker stays alive in degraded mode, publishes readiness via `worker_runtime_state`, and only claims jobs while `ready=true`
 - Health monitoring via /healthz, /api/indexer-health, /api/worker-health, agora doctor
@@ -125,6 +126,7 @@ Architecture boundary:
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` declares the active scoring runtime version for claim fencing during split deploys.
 - Official preset challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
+- Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
 ### Worker Docker Flow
 

@@ -33,6 +33,7 @@ import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { z } from "zod";
 import { getSession } from "../lib/auth-store.js";
+import { getMatchingOptionalSessionAddress } from "../lib/auth/session-policy.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import { requireSiweSession } from "../middleware/siwe.js";
@@ -336,16 +337,10 @@ router.post(
       );
     }
 
-    const sessionAddress = await getOptionalSessionAddress(c);
-    if (sessionAddress && sessionAddress !== solverAddress.toLowerCase()) {
-      return c.json(
-        {
-          error:
-            "Authenticated wallet does not match the submission solver. Next step: switch to the submitting wallet or sign out and retry.",
-        },
-        403,
-      );
-    }
+    const sessionAddress = getMatchingOptionalSessionAddress(
+      await getOptionalSessionAddress(c),
+      solverAddress,
+    );
 
     const db = createSupabaseClient(true);
     const challenge = await getChallengeById(db, challengeId);
@@ -373,7 +368,8 @@ router.post(
       );
     }
 
-    const normalizedSolverAddress = solverAddress.toLowerCase();
+    const normalizedSolverAddress =
+      sessionAddress ?? solverAddress.toLowerCase();
     const resultHash = computeSubmissionResultHash(normalizedResultCid);
     const intent = await createSubmissionIntent(db, {
       challenge_id: challengeId,
@@ -487,16 +483,14 @@ router.post(
     // Authorization:
     // 1) If SIWE session exists, solver must match session address.
     // 2) Otherwise, fall back to transaction sender match.
-    if (sessionAddress) {
-      if (onChain.solver.toLowerCase() !== sessionAddress.toLowerCase()) {
-        return c.json(
-          { error: "Authenticated wallet does not match submission solver." },
-          403,
-        );
-      }
-    } else if (
-      !receipt.from ||
-      onChain.solver.toLowerCase() !== receipt.from.toLowerCase()
+    const matchedSessionAddress = getMatchingOptionalSessionAddress(
+      sessionAddress,
+      onChain.solver,
+    );
+    if (
+      !matchedSessionAddress &&
+      (!receipt.from ||
+        onChain.solver.toLowerCase() !== receipt.from.toLowerCase())
     ) {
       return c.json(
         { error: "Transaction sender does not match submission solver." },

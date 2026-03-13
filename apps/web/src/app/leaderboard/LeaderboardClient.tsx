@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { getPublicLeaderboard } from "../../lib/api";
 import { formatUsdc, formatWadToScore } from "../../lib/format";
+import { getExplorerAddressUrl } from "../../lib/wallet/network";
 
 export function LeaderboardClient() {
   const leaderboardQuery = useQuery({
@@ -71,7 +72,7 @@ export function LeaderboardClient() {
                     </span>
                     <div className="min-w-0">
                       <a
-                        href={`https://sepolia.basescan.org/address/${entry.address}`}
+                        href={getExplorerAddressUrl(entry.address) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-mono text-xs hover:underline flex items-center gap-1"

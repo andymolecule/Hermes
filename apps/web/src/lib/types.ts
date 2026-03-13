@@ -190,6 +190,26 @@ export type WorkerHealth = {
   error?: string;
 };
 
+export type ApiHealth = {
+  ok: boolean;
+  service: string;
+  runtimeVersion: string;
+  checkedAt: string;
+};
+
+export type ChallengeClaimableInfo = {
+  onChainStatus: string;
+  contractVersion: number;
+  supportedVersion: boolean;
+  reviewEndsAt: string | null;
+  scoringGraceEndsAt: string | null;
+  earliestFinalizeAt: string | null;
+  canFinalize: boolean;
+  finalizeBlockedReason: string | null;
+  claimable: string;
+  canClaim: boolean;
+};
+
 export type AuthSession = {
   authenticated: boolean;
   address?: string;

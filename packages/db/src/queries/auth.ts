@@ -125,3 +125,27 @@ export async function revokeAuthSession(db: AgoraDbClient, tokenHash: string) {
     throw new Error(`Failed to revoke auth session: ${error.message}`);
   }
 }
+
+export async function purgeExpiredAuthNonces(db: AgoraDbClient) {
+  const now = new Date().toISOString();
+  const { error } = await db
+    .from("auth_nonces")
+    .delete()
+    .or(`expires_at.lte.${now},consumed_at.not.is.null`);
+
+  if (error) {
+    throw new Error(`Failed to purge expired auth nonces: ${error.message}`);
+  }
+}
+
+export async function purgeExpiredAuthSessions(db: AgoraDbClient) {
+  const now = new Date().toISOString();
+  const { error } = await db
+    .from("auth_sessions")
+    .delete()
+    .or(`expires_at.lte.${now},revoked_at.not.is.null`);
+
+  if (error) {
+    throw new Error(`Failed to purge expired auth sessions: ${error.message}`);
+  }
+}

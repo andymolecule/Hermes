@@ -13,19 +13,17 @@ import {
   verifySiweSession,
 } from "../../lib/api";
 import { getChallengeBadgeLabel } from "../../lib/challenge-status-copy";
-import { API_BASE_URL, CHAIN_ID } from "../../lib/config";
-import { formatUsdc } from "../../lib/format";
+import { CHAIN_ID } from "../../lib/config";
+import { formatDate, formatUsdc } from "../../lib/format";
 import { getStatusStyle } from "../../lib/status-styles";
 import type { SolverSubmission } from "../../lib/types";
+import { APP_CHAIN_NAME } from "../../lib/wallet/network";
+import {
+  AUTH_SESSION_QUERY_KEY,
+  MY_PORTFOLIO_QUERY_KEY,
+  resetWalletSessionQueries,
+} from "../../lib/wallet/session-state";
 import { getPortfolioAccessState } from "./portfolio-access";
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function formatScore(score: string | null) {
   if (score === null || score === undefined) return "--";
@@ -134,7 +132,7 @@ export function PortfolioClient() {
   const { signMessageAsync, isPending: isSigning } = useSignMessage();
 
   const sessionQuery = useQuery({
-    queryKey: ["auth-session"],
+    queryKey: AUTH_SESSION_QUERY_KEY,
     queryFn: getAuthSession,
   });
   const accessState = getPortfolioAccessState({
@@ -146,35 +144,33 @@ export function PortfolioClient() {
   });
 
   const portfolioQuery = useQuery({
-    queryKey: ["my-portfolio"],
+    queryKey: MY_PORTFOLIO_QUERY_KEY,
     queryFn: getMyPortfolio,
     enabled: accessState === "ready",
   });
 
   async function handleSignIn() {
     if (!address) return;
-    const apiOrigin = new URL(API_BASE_URL, window.location.origin).origin;
     const nonce = await getAuthNonce();
     const message = buildSiweMessage({
       address: address as `0x${string}`,
       chainId: chainId ?? CHAIN_ID,
       nonce,
-      domain: new URL(apiOrigin).host,
-      uri: apiOrigin,
+      domain: window.location.host,
+      uri: window.location.origin,
     });
     const signature = await signMessageAsync({ message });
     await verifySiweSession({
       message,
       signature,
     });
-    await queryClient.invalidateQueries({ queryKey: ["auth-session"] });
-    await queryClient.invalidateQueries({ queryKey: ["my-portfolio"] });
+    await queryClient.invalidateQueries({ queryKey: AUTH_SESSION_QUERY_KEY });
+    await queryClient.invalidateQueries({ queryKey: MY_PORTFOLIO_QUERY_KEY });
   }
 
   async function handleLogout() {
     await logoutSiweSession();
-    await queryClient.invalidateQueries({ queryKey: ["auth-session"] });
-    await queryClient.removeQueries({ queryKey: ["my-portfolio"] });
+    await resetWalletSessionQueries(queryClient);
   }
 
   if (accessState === "connect") {
@@ -209,7 +205,8 @@ export function PortfolioClient() {
         </section>
         <div className="border border-black p-12 text-center">
           <p className="font-mono font-bold text-sm uppercase tracking-wider text-black/60">
-            Switch to chain {CHAIN_ID} to sign in and view your portfolio.
+            Switch to {APP_CHAIN_NAME} (chain {CHAIN_ID}) to sign in and view
+            your portfolio.
           </p>
         </div>
       </div>

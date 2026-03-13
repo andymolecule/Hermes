@@ -20,25 +20,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { getAnalytics, getWorkerHealth } from "../../lib/api";
-import { formatUsdc, formatWadToScore } from "../../lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatUsdc,
+  formatWadToScore,
+} from "../../lib/format";
 import { getStatusStyle } from "../../lib/status-styles";
 import type { AnalyticsData } from "../../lib/types";
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+import { getExplorerAddressUrl } from "../../lib/wallet/network";
 
 function formatTimestamp(iso: string) {
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatDateTime(iso);
 }
 
 function formatRelativeAge(ms: number | null | undefined) {
@@ -310,7 +303,7 @@ function RecentSubmissionsTable({
             >
               <td className="py-2 px-4">
                 <a
-                  href={`https://sepolia.basescan.org/address/${s.solver_address}`}
+                  href={getExplorerAddressUrl(s.solver_address) ?? undefined}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs hover:underline flex items-center gap-1"
@@ -326,10 +319,11 @@ function RecentSubmissionsTable({
               </td>
               <td className="py-2 px-4 text-right">
                 <span
-                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${s.scored
+                  className={`px-2 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-[2px] border ${
+                    s.scored
                       ? "bg-[#e8efe8] text-[#2d6a2e] border-[#b5cdb6]"
                       : "bg-black/5 text-black/40 border-black/10"
-                    }`}
+                  }`}
                 >
                   {s.scored ? "Yes" : "Pending"}
                 </span>
@@ -389,24 +383,24 @@ function ProjectionFreshnessBanner({
   const tone =
     freshness.indexerStatus === "ok"
       ? {
-        border: "#b5cdb6",
-        background: "#e8efe8",
-        text: "#2d6a2e",
-        label: "Projection Current",
-      }
+          border: "#b5cdb6",
+          background: "#e8efe8",
+          text: "#2d6a2e",
+          label: "Projection Current",
+        }
       : freshness.indexerStatus === "warning"
         ? {
-          border: "#f5d0a4",
-          background: "#fff7ed",
-          text: "#b45309",
-          label: "Projection Delayed",
-        }
+            border: "#f5d0a4",
+            background: "#fff7ed",
+            text: "#b45309",
+            label: "Projection Delayed",
+          }
         : {
-          border: "#fca5a5",
-          background: "#fef2f2",
-          text: "#dc2626",
-          label: "Projection Stale",
-        };
+            border: "#fca5a5",
+            background: "#fef2f2",
+            text: "#dc2626",
+            label: "Projection Stale",
+          };
 
   return (
     <div
@@ -483,15 +477,15 @@ function WorkerStatus() {
           style={
             ready
               ? {
-                backgroundColor: "#e8efe8",
-                color: "#2d6a2e",
-                borderColor: "#b5cdb6",
-              }
+                  backgroundColor: "#e8efe8",
+                  color: "#2d6a2e",
+                  borderColor: "#b5cdb6",
+                }
               : {
-                backgroundColor: "#fef2f2",
-                color: "#dc2626",
-                borderColor: "#fca5a5",
-              }
+                  backgroundColor: "#fef2f2",
+                  color: "#dc2626",
+                  borderColor: "#fca5a5",
+                }
           }
         >
           {ready ? "Active — Ready to Score" : s.label}
@@ -535,7 +529,10 @@ function WorkerStatus() {
               <div className="text-center py-3">
                 <div className="flex items-center justify-center gap-1.5">
                   {sealingReady ? (
-                    <ShieldCheck className="w-4 h-4 text-[#5A7D4F]" strokeWidth={2} />
+                    <ShieldCheck
+                      className="w-4 h-4 text-[#5A7D4F]"
+                      strokeWidth={2}
+                    />
                   ) : (
                     <Lock className="w-4 h-4 text-black/30" strokeWidth={2} />
                   )}

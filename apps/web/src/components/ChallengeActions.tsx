@@ -2,11 +2,31 @@
 
 import { ACTIVE_CONTRACT_VERSION, CHALLENGE_STATUS } from "@agora/common";
 import AgoraChallengeAbi from "@agora/common/abi/AgoraChallenge.json";
-import { AlertCircle, CheckCircle, Clock, Coins, Gavel, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Coins,
+  Gavel,
+  Loader2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Abi } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { API_BASE_URL } from "../lib/config";
+import { getChallengeClaimableInfo } from "../lib/api";
+import { formatDateTime, formatUsdc } from "../lib/format";
+import type { ChallengeClaimableInfo } from "../lib/types";
+import { assertSupportedContractVersion } from "../lib/wallet/challenge-version";
+import {
+  getExplorerTxUrl,
+  getWrongChainMessage,
+  isWrongWalletChain,
+} from "../lib/wallet/network";
+import { getErrorMessage, isUserRejectedError } from "../lib/wallet/tx-errors";
+import {
+  simulateAndWriteContract,
+  waitForTransactionReceiptWithTimeout,
+} from "../lib/wallet/tx-flow";
 
 const abi = AgoraChallengeAbi as unknown as Abi;
 
@@ -15,40 +35,18 @@ interface Props {
   contractAddress: string;
 }
 
-interface ClaimableResponse {
-  onChainStatus: string;
-  contractVersion: number;
-  supportedVersion: boolean;
-  reviewEndsAt: string | null;
-  scoringGraceEndsAt: string | null;
-  earliestFinalizeAt: string | null;
-  canFinalize: boolean;
-  finalizeBlockedReason: string | null;
-  claimable: string;
-  canClaim: boolean;
-}
-
-export function ChallengeActions({
-  challengeId,
-  contractAddress,
-}: Props) {
-  const { address, isConnected } = useAccount();
+export function ChallengeActions({ challengeId, contractAddress }: Props) {
+  const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient();
-  const { writeContractAsync: writeContract } = useWriteContract();
+  const { writeContractAsync } = useWriteContract();
 
-  const [info, setInfo] = useState<ClaimableResponse | null>(null);
-  const [fetchError, setFetchError] = useState<string>("");
-  const [actionStatus, setActionStatus] = useState<string>("");
-  const [txHash, setTxHash] = useState<string>("");
+  const [info, setInfo] = useState<ChallengeClaimableInfo | null>(null);
+  const [fetchError, setFetchError] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
+  const [txHash, setTxHash] = useState("");
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    setInfo(null);
-    setFetchError("");
-  }, [challengeId]);
-
-  // Fetch on-chain status + claimable amount
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
@@ -56,39 +54,33 @@ export function ChallengeActions({
     async function fetchInfo() {
       try {
         if (!cancelled) setFetchError("");
-        const params = new URLSearchParams();
-        if (address) params.set("address", address);
-        if (refreshNonce > 0) params.set("refresh", String(refreshNonce));
-        const base = API_BASE_URL.replace(/\/$/, "");
-        const query = params.toString();
-        const res = await fetch(
-          `${base}/api/challenges/${challengeId}/claimable${query ? `?${query}` : ""}`,
-          { signal: controller.signal },
-        );
-        if (!res.ok) {
-          throw new Error(`Claimable request failed (${res.status})`);
-        }
-        const json = (await res.json()) as { data?: ClaimableResponse };
+        const next = await getChallengeClaimableInfo({
+          challengeId,
+          address,
+          refresh: refreshNonce,
+        });
         if (!cancelled) {
-          setInfo(json.data ?? null);
+          setInfo(next);
           setFetchError("");
         }
       } catch (error) {
         if (!cancelled) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Unable to load challenge actions right now.";
-          setFetchError(message);
+          setFetchError(
+            getErrorMessage(
+              error,
+              "Unable to load challenge actions right now.",
+            ),
+          );
         }
       }
     }
-    fetchInfo();
+
+    void fetchInfo();
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [challengeId, address, refreshNonce]);
+  }, [address, challengeId, refreshNonce]);
 
   useEffect(() => {
     if (!challengeId) return;
@@ -124,8 +116,15 @@ export function ChallengeActions({
   const isCancelled = info.onChainStatus === CHALLENGE_STATUS.cancelled;
   const isDisputed = info.onChainStatus === CHALLENGE_STATUS.disputed;
   const isOpen = info.onChainStatus === CHALLENGE_STATUS.open;
-  const claimableUsdc = Number(info.claimable) / 1e6; // USDC has 6 decimals
+  const claimableUsdc = Number(info.claimable) / 1e6;
   const hasClaimable = info.canClaim && claimableUsdc > 0;
+  const wrongChain = isConnected && isWrongWalletChain(chainId);
+  const walletActionBlockedMessage = !isConnected
+    ? "Connect wallet to continue."
+    : wrongChain
+      ? getWrongChainMessage(chainId)
+      : null;
+  const txUrl = txHash ? getExplorerTxUrl(txHash) : null;
 
   if (isOpen) return null;
 
@@ -133,44 +132,44 @@ export function ChallengeActions({
     if (!publicClient) {
       throw new Error("Wallet client is not ready.");
     }
-    const rawVersion = (await publicClient.readContract({
+
+    await assertSupportedContractVersion({
+      publicClient,
       address: contractAddress as `0x${string}`,
       abi,
-      functionName: "contractVersion",
-    })) as bigint;
-    const contractVersion = Number(rawVersion);
-    if (contractVersion !== ACTIVE_CONTRACT_VERSION) {
-      throw new Error(
-        `Unsupported challenge contract version ${contractVersion}. Refresh the app and point it at the active v${ACTIVE_CONTRACT_VERSION} runtime.`,
-      );
-    }
+      contractLabel: "challenge",
+    });
   }
 
   async function handleFinalize() {
-    if (!writeContract || !publicClient) return;
+    if (!publicClient || !writeContractAsync || !address) return;
     setLoading(true);
     setActionStatus("Finalizing — confirm in your wallet...");
     try {
+      if (wrongChain) throw new Error(getWrongChainMessage(chainId));
       await assertSupportedVersion();
-      const hash = await writeContract({
+      const hash = await simulateAndWriteContract({
+        publicClient,
+        writeContractAsync,
+        account: address,
         address: contractAddress as `0x${string}`,
         abi,
         functionName: "finalize",
         args: [],
       });
       setActionStatus("Waiting for confirmation...");
-      await publicClient.waitForTransactionReceipt({ hash });
+      await waitForTransactionReceiptWithTimeout({ publicClient, hash });
       setTxHash(hash);
       setRefreshNonce((value) => value + 1);
       setActionStatus("Finalized ✅");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("ChallengeFinalized")) {
+    } catch (error) {
+      const message = getErrorMessage(error, "Finalize failed.");
+      if (message.includes("ChallengeFinalized")) {
         setActionStatus("Already finalized ✅");
-      } else if (msg.includes("rejected") || msg.includes("denied")) {
+      } else if (isUserRejectedError(error)) {
         setActionStatus("Transaction cancelled");
       } else {
-        setActionStatus(`Error: ${msg.slice(0, 100)}`);
+        setActionStatus(`Error: ${message.slice(0, 100)}`);
       }
     } finally {
       setLoading(false);
@@ -178,50 +177,43 @@ export function ChallengeActions({
   }
 
   async function handleClaim() {
-    if (!writeContract || !publicClient) return;
+    if (!publicClient || !writeContractAsync || !address) return;
     setLoading(true);
     setActionStatus("Claiming — confirm in your wallet...");
     try {
+      if (wrongChain) throw new Error(getWrongChainMessage(chainId));
       await assertSupportedVersion();
-      const hash = await writeContract({
+      const hash = await simulateAndWriteContract({
+        publicClient,
+        writeContractAsync,
+        account: address,
         address: contractAddress as `0x${string}`,
         abi,
         functionName: "claim",
         args: [],
       });
       setActionStatus("Waiting for confirmation...");
-      await publicClient.waitForTransactionReceipt({ hash });
+      await waitForTransactionReceiptWithTimeout({ publicClient, hash });
       setTxHash(hash);
       setRefreshNonce((value) => value + 1);
       setActionStatus("Claimed ✅");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("NothingToClaim")) {
+    } catch (error) {
+      const message = getErrorMessage(error, "Claim failed.");
+      if (message.includes("NothingToClaim")) {
         setActionStatus("Nothing to claim");
-      } else if (msg.includes("rejected") || msg.includes("denied")) {
+      } else if (isUserRejectedError(error)) {
         setActionStatus("Transaction cancelled");
       } else {
-        setActionStatus(`Error: ${msg.slice(0, 100)}`);
+        setActionStatus(`Error: ${message.slice(0, 100)}`);
       }
     } finally {
       setLoading(false);
     }
   }
 
-  function formatActionDate(value: string | null) {
-    if (!value) return "unavailable";
-    return new Date(value).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
-  const reviewEndsDate = formatActionDate(info.reviewEndsAt);
-  const scoringGraceDate = formatActionDate(info.scoringGraceEndsAt);
-  const earliestFinalizeDate = formatActionDate(info.earliestFinalizeAt);
+  const reviewEndsDate = formatDateTime(info.reviewEndsAt);
+  const scoringGraceDate = formatDateTime(info.scoringGraceEndsAt);
+  const earliestFinalizeDate = formatDateTime(info.earliestFinalizeAt);
 
   return (
     <div className="border border-[var(--border-default)] p-6 bg-white rounded-lg space-y-4">
@@ -255,7 +247,6 @@ export function ChallengeActions({
         </div>
       )}
 
-      {/* Finalize section */}
       {!isFinalized && !isCancelled && !isDisputed && info.supportedVersion && (
         <div className="space-y-2">
           {info.canFinalize ? (
@@ -264,7 +255,7 @@ export function ChallengeActions({
                 Dispute window has passed. Finalization runs automatically, but
                 you can trigger it now.
               </p>
-              {isConnected ? (
+              {!walletActionBlockedMessage ? (
                 <button
                   type="button"
                   onClick={handleFinalize}
@@ -280,19 +271,21 @@ export function ChallengeActions({
                 </button>
               ) : (
                 <p className="text-xs text-[var(--text-muted)] font-mono">
-                  Connect wallet to finalize
+                  {walletActionBlockedMessage}
                 </p>
               )}
             </>
           ) : info.finalizeBlockedReason === "review_window_active" ? (
             <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
               <Clock className="w-3.5 h-3.5" />
-              Review window ends {reviewEndsDate}. Finalization may take longer if scoring is still incomplete.
+              Review window ends {reviewEndsDate}. Finalization may take longer
+              if scoring is still incomplete.
             </div>
           ) : info.finalizeBlockedReason === "scoring_incomplete" ? (
             <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
               <Clock className="w-3.5 h-3.5" />
-              Waiting for scorer completion or grace period at {scoringGraceDate}.
+              Waiting for scorer completion or grace period at{" "}
+              {scoringGraceDate}.
             </div>
           ) : (
             <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono">
@@ -310,7 +303,6 @@ export function ChallengeActions({
         </div>
       )}
 
-      {/* Finalized status */}
       {isFinalized && !hasClaimable && (
         <div className="flex items-center gap-2 text-xs font-mono text-[var(--text-muted)]">
           <CheckCircle className="w-3.5 h-3.5 text-green-600" />
@@ -319,44 +311,47 @@ export function ChallengeActions({
         </div>
       )}
 
-      {/* Cancelled status */}
       {isCancelled && (
         <div className="text-xs font-mono text-[var(--text-muted)]">
           Challenge was cancelled. Funds returned to poster.
         </div>
       )}
 
-      {/* Claim section */}
       {isFinalized && hasClaimable && (
         <div className="space-y-2">
           <p className="text-xs text-[var(--text-muted)] font-mono">
             You have unclaimed rewards from this challenge.
           </p>
-          <button
-            type="button"
-            onClick={handleClaim}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold font-mono uppercase tracking-wider border-2 border-[var(--color-warm-900)] bg-[#EAB308] text-[var(--color-warm-900)] rounded-md hover:bg-[#CA8A04] transition-colors disabled:opacity-50"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Coins className="w-4 h-4" strokeWidth={2} />
-            )}
-            Claim {claimableUsdc.toFixed(2)} USDC
-          </button>
+          {!walletActionBlockedMessage ? (
+            <button
+              type="button"
+              onClick={handleClaim}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold font-mono uppercase tracking-wider border-2 border-[var(--color-warm-900)] bg-[#EAB308] text-[var(--color-warm-900)] rounded-md hover:bg-[#CA8A04] transition-colors disabled:opacity-50"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Coins className="w-4 h-4" strokeWidth={2} />
+              )}
+              Claim {formatUsdc(claimableUsdc.toFixed(2))} USDC
+            </button>
+          ) : (
+            <p className="text-xs text-[var(--text-muted)] font-mono">
+              {walletActionBlockedMessage}
+            </p>
+          )}
         </div>
       )}
 
-      {/* Status message */}
       {actionStatus && (
         <p className="text-xs font-mono text-[var(--text-muted)] border-t border-[var(--border-subtle)] pt-3 mt-3">
           {actionStatus}
-          {txHash && (
+          {txUrl ? (
             <>
               {" "}
               <a
-                href={`https://sepolia.basescan.org/tx/${txHash}`}
+                href={txUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline text-blue-600"
@@ -364,7 +359,7 @@ export function ChallengeActions({
                 View tx ↗
               </a>
             </>
-          )}
+          ) : null}
         </p>
       )}
     </div>

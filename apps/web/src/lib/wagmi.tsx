@@ -2,40 +2,40 @@
 
 import {
   RainbowKitProvider,
-  darkTheme,
   getDefaultConfig,
+  lightTheme,
 } from "@rainbow-me/rainbowkit";
 import {
-  phantomWallet,
-  metaMaskWallet,
   coinbaseWallet,
-  walletConnectWallet,
+  metaMaskWallet,
+  phantomWallet,
   rainbowWallet,
+  walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import "@rainbow-me/rainbowkit/styles.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http } from "wagmi";
 import { WagmiProvider } from "wagmi";
-import { baseSepolia } from "wagmi/chains";
-import { CHAIN_ID, RPC_URL } from "./config";
+import { APP_CHAIN } from "./wallet/network";
+import { WalletSessionBridge } from "./wallet/session-bridge";
 
-const chain =
-  CHAIN_ID === baseSepolia.id
-    ? baseSepolia
-    : {
-      ...baseSepolia,
-      id: CHAIN_ID,
-      name: "Agora Chain",
-    };
+const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
+if (!walletConnectProjectId && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required in production. Add it to the web environment and redeploy.",
+  );
+}
 
 const config = getDefaultConfig({
   appName: "Agora",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "agora-dev",
-  chains: [chain],
+  projectId: walletConnectProjectId ?? "00000000000000000000000000000000",
+  chains: [APP_CHAIN],
   transports: {
-    [chain.id]: http(RPC_URL),
+    [APP_CHAIN.id]: http(APP_CHAIN.rpcUrls.default.http[0]),
   },
-  ssr: true,
+  ssr: false,
   wallets: [
     {
       groupName: "Popular",
@@ -43,7 +43,7 @@ const config = getDefaultConfig({
         metaMaskWallet,
         phantomWallet,
         coinbaseWallet,
-        walletConnectWallet,
+        ...(walletConnectProjectId ? [walletConnectWallet] : []),
         rainbowWallet,
       ],
     },
@@ -56,10 +56,11 @@ export function WebProviders({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
+        <WalletSessionBridge />
         <RainbowKitProvider
           modalSize="compact"
-          theme={darkTheme({
-            accentColor: "#000000",
+          theme={lightTheme({
+            accentColor: "#2f261d",
             accentColorForeground: "#ffffff",
             borderRadius: "small",
           })}

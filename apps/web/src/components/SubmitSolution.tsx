@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ACTIVE_CONTRACT_VERSION,
   CHALLENGE_STATUS,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
@@ -14,13 +13,11 @@ import {
   validateSubmissionTextAgainstContract,
 } from "@agora/common";
 import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowRight,
   CheckCircle,
-  FileCheck,
   FileUp,
   Loader2,
   Lock,
@@ -36,8 +33,21 @@ import {
   createSubmissionRecord,
   getSubmissionPublicKey,
 } from "../lib/api";
-import { CHAIN_ID } from "../lib/config";
+import { formatUsdc, shortAddress } from "../lib/format";
+import { assertSupportedContractVersion } from "../lib/wallet/challenge-version";
+import {
+  APP_CHAIN_NAME,
+  getExplorerTxUrl,
+  getWrongChainMessage,
+  isWrongWalletChain,
+} from "../lib/wallet/network";
+import { getErrorMessage, isUserRejectedError } from "../lib/wallet/tx-errors";
+import {
+  simulateAndWriteContract,
+  waitForTransactionReceiptWithTimeout,
+} from "../lib/wallet/tx-flow";
 import { ScoringTrustNotice } from "./ScoringTrustNotice";
+import { WalletButton } from "./WalletButton";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 const MAX_UPLOAD_MB = SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024;
@@ -113,6 +123,7 @@ export function SubmitSolution({
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const wrongChain = isConnected && isWrongWalletChain(chainId);
   const isOpen = challengeStatus === CHALLENGE_STATUS.open;
   const isPastDeadline = new Date(deadline).getTime() <= Date.now();
   const canSubmit = isOpen && !isPastDeadline;
@@ -286,8 +297,8 @@ export function SubmitSolution({
       setStatus("Connect your wallet first.");
       return;
     }
-    if (chainId !== CHAIN_ID) {
-      setStatus(`Wrong network. Switch to chain ${CHAIN_ID}.`);
+    if (wrongChain) {
+      setStatus(getWrongChainMessage(chainId));
       return;
     }
     if (!publicClient) {
@@ -403,29 +414,29 @@ export function SubmitSolution({
         resultCid: cid,
         resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
       });
-      const contractVersion = (await publicClient.readContract({
+      if (wrongChain) {
+        throw new Error(getWrongChainMessage(chainId));
+      }
+      await assertSupportedContractVersion({
+        publicClient,
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
-        functionName: "contractVersion",
-      })) as bigint;
-      if (Number(contractVersion) !== ACTIVE_CONTRACT_VERSION) {
-        throw new Error(
-          `Unsupported challenge contract version ${contractVersion}. Refresh against the active v${ACTIVE_CONTRACT_VERSION} deployment and retry.`,
-        );
-      }
+        contractLabel: "challenge",
+      });
 
       setStatus("Submitting on-chain — confirm in your wallet...");
-      const { request } = await publicClient.simulateContract({
+      const tx = await simulateAndWriteContract({
+        publicClient,
+        writeContractAsync,
         account: address,
         address: challengeAddress as `0x${string}`,
         abi: AgoraChallengeAbi,
         functionName: "submit",
         args: [submissionIntent.resultHash],
       });
-      const tx = await writeContractAsync(request);
 
       setStatus("Waiting for confirmation...");
-      await publicClient.waitForTransactionReceipt({ hash: tx });
+      await waitForTransactionReceiptWithTimeout({ publicClient, hash: tx });
 
       let metadataWarning: string | null = null;
       try {
@@ -450,16 +461,12 @@ export function SubmitSolution({
           : `success: Submission confirmed! tx=${tx}`,
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Submission failed.";
+      const message = getErrorMessage(error, "Submission failed.");
       if (message.includes("DeadlinePassed")) {
         setStatus("Deadline has passed. Cannot submit.");
       } else if (message.includes("InvalidStatus")) {
         setStatus("Challenge is no longer accepting submissions.");
-      } else if (
-        message.includes("User rejected") ||
-        message.includes("user rejected")
-      ) {
+      } else if (isUserRejectedError(error)) {
         setStatus("Transaction cancelled.");
       } else {
         setStatus(message);
@@ -487,29 +494,27 @@ export function SubmitSolution({
             Connect your wallet to submit a solution. Rewards are paid to the
             wallet you submit from.
           </p>
-          <ConnectButton.Custom>
-            {({ openConnectModal, mounted }) => (
-              <button
-                onClick={openConnectModal}
-                type="button"
-                disabled={!mounted}
-                className="btn-primary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider"
-              >
-                <Wallet className="w-4 h-4" />
-                Connect Wallet
-              </button>
-            )}
-          </ConnectButton.Custom>
+          <WalletButton className="btn-primary inline-flex items-center justify-center gap-2 px-6 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider" />
         </div>
       ) : (
         <div className="space-y-5">
+          {wrongChain ? (
+            <div className="flex items-start gap-3 p-4 border border-[var(--border-default)] bg-white text-[var(--color-warm-900)] text-sm rounded-lg">
+              <AlertCircle
+                className="w-5 h-5 mt-0.5 shrink-0"
+                strokeWidth={2}
+              />
+              <p className="break-all font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
+                {getWrongChainMessage(chainId)}
+              </p>
+            </div>
+          ) : null}
+
           {/* Wallet info + payout notice */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-[var(--border-subtle)] bg-[var(--surface-inset)] rounded-lg">
             <div className="flex items-center gap-2 text-sm text-[var(--color-warm-900)] font-bold">
               <Wallet className="w-4 h-4" strokeWidth={2} />
-              <span className="font-mono">
-                {address?.slice(0, 6)}...{address?.slice(-4)}
-              </span>
+              <span className="font-mono">{shortAddress(address ?? "")}</span>
             </div>
             <span className="text-[10px] font-mono tracking-wider uppercase font-bold text-[var(--text-muted)]">
               ← Rewards paid here
@@ -709,7 +714,7 @@ export function SubmitSolution({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isSubmitting || uploading || !hasResult}
+                disabled={isSubmitting || uploading || !hasResult || wrongChain}
                 className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 text-xs font-bold font-mono uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isSubmitting ? (
@@ -738,14 +743,15 @@ export function SubmitSolution({
                 <p className="font-bold underline text-base font-display">
                   Submission confirmed!
                 </p>
-                {txHash && (
+                {txHash && getExplorerTxUrl(txHash) && (
                   <a
-                    href={`https://sepolia.basescan.org/tx/${txHash}`}
+                    href={getExplorerTxUrl(txHash) ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-mono font-bold mt-2 inline-flex items-center gap-1 hover:underline"
                   >
-                    View on Basescan <ArrowRight className="w-3 h-3" />
+                    View on {APP_CHAIN_NAME} explorer{" "}
+                    <ArrowRight className="w-3 h-3" />
                   </a>
                 )}
               </div>

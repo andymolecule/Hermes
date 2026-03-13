@@ -19,9 +19,12 @@ const HOP_BY_HOP_HEADERS = [
 
 function buildProxyHeaders(request: Request) {
   const headers = new Headers(request.headers);
+  const requestUrl = new URL(request.url);
   for (const header of HOP_BY_HOP_HEADERS) {
     headers.delete(header);
   }
+  headers.set("x-forwarded-host", requestUrl.host);
+  headers.set("x-forwarded-proto", requestUrl.protocol.replace(":", ""));
   return headers;
 }
 
@@ -40,8 +43,10 @@ async function proxy(
 
   const url = new URL(request.url);
   const upstreamPath = (context.params.path ?? []).join("/");
+  const upstreamRelativePath =
+    upstreamPath === "healthz" ? "healthz" : `api/${upstreamPath}`;
   const upstreamUrl = new URL(
-    `api/${upstreamPath}${url.search}`,
+    `${upstreamRelativePath}${url.search}`,
     `${resolved.baseUrl}/`,
   );
 

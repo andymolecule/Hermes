@@ -156,6 +156,7 @@ This section covers non-code work for deployment across hosted systems.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.
+- Browser auth/session requests stay same-origin under the web origin's `/api/*` proxy instead of calling the backend API origin directly.
 
 ### Chain Cutover
 

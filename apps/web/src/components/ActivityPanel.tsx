@@ -1,45 +1,36 @@
 "use client";
 
 import { CHALLENGE_LIMITS, PROTOCOL_FEE_PERCENT } from "@agora/common";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   Cpu,
-  Server,
   Settings,
   Wifi,
   WifiOff,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import {
-  API_BASE_URL,
-  CHAIN_ID,
-  FACTORY_ADDRESS,
-  USDC_ADDRESS,
-} from "../lib/config";
-import type { WorkerHealth } from "../lib/types";
+import { getApiHealth, getWorkerHealth } from "../lib/api";
+import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../lib/config";
+import { shortAddress } from "../lib/format";
+import type { ApiHealth, WorkerHealth } from "../lib/types";
+import { APP_CHAIN_NAME, isWrongWalletChain } from "../lib/wallet/network";
+import { WalletButton } from "./WalletButton";
 
 // ─── System Status Panel ─────────────────────────────
 
 function useApiHealth() {
-  const [ok, setOk] = useState<boolean | null>(null);
+  const [health, setHealth] = useState<ApiHealth | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function check() {
       try {
-        const res = await fetch(
-          `${API_BASE_URL.replace(/\/$/, "")}/healthz`,
-          {
-            signal: AbortSignal.timeout(5000),
-          },
-        );
-        if (!cancelled) setOk(res.ok);
+        if (!cancelled) setHealth(await getApiHealth());
       } catch {
-        if (!cancelled) setOk(false);
+        if (!cancelled) setHealth(null);
       }
     }
     check();
@@ -50,7 +41,7 @@ function useApiHealth() {
     };
   }, []);
 
-  return ok;
+  return health;
 }
 
 function useWorkerHealth() {
@@ -60,13 +51,7 @@ function useWorkerHealth() {
     let cancelled = false;
     async function check() {
       try {
-        const res = await fetch(
-          `${API_BASE_URL.replace(/\/$/, "")}/api/worker-health`,
-          {
-            signal: AbortSignal.timeout(5000),
-          },
-        );
-        if (!cancelled) setHealth((await res.json()) as WorkerHealth);
+        if (!cancelled) setHealth(await getWorkerHealth());
       } catch {
         if (!cancelled)
           setHealth({
@@ -122,7 +107,7 @@ export function ActivityPanel() {
   const apiHealth = useApiHealth();
   const workerHealth = useWorkerHealth();
 
-  const wrongChain = isConnected && chainId !== CHAIN_ID;
+  const wrongChain = isConnected && isWrongWalletChain(chainId);
   const hasConfig = !!FACTORY_ADDRESS && !!USDC_ADDRESS;
 
   return (
@@ -158,7 +143,7 @@ export function ActivityPanel() {
             </div>
             <div className="feed-detail">
               {isConnected && address
-                ? `${address.slice(0, 6)}...${address.slice(-4)}`
+                ? shortAddress(address)
                 : "Connect wallet to post bounties"}
             </div>
           </div>
@@ -186,13 +171,13 @@ export function ActivityPanel() {
               {wrongChain
                 ? "Wrong chain"
                 : isConnected
-                  ? "Base Sepolia"
+                  ? APP_CHAIN_NAME
                   : "Not connected"}
             </div>
             <div className="feed-detail">
               {wrongChain
                 ? `Expected chain ${CHAIN_ID}, got ${chainId}`
-                : `Chain ID: ${CHAIN_ID}`}
+                : `${APP_CHAIN_NAME} · chain ${CHAIN_ID}`}
             </div>
           </div>
           <StatusDot ok={isConnected ? !wrongChain : null} />
@@ -201,28 +186,26 @@ export function ActivityPanel() {
         {/* API */}
         <div className="feed-entry">
           <div
-            className={`feed-icon ${apiHealth === true ? "verify" : apiHealth === false ? "error" : "system"}`}
+            className={`feed-icon ${apiHealth?.ok === true ? "verify" : apiHealth ? "error" : "error"}`}
           >
-            {apiHealth === true ? (
+            {apiHealth?.ok === true ? (
               <CheckCircle2 size={14} />
-            ) : apiHealth === false ? (
-              <WifiOff size={14} />
             ) : (
-              <Server size={14} />
+              <WifiOff size={14} />
             )}
           </div>
           <div className="feed-body">
             <div className="feed-headline">
               <strong>API</strong>{" "}
-              {apiHealth === true
-                ? "Connected"
-                : apiHealth === false
-                  ? "Unreachable"
-                  : "Checking…"}
+              {apiHealth?.ok === true ? "Connected" : "Unreachable"}
             </div>
-            <div className="feed-detail">{API_BASE_URL}</div>
+            <div className="feed-detail">
+              {apiHealth
+                ? `runtime ${apiHealth.runtimeVersion.slice(0, 8)}`
+                : "Check web /api proxy and backend healthz."}
+            </div>
           </div>
-          <StatusDot ok={apiHealth} />
+          <StatusDot ok={apiHealth?.ok ?? false} />
         </div>
 
         {/* Contracts */}
@@ -241,7 +224,7 @@ export function ActivityPanel() {
             </div>
             <div className="feed-detail">
               {hasConfig
-                ? `Factory: ${FACTORY_ADDRESS.slice(0, 6)}...${FACTORY_ADDRESS.slice(-4)}`
+                ? `Factory: ${shortAddress(FACTORY_ADDRESS)}`
                 : "Set NEXT_PUBLIC_AGORA_FACTORY_ADDRESS in .env"}
             </div>
           </div>
@@ -308,13 +291,13 @@ export function ActivityPanel() {
           borderTop: "1px solid var(--border-subtle)",
         }}
       >
-        <ConnectButton />
+        <WalletButton className="btn-primary inline-flex items-center justify-center gap-2 px-5 py-2.5 font-semibold text-sm uppercase font-mono tracking-wider" />
       </div>
 
       <div className="activity-footer">
         <div className="activity-stat">
           <span className="activity-stat-label">Network</span>
-          <span className="activity-stat-value">Base Sepolia</span>
+          <span className="activity-stat-value">{APP_CHAIN_NAME}</span>
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Protocol Fee</span>
@@ -322,11 +305,15 @@ export function ActivityPanel() {
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Min Dispute</span>
-          <span className="activity-stat-value">{CHALLENGE_LIMITS.defaultDisputeWindowHours}h</span>
+          <span className="activity-stat-value">
+            {CHALLENGE_LIMITS.defaultDisputeWindowHours}h
+          </span>
         </div>
         <div className="activity-stat">
           <span className="activity-stat-label">Max Reward</span>
-          <span className="activity-stat-value">{CHALLENGE_LIMITS.rewardMaxUsdc} USDC</span>
+          <span className="activity-stat-value">
+            {CHALLENGE_LIMITS.rewardMaxUsdc} USDC
+          </span>
         </div>
       </div>
     </aside>

@@ -1,4 +1,5 @@
 import type { AuthSession } from "../../lib/types";
+import { hasMatchingWalletSession } from "../../lib/wallet/session-state";
 
 export type PortfolioAccessState =
   | "connect"
@@ -10,11 +11,7 @@ export function hasMatchingPortfolioSession(
   address: string | undefined,
   session: AuthSession | undefined,
 ) {
-  return Boolean(
-    address &&
-      session?.authenticated &&
-      session.address?.toLowerCase() === address.toLowerCase(),
-  );
+  return hasMatchingWalletSession(address, session);
 }
 
 export function getPortfolioAccessState(input: {

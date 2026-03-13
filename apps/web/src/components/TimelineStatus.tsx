@@ -9,8 +9,7 @@ import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
 import { getChallengeTimelineFlow } from "../lib/challenge-status-copy";
 import { shortAddress } from "../lib/format";
 import type { Challenge, Submission } from "../lib/types";
-
-const BASESCAN_URL = "https://sepolia.basescan.org";
+import { getExplorerAddressUrl } from "../lib/wallet/network";
 
 export function TimelineStatus({
   challenge,
@@ -110,7 +109,9 @@ export function TimelineStatus({
               Contract
             </span>
             <a
-              href={`${BASESCAN_URL}/address/${challenge.contract_address}`}
+              href={
+                getExplorerAddressUrl(challenge.contract_address) ?? undefined
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto font-mono font-bold text-xs text-[var(--color-warm-900)] hover:text-[var(--accent-500)] transition-colors underline tabular-nums"
@@ -143,7 +144,9 @@ export function TimelineStatus({
             </div>
             {challenge.contract_address && (
               <a
-                href={`${BASESCAN_URL}/address/${challenge.contract_address}`}
+                href={
+                  getExplorerAddressUrl(challenge.contract_address) ?? undefined
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[var(--text-muted)] hover:text-[var(--accent-500)] transition-colors shrink-0"
