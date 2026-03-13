@@ -151,7 +151,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
-- `AGORA_RUNTIME_VERSION` is optional; hosted deploys should auto-detect the git SHA and still match the deployed worker runtime version.
+- `AGORA_RUNTIME_VERSION` is optional. API, worker, and indexer processes launched through `scripts/run-node-with-root-env.mjs` derive a service-specific runtime version from the latest commit that touched that deploy surface, so web-only pushes do not invalidate the worker runtime gate.
 - On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, so deploy order matters: bring up the new API runtime before expecting new workers to claim work.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
@@ -190,6 +190,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web each match the latest relevant git revision for their own deploy surface, and that the worker is healthy on the active API runtime. Use `--expected` only when you intentionally want to force one exact revision across both services.
+- `Auto-heal Worker (DigitalOcean)` GitHub Actions runs on a schedule and redeploys the worker droplet automatically when `/api/worker-health` reports zero healthy workers on the active runtime or the active submission-seal key is unavailable.
 
 ### DNS and Domains
 

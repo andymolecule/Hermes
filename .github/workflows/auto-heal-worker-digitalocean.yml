@@ -1,0 +1,161 @@
+name: Auto-heal Worker (DigitalOcean)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-digitalocean-worker
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  heal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DO_WORKER_HOST: ${{ secrets.DO_WORKER_HOST }}
+      DO_WORKER_USER: ${{ secrets.DO_WORKER_USER }}
+      DO_WORKER_PORT: ${{ vars.DO_WORKER_PORT }}
+      DO_WORKER_PATH: ${{ vars.DO_WORKER_PATH }}
+      DO_WORKER_PM2_NAME: ${{ vars.DO_WORKER_PM2_NAME }}
+      AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL }}
+    steps:
+      - name: Validate deploy secrets
+        run: |
+          set -euo pipefail
+          test -n "$DO_WORKER_HOST"
+          test -n "$DO_WORKER_USER"
+          test -n "${{ secrets.DO_WORKER_SSH_KEY }}"
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DO_WORKER_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DO_WORKER_PORT" -H "$DO_WORKER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Check runtime alignment and sealing readiness
+        id: health
+        run: |
+          set -euo pipefail
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
+          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
+          AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
+
+          api_json="$(curl -fsS "$AGORA_API_HEALTH_URL")"
+          worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
+
+          API_JSON="$api_json" WORKER_JSON="$worker_json" python3 - <<'PY' >> "$GITHUB_OUTPUT"
+import json
+import os
+import sys
+
+api = json.loads(os.environ["API_JSON"])
+worker = json.loads(os.environ["WORKER_JSON"])
+
+api_runtime = str(api.get("runtimeVersion") or "").strip()
+if not api_runtime:
+    print("Live API health did not include runtimeVersion.", file=sys.stderr)
+    sys.exit(1)
+
+workers = worker.get("workers") or {}
+sealing = worker.get("sealing") or {}
+
+healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+sealing_configured = bool(sealing.get("configured"))
+sealing_ready = bool(sealing.get("workerReady"))
+latest_error = str(workers.get("latestError") or "").strip()
+
+reasons = []
+if healthy_active <= 0:
+    reasons.append("zero healthy workers on the active API runtime")
+if healthy_stale_runtime > 0:
+    reasons.append(f"{healthy_stale_runtime} healthy worker(s) still on an inactive runtime")
+if sealing_configured and not sealing_ready:
+    reasons.append("sealed-submission worker readiness is false")
+
+print(f"api_runtime={api_runtime}")
+if reasons:
+    print("needs_heal=true")
+    print(f"reasons={' ; '.join(reasons)}")
+    if latest_error:
+        print(f"latest_error={latest_error}")
+else:
+    print("needs_heal=false")
+PY
+
+      - name: Report health status
+        run: |
+          set -euo pipefail
+          echo "API runtime: ${{ steps.health.outputs.api_runtime }}"
+          if [ "${{ steps.health.outputs.needs_heal }}" = "true" ]; then
+            echo "Auto-heal required: ${{ steps.health.outputs.reasons }}"
+            if [ -n "${{ steps.health.outputs.latest_error }}" ]; then
+              echo "Latest worker error: ${{ steps.health.outputs.latest_error }}"
+            fi
+          else
+            echo "Worker runtime is healthy; no action required."
+          fi
+
+      - name: Redeploy worker on droplet
+        if: steps.health.outputs.needs_heal == 'true'
+        run: |
+          set -euo pipefail
+          DO_WORKER_PORT="${DO_WORKER_PORT:-22}"
+          DO_WORKER_PATH="${DO_WORKER_PATH:-/opt/agora}"
+          DO_WORKER_PM2_NAME="${DO_WORKER_PM2_NAME:-agora-worker}"
+          ssh -p "$DO_WORKER_PORT" "$DO_WORKER_USER@$DO_WORKER_HOST" \
+            "set -euo pipefail; cd '$DO_WORKER_PATH'; if [ ! -x scripts/ops/deploy-worker.sh ]; then git fetch origin main && git checkout main && git pull --ff-only origin main; fi; export AGORA_DEPLOY_EXPECTED_SHA='${{ steps.health.outputs.api_runtime }}' AGORA_WORKER_PM2_NAME='$DO_WORKER_PM2_NAME'; bash scripts/ops/deploy-worker.sh"
+
+      - name: Wait for worker recovery
+        if: steps.health.outputs.needs_heal == 'true'
+        run: |
+          set -euo pipefail
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
+          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
+          AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
+
+          for attempt in $(seq 1 20); do
+            worker_json="$(curl -fsS "$AGORA_WORKER_HEALTH_URL")"
+
+            HEALTHY="$(
+              WORKER_JSON="$worker_json" python3 - <<'PY'
+import json
+import os
+
+worker = json.loads(os.environ["WORKER_JSON"])
+workers = worker.get("workers") or {}
+sealing = worker.get("sealing") or {}
+
+healthy_active = int(workers.get("healthyWorkersForActiveRuntimeVersion") or 0)
+healthy_stale_runtime = int(workers.get("healthyWorkersNotOnActiveRuntimeVersion") or 0)
+sealing_configured = bool(sealing.get("configured"))
+sealing_ready = bool(sealing.get("workerReady"))
+
+healthy = (
+    healthy_active > 0
+    and healthy_stale_runtime == 0
+    and (not sealing_configured or sealing_ready)
+)
+print("true" if healthy else "false")
+PY
+            )"
+
+            if [ "$HEALTHY" = "true" ]; then
+              echo "Worker recovered and is aligned with the live API runtime."
+              exit 0
+            fi
+
+            echo "Worker still unhealthy after auto-heal attempt ($attempt/20). Waiting 15s..."
+            sleep 15
+          done
+
+          echo "Worker did not recover after auto-heal."
+          exit 1

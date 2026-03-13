@@ -14,14 +14,31 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 git fetch origin main
-git checkout main
-git pull --ff-only origin main
+
+if [[ -n "$EXPECTED_SHA" ]]; then
+  TARGET_COMMIT="$(git rev-parse --verify "${EXPECTED_SHA}^{commit}" 2>/dev/null || true)"
+  if [[ -z "$TARGET_COMMIT" ]]; then
+    echo "Worker deploy aborted: could not resolve commit '$EXPECTED_SHA' locally after fetching origin/main."
+    echo "Next step: verify the API runtime SHA is reachable from origin/main, then retry."
+    exit 1
+  fi
+
+  git checkout --detach "$TARGET_COMMIT"
+else
+  git checkout main
+  git pull --ff-only origin main
+fi
 
 DEPLOYED_SHA="$(git rev-parse HEAD)"
-if [[ -n "$EXPECTED_SHA" && "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]]; then
-  echo "Worker deploy aborted: expected $EXPECTED_SHA but droplet resolved $DEPLOYED_SHA."
-  echo "Next step: retry from the latest main push after checking GitHub Actions concurrency."
-  exit 1
+if [[ -n "$EXPECTED_SHA" ]]; then
+  case "$DEPLOYED_SHA" in
+    "$EXPECTED_SHA"*) ;;
+    *)
+      echo "Worker deploy aborted: expected $EXPECTED_SHA but droplet resolved $DEPLOYED_SHA."
+      echo "Next step: retry from the live API runtime revision after checking GitHub Actions concurrency."
+      exit 1
+      ;;
+  esac
 fi
 
 pnpm install --frozen-lockfile

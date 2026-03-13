@@ -254,9 +254,10 @@ Operational rule:
 
 ### DigitalOcean Worker Auto-Deploy
 
-For the self-hosted worker, this repo ships a GitHub Actions deploy workflow plus a reusable droplet script:
+For the self-hosted worker, this repo ships a push-triggered deploy workflow, a scheduled auto-heal workflow, and a reusable droplet script:
 
 - Workflow: [deploy-worker-digitalocean.yml](../.github/workflows/deploy-worker-digitalocean.yml)
+- Workflow: [auto-heal-worker-digitalocean.yml](../.github/workflows/auto-heal-worker-digitalocean.yml)
 - Droplet script: [deploy-worker.sh](../scripts/ops/deploy-worker.sh)
 
 Expected GitHub configuration:
@@ -273,11 +274,18 @@ Deploy flow:
 
 1. Push to `main`
 2. Railway API and indexer redeploy natively from GitHub `main`
-3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the pushed commit
+3. GitHub Actions (DO worker workflow) waits for the API `/healthz` runtime version to match the latest API-surface commit for that push
 4. GitHub Actions SSHes into the worker host
 5. The droplet runs `scripts/ops/deploy-worker.sh`
-6. The script fast-forwards `main`, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
+6. The script checks out the live API runtime revision, installs deps, rebuilds `@agora/api`, and restarts the PM2 worker
 7. The worker reports the new runtime SHA automatically through `/api/worker-health`
+
+Auto-heal flow:
+
+1. Every 10 minutes, GitHub Actions checks API `/healthz` and `/api/worker-health`
+2. If the worker has zero healthy processes on the active runtime, or sealing is configured but `workerReady=false`, the workflow SSHes into the droplet
+3. The droplet reruns `scripts/ops/deploy-worker.sh` pinned to the live API runtime revision
+4. The workflow polls `/api/worker-health` until the worker is aligned again or fails visibly
 
 ---
 

@@ -1,4 +1,8 @@
 import { spawnSync } from "node:child_process";
+import {
+  API_RUNTIME_PATHS,
+  resolveGitRuntimeVersionForPaths,
+} from "./runtime-surfaces.mjs";
 
 function parseArgs(argv) {
   const options = {};
@@ -113,28 +117,6 @@ function resolveSharedExpectedRuntimeVersion(options) {
   }
 }
 
-function resolveGitRuntimeVersionForPaths(label, pathspecs) {
-  const result = spawnSync(
-    "git",
-    ["log", "-1", "--format=%H", "HEAD", "--", ...pathspecs],
-    {
-      cwd: process.cwd(),
-      encoding: "utf8",
-    },
-  );
-
-  if (result.status === 0) {
-    const commit = result.stdout.trim();
-    if (commit.length >= 12) {
-      return commit.slice(0, 12);
-    }
-  }
-
-  throw new Error(
-    `Could not resolve the latest git SHA for ${label}. Next step: run this command from the Agora repo or pass an explicit expected SHA for that service.`,
-  );
-}
-
 async function fetchJson(url, label) {
   const response = await fetch(url, {
     headers: { accept: "application/json" },
@@ -178,22 +160,6 @@ function compareRuntimeVersion(input) {
   return false;
 }
 
-const API_RUNTIME_PATHS = [
-  "apps/api",
-  "packages/common",
-  "packages/db",
-  "packages/chain",
-  "packages/ipfs",
-  "packages/scorer",
-  "scripts/run-node-with-root-env.mjs",
-  "scripts/runtime-env.mjs",
-  "package.json",
-  "pnpm-lock.yaml",
-  "pnpm-workspace.yaml",
-  "turbo.json",
-  "tsconfig.base.json",
-];
-
 const options = parseArgs(process.argv.slice(2));
 const apiUrl = normalizeBaseUrl(
   options.apiUrl ?? process.env.AGORA_API_URL,
@@ -208,7 +174,11 @@ const sharedExpectedRuntimeVersion =
 const expectedApiRuntimeVersion =
   options.expectedApiRuntimeVersion?.trim() ||
   sharedExpectedRuntimeVersion ||
-  resolveGitRuntimeVersionForPaths("API", API_RUNTIME_PATHS);
+  resolveGitRuntimeVersionForPaths({
+    label: "API",
+    pathspecs: API_RUNTIME_PATHS,
+    cwd: process.cwd(),
+  });
 const expectedWebRuntimeVersion =
   options.expectedWebRuntimeVersion?.trim() ||
   sharedExpectedRuntimeVersion ||
