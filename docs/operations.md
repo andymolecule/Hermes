@@ -332,7 +332,7 @@ Check every 15-30 minutes during first launch window:
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
 6. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
-6. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
+7. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:
 

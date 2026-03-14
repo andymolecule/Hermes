@@ -403,6 +403,7 @@ flowchart TB
     subgraph apps["apps/"]
         cli["cli<br/>Commander CLI (agora)"]
         api["api<br/>Hono REST API"]
+        executor["executor<br/>Docker execution service"]
         mcp["mcp-server<br/>MCP SDK (stdio + HTTP)"]
         web["web<br/>Next.js frontend"]
     end
@@ -413,7 +414,8 @@ flowchart TB
         chain["chain<br/>viem clients + indexer"]
         db["db<br/>Supabase queries"]
         ipfs["ipfs<br/>Pinata helpers"]
-        scorer["scorer<br/>Docker runner + proofs"]
+        scorerRuntime["scorer-runtime<br/>Docker runtime + workspace staging"]
+        scorer["scorer<br/>Scoring pipeline + proofs"]
     end
 
     cli --> common
@@ -426,12 +428,15 @@ flowchart TB
     api --> db
     api --> ipfs
     api --> scorer
+    executor --> common
+    executor --> scorerRuntime
     mcp --> common
     mcp --> chain
     mcp --> db
     mcp --> ipfs
     mcp --> scorer
     web --> common
+    scorer --> scorerRuntime
     chain --> common
     db --> common
 ```

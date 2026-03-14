@@ -55,6 +55,7 @@ These apply to every line of code and every design decision:
 @agora/ipfs            ← Pinata pin/fetch
 @agora/db              ← Supabase queries
 @agora/chain           ← viem contract wrappers + indexer
+@agora/scorer-runtime  ← Docker execution + workspace utilities
     ↓
 @agora/scorer          ← Docker scorer orchestration
     ↓
