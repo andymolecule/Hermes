@@ -26,7 +26,7 @@ test("failed challenge registration status includes the next action", () => {
   assert.equal(message.tone, "warning");
   assert.equal(message.postedOnChain, true);
   assert.match(message.message, /could not register it immediately/i);
-  assert.match(message.message, /wait for the indexer to catch up/i);
+  assert.match(message.message, /retry in a few seconds and refresh the challenge list/i);
   assert.match(message.message, /retry \/api\/challenges with this tx hash/i);
 });
 

@@ -13,7 +13,7 @@ import {
   type TransactionReceipt,
 } from "viem";
 import { getPublicClient, getWalletClient } from "./client.js";
-import { readContractStrict } from "./contract-read.js";
+import { readImmutableContractWithLatestFallback } from "./contract-read.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
@@ -199,12 +199,11 @@ export function parseFactoryLogs(logs: TransactionReceipt["logs"]) {
 export async function getFactoryContractVersion(
   factoryAddress?: `0x${string}`,
   blockNumber?: bigint,
+  publicClient = getPublicClient(),
 ): Promise<number> {
-  const config = loadConfig();
-  const publicClient = getPublicClient();
-  const rawVersion = await readContractStrict<bigint>({
+  const rawVersion = await readImmutableContractWithLatestFallback<bigint>({
     publicClient,
-    address: factoryAddress ?? config.AGORA_FACTORY_ADDRESS,
+    address: factoryAddress ?? loadConfig().AGORA_FACTORY_ADDRESS,
     abi: AgoraFactoryAbi,
     functionName: "contractVersion",
     blockNumber,

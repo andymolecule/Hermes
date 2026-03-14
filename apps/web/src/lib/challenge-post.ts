@@ -39,7 +39,7 @@ export function getChallengePostIndexingFailureStatus(
   const detail =
     message.trim().length > 0 ? message : "Unknown registration error.";
   return createChallengePostStatus(
-    `Challenge posted on-chain (tx=${txHash}), but Agora could not register it immediately: ${detail} Next step: wait for the indexer to catch up and refresh the challenge list, or retry /api/challenges with this tx hash if you operate the API.`,
+    `Challenge posted on-chain (tx=${txHash}), but Agora could not register it immediately: ${detail} Next step: retry in a few seconds and refresh the challenge list, or retry /api/challenges with this tx hash if you operate the API.`,
     {
       tone: "warning",
       postedOnChain: true,

@@ -5,6 +5,7 @@ import {
   getChallengeFinalizeState,
   getChallengePayoutByAddress,
   getPublicClient,
+  isTransientPinnedContractReadError,
   parseChallengeCreationCall,
   parseChallengeCreatedReceipt,
 } from "@agora/chain";
@@ -43,6 +44,24 @@ function normalizeAddress(value: string | null | undefined) {
   return typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value)
     ? (value.toLowerCase() as `0x${string}`)
     : undefined;
+}
+
+export function getChallengeRegistrationRetryMessage() {
+  return "Challenge transaction is confirmed, but Agora could not read immutable registration metadata from chain yet. Next step: retry in a few seconds.";
+}
+
+export function toChallengeRegistrationChainReadErrorResponse(error: unknown) {
+  if (isTransientPinnedContractReadError(error)) {
+    return {
+      status: 409 as const,
+      error: getChallengeRegistrationRetryMessage(),
+    };
+  }
+
+  return {
+    status: 400 as const,
+    error: error instanceof Error ? error.message : String(error),
+  };
 }
 
 const DISTRIBUTION_TYPE_TO_SPEC = {
@@ -190,8 +209,8 @@ router.post(
       ({ challengeAddress, posterAddress, reward } =
         parseChallengeCreatedReceipt(receipt));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 400);
+      const response = toChallengeRegistrationChainReadErrorResponse(error);
+      return c.json({ error: response.error }, response.status);
     }
 
     let specCid: string;
@@ -234,8 +253,8 @@ router.post(
       );
       onChainDeadlineIso = toIsoFromUnixSeconds(creation.deadline);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return c.json({ error: message }, 400);
+      const response = toChallengeRegistrationChainReadErrorResponse(error);
+      return c.json({ error: response.error }, response.status);
     }
 
     // P0: Reject unscorable bounties — container must be valid
