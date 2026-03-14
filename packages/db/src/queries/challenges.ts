@@ -236,32 +236,34 @@ export async function listChallengesForIndexing(db: AgoraDbClient) {
     );
   }
 
-  const { data: unclaimedPayoutRows, error: payoutError } = await db
+  const { data: payoutRows, error: payoutError } = await db
     .from("challenge_payouts")
-    .select("challenge_id")
-    .is("claimed_at", null);
+    .select("challenge_id, claimed_at");
   if (payoutError) {
     throw new Error(
-      `Failed to list unclaimed challenge payouts: ${payoutError.message}`,
+      `Failed to list challenge payouts for indexing: ${payoutError.message}`,
     );
   }
 
-  const finalizedChallengeIds = Array.from(
+  const challengesWithAnyPayouts = new Set(
+    (payoutRows ?? [])
+      .map((row) => row.challenge_id)
+      .filter((value): value is string => typeof value === "string"),
+  );
+  const finalizedChallengeIdsNeedingPayoutRepair = new Set(
     new Set(
-      (unclaimedPayoutRows ?? [])
+      (payoutRows ?? [])
+        .filter((row) => row.claimed_at === null)
         .map((row) => row.challenge_id)
         .filter((value): value is string => typeof value === "string"),
     ),
   );
-  if (finalizedChallengeIds.length === 0) {
-    return activeChallenges ?? [];
-  }
 
   const { data: finalizedChallenges, error: finalizedError } = await db
     .from("challenges")
     .select(INDEXING_CHALLENGE_SELECT)
     .eq("status", CHALLENGE_STATUS.finalized)
-    .in("id", finalizedChallengeIds);
+    .not("winning_on_chain_sub_id", "is", null);
   if (finalizedError) {
     throw new Error(
       `Failed to list finalized challenges for indexing: ${finalizedError.message}`,
@@ -275,7 +277,11 @@ export async function listChallengesForIndexing(db: AgoraDbClient) {
     }
   }
   for (const challenge of finalizedChallenges ?? []) {
-    if (typeof challenge.id === "string") {
+    if (
+      typeof challenge.id === "string" &&
+      (!challengesWithAnyPayouts.has(challenge.id) ||
+        finalizedChallengeIdsNeedingPayoutRepair.has(challenge.id))
+    ) {
       merged.set(challenge.id, challenge);
     }
   }

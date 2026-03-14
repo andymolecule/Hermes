@@ -88,7 +88,8 @@ const inferredSpec = challengeSpecSchema.parse({
   type: "prediction",
   description: "desc",
   dataset: {
-    test: "ipfs://QmLegacyTest",
+    test: "ipfs://QmPublicEvalInputs",
+    hidden_labels: "ipfs://QmHiddenLabelsInferred",
   },
   scoring: {
     container: "ghcr.io/andymolecule/regression-scorer:v1",
@@ -108,9 +109,10 @@ const insertInferred = await buildChallengeInsert({
   spec: inferredSpec,
 });
 assert.equal(insertInferred.runner_preset_id, "regression_v1");
-assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmLegacyTest");
+assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmHiddenLabelsInferred");
 assert.deepEqual(insertInferred.expected_columns, ["id", "prediction"]);
 assert.equal(insertInferred.submission_contract_json?.kind, "csv_table");
+assert.equal(insertInferred.dataset_test_cid, "ipfs://QmPublicEvalInputs");
 
 const insertWithOnChainDeadline = await buildChallengeInsert({
   ...baseInput,

@@ -15,7 +15,7 @@ type ChallengeRow = {
 
 function createFakeDb(input: {
   challenges: ChallengeRow[];
-  unclaimedPayoutChallengeIds: string[];
+  payoutRows: Array<{ challenge_id: string; claimed_at: string | null }>;
 }) {
   return {
     from(table: string) {
@@ -35,13 +35,15 @@ function createFakeDb(input: {
               eq(column: string, value: string) {
                 assert.equal(column, "status");
                 return {
-                  in(nestedColumn: string, ids: string[]) {
-                    assert.equal(nestedColumn, "id");
+                  not(nestedColumn: string, operator: string, filterValue: null) {
+                    assert.equal(nestedColumn, "winning_on_chain_sub_id");
+                    assert.equal(operator, "is");
+                    assert.equal(filterValue, null);
                     return Promise.resolve({
                       data: input.challenges.filter(
                         (challenge) =>
                           challenge.status === value &&
-                          ids.includes(challenge.id),
+                          challenge.id.startsWith("finalized-"),
                       ),
                       error: null,
                     });
@@ -56,20 +58,10 @@ function createFakeDb(input: {
       if (table === "challenge_payouts") {
         return {
           select() {
-            return {
-              is(column: string, value: null) {
-                assert.equal(column, "claimed_at");
-                assert.equal(value, null);
-                return Promise.resolve({
-                  data: input.unclaimedPayoutChallengeIds.map(
-                    (challengeId) => ({
-                      challenge_id: challengeId,
-                    }),
-                  ),
-                  error: null,
-                });
-              },
-            };
+            return Promise.resolve({
+              data: input.payoutRows,
+              error: null,
+            });
           },
         };
       }
@@ -79,7 +71,7 @@ function createFakeDb(input: {
   };
 }
 
-test("listChallengesForIndexing only returns active rows and finalized rows with unclaimed payouts", async () => {
+test("listChallengesForIndexing returns active rows plus finalized rows needing payout repair", async () => {
   const rows: ChallengeRow[] = [
     {
       id: "open-1",
@@ -127,6 +119,15 @@ test("listChallengesForIndexing only returns active rows and finalized rows with
       max_submissions_per_solver: 3,
     },
     {
+      id: "finalized-missing-payouts",
+      status: CHALLENGE_STATUS.finalized,
+      contract_address: "0x0000000000000000000000000000000000000007",
+      factory_address: "0x000000000000000000000000000000000000000f",
+      tx_hash: "0x7",
+      max_submissions_total: 10,
+      max_submissions_per_solver: 3,
+    },
+    {
       id: "cancelled-1",
       status: CHALLENGE_STATUS.cancelled,
       contract_address: "0x0000000000000000000000000000000000000006",
@@ -140,9 +141,9 @@ test("listChallengesForIndexing only returns active rows and finalized rows with
   const result = await listChallengesForIndexing(
     createFakeDb({
       challenges: rows,
-      unclaimedPayoutChallengeIds: [
-        "finalized-claimable",
-        "finalized-claimable",
+      payoutRows: [
+        { challenge_id: "finalized-claimable", claimed_at: null },
+        { challenge_id: "finalized-complete", claimed_at: "2026-03-14T00:00:00.000Z" },
       ],
     }) as never,
   );
@@ -150,6 +151,7 @@ test("listChallengesForIndexing only returns active rows and finalized rows with
   assert.deepEqual(result.map((row) => row.id).sort(), [
     "disputed-1",
     "finalized-claimable",
+    "finalized-missing-payouts",
     "open-1",
     "scoring-1",
   ]);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPlatformAnalyticsSnapshot } from "../queries/analytics.js";
 
-test("analytics snapshot uses effective status and finalized payouts as the source of truth", () => {
+test("analytics snapshot uses claimed finalized payouts as distributed value", () => {
   const snapshot = buildPlatformAnalyticsSnapshot({
     challenges: [
       {
@@ -70,8 +70,21 @@ test("analytics snapshot uses effective status and finalized payouts as the sour
       },
     ],
     payoutRows: [
-      { challenge_id: "finalized-1", amount: "18" },
-      { challenge_id: "open-past-deadline", amount: "999" },
+      {
+        challenge_id: "finalized-1",
+        amount: "18",
+        claimed_at: "2026-03-10T00:00:00.000Z",
+      },
+      {
+        challenge_id: "finalized-1",
+        amount: "2",
+        claimed_at: null,
+      },
+      {
+        challenge_id: "open-past-deadline",
+        amount: "999",
+        claimed_at: "2026-03-10T00:00:00.000Z",
+      },
     ],
     scoreJobRows: [
       { status: "scored" },

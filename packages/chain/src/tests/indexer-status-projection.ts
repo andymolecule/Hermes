@@ -38,6 +38,7 @@ function createFakeDb() {
   return {
     indexedEvents,
     challengeRows,
+    challengePayouts,
     indexerCursors,
     from(table: string) {
       if (table === "indexed_events") {
@@ -97,6 +98,59 @@ function createFakeDb() {
 
       if (table === "challenge_payouts") {
         return {
+          select() {
+            return {
+              eq(_challengeColumn: string, challengeId: string) {
+                return {
+                  eq(_solverColumn: string, solverAddress: string) {
+                    return {
+                      eq(_rankColumn: string, rank: number) {
+                        return {
+                          async maybeSingle() {
+                            const rows = challengePayouts.get(challengeId) ?? [];
+                            const match =
+                              rows.find(
+                                (row) =>
+                                  String(row.solver_address) ===
+                                    solverAddress.toLowerCase() &&
+                                  Number(row.rank) === rank,
+                              ) ?? null;
+                            return { data: match, error: null };
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+          upsert(payload: Record<string, unknown>) {
+            return {
+              select() {
+                return {
+                  async single() {
+                    const challengeId = String(payload.challenge_id);
+                    const existing = challengePayouts.get(challengeId) ?? [];
+                    const nextRows = existing.filter(
+                      (row) =>
+                        !(
+                          String(row.solver_address) ===
+                            String(payload.solver_address).toLowerCase() &&
+                          Number(row.rank) === Number(payload.rank)
+                        ),
+                    );
+                    const normalized = {
+                      ...payload,
+                      solver_address: String(payload.solver_address).toLowerCase(),
+                    };
+                    challengePayouts.set(challengeId, [...nextRows, normalized]);
+                    return { data: normalized, error: null };
+                  },
+                };
+              },
+            };
+          },
           update(payload: Record<string, unknown>) {
             return {
               eq(_challengeColumn: string, challengeId: string) {
@@ -363,6 +417,70 @@ test("Claimed flags targeted repair when payout rows are missing", async () => {
     block_number: 456,
     block_hash: `0x${"f".repeat(64)}`,
   });
+});
+
+test("PayoutAllocated accepts numeric rank values and stores payout rows", async () => {
+  const db = createFakeDb();
+  const txHash = `0x${"1".repeat(64)}` as `0x${string}`;
+
+  const result = await processChallengeLog({
+    db: db as never,
+    publicClient: {} as never,
+    challenge: {
+      id: "challenge-payout",
+      contract_address: "0x0000000000000000000000000000000000000007",
+      tx_hash: txHash,
+      status: CHALLENGE_STATUS.finalized,
+    },
+    log: {
+      eventName: "PayoutAllocated",
+      args: {
+        solver: "0x0000000000000000000000000000000000000008",
+        submissionId: 0n,
+        rank: 1,
+        amount: 18_000_000n,
+      },
+      transactionHash: txHash,
+      logIndex: 10,
+      blockNumber: 457n,
+      blockHash: `0x${"e".repeat(64)}`,
+    },
+    fromBlock: 450n,
+    challengeFromBlock: 450n,
+    challengeCursorKey: "challenge-payout",
+    challengePersistTargets: new Map(),
+  });
+
+  assert.equal(result.needsRepair, false);
+  assert.deepEqual(db.indexedEvents.get(`${txHash}:10`), {
+    tx_hash: txHash,
+    log_index: 10,
+    event_name: "PayoutAllocated",
+    block_number: 457,
+    block_hash: `0x${"e".repeat(64)}`,
+  });
+  assert.deepEqual(
+    (db.challengePayouts.get("challenge-payout") ?? []).map((row) => ({
+      challenge_id: row.challenge_id,
+      solver_address: row.solver_address,
+      winning_on_chain_sub_id: row.winning_on_chain_sub_id,
+      rank: row.rank,
+      amount: row.amount,
+      claimed_at: row.claimed_at,
+      claim_tx_hash: row.claim_tx_hash,
+    })),
+    [
+      {
+        challenge_id: "challenge-payout",
+        solver_address: "0x0000000000000000000000000000000000000008",
+        winning_on_chain_sub_id: 0,
+        rank: 1,
+        amount: 18,
+        claimed_at: null,
+        claim_tx_hash: null,
+      },
+    ],
+  );
 });
 
 test("persistChallengeCursors keeps exact next block for quiet challenges", async () => {

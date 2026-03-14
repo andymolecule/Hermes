@@ -626,7 +626,7 @@ export function AnalyticsClient() {
                 <HeroMetric
                   label="Total Distributed"
                   value={`$${formatUsdc(d.distributedUsdc ?? 0)}`}
-                  sub="To solvers"
+                  sub="Claimed by solvers"
                 />
               </div>
               <div className="p-5 text-center">

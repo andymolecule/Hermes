@@ -91,6 +91,16 @@ function parseRequiredBigInt(value: unknown, field: string): bigint {
   throw new Error(`Invalid event arg '${field}': expected bigint`);
 }
 
+function parseRequiredInteger(value: unknown, field: string): number {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  throw new Error(`Invalid event arg '${field}': expected integer`);
+}
+
 function parseRequiredAddress(value: unknown, field: string): `0x${string}` {
   if (typeof value === "string" && value.startsWith("0x")) {
     return value as `0x${string}`;
@@ -310,11 +320,9 @@ async function buildCanonicalChallengeSettlement(input: {
           "submissionId",
         ),
       );
-      const rank = Number(
-        parseRequiredBigInt(
-          eventArg(log.args, 2) ?? eventArg(log.args, "rank"),
-          "rank",
-        ),
+      const rank = parseRequiredInteger(
+        eventArg(log.args, 2) ?? eventArg(log.args, "rank"),
+        "rank",
       );
       const amount = payoutAmountUsdc(
         parseRequiredBigInt(
@@ -861,7 +869,7 @@ export async function processChallengeLog(input: {
         eventArg(log.args, 1) ?? eventArg(log.args, "submissionId"),
         "submissionId",
       );
-      const rank = parseRequiredBigInt(
+      const rank = parseRequiredInteger(
         eventArg(log.args, 2) ?? eventArg(log.args, "rank"),
         "rank",
       );
@@ -873,7 +881,7 @@ export async function processChallengeLog(input: {
         challenge_id: challenge.id,
         solver_address: solver,
         winning_on_chain_sub_id: Number(submissionId),
-        rank: Number(rank),
+        rank,
         amount: payoutAmountUsdc(amount),
       });
     }

@@ -70,6 +70,7 @@ type AnalyticsSubmissionRow = {
 type AnalyticsPayoutRow = {
   challenge_id: string;
   amount: string | number | null;
+  claimed_at: string | null;
 };
 
 type AnalyticsScoreJobRow = {
@@ -165,6 +166,9 @@ export function buildPlatformAnalyticsSnapshot(
   );
   const distributedUsdc = input.payoutRows.reduce((sum, payout) => {
     if (!finalizedChallengeIds.has(payout.challenge_id)) {
+      return sum;
+    }
+    if (payout.claimed_at === null) {
       return sum;
     }
     return sum + parseNumericValue(payout.amount);
@@ -306,7 +310,7 @@ export async function getPlatformAnalytics(
       .order("submitted_at", { ascending: false })
       .limit(10),
 
-    db.from("challenge_payouts").select("challenge_id, amount"),
+    db.from("challenge_payouts").select("challenge_id, amount, claimed_at"),
 
     db.from("score_jobs").select("status"),
   ]);
