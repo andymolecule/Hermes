@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort)"
+    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort) && python3 ../../containers/regression-scorer/test_score.py"
   },
   "devDependencies": {
     "@types/node": "^25.3.0"

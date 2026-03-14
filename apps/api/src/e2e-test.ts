@@ -25,6 +25,7 @@ import {
   createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
+  lookupPreset,
   loadConfig,
   resolveRuntimePrivateKey,
   sealSubmission,
@@ -44,6 +45,17 @@ const E2E_DISPUTE_WINDOW_HOURS = 1;
 const E2E_DEADLINE_SECONDS = 60;
 const E2E_POLL_INTERVAL_MS = 1_000;
 const E2E_POLL_TIMEOUT_MS = 60_000;
+
+type LifecycleScenarioPrepared = {
+  label: string;
+  specCid: string;
+  submissionSourcePath: string;
+  assertPublicApis?: (input: {
+    app: ReturnType<typeof createApp>;
+    challengeId: string;
+    submissionId: string;
+  }) => Promise<void>;
+};
 
 function repoPath(...segments: string[]) {
   return path.resolve(
@@ -182,6 +194,58 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
   };
 }
 
+function buildPredictionE2ESpec(input: {
+  trainCid: string;
+  testCid: string;
+  hiddenLabelsCid: string;
+}) {
+  const regressionContainer = lookupPreset("regression_v1")?.container;
+  if (!regressionContainer) {
+    throw new Error(
+      "Lifecycle E2E requires the official regression_v1 preset. Restore the preset registry entry and retry.",
+    );
+  }
+
+  return {
+    schema_version: 2 as const,
+    id: `e2e-prediction-${Date.now()}`,
+    preset_id: "regression_v1",
+    title: `E2E Prediction ${Date.now()}`,
+    description:
+      "End-to-end prediction flow using the regression scorer, hidden labels, and on-chain settlement.",
+    domain: "other" as const,
+    type: "prediction" as const,
+    dataset: {
+      train: input.trainCid,
+      test: input.testCid,
+      hidden_labels: input.hiddenLabelsCid,
+    },
+    scoring: {
+      container: regressionContainer,
+      metric: "r2" as const,
+    },
+    eval_spec: {
+      engine_id: "regression_v1",
+      evaluation_bundle: input.hiddenLabelsCid,
+    },
+    submission_contract: createCsvTableSubmissionContract({
+      requiredColumns: ["id", "prediction"],
+      idColumn: "id",
+      valueColumn: "prediction",
+    }),
+    reward: {
+      total: E2E_REWARD_USDC,
+      distribution: "top_3" as const,
+    },
+    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    evaluation: {
+      success_definition:
+        "Predict held-out numeric labels for every evaluation row using R².",
+    },
+    lab_tba: ZERO_ADDRESS,
+  };
+}
+
 async function waitFor<T>(
   description: string,
   task: () => Promise<T | null>,
@@ -196,6 +260,17 @@ async function waitFor<T>(
     await new Promise((resolve) => setTimeout(resolve, E2E_POLL_INTERVAL_MS));
   }
   throw new Error(`Timed out waiting for ${description}.`);
+}
+
+function readNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 async function getTrackedChallengeRow(
@@ -276,41 +351,7 @@ async function projectChallengeReceipt(input: {
   });
 }
 
-export async function runLifecycleE2E() {
-  const config = loadConfig();
-  if (!config.AGORA_SUPABASE_SERVICE_KEY) {
-    throw new Error(
-      "Lifecycle E2E requires AGORA_SUPABASE_SERVICE_KEY. Provide it and retry.",
-    );
-  }
-  if (!config.AGORA_PINATA_JWT) {
-    throw new Error(
-      "Lifecycle E2E requires AGORA_PINATA_JWT. Provide it and retry.",
-    );
-  }
-
-  const publicClient = getPublicClient();
-  const walletClient = getWalletClient();
-  const account = walletClient.account;
-  if (!account || !resolveRuntimePrivateKey(config)) {
-    throw new Error(
-      "Wallet client account is not configured. Set AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY and retry.",
-    );
-  }
-
-  await ensureWalletMatchesOracle(
-    publicClient,
-    config.AGORA_FACTORY_ADDRESS,
-    account.address,
-  );
-
-  const db = createSupabaseClient(true);
-  const app = createApp();
-
-  console.log(
-    "\n=== E2E TEST: Open -> startScoring -> worker score -> verify -> dispute -> resolve -> claim ===\n",
-  );
-
+async function prepareReproducibilityScenario() {
   const reproducibilityDir = repoPath(
     "challenges",
     "test-data",
@@ -324,15 +365,160 @@ export async function runLifecycleE2E() {
     path.join(reproducibilityDir, "expected_output.csv"),
     "e2e-expected-output.csv",
   );
-  const submissionSourcePath = path.join(
-    reproducibilityDir,
-    "sample_submission.csv",
+
+  return {
+    label: "reproducibility",
+    specCid: await pinJSON(
+      "e2e-reproducibility-spec.json",
+      buildE2ESpec({ trainCid, expectedCid }),
+    ),
+    submissionSourcePath: path.join(
+      reproducibilityDir,
+      "sample_submission.csv",
+    ),
+  } satisfies LifecycleScenarioPrepared;
+}
+
+async function assertPredictionPublicApis(input: {
+  app: ReturnType<typeof createApp>;
+  challengeId: string;
+  submissionId: string;
+}) {
+  await waitFor("prediction challenge public routes", async () => {
+    try {
+      const detailResponse = await input.app.request(
+        new Request(`http://localhost/api/challenges/${input.challengeId}`),
+      );
+      if (detailResponse.status !== 200) {
+        throw new Error(
+          `Prediction detail route returned ${detailResponse.status}.`,
+        );
+      }
+      const detailBody = (await detailResponse.json()) as {
+        data?: {
+          challenge?: {
+            id?: string;
+            type?: string;
+            status?: string;
+            submissions_count?: unknown;
+          };
+          leaderboard?: Array<{ id?: string; score?: unknown }>;
+        };
+      };
+      const detailChallenge = detailBody.data?.challenge;
+      const detailCount = readNumber(detailChallenge?.submissions_count);
+      if (detailChallenge?.id !== input.challengeId) {
+        throw new Error("Prediction detail route returned the wrong challenge.");
+      }
+      if (detailChallenge?.type !== "prediction") {
+        throw new Error("Prediction detail route lost the challenge type.");
+      }
+      if (detailChallenge?.status !== "finalized") {
+        throw new Error("Prediction challenge should be finalized.");
+      }
+      if (detailCount === null || detailCount < 1) {
+        throw new Error(
+          `Prediction detail route reported submissions_count=${String(detailChallenge?.submissions_count)}.`,
+        );
+      }
+      const detailLeaderboard = detailBody.data?.leaderboard ?? [];
+      if (detailLeaderboard.length === 0) {
+        throw new Error("Prediction detail route returned an empty leaderboard.");
+      }
+      if (detailLeaderboard[0]?.id !== input.submissionId) {
+        throw new Error("Prediction detail route did not expose the scored submission.");
+      }
+      if (detailLeaderboard[0]?.score === null || detailLeaderboard[0]?.score === undefined) {
+        throw new Error("Prediction detail leaderboard row is missing the score.");
+      }
+
+      const leaderboardResponse = await input.app.request(
+        new Request(
+          `http://localhost/api/challenges/${input.challengeId}/leaderboard`,
+        ),
+      );
+      if (leaderboardResponse.status !== 200) {
+        throw new Error(
+          `Prediction leaderboard route returned ${leaderboardResponse.status}.`,
+        );
+      }
+      const leaderboardBody = (await leaderboardResponse.json()) as {
+        data?: Array<{ id?: string; score?: unknown }>;
+      };
+      if ((leaderboardBody.data ?? [])[0]?.id !== input.submissionId) {
+        throw new Error("Prediction leaderboard route did not expose the scored submission.");
+      }
+
+      const listResponse = await input.app.request(
+        new Request("http://localhost/api/challenges"),
+      );
+      if (listResponse.status !== 200) {
+        throw new Error(`Prediction list route returned ${listResponse.status}.`);
+      }
+      const listBody = (await listResponse.json()) as {
+        data?: Array<{ id?: string; submissions_count?: unknown; status?: string }>;
+      };
+      const listRow = (listBody.data ?? []).find(
+        (row) => row.id === input.challengeId,
+      );
+      const listCount = readNumber(listRow?.submissions_count);
+      if (!listRow) {
+        throw new Error("Prediction challenge was missing from the public list.");
+      }
+      if (listRow.status !== "finalized") {
+        throw new Error("Prediction challenge list row should be finalized.");
+      }
+      if (listCount === null || listCount < 1) {
+        throw new Error(
+          `Prediction challenge list row reported submissions_count=${String(listRow.submissions_count)}.`,
+        );
+      }
+      return true;
+    } catch {
+      return null;
+    }
+  });
+}
+
+async function preparePredictionScenario() {
+  const predictionDir = repoPath("challenges", "test-data", "prediction");
+  const trainCid = await pinFile(
+    path.join(predictionDir, "train.csv"),
+    "e2e-prediction-train.csv",
   );
-  const useSealedSubmission = hasSubmissionSealWorkerConfig(config);
-  const specCid = await pinJSON(
-    "e2e-reproducibility-spec.json",
-    buildE2ESpec({ trainCid, expectedCid }),
+  const testCid = await pinFile(
+    path.join(predictionDir, "test.csv"),
+    "e2e-prediction-test.csv",
   );
+  const hiddenLabelsCid = await pinFile(
+    path.join(predictionDir, "hidden_labels.csv"),
+    "e2e-prediction-hidden-labels.csv",
+  );
+
+  return {
+    label: "prediction",
+    specCid: await pinJSON(
+      "e2e-prediction-spec.json",
+      buildPredictionE2ESpec({ trainCid, testCid, hiddenLabelsCid }),
+    ),
+    submissionSourcePath: path.join(predictionDir, "sample_submission.csv"),
+    assertPublicApis: assertPredictionPublicApis,
+  } satisfies LifecycleScenarioPrepared;
+}
+
+async function runLifecycleScenario(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  app: ReturnType<typeof createApp>;
+  accountAddress: `0x${string}`;
+  useSealedSubmission: boolean;
+  prepared: LifecycleScenarioPrepared;
+}) {
+  const { db, publicClient, app, accountAddress, useSealedSubmission, prepared } =
+    input;
+  const config = loadConfig();
+
+  console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
   console.log("1. Base fixtures pinned");
 
   const approveTxHash = await approve(
@@ -343,7 +529,7 @@ export async function runLifecycleE2E() {
 
   const latestBlock = await publicClient.getBlock();
   const createTxHash = await createChallenge({
-    specCid,
+    specCid: prepared.specCid,
     rewardAmount: E2E_REWARD_USDC,
     deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
     disputeWindowHours: E2E_DISPUTE_WINDOW_HOURS,
@@ -382,19 +568,22 @@ export async function runLifecycleE2E() {
           );
         }
         const publicKey = await importSubmissionSealPublicKey(publicKeyPem);
-        const sourceBytes = await fs.readFile(submissionSourcePath);
+        const sourceBytes = await fs.readFile(prepared.submissionSourcePath);
         const envelope = await sealSubmission({
           challengeId: challenge.id,
-          solverAddress: account.address.toLowerCase(),
-          fileName: "sample_submission.csv",
+          solverAddress: accountAddress.toLowerCase(),
+          fileName: path.basename(prepared.submissionSourcePath),
           mimeType: "text/csv",
           bytes: new Uint8Array(sourceBytes),
           keyId,
           publicKey,
         });
-        return pinJSON("e2e-sealed-submission.json", envelope);
+        return pinJSON(`e2e-${prepared.label}-sealed-submission.json`, envelope);
       })()
-    : await pinFile(submissionSourcePath, "e2e-sample-submission.csv");
+    : await pinFile(
+        prepared.submissionSourcePath,
+        `e2e-${prepared.label}-sample-submission.csv`,
+      );
   console.log(
     `3. Submission payload pinned${useSealedSubmission ? " (sealed path)" : ""}`,
   );
@@ -405,7 +594,7 @@ export async function runLifecycleE2E() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         challengeId: challenge.id,
-        solverAddress: account.address.toLowerCase(),
+        solverAddress: accountAddress.toLowerCase(),
         resultCid: submissionCid,
         resultFormat: useSealedSubmission
           ? SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
@@ -426,10 +615,7 @@ export async function runLifecycleE2E() {
     throw new Error("Submission intent route succeeded without a result hash.");
   }
 
-  const submitTxHash = await submitChallengeResult(
-    challengeAddress,
-    resultHash,
-  );
+  const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
   console.log("4. Submission posted:", submitTxHash);
 
@@ -487,7 +673,7 @@ export async function runLifecycleE2E() {
   console.log("6. startScoring projected:", startTxHash);
 
   const scoreJob = await waitFor("score job", async () =>
-    claimNextJob(db, "lifecycle-e2e"),
+    claimNextJob(db, `lifecycle-e2e-${prepared.label}`),
   );
   await processJob(db, scoreJob, (_level, message) =>
     console.log(`[worker] ${message}`),
@@ -547,9 +733,18 @@ export async function runLifecycleE2E() {
   }
   console.log("10. Canonical top_3 payout rows projected");
 
+  if (prepared.assertPublicApis) {
+    await prepared.assertPublicApis({
+      app,
+      challengeId: challenge.id,
+      submissionId,
+    });
+    console.log("11. Public API projections aligned");
+  }
+
   const payoutBeforeClaim = await getChallengePayoutByAddress(
     challengeAddress,
-    account.address,
+    accountAddress,
   );
   if (payoutBeforeClaim === 0n) {
     throw new Error("Expected a claimable payout after dispute resolution.");
@@ -567,7 +762,7 @@ export async function runLifecycleE2E() {
 
   const payoutAfterClaim = await getChallengePayoutByAddress(
     challengeAddress,
-    account.address,
+    accountAddress,
   );
   if (payoutAfterClaim !== 0n) {
     throw new Error("Expected payout to be zero after claim.");
@@ -577,7 +772,7 @@ export async function runLifecycleE2E() {
     .from("challenge_payouts")
     .select("rank, claimed_at, claim_tx_hash")
     .eq("challenge_id", challenge.id)
-    .eq("solver_address", account.address.toLowerCase())
+    .eq("solver_address", accountAddress.toLowerCase())
     .order("rank", { ascending: true });
   if (claimedRowsError) {
     throw new Error(
@@ -595,8 +790,56 @@ export async function runLifecycleE2E() {
     }
   }
   console.log(
-    "11. Claim succeeded and all allocation rows were marked claimed",
+    `${prepared.assertPublicApis ? "12" : "11"}. Claim succeeded and all allocation rows were marked claimed`,
   );
+}
+
+export async function runLifecycleE2E() {
+  const config = loadConfig();
+  if (!config.AGORA_SUPABASE_SERVICE_KEY) {
+    throw new Error(
+      "Lifecycle E2E requires AGORA_SUPABASE_SERVICE_KEY. Provide it and retry.",
+    );
+  }
+  if (!config.AGORA_PINATA_JWT) {
+    throw new Error(
+      "Lifecycle E2E requires AGORA_PINATA_JWT. Provide it and retry.",
+    );
+  }
+
+  const publicClient = getPublicClient();
+  const walletClient = getWalletClient();
+  const account = walletClient.account;
+  if (!account || !resolveRuntimePrivateKey(config)) {
+    throw new Error(
+      "Wallet client account is not configured. Set AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY and retry.",
+    );
+  }
+
+  await ensureWalletMatchesOracle(
+    publicClient,
+    config.AGORA_FACTORY_ADDRESS,
+    account.address,
+  );
+
+  const db = createSupabaseClient(true);
+  const app = createApp();
+  const useSealedSubmission = hasSubmissionSealWorkerConfig(config);
+  const scenarios = await Promise.all([
+    prepareReproducibilityScenario(),
+    preparePredictionScenario(),
+  ]);
+
+  for (const prepared of scenarios) {
+    await runLifecycleScenario({
+      db,
+      publicClient,
+      app,
+      accountAddress: account.address,
+      useSealedSubmission,
+      prepared,
+    });
+  }
 }
 
 function maybeRunLifecycleE2ECli(importMetaUrl: string, argv1?: string) {

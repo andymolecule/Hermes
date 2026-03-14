@@ -267,6 +267,7 @@ export async function scoreLocal(input: {
       mount: evalPlan.mount,
       submission: { localPath: input.filePath },
       submissionContract: scoringSpecConfig.submissionContract,
+      metric: evalPlan.metric,
       env: scoringSpecConfig.env,
     });
 
@@ -398,6 +399,7 @@ export async function verifySubmission(input: {
         privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(loadConfig()),
       }),
       submissionContract: scoringSpecConfig.submissionContract,
+      metric: evalPlan.metric,
       env: scoringSpecConfig.env,
     });
 

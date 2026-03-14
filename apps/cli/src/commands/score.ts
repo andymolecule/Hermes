@@ -122,6 +122,7 @@ export function buildOracleScoreCommand() {
           mount: evalPlan.mount,
           submission: submissionSource,
           submissionContract: scoringSpecConfig.submissionContract,
+          metric: evalPlan.metric,
           env: scoringSpecConfig.env,
           keepWorkspace: true,
         });

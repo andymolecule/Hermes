@@ -105,6 +105,7 @@ export async function oracleScore(
     mount: evalPlan.mount,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
+    metric: evalPlan.metric,
     env: scoringSpecConfig.env,
     keepWorkspace: true,
   });

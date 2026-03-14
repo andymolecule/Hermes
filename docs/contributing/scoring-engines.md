@@ -23,7 +23,7 @@ flowchart LR
     Preset["Scoring preset<br/>image + limits + format + mount"] --> Spec
     Spec --> Common["packages/common/src/schemas/challenge-spec.ts<br/>resolveEvalSpec()"]
     Common --> Worker["apps/api/src/worker/scoring.ts"]
-    Common --> Scorer["packages/scorer/src/pipeline.ts"]
+    Common --> Scorer["packages/scorer/src/pipeline.ts<br/>writes agora-runtime.json"]
     Worker --> Scorer
 ```
 
@@ -31,7 +31,7 @@ ELI5:
 
 - `templates.ts` decides what the posting flow should default to
 - `presets.ts` decides how official scoring runs
-- `pipeline.ts` stages files and runs Docker
+- `pipeline.ts` stages files, writes the scorer runtime config, and runs Docker
 - the worker just asks common for the resolved plan and executes it
 
 ## File map
@@ -72,6 +72,9 @@ The worker hot path reads the resolved submission contract and scoring env from
 the `challenges` table first. IPFS spec reads during scoring are now legacy
 fallback only.
 
+Official presets may also declare scorer-facing runtime defaults that the
+pipeline serializes into `/input/agora-runtime.json` for the container.
+
 ### `packages/common/src/schemas/challenge-spec.ts`
 
 This is where the shared contract is validated and turned into a resolved runtime plan.
@@ -89,6 +92,7 @@ This is the generic runtime path.
 It owns:
 
 - staging evaluation bundle + submission files into the workspace
+- writing `/input/agora-runtime.json` from preset defaults + submission contract
 - pre-scoring contract validation
 - running the Docker scorer
 - DB-first runtime config resolution with legacy IPFS fallback

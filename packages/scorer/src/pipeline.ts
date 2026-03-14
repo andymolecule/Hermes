@@ -2,10 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_SCORER_MOUNT,
+  SCORER_RUNTIME_CONFIG_FILE_NAME,
+  buildScorerRuntimeConfig,
+  type ChallengeScoring,
   type ScoringMountConfig,
   type SubmissionContractOutput,
   challengeSpecSchema,
+  inferPresetIdByContainer,
   resolveScoringEnvironmentFromSpec,
+  resolvePresetRuntimeDefaults,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
 import { downloadToPath } from "@agora/ipfs";
@@ -45,6 +50,7 @@ export interface ExecuteScoringPipelineInput {
   submission: ScoringInputSource;
   mount?: ScoringMountConfig;
   submissionContract?: SubmissionContractOutput;
+  metric?: ChallengeScoring["metric"] | string;
   env?: Record<string, string>;
   timeoutMs?: number;
   limits?: RunScorerInput["limits"];
@@ -60,6 +66,7 @@ export interface ScoringPipelineResult {
   inputDir: string;
   evaluationBundlePath?: string;
   submissionPath: string;
+  runtimeConfigPath: string;
   inputPaths: string[];
   cleanup: () => Promise<void>;
 }
@@ -79,6 +86,23 @@ export interface ResolveScoringRuntimeConfigInput {
 interface ScoringMountPlan {
   evaluationBundlePath?: string;
   submissionPath: string;
+  runtimeConfigPath: string;
+}
+
+function normalizeScoringMetric(
+  metric: string | undefined,
+): ChallengeScoring["metric"] | undefined {
+  switch (metric) {
+    case "rmse":
+    case "mae":
+    case "r2":
+    case "pearson":
+    case "spearman":
+    case "custom":
+      return metric;
+    default:
+      return undefined;
+  }
 }
 
 function buildScoringMountPlan(
@@ -92,6 +116,7 @@ function buildScoringMountPlan(
         }
       : {}),
     submissionPath: path.join(inputDir, mount.submissionFileName),
+    runtimeConfigPath: path.join(inputDir, SCORER_RUNTIME_CONFIG_FILE_NAME),
   };
 }
 
@@ -210,7 +235,8 @@ export async function executeScoringPipeline(
   };
 
   try {
-    const { evaluationBundlePath, submissionPath } = await runObservedPhase(
+    const { evaluationBundlePath, submissionPath, runtimeConfigPath } =
+      await runObservedPhase(
       input.phaseObserver,
       "fetch_inputs",
       async () => {
@@ -226,9 +252,25 @@ export async function executeScoringPipeline(
         }
 
         await stageSourceToPath(input.submission, stagingPlan.submissionPath);
+        const presetId = inferPresetIdByContainer(input.image) ?? undefined;
+        const presetRuntimeDefaults = resolvePresetRuntimeDefaults(presetId);
+        const runtimeConfig = buildScorerRuntimeConfig({
+          presetId,
+          metric: normalizeScoringMetric(input.metric),
+          mount: input.mount ?? DEFAULT_SCORER_MOUNT,
+          submissionContract: input.submissionContract,
+          evaluationContract: presetRuntimeDefaults?.evaluationContract,
+          policies: presetRuntimeDefaults?.policies,
+        });
+        await fs.writeFile(
+          stagingPlan.runtimeConfigPath,
+          JSON.stringify(runtimeConfig, null, 2),
+          "utf8",
+        );
         return {
           evaluationBundlePath,
           submissionPath: stagingPlan.submissionPath,
+          runtimeConfigPath: stagingPlan.runtimeConfigPath,
         };
       },
     );
@@ -256,7 +298,9 @@ export async function executeScoringPipeline(
           inputDir: workspace.inputDir,
           evaluationBundlePath,
           submissionPath,
-          inputPaths: [evaluationBundlePath, submissionPath].filter(
+          runtimeConfigPath,
+          inputPaths: [evaluationBundlePath, submissionPath, runtimeConfigPath]
+            .filter(
             (value): value is string => typeof value === "string",
           ),
           cleanup,
@@ -290,7 +334,9 @@ export async function executeScoringPipeline(
       inputDir: workspace.inputDir,
       evaluationBundlePath,
       submissionPath,
-      inputPaths: [evaluationBundlePath, submissionPath].filter(
+      runtimeConfigPath,
+      inputPaths: [evaluationBundlePath, submissionPath, runtimeConfigPath]
+        .filter(
         (value): value is string => typeof value === "string",
       ),
       cleanup,

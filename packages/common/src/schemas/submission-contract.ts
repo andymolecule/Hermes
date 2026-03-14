@@ -14,6 +14,31 @@ const baseFileContractSchema = z.object({
     .default(SUBMISSION_LIMITS.maxUploadBytes),
 });
 
+export const csvTableColumnsSchema = z
+  .object({
+    required: z.array(z.string().min(1)).min(1),
+    id: z.string().min(1).optional(),
+    value: z.string().min(1).optional(),
+    allow_extra: z.boolean().default(true),
+  })
+  .superRefine((value, ctx) => {
+    const required = new Set(value.required);
+    if (value.id && !required.has(value.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["id"],
+        message: "columns.id must also appear in columns.required.",
+      });
+    }
+    if (value.value && !required.has(value.value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["value"],
+        message: "columns.value must also appear in columns.required.",
+      });
+    }
+  });
+
 export const csvTableSubmissionContractSchema = z
   .object({
     version: z.literal("v1"),
@@ -22,30 +47,7 @@ export const csvTableSubmissionContractSchema = z
       extension: csvExtensionSchema.default(".csv"),
       mime: csvMimeSchema.default("text/csv"),
     }),
-    columns: z
-      .object({
-        required: z.array(z.string().min(1)).min(1),
-        id: z.string().min(1).optional(),
-        value: z.string().min(1).optional(),
-        allow_extra: z.boolean().default(true),
-      })
-      .superRefine((value, ctx) => {
-        const required = new Set(value.required);
-        if (value.id && !required.has(value.id)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["id"],
-            message: "columns.id must also appear in columns.required.",
-          });
-        }
-        if (value.value && !required.has(value.value)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["value"],
-            message: "columns.value must also appear in columns.required.",
-          });
-        }
-      }),
+    columns: csvTableColumnsSchema,
   })
   .superRefine((value, ctx) => {
     if (value.file.max_bytes > SUBMISSION_LIMITS.maxUploadBytes) {
@@ -77,6 +79,7 @@ export const submissionContractSchema = z.union([
 export type CsvTableSubmissionContract = z.output<
   typeof csvTableSubmissionContractSchema
 >;
+export type CsvTableColumnsOutput = z.output<typeof csvTableColumnsSchema>;
 export type OpaqueFileSubmissionContract = z.output<
   typeof opaqueFileSubmissionContractSchema
 >;

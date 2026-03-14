@@ -337,6 +337,104 @@ if (!predictionScoreability.ok) {
   process.exit(1);
 }
 
+const predictionCustomSubmissionColumns = challengeSpecSchema.safeParse({
+  schema_version: 2,
+  id: "ch-004a",
+  title: "Prediction custom submission columns",
+  domain: "omics",
+  type: "prediction",
+  description: "Prediction challenge with custom solver-facing columns.",
+  dataset: {
+    hidden_labels: "ipfs://QmHiddenLabels",
+  },
+  scoring: {
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
+    metric: "r2",
+  },
+  submission_contract: csvContract({
+    requiredColumns: ["sample_id", "forecast"],
+    idColumn: "sample_id",
+    valueColumn: "forecast",
+  }),
+  reward: {
+    total: 10,
+    distribution: "winner_take_all",
+  },
+  deadline: "2026-03-04T23:59:59Z",
+  dispute_window_hours: 168,
+});
+if (!predictionCustomSubmissionColumns.success) {
+  console.error(
+    "prediction spec should accept custom submission column names when hidden labels are provided:",
+    predictionCustomSubmissionColumns.error.format(),
+  );
+  process.exit(1);
+}
+
+const predictionMissingSubmissionId = challengeSpecSchema.safeParse({
+  schema_version: 2,
+  id: "ch-004aa",
+  title: "Prediction missing submission id column",
+  domain: "omics",
+  type: "prediction",
+  description: "Prediction challenge without a submission id column.",
+  dataset: {
+    hidden_labels: "ipfs://QmHiddenLabels",
+  },
+  scoring: {
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
+    metric: "r2",
+  },
+  submission_contract: csvContract({
+    requiredColumns: ["forecast"],
+    valueColumn: "forecast",
+  }),
+  reward: {
+    total: 10,
+    distribution: "winner_take_all",
+  },
+  deadline: "2026-03-04T23:59:59Z",
+  dispute_window_hours: 168,
+});
+if (predictionMissingSubmissionId.success) {
+  console.error(
+    "prediction specs should reject submission contracts without columns.id",
+  );
+  process.exit(1);
+}
+
+const predictionMissingSubmissionValue = challengeSpecSchema.safeParse({
+  schema_version: 2,
+  id: "ch-004ab",
+  title: "Prediction missing submission value column",
+  domain: "omics",
+  type: "prediction",
+  description: "Prediction challenge without a submission value column.",
+  dataset: {
+    hidden_labels: "ipfs://QmHiddenLabels",
+  },
+  scoring: {
+    container: "ghcr.io/andymolecule/regression-scorer:v1",
+    metric: "r2",
+  },
+  submission_contract: csvContract({
+    requiredColumns: ["sample_id"],
+    idColumn: "sample_id",
+  }),
+  reward: {
+    total: 10,
+    distribution: "winner_take_all",
+  },
+  deadline: "2026-03-04T23:59:59Z",
+  dispute_window_hours: 168,
+});
+if (predictionMissingSubmissionValue.success) {
+  console.error(
+    "prediction specs should reject submission contracts without columns.value",
+  );
+  process.exit(1);
+}
+
 const predictionTestOnly = challengeSpecSchema.safeParse({
   schema_version: 2,
   id: "ch-004b",
@@ -363,19 +461,56 @@ const predictionTestOnly = challengeSpecSchema.safeParse({
   deadline: "2026-03-04T23:59:59Z",
   dispute_window_hours: 168,
 });
-if (!predictionTestOnly.success) {
+if (predictionTestOnly.success) {
   console.error(
-    "prediction spec should still accept dataset.test as the evaluation bundle fallback",
+    "prediction spec should reject dataset.test-only input for the official regression scorer",
   );
   process.exit(1);
 }
 
-const resolvedPredictionTestOnly = resolveEvalSpec(predictionTestOnly.data);
+const customPredictionTestOnly = challengeSpecSchema.safeParse({
+  schema_version: 2,
+  id: "ch-004c",
+  title: "Custom prediction test dataset only",
+  domain: "omics",
+  type: "prediction",
+  description: "Prediction challenge with a custom scorer and dataset.test fallback.",
+  dataset: {
+    test: "ipfs://QmPredictionTest",
+  },
+  preset_id: "custom",
+  scoring: {
+    container: "ghcr.io/example/custom-prediction@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    metric: "custom",
+  },
+  submission_contract: csvContract({
+    requiredColumns: ["id", "prediction"],
+    idColumn: "id",
+    valueColumn: "prediction",
+  }),
+  reward: {
+    total: 10,
+    distribution: "winner_take_all",
+  },
+  deadline: "2026-03-04T23:59:59Z",
+  dispute_window_hours: 168,
+});
+if (!customPredictionTestOnly.success) {
+  console.error(
+    "custom prediction specs should still accept dataset.test as the evaluation bundle fallback",
+    customPredictionTestOnly.error.format(),
+  );
+  process.exit(1);
+}
+
+const resolvedCustomPredictionTestOnly = resolveEvalSpec(
+  customPredictionTestOnly.data,
+);
 if (
-  resolvedPredictionTestOnly.evaluationBundleCid !== "ipfs://QmPredictionTest"
+  resolvedCustomPredictionTestOnly.evaluationBundleCid !== "ipfs://QmPredictionTest"
 ) {
   console.error(
-    "resolveEvalSpec should fall back to dataset.test for prediction specs",
+    "resolveEvalSpec should fall back to dataset.test for custom prediction specs",
   );
   process.exit(1);
 }

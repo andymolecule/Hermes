@@ -1,4 +1,10 @@
 import type { SubmissionContractOutput } from "./schemas/submission-contract.js";
+import {
+  createCsvTableEvaluationContract,
+  createRuntimePolicies,
+  type CsvTableEvaluationContractOutput,
+  type ScorerRuntimePoliciesOutput,
+} from "./schemas/scorer-runtime.js";
 
 // ---------------------------------------------------------------------------
 // Official images — match containers/ directory names exactly.
@@ -56,6 +62,11 @@ export interface ScorerPresetV2 {
   expectedSubmissionKind?: SubmissionContractOutput["kind"];
   /** Optional scorer input layout override. Defaults to DEFAULT_SCORER_MOUNT. */
   mount?: ScoringMountConfig;
+  /** Optional scorer-facing runtime defaults derived into agora-runtime.json. */
+  runtimeDefaults?: {
+    evaluationContract?: CsvTableEvaluationContractOutput;
+    policies?: ScorerRuntimePoliciesOutput;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +95,18 @@ export const PRESET_REGISTRY: Record<string, ScorerPresetV2> = {
     runnerLimits: { memory: "2g", cpus: "2", pids: 64, timeoutMs: 600_000 },
     defaultMinimumScore: 0,
     expectedSubmissionKind: "csv_table",
+    runtimeDefaults: {
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: ["id", "label"],
+        idColumn: "id",
+        valueColumn: "label",
+      }),
+      policies: createRuntimePolicies({
+        coveragePolicy: "reject",
+        duplicateIdPolicy: "reject",
+        invalidValuePolicy: "reject",
+      }),
+    },
   },
   docking_v1: {
     id: "docking_v1",
@@ -130,6 +153,16 @@ export function getPresetExpectedSubmissionKind(
       ? PRESET_REGISTRY[presetId.trim()]
       : undefined;
   return preset?.expectedSubmissionKind ?? null;
+}
+
+export function resolvePresetRuntimeDefaults(
+  presetId?: string | null,
+): ScorerPresetV2["runtimeDefaults"] | null {
+  const preset =
+    typeof presetId === "string" && presetId.trim().length > 0
+      ? PRESET_REGISTRY[presetId.trim()]
+      : undefined;
+  return preset?.runtimeDefaults ?? null;
 }
 
 type ParsedGhcrImageRef = {

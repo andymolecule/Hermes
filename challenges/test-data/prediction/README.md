@@ -36,14 +36,13 @@ Important current constraint:
 - the official `regression_v1` preset currently resolves to the default mount layout:
   - evaluation bundle -> `ground_truth.csv`
   - solver artifact -> `submission.csv`
-- the current regression scorer still expects those mounted filenames with columns `id,label` and `id,prediction`
-- the current web UI exposes `Row ID column` and `Target column`, but the scorer does not actually honor arbitrary custom column names yet
+- the regression scorer reads `/input/agora-runtime.json` staged by the pipeline
+- the evaluation bundle still uses `id,label`
+- solver submission column names now come from the challenge `submission_contract`
 
-For human UI testing, use the default prediction field names:
+For simple human UI testing, the default prediction field names are still the easiest path:
 - `Row ID column`: `id`
 - `Target column`: `prediction`
-
-Do not treat those two UI fields as truly configurable yet.
 
 ## Files
 
@@ -63,9 +62,9 @@ Do not treat those two UI fields as truly configurable yet.
 | `perfect_submission.csv` | Valid, score = 1.0 | Proves best-case scoring path |
 | `bad_submission_missing_prediction.csv` | Invalid | Missing required `prediction` column |
 | `bad_submission_wrong_id_header.csv` | Invalid | Uses `sample_id` instead of `id` |
-| `bad_submission_partial_ids.csv` | Valid but incomplete | Only predicts a subset of rows |
-| `bad_submission_nonnumeric.csv` | Valid file, degraded/incomplete scoring | Contains non-numeric prediction value |
-| `bad_submission_duplicate_ids.csv` | Accepted by current scorer | Exposes duplicate-row behavior |
+| `bad_submission_partial_ids.csv` | Invalid | Missing required prediction rows |
+| `bad_submission_nonnumeric.csv` | Invalid | Contains non-numeric prediction value |
+| `bad_submission_duplicate_ids.csv` | Invalid | Contains duplicate prediction ids |
 
 ### Local scorer convenience
 
@@ -114,7 +113,6 @@ Why this matters:
 
 Why this matters:
 - matches the actual preset + scorer contract
-- avoids the current runtime mismatch around custom column names
 - gives solvers a realistic, explicit submission contract
 
 ### Step 4: Reward & Timeline
@@ -191,8 +189,8 @@ Why:
 - verifies handling of parse failures inside otherwise valid CSV structure
 
 Expected scorer behavior:
-- row with non-numeric prediction is skipped as missing/invalid
-- scoring may still succeed if other rows match
+- rejected as an invalid submission
+- all prediction rows must be numeric for `regression_v1`
 
 ## 5. Test edge-case acceptance behavior
 
@@ -205,10 +203,8 @@ Why:
 - useful for deciding whether the platform should require complete coverage in the future
 
 Expected current behavior:
-- accepted by scorer
-- lower `matched_rows`
-- non-zero `missing_ids`
-- not necessarily treated as invalid
+- rejected as an invalid submission
+- missing evaluation ids are not scored partially for `regression_v1`
 
 ### Duplicate IDs
 Use:
@@ -219,9 +215,8 @@ Why:
 - useful robustness test because duplicates are common in real CSV mistakes
 
 Expected current behavior:
-- accepted by current scorer
-- duplicate rows are not explicitly rejected
-- use this to confirm whether you want stricter validation later
+- rejected as an invalid submission
+- each evaluation id must appear at most once
 
 ## What Each Posting Field Means In Practice
 
@@ -274,10 +269,10 @@ For local direct runs:
 
 These fixtures are intentionally useful for product review, not just happy-path demos.
 
-Current codebase gaps exposed by this folder:
-- prediction column-name fields in the UI are advisory only; scoring is still hardcoded to `id`, `label`, and `prediction`
-- partial submissions are currently accepted instead of being explicitly rejected
-- duplicate submission IDs are currently accepted instead of being explicitly rejected
-- non-numeric predictions degrade matching rather than always hard-failing the submission
+Current runtime rules this folder verifies:
+- solver-facing prediction column names come from the challenge `submission_contract`
+- partial submissions are rejected
+- duplicate submission IDs are rejected
+- non-numeric predictions are rejected
 
 If you want stricter production behavior later, these are the first places to tighten.

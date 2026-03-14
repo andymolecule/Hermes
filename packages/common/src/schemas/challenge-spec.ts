@@ -233,13 +233,48 @@ const _baseSpecShape = z
         message:
           "Prediction challenges require a csv_table submission_contract.",
       });
+      return;
+    }
+
+    if (!value.submission_contract.columns.id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submission_contract", "columns", "id"],
+        message:
+          "Prediction challenges require submission_contract.columns.id so submissions can be matched to evaluation rows.",
+      });
+    }
+
+    if (!value.submission_contract.columns.value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submission_contract", "columns", "value"],
+        message:
+          "Prediction challenges require submission_contract.columns.value so submitted prediction values can be scored.",
+      });
     }
 
     const evaluationBundle = value.eval_spec?.evaluation_bundle;
     const hiddenLabels = value.dataset?.hidden_labels;
     const testDataset = value.dataset?.test;
+    const inferredPresetId = resolveSubmissionContractPolicyPresetId({
+      type: value.type,
+      preset_id: value.preset_id,
+      scoring: value.scoring,
+    });
 
-    if (!evaluationBundle && !hiddenLabels && !testDataset) {
+    if (
+      inferredPresetId === "regression_v1" &&
+      !evaluationBundle &&
+      !hiddenLabels
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset"],
+        message:
+          "Prediction challenges using regression_v1 require dataset.hidden_labels or eval_spec.evaluation_bundle. dataset.test alone is not scoreable for the official regression scorer.",
+      });
+    } else if (!evaluationBundle && !hiddenLabels && !testDataset) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["dataset"],

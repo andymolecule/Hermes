@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import {
   DEFAULT_SCORER_MOUNT,
+  SCORER_RUNTIME_CONFIG_FILE_NAME,
+  scorerRuntimeConfigSchema,
   createCsvTableSubmissionContract,
 } from "@agora/common";
 import {
@@ -21,10 +25,26 @@ test("executeScoringPipeline rejects contract-invalid CSV before Docker runs", a
       idColumn: "sample_id",
       valueColumn: "normalized_signal",
     }),
+    metric: "custom",
+    keepWorkspace: true,
   });
 
   assert.equal(run.result.ok, false);
   assert.match(run.result.error ?? "", /Missing: condition/);
+  const runtimeConfig = scorerRuntimeConfigSchema.parse(
+    JSON.parse(
+      await fs.readFile(
+        path.join(run.inputDir, SCORER_RUNTIME_CONFIG_FILE_NAME),
+        "utf8",
+      ),
+    ),
+  );
+  assert.equal(runtimeConfig.mount.submission_file_name, "submission.csv");
+  assert.equal(runtimeConfig.submission_contract?.kind, "csv_table");
+  assert.deepEqual(run.inputPaths, [
+    run.submissionPath,
+    path.join(run.inputDir, SCORER_RUNTIME_CONFIG_FILE_NAME),
+  ]);
   await run.cleanup();
 });
 

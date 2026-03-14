@@ -160,6 +160,7 @@ export function buildVerifyPublicCommand() {
           mount: evalPlan.mount,
           submission: { cid: payload.replaySubmissionCid },
           submissionContract: scoringSpecConfig.submissionContract,
+          metric: evalPlan.metric,
           env: scoringSpecConfig.env,
           strictPull: true,
         });

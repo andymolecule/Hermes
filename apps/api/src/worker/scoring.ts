@@ -215,6 +215,7 @@ export async function scoreSubmissionAndBuildProof(
     mount: evalPlan.mount,
     submission: submissionSource,
     submissionContract: scoringSpecConfig.submissionContract,
+    metric: evalPlan.metric,
     env: scoringSpecConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
