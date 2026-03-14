@@ -342,16 +342,3 @@ export function summarizeWorkerRuntimeStates(
     staleAfterMs,
   };
 }
-
-export async function hasReadyWorkerForSealKey(
-  db: AgoraDbClient,
-  activeSealKeyId: string,
-  staleAfterMs = getDefaultWorkerRuntimeStaleMs(),
-): Promise<boolean> {
-  const rows = await listWorkerRuntimeStates(db);
-  const summary = summarizeWorkerRuntimeStates(rows, {
-    activeSealKeyId,
-    staleAfterMs,
-  });
-  return summary.healthyWorkersForActiveSealKey > 0;
-}
