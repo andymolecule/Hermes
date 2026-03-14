@@ -1061,12 +1061,19 @@ export async function persistChallengeCursors(input: {
   resolvedChallengeKeys: Set<string>;
   challengePersistTargets: Map<string, bigint>;
   nextBlock: bigint;
+  pollingConfig?: IndexerPollingConfig;
 }) {
-  const { db, resolvedChallengeKeys, challengePersistTargets, nextBlock } =
-    input;
+  const {
+    db,
+    resolvedChallengeKeys,
+    challengePersistTargets,
+    nextBlock,
+    pollingConfig,
+  } = input;
+  const quietReplayBlock = rewindStartBlock(nextBlock, pollingConfig);
   for (const challengeKey of resolvedChallengeKeys) {
     const persistTarget =
-      challengePersistTargets.get(challengeKey) ?? nextBlock;
+      challengePersistTargets.get(challengeKey) ?? quietReplayBlock;
     await setIndexerCursor(db, challengeKey, persistTarget);
   }
 }

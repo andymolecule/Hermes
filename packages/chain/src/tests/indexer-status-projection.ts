@@ -17,6 +17,7 @@ import {
   persistChallengeCursors,
   processChallengeLog,
 } from "../indexer/handlers.js";
+import { DEFAULT_INDEXER_POLLING_CONFIG } from "../indexer/polling.js";
 
 type FakeIndexedEvent = {
   tx_hash: string;
@@ -559,7 +560,7 @@ test("PayoutAllocated accepts numeric rank values and stores payout rows", async
   );
 });
 
-test("persistChallengeCursors keeps exact next block for quiet challenges", async () => {
+test("persistChallengeCursors replays a safety window for quiet challenges", async () => {
   const db = createFakeDb();
 
   await persistChallengeCursors({
@@ -567,7 +568,28 @@ test("persistChallengeCursors keeps exact next block for quiet challenges", asyn
     resolvedChallengeKeys: new Set(["challenge:test:1"]),
     challengePersistTargets: new Map(),
     nextBlock: 500n,
+    pollingConfig: {
+      ...DEFAULT_INDEXER_POLLING_CONFIG,
+      replayWindowBlocks: 25n,
+    },
   });
 
-  assert.equal(db.indexerCursors.get("challenge:test:1"), "500");
+  assert.equal(db.indexerCursors.get("challenge:test:1"), "475");
+});
+
+test("persistChallengeCursors keeps the earliest explicit replay target", async () => {
+  const db = createFakeDb();
+
+  await persistChallengeCursors({
+    db: db as never,
+    resolvedChallengeKeys: new Set(["challenge:test:1"]),
+    challengePersistTargets: new Map([["challenge:test:1", 410n]]),
+    nextBlock: 500n,
+    pollingConfig: {
+      ...DEFAULT_INDEXER_POLLING_CONFIG,
+      replayWindowBlocks: 25n,
+    },
+  });
+
+  assert.equal(db.indexerCursors.get("challenge:test:1"), "410");
 });

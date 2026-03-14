@@ -249,6 +249,7 @@ export async function runIndexer() {
         resolvedChallengeKeys,
         challengePersistTargets,
         nextBlock,
+        pollingConfig,
       });
     } catch (error) {
       console.error(
