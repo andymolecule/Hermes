@@ -17,9 +17,13 @@ broadcast/
 
 # Supabase
 supabase/.temp/
+/packages/db/supabase/.temp/
 .next.bak*
 submission-seal-private.pem
 submission-seal-public.pem
 
 # Secret internal docs (never commit)
 .secret/
+
+# Local summary docs (never commit)
+/Summary Docs/

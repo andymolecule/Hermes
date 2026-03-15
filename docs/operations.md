@@ -232,7 +232,7 @@ pnpm --filter @agora/executor start  # only when AGORA_SCORER_EXECUTOR_BACKEND=r
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
-pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp
+pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp (executor is separately managed)
 ```
 
 ### Split Hosted Production

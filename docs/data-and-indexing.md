@@ -163,12 +163,19 @@ erDiagram
         string status
         int attempts
         int max_attempts
+        timestamp next_attempt_at
         timestamp locked_at
         timestamp run_started_at
         string locked_by
         string last_error
         string score_tx_hash
         timestamp created_at
+        timestamp updated_at
+    }
+
+    worker_runtime_control {
+        string worker_type PK
+        string active_runtime_version
         timestamp updated_at
     }
 

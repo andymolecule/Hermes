@@ -44,7 +44,7 @@ Key code paths:
 - Worker scoring flow and replay publication: `apps/api/src/worker/scoring.ts`
 - Scorer-side sealed envelope resolution and decrypt: `packages/scorer/src/sealed-submission.ts`
 - Worker heartbeat/readiness queries: `packages/db/src/queries/worker-runtime.ts`
-- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`, `packages/db/supabase/migrations/004_add_score_job_backoff.sql`
+- Database result-format + worker runtime migrations: `packages/db/supabase/migrations/001_baseline.sql`, `packages/db/supabase/migrations/002_align_sealed_submission_result_format.sql`, `packages/db/supabase/migrations/003_add_worker_runtime_state.sql`, `packages/db/supabase/migrations/004_add_score_job_backoff.sql`, `packages/db/supabase/migrations/005_add_submission_intents.sql`, `packages/db/supabase/migrations/006_add_worker_runtime_version.sql`, `packages/db/supabase/migrations/008_add_worker_runtime_control.sql`, `packages/db/supabase/migrations/010_finalize_worker_runtime_fencing.sql`, `packages/db/supabase/migrations/011_rename_worker_runtime_executor_ready.sql`
 
 ---
 

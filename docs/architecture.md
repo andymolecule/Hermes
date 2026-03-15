@@ -18,7 +18,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 
 ## Summary
 
-- Monorepo with 5 apps (CLI, API, Executor, MCP, Web) and 6 packages (common, contracts, chain, db, ipfs, scorer)
+- Monorepo with 5 apps (CLI, API, Executor, MCP, Web) and 8 packages (common, contracts, chain, db, ipfs, scorer-runtime, scorer, agent-runtime)
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, datasets, submissions, scoring compute, search indexes
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape; `expected_columns` in Supabase is only a derived cache for CSV-table challenges
@@ -416,13 +416,11 @@ flowchart TB
         ipfs["ipfs<br/>Pinata helpers"]
         scorerRuntime["scorer-runtime<br/>Docker runtime + workspace staging"]
         scorer["scorer<br/>Scoring pipeline + proofs"]
+        agentRuntime["agent-runtime<br/>Shared agent workflows"]
     end
 
     cli --> common
-    cli --> chain
-    cli --> db
-    cli --> ipfs
-    cli --> scorer
+    cli --> agentRuntime
     api --> common
     api --> chain
     api --> db
@@ -431,11 +429,12 @@ flowchart TB
     executor --> common
     executor --> scorerRuntime
     mcp --> common
-    mcp --> chain
-    mcp --> db
-    mcp --> ipfs
-    mcp --> scorer
+    mcp --> agentRuntime
     web --> common
+    agentRuntime --> chain
+    agentRuntime --> db
+    agentRuntime --> ipfs
+    agentRuntime --> scorer
     scorer --> scorerRuntime
     chain --> common
     db --> common
@@ -628,6 +627,14 @@ erDiagram
 | `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
+| `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
+| `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
+| `GET` | `/api/submissions/public-key` | — | — | Active submission sealing public key |
+| `GET` | `/api/submissions/:id/status` | — | — | Submission status lookup |
+| `POST` | `/api/submissions/intent` | Rate limit | — | Pre-register submission metadata before on-chain submit |
+| `POST` | `/api/submissions` | Rate limit | — | Confirm submission after on-chain tx |
+| `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
+| `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 | `GET` | `/api/agent/challenges` | — | Paid | Agent discovery (x402 gated) |
 

@@ -159,9 +159,9 @@ flowchart LR
         W1["🥇 100%"]
     end
     subgraph T3["Top 3"]
-        T1["🥇 70%"]
-        T2["🥈 20%"]
-        T3a["🥉 10%"]
+        T1["🥇 60%"]
+        T2["🥈 25%"]
+        T3a["🥉 15%"]
     end
     subgraph PROP["Proportional"]
         P1["Score-weighted<br/>All qualifying<br/>solvers share"]
