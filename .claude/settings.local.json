@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:status.railway.com)",
+      "WebFetch(domain:docs.railway.com)",
+      "WebFetch(domain:sepolia.basescan.org)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "agora"
+  ]
+}
