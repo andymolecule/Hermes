@@ -25,6 +25,7 @@ function TopNav() {
     { href: "/analytics", label: "Analytics" },
     { href: "/leaderboard", label: "Leaderboard" },
     { href: "/portfolio", label: "Portfolio" },
+    { href: "/agents", label: "Agents" },
   ];
 
   return (
