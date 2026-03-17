@@ -131,8 +131,10 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
             },
             datasets: {
               train_cid: null,
+              train_file_name: null,
               train_url: null,
               test_cid: null,
+              test_file_name: null,
               test_url: null,
               spec_cid: "ipfs://spec",
               spec_url: "https://gateway/spec",
@@ -221,6 +223,10 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
     });
 
     const getPayload = JSON.parse(getLogs.join("\n")) as {
+      datasets: {
+        train_file_name: string | null;
+        test_file_name: string | null;
+      };
       submissions: Array<{ on_chain_sub_id: number }>;
       leaderboard: unknown[];
     };
@@ -237,6 +243,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
     };
 
     assert.equal(getPayload.submissions[0]?.on_chain_sub_id, 0);
+    assert.equal(getPayload.datasets.train_file_name, null);
     assert.deepEqual(getPayload.leaderboard, []);
     assert.equal(statusPayload.submissions, 2);
     assert.equal(statusPayload.topScore, null);
@@ -286,8 +293,10 @@ test("status and get commands expose solver-specific submission limits and claim
             },
             datasets: {
               train_cid: null,
+              train_file_name: null,
               train_url: null,
               test_cid: null,
+              test_file_name: null,
               test_url: null,
               spec_cid: "ipfs://spec",
               spec_url: "https://gateway/spec",
@@ -355,18 +364,143 @@ test("status and get commands expose solver-specific submission limits and claim
   }
 });
 
-test("submission-status --watch waits for a terminal state", async () => {
+test("submission-status --watch prefers the submission event stream", async () => {
   const originalEnv = { ...process.env };
   const originalFetch = global.fetch;
   process.env = { AGORA_API_URL: "https://api.example" };
-  let calls = 0;
   global.fetch = async (input) => {
-    calls += 1;
     const url = String(input);
+    assert.match(
+      url,
+      /\/api\/submissions\/22222222-2222-4222-8222-222222222222\/events$/,
+    );
+    return new Response(
+      [
+        `event: status
+data: ${JSON.stringify({
+          submission: {
+            id: "22222222-2222-4222-8222-222222222222",
+            challenge_id: challengeId,
+            challenge_address: challengeAddress,
+            on_chain_sub_id: 0,
+            solver_address: "0x0000000000000000000000000000000000000003",
+            score: null,
+            scored: false,
+            submitted_at: "2026-03-19T00:00:00.000Z",
+            scored_at: null,
+            refs: {
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId,
+              challengeAddress,
+              onChainSubmissionId: 0,
+            },
+          },
+          proofBundle: null,
+          job: {
+            status: "running",
+            attempts: 1,
+            maxAttempts: 3,
+            lastError: null,
+            nextAttemptAt: null,
+            lockedAt: null,
+          },
+          scoringStatus: "pending",
+          terminal: false,
+          recommendedPollSeconds: 1,
+        })}
+
+event: terminal
+data: ${JSON.stringify({
+          submission: {
+            id: "22222222-2222-4222-8222-222222222222",
+            challenge_id: challengeId,
+            challenge_address: challengeAddress,
+            on_chain_sub_id: 0,
+            solver_address: "0x0000000000000000000000000000000000000003",
+            score: "100",
+            scored: true,
+            submitted_at: "2026-03-19T00:00:00.000Z",
+            scored_at: "2026-03-19T00:10:00.000Z",
+            refs: {
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId,
+              challengeAddress,
+              onChainSubmissionId: 0,
+            },
+          },
+          proofBundle: { reproducible: true },
+          job: {
+            status: "scored",
+            attempts: 1,
+            maxAttempts: 3,
+            lastError: null,
+            nextAttemptAt: null,
+            lockedAt: null,
+          },
+          scoringStatus: "complete",
+          terminal: true,
+          recommendedPollSeconds: 60,
+          waitedMs: 100,
+          timedOut: false,
+        })}
+
+`,
+      ].join(""),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+  };
+
+  try {
+    const logs = await withConsoleCapture(async () => {
+      await buildSubmissionStatusCommand().parseAsync(
+        [
+          "22222222-2222-4222-8222-222222222222",
+          "--watch",
+          "--timeout-seconds",
+          "5",
+          "--format",
+          "json",
+        ],
+        {
+          from: "user",
+        },
+      );
+    });
+    const payload = JSON.parse(logs.join("\n")) as {
+      terminal: boolean;
+      scoringStatus: string;
+    };
+
+    assert.equal(payload.terminal, true);
+    assert.equal(payload.scoringStatus, "complete");
+  } finally {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+  }
+});
+
+test("submission-status --watch falls back to long-poll when the event stream is unavailable", async () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  process.env = { AGORA_API_URL: "https://api.example" };
+  let waitCalls = 0;
+  global.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/events")) {
+      return new Response(
+        JSON.stringify({
+          error: "Not found",
+          code: "NOT_FOUND",
+          retriable: false,
+        }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      );
+    }
     assert.match(
       url,
       /\/api\/submissions\/22222222-2222-4222-8222-222222222222\/wait\?timeout_seconds=/,
     );
+    waitCalls += 1;
     return new Response(
       JSON.stringify({
         data: {
@@ -376,10 +510,10 @@ test("submission-status --watch waits for a terminal state", async () => {
             challenge_address: challengeAddress,
             on_chain_sub_id: 0,
             solver_address: "0x0000000000000000000000000000000000000003",
-            score: calls >= 2 ? "100" : null,
-            scored: calls >= 2,
+            score: waitCalls >= 2 ? "100" : null,
+            scored: waitCalls >= 2,
             submitted_at: "2026-03-19T00:00:00.000Z",
-            scored_at: calls >= 2 ? "2026-03-19T00:10:00.000Z" : null,
+            scored_at: waitCalls >= 2 ? "2026-03-19T00:10:00.000Z" : null,
             refs: {
               submissionId: "22222222-2222-4222-8222-222222222222",
               challengeId,
@@ -387,9 +521,9 @@ test("submission-status --watch waits for a terminal state", async () => {
               onChainSubmissionId: 0,
             },
           },
-          proofBundle: calls >= 2 ? { reproducible: true } : null,
+          proofBundle: waitCalls >= 2 ? { reproducible: true } : null,
           job:
-            calls >= 2
+            waitCalls >= 2
               ? {
                   status: "scored",
                   attempts: 1,
@@ -406,11 +540,11 @@ test("submission-status --watch waits for a terminal state", async () => {
                   nextAttemptAt: null,
                   lockedAt: null,
                 },
-          scoringStatus: calls >= 2 ? "complete" : "pending",
-          terminal: calls >= 2,
+          scoringStatus: waitCalls >= 2 ? "complete" : "pending",
+          terminal: waitCalls >= 2,
           recommendedPollSeconds: 1,
-          waitedMs: calls >= 2 ? 100 : 1_000,
-          timedOut: calls < 2,
+          waitedMs: waitCalls >= 2 ? 100 : 1_000,
+          timedOut: waitCalls < 2,
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -438,7 +572,7 @@ test("submission-status --watch waits for a terminal state", async () => {
       scoringStatus: string;
     };
 
-    assert.equal(calls, 2);
+    assert.equal(waitCalls, 2);
     assert.equal(payload.terminal, true);
     assert.equal(payload.scoringStatus, "complete");
   } finally {
@@ -524,4 +658,26 @@ test("dataset downloads prefer the submission contract extension over .data", ()
   });
 
   assert.equal(resolved, "train.csv");
+});
+
+test("dataset downloads prefer canonical file names from the API when available", () => {
+  const resolved = resolveDatasetFileName({
+    source: "ipfs://bafytraincid",
+    baseName: "train",
+    challenge: {
+      id: challengeId,
+      title: "Challenge",
+      domain: "longevity",
+      challenge_type: "prediction",
+      reward_amount: 42,
+      deadline: "2026-03-20T00:00:00.000Z",
+      status: "open",
+      spec_cid: "ipfs://spec",
+    },
+    datasets: {
+      train_file_name: "train.data",
+    },
+  });
+
+  assert.equal(resolved, "train.data");
 });

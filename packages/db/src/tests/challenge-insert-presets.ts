@@ -89,6 +89,7 @@ const inferredSpec = challengeSpecSchema.parse({
   description: "desc",
   dataset: {
     test: "ipfs://QmPublicEvalInputs",
+    test_file_name: "test.csv",
     hidden_labels: "ipfs://QmHiddenLabelsInferred",
   },
   scoring: {
@@ -113,6 +114,7 @@ assert.equal(insertInferred.eval_bundle_cid, "ipfs://QmHiddenLabelsInferred");
 assert.deepEqual(insertInferred.expected_columns, ["id", "prediction"]);
 assert.equal(insertInferred.submission_contract_json?.kind, "csv_table");
 assert.equal(insertInferred.dataset_test_cid, "ipfs://QmPublicEvalInputs");
+assert.equal(insertInferred.dataset_test_file_name, "test.csv");
 
 const insertWithOnChainDeadline = await buildChallengeInsert({
   ...baseInput,

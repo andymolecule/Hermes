@@ -150,7 +150,9 @@ agora status <challenge_uuid> --format json
 Use `agora submission-status --watch` to follow one solver submission until it
 reaches a terminal state. Use `agora status` or `agora get` to watch the
 challenge-level countdown, public submission count, your remaining submission
-slots, and any claimable payout for the configured wallet.
+slots, and any claimable payout for the configured wallet. Current API builds
+prefer a push-style event stream for `--watch` and fall back to long-polling
+only when the stream endpoint is unavailable.
 
 ### 4. Official scoring
 

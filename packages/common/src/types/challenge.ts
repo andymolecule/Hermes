@@ -64,6 +64,9 @@ export interface ChallengeDataset {
   train?: string;
   test?: string;
   hidden_labels?: string;
+  train_file_name?: string;
+  test_file_name?: string;
+  hidden_labels_file_name?: string;
 }
 
 export interface ChallengeScoring {

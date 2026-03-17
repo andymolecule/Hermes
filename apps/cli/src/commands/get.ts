@@ -27,6 +27,8 @@ type ChallengeRecord = {
   spec_cid: string;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
+  dataset_train_file_name?: string | null;
+  dataset_test_file_name?: string | null;
   submission_contract?: {
     kind?: string | null;
     file?: {
@@ -76,7 +78,23 @@ export function resolveDatasetFileName(input: {
   source: string;
   baseName: "train" | "test";
   challenge: ChallengeRecord;
+  datasets?: {
+    train_file_name?: string | null;
+    test_file_name?: string | null;
+  };
 }) {
+  const explicitFileName =
+    input.baseName === "train"
+      ? (input.datasets?.train_file_name ??
+        input.challenge.dataset_train_file_name)
+      : (input.datasets?.test_file_name ??
+        input.challenge.dataset_test_file_name);
+  if (
+    typeof explicitFileName === "string" &&
+    explicitFileName.trim().length > 0
+  ) {
+    return explicitFileName.trim();
+  }
   return filenameFromUrl(
     input.source,
     `${input.baseName}${getDatasetFallbackExtension(input.challenge)}`,
@@ -130,6 +148,7 @@ export function buildGetCommand() {
               source: datasets.train_cid ?? challenge.dataset_train_cid ?? "",
               baseName: "train",
               challenge,
+              datasets,
             });
             await downloadToPath(
               datasets.train_cid ?? challenge.dataset_train_cid ?? "",
@@ -141,6 +160,7 @@ export function buildGetCommand() {
               source: datasets.test_cid ?? challenge.dataset_test_cid ?? "",
               baseName: "test",
               challenge,
+              datasets,
             });
             await downloadToPath(
               datasets.test_cid ?? challenge.dataset_test_cid ?? "",
@@ -151,7 +171,7 @@ export function buildGetCommand() {
         }
 
         if (opts.format === "json") {
-          printJson({ challenge, submissions, leaderboard, solver });
+          printJson({ challenge, datasets, submissions, leaderboard, solver });
           return;
         }
 

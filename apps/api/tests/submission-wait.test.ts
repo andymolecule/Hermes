@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { waitForSubmissionStatusDataWithReader } from "../src/routes/submissions.js";
+import {
+  buildSubmissionStatusEventStream,
+  waitForSubmissionStatusDataWithReader,
+} from "../src/routes/submissions.js";
 
 const basePayload = {
   submission: {
@@ -33,6 +36,41 @@ const basePayload = {
   terminal: false,
   recommendedPollSeconds: 15,
 };
+
+async function readStreamText(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    text += decoder.decode(value, { stream: !done });
+    if (done) {
+      break;
+    }
+  }
+
+  return text;
+}
+
+function parseSseEvents(text: string) {
+  return text
+    .replaceAll("\r\n", "\n")
+    .trim()
+    .split("\n\n")
+    .map((record) => {
+      const eventLine = record
+        .split("\n")
+        .find((line) => line.startsWith("event: "));
+      const dataLine = record
+        .split("\n")
+        .find((line) => line.startsWith("data: "));
+      return {
+        event: eventLine?.slice("event: ".length) ?? "message",
+        data: dataLine ? JSON.parse(dataLine.slice("data: ".length)) : null,
+      };
+    });
+}
 
 test("wait helper returns immediately for terminal submissions", async () => {
   const data = await waitForSubmissionStatusDataWithReader({
@@ -90,4 +128,80 @@ test("wait helper returns when the submission changes before timing out", async 
   assert.equal(reads, 2);
   assert.equal(data.job?.status, "running");
   assert.equal(data.timedOut, false);
+});
+
+test("submission status event stream emits a terminal event immediately", async () => {
+  const stream = buildSubmissionStatusEventStream({
+    submissionId: "22222222-2222-4222-8222-222222222222",
+    readStatus: async () => ({
+      ...basePayload,
+      submission: {
+        ...basePayload.submission,
+        score: "100",
+        scored: true,
+        scored_at: "2026-03-17T00:10:00.000Z",
+      },
+      proofBundle: { reproducible: true },
+      job: {
+        ...basePayload.job,
+        status: "scored",
+      },
+      scoringStatus: "complete",
+      terminal: true,
+      recommendedPollSeconds: 60,
+    }),
+    waitForStatus: async () => {
+      throw new Error("waitForStatus should not be called");
+    },
+  });
+
+  const events = parseSseEvents(await readStreamText(stream));
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.event, "terminal");
+  assert.equal(events[0]?.data?.terminal, true);
+});
+
+test("submission status event stream emits keepalive updates before completion", async () => {
+  let waits = 0;
+  const stream = buildSubmissionStatusEventStream({
+    submissionId: "22222222-2222-4222-8222-222222222222",
+    readStatus: async () => basePayload,
+    waitForStatus: async () => {
+      waits += 1;
+      if (waits === 1) {
+        return {
+          ...basePayload,
+          waitedMs: 20_000,
+          timedOut: true,
+        };
+      }
+      return {
+        ...basePayload,
+        submission: {
+          ...basePayload.submission,
+          score: "100",
+          scored: true,
+          scored_at: "2026-03-17T00:10:00.000Z",
+        },
+        proofBundle: { reproducible: true },
+        job: {
+          ...basePayload.job,
+          status: "scored",
+        },
+        scoringStatus: "complete",
+        terminal: true,
+        recommendedPollSeconds: 60,
+        waitedMs: 5_000,
+        timedOut: false,
+      };
+    },
+  });
+
+  const events = parseSseEvents(await readStreamText(stream));
+  assert.deepEqual(
+    events.map((event) => event.event),
+    ["status", "keepalive", "terminal"],
+  );
+  assert.equal(events[1]?.data?.waitedMs, 20_000);
+  assert.equal(events[2]?.data?.terminal, true);
 });

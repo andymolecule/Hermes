@@ -113,7 +113,8 @@ agora submission-status <submission_uuid> --watch
 ```
 
 When `--watch` is enabled, the CLI follows the submission until it reaches a
-terminal state using the API's recommended polling interval.
+terminal state. On current API deployments it prefers the submission event
+stream and falls back to long-polling when the stream endpoint is unavailable.
 
 ---
 

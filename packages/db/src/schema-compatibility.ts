@@ -73,6 +73,13 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 012_add_factory_challenge_id.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
+    id: "challenge_dataset_file_name_columns",
+    table: "challenges",
+    select: "dataset_train_file_name,dataset_test_file_name",
+    nextStep:
+      "Apply migration 014_add_challenge_dataset_file_names.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
     id: "worker_runtime_control_columns",
     table: "worker_runtime_control",
     select: "worker_type,active_runtime_version",

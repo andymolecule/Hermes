@@ -501,6 +501,34 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/{id}/events": {
+        get: {
+          operationId: "streamSubmissionStatus",
+          summary:
+            "Stream submission progress updates until completion using Server-Sent Events",
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description:
+                "A text/event-stream response that emits status, keepalive, terminal, and error events.",
+              content: {
+                "text/event-stream": {
+                  schema: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/submissions/by-onchain/{challengeAddress}/{subId}/public": {
         get: {
           operationId: "getPublicSubmissionVerificationByOnChain",
@@ -859,16 +887,20 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             train_cid: { type: "string", nullable: true },
+            train_file_name: { type: "string", nullable: true },
             train_url: { type: "string", nullable: true },
             test_cid: { type: "string", nullable: true },
+            test_file_name: { type: "string", nullable: true },
             test_url: { type: "string", nullable: true },
             spec_cid: { type: "string", nullable: true },
             spec_url: { type: "string", nullable: true },
           },
           required: [
             "train_cid",
+            "train_file_name",
             "train_url",
             "test_cid",
+            "test_file_name",
             "test_url",
             "spec_cid",
             "spec_url",

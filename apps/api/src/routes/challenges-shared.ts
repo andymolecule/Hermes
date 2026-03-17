@@ -363,8 +363,18 @@ function toChallengeDetailResponse(input: {
     challenge,
     datasets: {
       train_cid: input.challenge.dataset_train_cid ?? null,
+      train_file_name:
+        "dataset_train_file_name" in input.challenge &&
+        typeof input.challenge.dataset_train_file_name === "string"
+          ? input.challenge.dataset_train_file_name
+          : null,
       train_url: cidToGatewayUrl(input.challenge.dataset_train_cid),
       test_cid: input.challenge.dataset_test_cid ?? null,
+      test_file_name:
+        "dataset_test_file_name" in input.challenge &&
+        typeof input.challenge.dataset_test_file_name === "string"
+          ? input.challenge.dataset_test_file_name
+          : null,
       test_url: cidToGatewayUrl(input.challenge.dataset_test_cid),
       spec_cid: input.challenge.spec_cid ?? null,
       spec_url: cidToGatewayUrl(input.challenge.spec_cid),

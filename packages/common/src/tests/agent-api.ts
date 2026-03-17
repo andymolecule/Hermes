@@ -103,8 +103,10 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
     },
     datasets: {
       train_cid: null,
+      train_file_name: null,
       train_url: null,
       test_cid: null,
+      test_file_name: null,
       test_url: null,
       spec_cid: null,
       spec_url: null,

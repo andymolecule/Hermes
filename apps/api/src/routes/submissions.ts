@@ -67,6 +67,7 @@ const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45 * 1000;
 const SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS = 30;
 const SUBMISSION_WAIT_MAX_TIMEOUT_SECONDS = 60;
 const SUBMISSION_WAIT_POLL_INTERVAL_MS = 2_000;
+const SUBMISSION_EVENTS_WAIT_TIMEOUT_SECONDS = 20;
 
 type PublicSubmissionVerification = {
   challengeId: string;
@@ -257,6 +258,88 @@ function toSubmissionStatusPayload(
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type SubmissionStatusPayload = ReturnType<typeof toSubmissionStatusPayload>;
+type SubmissionWaitPayload = ReturnType<typeof withSubmissionWaitMetadata>;
+
+function encodeSseEvent(event: string, data: unknown) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export function buildSubmissionStatusEventStream(input: {
+  submissionId: string;
+  signal?: AbortSignal;
+  readStatus?: (submissionId: string) => Promise<SubmissionStatusPayload>;
+  waitForStatus?: (input: {
+    submissionId: string;
+    timeoutSeconds: number;
+  }) => Promise<SubmissionWaitPayload>;
+}) {
+  const readStatus = input.readStatus ?? getSubmissionStatusData;
+  const waitForStatus = input.waitForStatus ?? waitForSubmissionStatusData;
+
+  return new ReadableStream<Uint8Array>({
+    start: async (controller) => {
+      const encoder = new TextEncoder();
+      let closed = false;
+      const close = () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        controller.close();
+      };
+      const enqueue = (event: string, data: unknown) =>
+        closed
+          ? undefined
+          : controller.enqueue(encoder.encode(encodeSseEvent(event, data)));
+
+      try {
+        const initial = await readStatus(input.submissionId);
+        if (input.signal?.aborted) {
+          close();
+          return;
+        }
+        if (initial.terminal) {
+          enqueue("terminal", initial);
+          close();
+          return;
+        }
+        enqueue("status", initial);
+
+        while (!input.signal?.aborted) {
+          const next = await waitForStatus({
+            submissionId: input.submissionId,
+            timeoutSeconds: SUBMISSION_EVENTS_WAIT_TIMEOUT_SECONDS,
+          });
+          if (input.signal?.aborted) {
+            close();
+            return;
+          }
+          if (next.terminal) {
+            enqueue("terminal", next);
+            close();
+            return;
+          }
+          if (next.timedOut) {
+            enqueue("keepalive", {
+              waitedMs: next.waitedMs,
+              recommendedPollSeconds: next.recommendedPollSeconds,
+            });
+            continue;
+          }
+          enqueue("status", next);
+        }
+      } catch (error) {
+        enqueue("error", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        close();
+      }
+    },
+  });
 }
 
 function getSubmissionStatusSignature(
@@ -729,6 +812,22 @@ router.get("/:id/wait", async (c) => {
     timeoutSeconds,
   });
   return c.json({ data });
+});
+
+router.get("/:id/events", async (c) => {
+  const stream = buildSubmissionStatusEventStream({
+    submissionId: c.req.param("id"),
+    signal: c.req.raw.signal,
+  });
+  return new Response(stream, {
+    headers: {
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "content-type": "text/event-stream; charset=utf-8",
+      "x-accel-buffering": "no",
+      "x-request-id": getRequestId(c),
+    },
+  });
 });
 
 router.get("/:id/public", async (c) => {

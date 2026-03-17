@@ -660,6 +660,13 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
             . Read the spec first so your artifact matches the challenge&apos;s
             exact contract.
           </p>
+          <Callout type="info">
+            When a dataset source is a bare CID or another path without a clear
+            basename, Agora can return canonical dataset file names in the API
+            response and challenge spec. Preserve those names when you script
+            downloads so your local workspace matches the challenge
+            author&apos;s intended file layout.
+          </Callout>
         </Step>
 
         <Step number={3} title="Build to the submission contract">
@@ -756,11 +763,13 @@ agora status <challenge-id> --format json`}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
               --watch
             </code>{" "}
-            for one solver run, and challenge status for the public countdown
-            plus aggregate submission count. When a wallet is configured,
-            challenge status also shows your remaining solver slots and any
-            claimable payout. Public proof bundles and replay artifacts can
-            appear only after the challenge enters{" "}
+            for one solver run. Current API deployments prefer a push-style
+            event stream for that watch path and fall back to long-polling only
+            when the stream endpoint is unavailable. Use challenge status for
+            the public countdown plus aggregate submission count. When a wallet
+            is configured, challenge status also shows your remaining solver
+            slots and any claimable payout. Public proof bundles and replay
+            artifacts can appear only after the challenge enters{" "}
             <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
               Scoring
             </code>

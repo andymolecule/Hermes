@@ -71,6 +71,38 @@ if (result.data.preset_id !== "csv_comparison_v1") {
   process.exit(1);
 }
 
+const sampleWithCanonicalDatasetNames = challengeSpecSchema.safeParse({
+  ...sample,
+  id: "ch-001-names",
+  dataset: {
+    ...sample.dataset,
+    train_file_name: "train.csv",
+    test_file_name: "test.csv",
+  },
+});
+if (!sampleWithCanonicalDatasetNames.success) {
+  console.error(
+    "challenge specs should accept canonical dataset file names when dataset sources are present",
+    sampleWithCanonicalDatasetNames.error.format(),
+  );
+  process.exit(1);
+}
+
+const orphanedDatasetFileName = challengeSpecSchema.safeParse({
+  ...sample,
+  id: "ch-001-orphaned-name",
+  dataset: {
+    test: "ipfs://QmTest",
+    train_file_name: "train.csv",
+  },
+});
+if (orphanedDatasetFileName.success) {
+  console.error(
+    "challenge specs should reject dataset file names when the matching dataset source is missing",
+  );
+  process.exit(1);
+}
+
 const missingSubmissionContract = challengeSpecSchema.safeParse({
   ...sample,
   id: "ch-001a",
@@ -474,13 +506,15 @@ const customPredictionTestOnly = challengeSpecSchema.safeParse({
   title: "Custom prediction test dataset only",
   domain: "omics",
   type: "prediction",
-  description: "Prediction challenge with a custom scorer and dataset.test fallback.",
+  description:
+    "Prediction challenge with a custom scorer and dataset.test fallback.",
   dataset: {
     test: "ipfs://QmPredictionTest",
   },
   preset_id: "custom",
   scoring: {
-    container: "ghcr.io/example/custom-prediction@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    container:
+      "ghcr.io/example/custom-prediction@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     metric: "custom",
   },
   submission_contract: csvContract({
@@ -507,7 +541,8 @@ const resolvedCustomPredictionTestOnly = resolveEvalSpec(
   customPredictionTestOnly.data,
 );
 if (
-  resolvedCustomPredictionTestOnly.evaluationBundleCid !== "ipfs://QmPredictionTest"
+  resolvedCustomPredictionTestOnly.evaluationBundleCid !==
+  "ipfs://QmPredictionTest"
 ) {
   console.error(
     "resolveEvalSpec should fall back to dataset.test for custom prediction specs",

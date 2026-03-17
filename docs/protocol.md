@@ -221,8 +221,11 @@ The authoritative schema for challenge specification files.
 | Field | Type | Description |
 |-------|------|-------------|
 | `dataset.train` | string | Training data URL. Accepts `ipfs://` or `https://`. |
+| `dataset.train_file_name` | string | Optional canonical file name for the training dataset when the source URL/CID has no basename. |
 | `dataset.test` | string | Test data URL. Accepts `ipfs://` or `https://`. |
+| `dataset.test_file_name` | string | Optional canonical file name for the test dataset when the source URL/CID has no basename. |
 | `dataset.hidden_labels` | string | Hidden labels URL. Accepts `ipfs://` or `https://`. |
+| `dataset.hidden_labels_file_name` | string | Optional canonical file name for hidden labels when the source URL/CID has no basename. |
 | `tags` | string[] | Freeform tags for discovery. |
 | `minimum_score` | decimal | Minimum score threshold for payout eligibility. |
 | `dispute_window_hours` | integer | Dispute window in hours (0–2160 on testnet; 168–2160 before mainnet). |
@@ -244,7 +247,9 @@ type: reproducibility
 description: "..."
 dataset:
   train: ipfs://Qm...
+  train_file_name: train.csv
   test: ipfs://Qm...
+  test_file_name: test.csv
 scoring:
   container: ghcr.io/andymolecule/repro-scorer:v1
   metric: custom

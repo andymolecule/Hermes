@@ -46,9 +46,31 @@ function formatZodError(error: z.ZodError) {
     .join("\n");
 }
 
+function toDatasetFileName(value: string, baseDir: string) {
+  if (value.startsWith("ipfs://")) {
+    return null;
+  }
+  if (value.startsWith("https://")) {
+    try {
+      const parsed = new URL(value);
+      const base = path.basename(parsed.pathname).trim();
+      return base.length > 0 ? base : null;
+    } catch {
+      return null;
+    }
+  }
+  const resolvedPath = path.isAbsolute(value)
+    ? value
+    : path.resolve(baseDir, value);
+  return path.basename(resolvedPath);
+}
+
 async function maybePinDataset(value: string, label: string, baseDir: string) {
   if (value.startsWith("ipfs://") || value.startsWith("https://")) {
-    return value;
+    return {
+      source: value,
+      fileName: toDatasetFileName(value, baseDir),
+    };
   }
   const resolvedPath = path.isAbsolute(value)
     ? value
@@ -57,7 +79,10 @@ async function maybePinDataset(value: string, label: string, baseDir: string) {
   try {
     const cid = await pinFile(resolvedPath, path.basename(resolvedPath));
     spinner.succeed(`Pinned ${label}: ${cid}`);
-    return cid;
+    return {
+      source: cid,
+      fileName: path.basename(resolvedPath),
+    };
   } catch (error) {
     spinner.fail(`Failed to pin ${label}`);
     throw error;
@@ -161,20 +186,29 @@ export function buildPostCommand() {
         }
 
         if (parsed.dataset && typeof parsed.dataset === "object") {
-          const dataset = parsed.dataset as { train?: string; test?: string };
+          const dataset = parsed.dataset as {
+            train?: string;
+            test?: string;
+            train_file_name?: string;
+            test_file_name?: string;
+          };
           if (dataset.train) {
-            dataset.train = await maybePinDataset(
+            const pinnedTrain = await maybePinDataset(
               dataset.train,
               "train dataset",
               path.dirname(path.resolve(process.cwd(), file)),
             );
+            dataset.train = pinnedTrain.source;
+            dataset.train_file_name ??= pinnedTrain.fileName ?? undefined;
           }
           if (dataset.test) {
-            dataset.test = await maybePinDataset(
+            const pinnedTest = await maybePinDataset(
               dataset.test,
               "test dataset",
               path.dirname(path.resolve(process.cwd(), file)),
             );
+            dataset.test = pinnedTest.source;
+            dataset.test_file_name ??= pinnedTest.fileName ?? undefined;
           }
         }
 

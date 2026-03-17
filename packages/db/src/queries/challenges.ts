@@ -30,6 +30,8 @@ export interface ChallengeInsert {
   spec_cid: string;
   dataset_train_cid?: string | null;
   dataset_test_cid?: string | null;
+  dataset_train_file_name?: string | null;
+  dataset_test_file_name?: string | null;
   eval_image: string;
   eval_metric: string;
   runner_preset_id: string;
@@ -148,6 +150,8 @@ export async function buildChallengeInsert(
     spec_cid: input.specCid,
     dataset_train_cid: canonicalSpec.dataset?.train ?? null,
     dataset_test_cid: canonicalSpec.dataset?.test ?? null,
+    dataset_train_file_name: canonicalSpec.dataset?.train_file_name ?? null,
+    dataset_test_file_name: canonicalSpec.dataset?.test_file_name ?? null,
     eval_image: resolvedEvalPlan.image,
     eval_metric: resolvedEvalPlan.metric,
     runner_preset_id: runnerPresetId,

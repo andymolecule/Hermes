@@ -55,6 +55,12 @@ const checks: RuntimeSchemaCheck[] = [
     select: "trace_id",
     nextStep: "apply migration",
   },
+  {
+    id: "challenge_dataset_file_name_columns",
+    table: "challenges",
+    select: "dataset_train_file_name,dataset_test_file_name",
+    nextStep: "apply migration",
+  },
 ];
 
 const passingDb = createMockDb({});

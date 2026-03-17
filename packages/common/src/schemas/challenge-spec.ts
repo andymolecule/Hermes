@@ -47,6 +47,8 @@ const datasetSource = z
     "dataset source must start with ipfs:// or https://",
   );
 
+const datasetFileNameSchema = z.string().trim().min(1);
+
 const rewardTotal = z
   .preprocess((value) => {
     if (typeof value === "string") {
@@ -150,6 +152,9 @@ const _baseSpecShape = z
         test: datasetSource.optional(),
         // Prediction: ground truth labels for scoring (separate from test inputs)
         hidden_labels: datasetSource.optional(),
+        train_file_name: datasetFileNameSchema.optional(),
+        test_file_name: datasetFileNameSchema.optional(),
+        hidden_labels_file_name: datasetFileNameSchema.optional(),
       })
       .optional(),
     // Author-facing scoring section. When eval_spec is omitted, the runtime
@@ -191,6 +196,42 @@ const _baseSpecShape = z
       .optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.dataset?.train_file_name &&
+      typeof value.dataset.train !== "string"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset", "train_file_name"],
+        message:
+          "dataset.train_file_name requires dataset.train. Next step: provide the train dataset source or remove the file name.",
+      });
+    }
+
+    if (
+      value.dataset?.test_file_name &&
+      typeof value.dataset.test !== "string"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset", "test_file_name"],
+        message:
+          "dataset.test_file_name requires dataset.test. Next step: provide the test dataset source or remove the file name.",
+      });
+    }
+
+    if (
+      value.dataset?.hidden_labels_file_name &&
+      typeof value.dataset.hidden_labels !== "string"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dataset", "hidden_labels_file_name"],
+        message:
+          "dataset.hidden_labels_file_name requires dataset.hidden_labels. Next step: provide the hidden_labels source or remove the file name.",
+      });
+    }
+
     if (
       typeof value.max_submissions_total === "number" &&
       typeof value.max_submissions_per_solver === "number" &&

@@ -111,8 +111,10 @@ export const challengeSummarySchema = z
 
 export const challengeDatasetsSchema = z.object({
   train_cid: z.string().nullable(),
+  train_file_name: z.string().nullable(),
   train_url: z.string().nullable(),
   test_cid: z.string().nullable(),
+  test_file_name: z.string().nullable(),
   test_url: z.string().nullable(),
   spec_cid: z.string().nullable(),
   spec_url: z.string().nullable(),
