@@ -3,11 +3,7 @@
 import type { ClarificationQuestionOutput } from "@agora/common";
 import { Check, CircleAlert, Loader2, Pencil, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  GUIDED_DISTRIBUTION_OPTIONS,
-  GUIDED_PROMPTS,
-  GUIDED_PROMPT_ORDER,
-} from "./guided-prompts";
+import { GUIDED_PROMPTS, GUIDED_PROMPT_ORDER } from "./guided-prompts";
 import {
   type GuidedComposerState,
   type GuidedFieldKey,
@@ -244,7 +240,13 @@ export function GuidedComposer({
   const activePromptValue =
     activePromptId && activePromptId !== "uploads"
       ? (getFieldValue(state, activePromptId) ??
-        (activePromptId === "distribution" ? "winner_take_all" : ""))
+        (activePromptId === "distribution"
+          ? "winner_take_all"
+          : activePromptId === "deadline"
+            ? "7"
+            : activePromptId === "disputeWindow"
+              ? "168"
+              : ""))
       : "";
 
   useEffect(() => {
@@ -455,16 +457,13 @@ export function GuidedComposer({
                     ) : prompt.inputKind === "select" ? (
                       <div
                         className="flex flex-wrap gap-2"
-                        role="radiogroup"
                         aria-label={prompt.prompt}
                       >
-                        {GUIDED_DISTRIBUTION_OPTIONS.map((option) => (
-                          // biome-ignore lint/a11y/useSemanticElements: styled toggle buttons are intentional
+                        {(prompt.options ?? []).map((option) => (
                           <button
                             key={option.value}
                             type="button"
-                            role="radio"
-                            aria-checked={draftValue === option.value}
+                            aria-pressed={draftValue === option.value}
                             onClick={() => setDraftValue(option.value)}
                             className={cx(
                               "rounded-[2px] border px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",

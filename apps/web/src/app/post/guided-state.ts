@@ -32,6 +32,7 @@ export type GuidedFieldKey =
   | "rewardTotal"
   | "distribution"
   | "deadline"
+  | "disputeWindow"
   | "solverInstructions";
 
 export type GuidedFieldStatus = "empty" | "collecting" | "suggested" | "locked";
@@ -78,6 +79,7 @@ export type GuidedComposerState = {
       "winner_take_all" | "top_3" | "proportional"
     >;
     deadline: GuidedDraftField<string>;
+    disputeWindow: GuidedDraftField<string>;
     solverInstructions: GuidedDraftField<string>;
   };
   uploads: UploadedArtifact[];
@@ -96,6 +98,7 @@ export type ManagedIntentState = {
   rewardTotal: string;
   distribution: "winner_take_all" | "top_3" | "proportional";
   deadline: string;
+  disputeWindowHours: string;
   domain: string;
   tags: string;
   solverInstructions: string;
@@ -159,6 +162,7 @@ const REQUIRED_PROMPTS = [
   "rewardTotal",
   "distribution",
   "deadline",
+  "disputeWindow",
 ] as const satisfies readonly Exclude<
   GuidedFieldKey,
   "title" | "solverInstructions"
@@ -172,12 +176,6 @@ const UPLOAD_HINTS = [
 ];
 
 export const GUIDED_STORAGE_KEY = STORAGE_KEY;
-
-function defaultDeadline(now = Date.now()) {
-  const nextWeek = new Date(now + 7 * 24 * 60 * 60 * 1000);
-  nextWeek.setMinutes(nextWeek.getMinutes() - nextWeek.getTimezoneOffset());
-  return nextWeek.toISOString().slice(0, 16);
-}
 
 export function resolveBrowserTimezone() {
   try {
@@ -214,6 +212,8 @@ export function getPromptStatus(
       return state.fields.distribution.status;
     case "deadline":
       return state.fields.deadline.status;
+    case "disputeWindow":
+      return state.fields.disputeWindow.status;
     case "solverInstructions":
       return state.fields.solverInstructions.status;
   }
@@ -244,6 +244,9 @@ function setPromptStatus(
       return;
     case "deadline":
       state.fields.deadline.status = status;
+      return;
+    case "disputeWindow":
+      state.fields.disputeWindow.status = status;
       return;
     case "solverInstructions":
       state.fields.solverInstructions.status = status;
@@ -289,8 +292,20 @@ export function answerSummaryForPrompt(
         default:
           return "";
       }
-    case "deadline":
-      return state.fields.deadline.value?.trim() ?? "";
+    case "deadline": {
+      const v = state.fields.deadline.value;
+      if (!v) return "";
+      if (v === "15m") return "15 minutes";
+      if (v === "0") return "30 minutes";
+      return `${v} days`;
+    }
+    case "disputeWindow": {
+      const v = state.fields.disputeWindow.value;
+      if (!v) return "";
+      const hours = Number(v);
+      if (hours === 0) return "None (testnet)";
+      return `${Math.round(hours / 24)} days`;
+    }
     case "solverInstructions":
       return hasTextValue(state.fields.solverInstructions.value)
         ? (state.fields.solverInstructions.value?.trim() ?? "")
@@ -392,6 +407,7 @@ function cloneState(state: GuidedComposerState): GuidedComposerState {
       rewardTotal: { ...state.fields.rewardTotal },
       distribution: { ...state.fields.distribution },
       deadline: { ...state.fields.deadline },
+      disputeWindow: { ...state.fields.disputeWindow },
       solverInstructions: { ...state.fields.solverInstructions },
     },
     uploads: state.uploads.map((artifact) => ({ ...artifact })),
@@ -459,6 +475,8 @@ export function getFieldValue(
       return state.fields.distribution.value;
     case "deadline":
       return state.fields.deadline.value;
+    case "disputeWindow":
+      return state.fields.disputeWindow.value;
     case "solverInstructions":
       return state.fields.solverInstructions.value;
   }
@@ -515,6 +533,13 @@ function setFieldValue(
         source,
       };
       return;
+    case "disputeWindow":
+      state.fields.disputeWindow = {
+        value: String(value),
+        status,
+        source,
+      };
+      return;
     case "solverInstructions":
       state.fields.solverInstructions = {
         value: String(value),
@@ -532,7 +557,6 @@ function finalizeState(state: GuidedComposerState) {
 
 export function createInitialGuidedState(
   timezone = resolveBrowserTimezone(),
-  now = Date.now(),
 ): GuidedComposerState {
   return finalizeState({
     fields: {
@@ -545,11 +569,8 @@ export function createInitialGuidedState(
         status: "suggested",
         source: "system",
       },
-      deadline: {
-        value: defaultDeadline(now),
-        status: "suggested",
-        source: "system",
-      },
+      deadline: { value: "7", status: "suggested", source: "system" },
+      disputeWindow: { value: "168", status: "suggested", source: "system" },
       solverInstructions: { value: null, status: "empty" },
     },
     uploads: [],
@@ -655,6 +676,7 @@ export function buildManagedIntentFromGuidedState(
     rewardTotal: trimText(state.fields.rewardTotal.value),
     distribution: state.fields.distribution.value ?? "winner_take_all",
     deadline: trimText(state.fields.deadline.value),
+    disputeWindowHours: trimText(state.fields.disputeWindow.value) || "168",
     domain: "other",
     tags: "",
     solverInstructions: trimText(state.fields.solverInstructions.value),
@@ -685,8 +707,6 @@ export function isReadyToCompile(state: GuidedComposerState) {
     (artifact) => artifact.status === "ready",
   );
   const reward = Number(state.fields.rewardTotal.value);
-  const deadline = Date.parse(state.fields.deadline.value ?? "");
-
   return (
     trimText(state.fields.title.value).length > 0 &&
     REQUIRED_PROMPTS.every(
@@ -696,7 +716,7 @@ export function isReadyToCompile(state: GuidedComposerState) {
     !state.uploads.some((artifact) => artifact.status === "uploading") &&
     Number.isFinite(reward) &&
     reward > 0 &&
-    !Number.isNaN(deadline)
+    hasTextValue(state.fields.deadline.value)
   );
 }
 
@@ -727,13 +747,15 @@ export function listReadinessIssues(state: GuidedComposerState) {
   if (state.fields.distribution.status !== "locked") {
     issues.push("Confirm how the payout should split.");
   }
-  if (
-    !trimText(state.fields.deadline.value) ||
-    Number.isNaN(Date.parse(state.fields.deadline.value ?? ""))
-  ) {
-    issues.push("Choose a valid submission deadline.");
+  if (!trimText(state.fields.deadline.value)) {
+    issues.push("Choose a submission window.");
   } else if (state.fields.deadline.status !== "locked") {
-    issues.push("Confirm the submission deadline.");
+    issues.push("Confirm the submission window.");
+  }
+  if (!trimText(state.fields.disputeWindow.value)) {
+    issues.push("Choose a dispute window.");
+  } else if (state.fields.disputeWindow.status !== "locked") {
+    issues.push("Confirm the dispute window.");
   }
   if (!trimText(state.fields.title.value)) {
     issues.push("Set the bounty title in the summary rail.");

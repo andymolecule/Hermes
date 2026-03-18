@@ -31,6 +31,7 @@ import {
 } from "wagmi";
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { computeProtocolFee, formatUsdc } from "../../lib/format";
+import { computeDeadlineIso } from "../../lib/post-submission-window";
 import {
   APP_CHAIN_NAME,
   getWrongChainMessage,
@@ -85,13 +86,6 @@ const STEP_LABELS: Record<Step, string> = {
 
 /* ── Utility functions ─────────────────────────────────── */
 
-function toIsoWithOffset(localValue: string) {
-  if (!localValue) {
-    return new Date().toISOString();
-  }
-  return new Date(localValue).toISOString();
-}
-
 function parseApiErrorMessage(text: string) {
   try {
     const parsed = JSON.parse(text) as { error?: unknown };
@@ -111,7 +105,8 @@ function buildPostingIntent(intent: ManagedIntentState) {
     payout_condition: intent.payoutCondition,
     reward_total: intent.rewardTotal,
     distribution: intent.distribution,
-    deadline: toIsoWithOffset(intent.deadline),
+    deadline: computeDeadlineIso(intent.deadline),
+    dispute_window_hours: Number(intent.disputeWindowHours) || undefined,
     domain: intent.domain,
     tags: intent.tags
       .split(",")

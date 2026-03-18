@@ -19,6 +19,7 @@ export const GUIDED_PROMPT_ORDER = [
   "rewardTotal",
   "distribution",
   "deadline",
+  "disputeWindow",
   "solverInstructions",
 ] as const satisfies readonly Exclude<GuidedFieldKey, "title">[];
 
@@ -26,6 +27,25 @@ export const GUIDED_DISTRIBUTION_OPTIONS = [
   { label: "Winner takes all", value: "winner_take_all" },
   { label: "Top 3 split (60 / 25 / 15)", value: "top_3" },
   { label: "Proportional to score", value: "proportional" },
+] as const satisfies readonly { label: string; value: string }[];
+
+export const GUIDED_SUBMISSION_WINDOW_OPTIONS = [
+  { label: "15 min", value: "15m" },
+  { label: "30 min", value: "0" },
+  { label: "7 days", value: "7" },
+  { label: "14 days", value: "14" },
+  { label: "30 days", value: "30" },
+  { label: "60 days", value: "60" },
+  { label: "90 days", value: "90" },
+] as const satisfies readonly { label: string; value: string }[];
+
+export const GUIDED_DISPUTE_WINDOW_OPTIONS = [
+  { label: "None (testnet)", value: "0" },
+  { label: "7 days", value: "168" },
+  { label: "14 days", value: "336" },
+  { label: "30 days", value: "720" },
+  { label: "60 days", value: "1440" },
+  { label: "90 days", value: "2160" },
 ] as const satisfies readonly { label: string; value: string }[];
 
 export const INPUT_KIND_LABELS: Record<InputKind, string> = {
@@ -80,7 +100,18 @@ export const GUIDED_PROMPTS: Record<
   deadline: {
     id: "deadline",
     prompt: "When should submissions close?",
-    inputKind: "date",
+    inputKind: "select",
+    options: [...GUIDED_SUBMISSION_WINDOW_OPTIONS],
+    helper:
+      "The deadline is computed from now when the challenge is published.",
+  },
+  disputeWindow: {
+    id: "disputeWindow",
+    prompt: "How long should the dispute window last?",
+    inputKind: "select",
+    options: [...GUIDED_DISPUTE_WINDOW_OPTIONS],
+    helper:
+      "After scoring, anyone can dispute. The window must pass before payouts unlock.",
   },
   solverInstructions: {
     id: "solverInstructions",
