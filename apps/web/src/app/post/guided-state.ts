@@ -1,7 +1,9 @@
 "use client";
 
 import type { ClarificationQuestionOutput } from "@agora/common";
-import { GUIDED_PROMPTS, GUIDED_PROMPT_ORDER } from "./guided-prompts";
+import { z } from "zod";
+import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
+import { GUIDED_PROMPT_ORDER, GUIDED_SELECT_DEFAULTS } from "./guided-prompts";
 
 export type UploadStatus = "uploading" | "ready" | "error";
 
@@ -16,13 +18,7 @@ export type UploadedArtifact = {
   error?: string;
 };
 
-export type InputKind =
-  | "textarea"
-  | "file"
-  | "currency"
-  | "select"
-  | "date"
-  | "text";
+export type InputKind = "textarea" | "file" | "currency" | "select" | "text";
 
 export type GuidedFieldKey =
   | "problem"
@@ -51,16 +47,6 @@ export type GuidedPromptConfig = {
   canSkip?: boolean;
 };
 
-export type GuidedConversationMessage = {
-  id: string;
-  role: "assistant" | "user" | "system";
-  content: string;
-  targetFields?: GuidedFieldKey[];
-  inputKind?: InputKind;
-  inputOptions?: { label: string; value: string }[];
-  state?: "pending" | "answered" | "editing";
-};
-
 export type GuidedCompileState =
   | "idle"
   | "ready_to_compile"
@@ -84,7 +70,6 @@ export type GuidedComposerState = {
   };
   uploads: UploadedArtifact[];
   uploadsStatus: GuidedFieldStatus;
-  transcript: GuidedConversationMessage[];
   activePromptId: Exclude<GuidedFieldKey, "title"> | null;
   compileState: GuidedCompileState;
   sessionId: string | null;
@@ -168,14 +153,74 @@ const REQUIRED_PROMPTS = [
   "title" | "solverInstructions"
 >[];
 
-const UPLOAD_HINTS = [
-  "train.csv",
-  "hidden_labels.csv",
-  "evaluation_features.csv",
-  "reference_output.csv",
-];
-
 export const GUIDED_STORAGE_KEY = STORAGE_KEY;
+
+const guidedFieldStatusSchema = z.enum([
+  "empty",
+  "collecting",
+  "suggested",
+  "locked",
+]);
+const guidedFieldSourceSchema = z.enum(["user", "system", "compile"]);
+const uploadStatusSchema = z.enum(["uploading", "ready", "error"]);
+const guidedCompileStateSchema = z.enum([
+  "idle",
+  "ready_to_compile",
+  "compiling",
+  "needs_clarification",
+  "needs_review",
+  "ready",
+]);
+const distributionValueSchema = z.enum([
+  "winner_take_all",
+  "top_3",
+  "proportional",
+]);
+
+const textDraftFieldSchema = z.object({
+  value: z.string().nullable().optional(),
+  status: guidedFieldStatusSchema.optional(),
+  source: guidedFieldSourceSchema.optional(),
+});
+
+const distributionDraftFieldSchema = z.object({
+  value: distributionValueSchema.nullable().optional(),
+  status: guidedFieldStatusSchema.optional(),
+  source: guidedFieldSourceSchema.optional(),
+});
+
+const uploadedArtifactSchema = z.object({
+  id: z.string(),
+  uri: z.string().optional(),
+  file_name: z.string(),
+  mime_type: z.string().optional(),
+  size_bytes: z.number().optional(),
+  detected_columns: z.array(z.string()).optional(),
+  status: uploadStatusSchema,
+  error: z.string().optional(),
+});
+
+const storedGuidedStateSchema = z.object({
+  fields: z
+    .object({
+      problem: textDraftFieldSchema.optional(),
+      title: textDraftFieldSchema.optional(),
+      winningCondition: textDraftFieldSchema.optional(),
+      rewardTotal: textDraftFieldSchema.optional(),
+      distribution: distributionDraftFieldSchema.optional(),
+      deadline: textDraftFieldSchema.optional(),
+      disputeWindow: textDraftFieldSchema.optional(),
+      solverInstructions: textDraftFieldSchema.optional(),
+    })
+    .partial(),
+  uploads: z.array(uploadedArtifactSchema).optional(),
+  uploadsStatus: guidedFieldStatusSchema.optional(),
+  activePromptId: z.enum(GUIDED_PROMPT_ORDER).nullable().optional(),
+  compileState: guidedCompileStateSchema.optional(),
+  sessionId: z.string().nullable().optional(),
+  timezone: z.string().optional(),
+});
+type StoredGuidedState = z.infer<typeof storedGuidedStateSchema>;
 
 export function resolveBrowserTimezone() {
   try {
@@ -295,9 +340,7 @@ export function answerSummaryForPrompt(
     case "deadline": {
       const v = state.fields.deadline.value;
       if (!v) return "";
-      if (v === "15m") return "15 minutes";
-      if (v === "0") return "30 minutes";
-      return `${v} days`;
+      return formatSubmissionWindowLabel(v);
     }
     case "disputeWindow": {
       const v = state.fields.disputeWindow.value;
@@ -322,52 +365,6 @@ export function getLastVisitedPromptIndex(state: GuidedComposerState) {
     }
   }
   return index;
-}
-
-function rebuildTranscript(
-  state: GuidedComposerState,
-): GuidedConversationMessage[] {
-  const lastVisitedPromptIndex = getLastVisitedPromptIndex(state);
-  const transcript: GuidedConversationMessage[] = [];
-
-  for (const promptId of GUIDED_PROMPT_ORDER) {
-    const currentPromptIndex = promptIndex(promptId);
-    if (
-      currentPromptIndex > lastVisitedPromptIndex &&
-      state.activePromptId !== promptId
-    ) {
-      continue;
-    }
-
-    const prompt = GUIDED_PROMPTS[promptId];
-    const status = getPromptStatus(state, promptId);
-    const isActive = state.activePromptId === promptId;
-    transcript.push({
-      id: `assistant:${promptId}`,
-      role: "assistant",
-      content: prompt.prompt,
-      targetFields: [promptId],
-      inputKind: prompt.inputKind,
-      inputOptions: "options" in prompt ? prompt.options : undefined,
-      state: isActive ? "pending" : "answered",
-    });
-
-    if (
-      status === "locked" ||
-      status === "suggested" ||
-      (isActive && answerSummaryForPrompt(state, promptId))
-    ) {
-      transcript.push({
-        id: `user:${promptId}`,
-        role: "user",
-        content: answerSummaryForPrompt(state, promptId),
-        targetFields: [promptId],
-        state: isActive ? "editing" : "answered",
-      });
-    }
-  }
-
-  return transcript;
 }
 
 function nextIncompletePrompt(
@@ -397,29 +394,138 @@ export function buildSuggestedTitle(problem: string) {
   return cleaned.slice(0, 160);
 }
 
-function cloneState(state: GuidedComposerState): GuidedComposerState {
+function buildSuggestedTitleField(
+  problem: string | null | undefined,
+): GuidedDraftField<string> {
+  const suggestion = buildSuggestedTitle(trimText(problem));
+  if (!suggestion) {
+    return { value: null, status: "empty" };
+  }
+
   return {
-    ...state,
-    fields: {
-      problem: { ...state.fields.problem },
-      title: { ...state.fields.title },
-      winningCondition: { ...state.fields.winningCondition },
-      rewardTotal: { ...state.fields.rewardTotal },
-      distribution: { ...state.fields.distribution },
-      deadline: { ...state.fields.deadline },
-      disputeWindow: { ...state.fields.disputeWindow },
-      solverInstructions: { ...state.fields.solverInstructions },
-    },
-    uploads: state.uploads.map((artifact) => ({ ...artifact })),
-    transcript: state.transcript.map((message) => ({
-      ...message,
-      targetFields: message.targetFields
-        ? [...message.targetFields]
-        : undefined,
-      inputOptions: message.inputOptions
-        ? message.inputOptions.map((option) => ({ ...option }))
-        : undefined,
-    })),
+    value: suggestion,
+    status: "suggested",
+    source: "system",
+  };
+}
+
+function buildManualTitleField(
+  problem: string | null | undefined,
+  title: string,
+): GuidedDraftField<string> {
+  const trimmedTitle = trimText(title);
+  if (!trimmedTitle) {
+    return buildSuggestedTitleField(problem);
+  }
+
+  return {
+    value: trimmedTitle,
+    status: "locked",
+    source: "user",
+  };
+}
+
+function cloneDraftField<T>(
+  field: Partial<GuidedDraftField<T>> | undefined,
+  fallback: GuidedDraftField<T>,
+): GuidedDraftField<T> {
+  return {
+    value: field?.value ?? fallback.value,
+    status: field?.status ?? fallback.status,
+    source: field?.source ?? fallback.source,
+  };
+}
+
+function buildInitialFields() {
+  return {
+    problem: { value: null, status: "collecting" } as GuidedDraftField<string>,
+    title: { value: null, status: "empty" } as GuidedDraftField<string>,
+    winningCondition: {
+      value: null,
+      status: "empty",
+    } as GuidedDraftField<string>,
+    rewardTotal: {
+      value: "500",
+      status: "suggested",
+      source: "system",
+    } as GuidedDraftField<string>,
+    distribution: {
+      value: GUIDED_SELECT_DEFAULTS.distribution,
+      status: "suggested",
+      source: "system",
+    } as GuidedDraftField<"winner_take_all" | "top_3" | "proportional">,
+    deadline: {
+      value: GUIDED_SELECT_DEFAULTS.deadline,
+      status: "suggested",
+      source: "system",
+    } as GuidedDraftField<string>,
+    disputeWindow: {
+      value: GUIDED_SELECT_DEFAULTS.disputeWindow,
+      status: "suggested",
+      source: "system",
+    } as GuidedDraftField<string>,
+    solverInstructions: {
+      value: null,
+      status: "empty",
+    } as GuidedDraftField<string>,
+  };
+}
+
+function normalizeGuidedState(state: StoredGuidedState): GuidedComposerState {
+  const timezone =
+    typeof state.timezone === "string" && state.timezone.trim().length > 0
+      ? state.timezone
+      : resolveBrowserTimezone();
+  const initialFields = buildInitialFields();
+  const uploads = Array.isArray(state.uploads)
+    ? state.uploads.map((artifact) => ({ ...artifact }))
+    : [];
+  const activePromptId =
+    state.activePromptId === null
+      ? null
+      : state.activePromptId != null &&
+          GUIDED_PROMPT_ORDER.includes(state.activePromptId)
+        ? state.activePromptId
+        : "problem";
+  const fields = {
+    problem: cloneDraftField(state.fields?.problem, initialFields.problem),
+    title: cloneDraftField(state.fields?.title, initialFields.title),
+    winningCondition: cloneDraftField(
+      state.fields?.winningCondition,
+      initialFields.winningCondition,
+    ),
+    rewardTotal: cloneDraftField(
+      state.fields?.rewardTotal,
+      initialFields.rewardTotal,
+    ),
+    distribution: cloneDraftField(
+      state.fields?.distribution,
+      initialFields.distribution,
+    ),
+    deadline: cloneDraftField(state.fields?.deadline, initialFields.deadline),
+    disputeWindow: cloneDraftField(
+      state.fields?.disputeWindow,
+      initialFields.disputeWindow,
+    ),
+    solverInstructions: cloneDraftField(
+      state.fields?.solverInstructions,
+      initialFields.solverInstructions,
+    ),
+  };
+
+  if (!hasTextValue(fields.title.value)) {
+    fields.title = buildSuggestedTitleField(fields.problem.value);
+  }
+
+  return {
+    fields,
+    uploads,
+    uploadsStatus:
+      state.uploadsStatus ?? (uploads.length > 0 ? "collecting" : "empty"),
+    activePromptId,
+    compileState: state.compileState ?? "idle",
+    sessionId: typeof state.sessionId === "string" ? state.sessionId : null,
+    timezone,
   };
 }
 
@@ -497,12 +603,7 @@ function setFieldValue(
         source,
       };
       if (state.fields.title.source !== "user") {
-        const suggestion = buildSuggestedTitle(String(value));
-        state.fields.title = {
-          value: suggestion,
-          status: suggestion ? "suggested" : "empty",
-          source: suggestion ? "system" : undefined,
-        };
+        state.fields.title = buildSuggestedTitleField(String(value));
       }
       return;
     case "winningCondition":
@@ -550,37 +651,18 @@ function setFieldValue(
   }
 }
 
-function finalizeState(state: GuidedComposerState) {
-  state.transcript = rebuildTranscript(state);
-  return state;
-}
-
 export function createInitialGuidedState(
   timezone = resolveBrowserTimezone(),
 ): GuidedComposerState {
-  return finalizeState({
-    fields: {
-      problem: { value: null, status: "collecting" },
-      title: { value: null, status: "empty" },
-      winningCondition: { value: null, status: "empty" },
-      rewardTotal: { value: "500", status: "suggested", source: "system" },
-      distribution: {
-        value: "winner_take_all",
-        status: "suggested",
-        source: "system",
-      },
-      deadline: { value: "7", status: "suggested", source: "system" },
-      disputeWindow: { value: "168", status: "suggested", source: "system" },
-      solverInstructions: { value: null, status: "empty" },
-    },
+  return {
+    fields: buildInitialFields(),
     uploads: [],
     uploadsStatus: "empty",
-    transcript: [],
     activePromptId: "problem",
     compileState: "idle",
     sessionId: null,
     timezone,
-  });
+  };
 }
 
 export function guidedComposerReducer(
@@ -588,14 +670,14 @@ export function guidedComposerReducer(
   action: GuidedAnswerAction,
 ) {
   if (action.type === "hydrate") {
-    return finalizeState(cloneState(action.state));
+    return normalizeGuidedState(action.state);
   }
 
   if (action.type === "reset") {
     return createInitialGuidedState(action.timezone ?? state.timezone);
   }
 
-  const nextState = cloneState(state);
+  const nextState = normalizeGuidedState(state);
 
   switch (action.type) {
     case "answer_prompt": {
@@ -606,26 +688,25 @@ export function guidedComposerReducer(
       );
       nextState.activePromptId = nextPrompt;
       updateCompileReadiness(nextState);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "skip_optional_prompt": {
       setFieldValue(nextState, "solverInstructions", "", "locked");
       nextState.activePromptId = null;
       updateCompileReadiness(nextState);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "edit_prompt": {
       invalidateFromPrompt(nextState, action.field);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "set_title": {
-      nextState.fields.title = {
-        value: action.value,
-        status: hasTextValue(action.value) ? "locked" : "empty",
-        source: hasTextValue(action.value) ? "user" : undefined,
-      };
+      nextState.fields.title = buildManualTitleField(
+        nextState.fields.problem.value,
+        action.value,
+      );
       updateCompileReadiness(nextState);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "set_uploads": {
       nextState.uploads = action.uploads;
@@ -635,7 +716,7 @@ export function guidedComposerReducer(
       nextState.uploadsStatus =
         action.uploads.length > 0 ? "collecting" : "empty";
       updateCompileReadiness(nextState);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "confirm_uploads": {
       nextState.uploadsStatus =
@@ -646,20 +727,20 @@ export function guidedComposerReducer(
       );
       nextState.activePromptId = nextPrompt;
       updateCompileReadiness(nextState);
-      return finalizeState(nextState);
+      return nextState;
     }
     case "set_compile_state": {
       nextState.compileState = action.compileState;
-      return finalizeState(nextState);
+      return nextState;
     }
     case "set_session_id": {
       nextState.sessionId = action.sessionId;
-      return finalizeState(nextState);
+      return nextState;
     }
     case "apply_clarification": {
       invalidateFromPrompt(nextState, action.field);
       nextState.compileState = "needs_clarification";
-      return finalizeState(nextState);
+      return nextState;
     }
   }
 }
@@ -758,7 +839,7 @@ export function listReadinessIssues(state: GuidedComposerState) {
     issues.push("Confirm the dispute window.");
   }
   if (!trimText(state.fields.title.value)) {
-    issues.push("Set the bounty title in the summary rail.");
+    issues.push("Edit the scientific problem to regenerate the bounty title.");
   }
 
   return issues;
@@ -792,11 +873,12 @@ export function loadGuidedDraft(storage = window.sessionStorage) {
   }
 
   try {
-    const parsed = JSON.parse(raw) as GuidedComposerState;
-    if (!parsed || typeof parsed !== "object" || !parsed.fields) {
+    const parsed = JSON.parse(raw) as unknown;
+    const result = storedGuidedStateSchema.safeParse(parsed);
+    if (!result.success) {
       return null;
     }
-    return finalizeState(parsed);
+    return normalizeGuidedState(result.data);
   } catch {
     return null;
   }
@@ -825,32 +907,4 @@ export function clarificationTargetFromQuestions(
     return "uploads" as const;
   }
   return "problem" as const;
-}
-
-export function clarificationHelperText(
-  target: ReturnType<typeof clarificationTargetFromQuestions>,
-) {
-  switch (target) {
-    case "winningCondition":
-      return "Update the winning condition, then reconfirm the later answers below it.";
-    case "uploads":
-      return "Review the uploaded files, rename any ambiguous aliases, and make sure the problem statement still matches them.";
-    case "problem":
-      return "Tighten the problem statement so Agora can map the files and scoring rules safely.";
-  }
-}
-
-export function cx(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
-
-export function buildUploadHintCopy() {
-  return UPLOAD_HINTS.map((hint, index) => ({
-    hint,
-    trailing: index < UPLOAD_HINTS.length - 1 ? ", " : ".",
-  }));
-}
-
-export function readyUploadCount(state: GuidedComposerState) {
-  return state.uploads.filter((artifact) => artifact.status === "ready").length;
 }

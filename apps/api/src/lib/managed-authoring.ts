@@ -856,6 +856,9 @@ async function compileManagedAuthoringDraft(
       distribution: input.intent.distribution,
     },
     deadline: input.intent.deadline,
+    ...(typeof input.intent.dispute_window_hours === "number"
+      ? { dispute_window_hours: input.intent.dispute_window_hours }
+      : {}),
     tags: [...input.intent.tags, `tz:${input.intent.timezone}`],
     ...(minimumScore !== undefined ? { minimum_score: minimumScore } : {}),
   };

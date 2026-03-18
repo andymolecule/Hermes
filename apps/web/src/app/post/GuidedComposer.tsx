@@ -3,19 +3,22 @@
 import type { ClarificationQuestionOutput } from "@agora/common";
 import { Check, CircleAlert, Loader2, Pencil, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GUIDED_PROMPTS, GUIDED_PROMPT_ORDER } from "./guided-prompts";
+import { clarificationHelperText } from "./guided-copy";
+import {
+  GUIDED_PROMPTS,
+  GUIDED_PROMPT_ORDER,
+  GUIDED_SELECT_DEFAULTS,
+  buildUploadHintCopy,
+} from "./guided-prompts";
 import {
   type GuidedComposerState,
   type GuidedFieldKey,
   type UploadedArtifact,
   answerSummaryForPrompt,
-  buildUploadHintCopy,
-  clarificationHelperText,
   clarificationTargetFromQuestions,
   getFieldValue,
   getLastVisitedPromptIndex,
   getPromptStatus,
-  readyUploadCount,
 } from "./guided-state";
 import { cx, truncateMiddle } from "./post-ui";
 
@@ -24,6 +27,25 @@ const STATUS_DOT: Record<string, string> = {
   uploading: "bg-amber-400 animate-pulse",
   error: "bg-red-500",
 };
+
+function countReadyUploads(uploads: UploadedArtifact[]) {
+  return uploads.filter((artifact) => artifact.status === "ready").length;
+}
+
+function getPromptFallbackValue(
+  promptId: Exclude<GuidedFieldKey, "title" | "uploads">,
+) {
+  switch (promptId) {
+    case "distribution":
+      return GUIDED_SELECT_DEFAULTS.distribution;
+    case "deadline":
+      return GUIDED_SELECT_DEFAULTS.deadline;
+    case "disputeWindow":
+      return GUIDED_SELECT_DEFAULTS.disputeWindow;
+    default:
+      return "";
+  }
+}
 
 function UploadEditor({
   uploads,
@@ -240,13 +262,7 @@ export function GuidedComposer({
   const activePromptValue =
     activePromptId && activePromptId !== "uploads"
       ? (getFieldValue(state, activePromptId) ??
-        (activePromptId === "distribution"
-          ? "winner_take_all"
-          : activePromptId === "deadline"
-            ? "7"
-            : activePromptId === "disputeWindow"
-              ? "168"
-              : ""))
+        getPromptFallbackValue(activePromptId))
       : "";
 
   useEffect(() => {
@@ -397,7 +413,7 @@ export function GuidedComposer({
                     onRemoveUpload={onRemoveUpload}
                     onConfirm={onConfirmUploads}
                     disabled={
-                      readyUploadCount(state) === 0 ||
+                      countReadyUploads(state.uploads) === 0 ||
                       state.uploads.some(
                         (artifact) => artifact.status === "uploading",
                       )
@@ -446,14 +462,6 @@ export function GuidedComposer({
                           USDC
                         </span>
                       </div>
-                    ) : prompt.inputKind === "date" ? (
-                      <input
-                        type="datetime-local"
-                        value={draftValue}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        aria-label={prompt.prompt}
-                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
-                      />
                     ) : prompt.inputKind === "select" ? (
                       <div
                         className="flex flex-wrap gap-2"

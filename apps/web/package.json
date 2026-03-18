@@ -23,7 +23,8 @@
     "tailwindcss": "^4.2.1",
     "viem": "^2.21.15",
     "wagmi": "^2.12.30",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

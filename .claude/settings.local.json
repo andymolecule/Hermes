@@ -4,7 +4,10 @@
       "WebSearch",
       "WebFetch(domain:status.railway.com)",
       "WebFetch(domain:docs.railway.com)",
-      "WebFetch(domain:sepolia.basescan.org)"
+      "WebFetch(domain:sepolia.basescan.org)",
+      "WebFetch(domain:agora-market.vercel.app)",
+      "WebFetch(domain:x.com)",
+      "WebFetch(domain:claude.com)"
     ]
   },
   "enableAllProjectMcpServers": true,

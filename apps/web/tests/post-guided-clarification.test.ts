@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { clarificationHelperText } from "../src/app/post/guided-copy";
 import {
-  clarificationHelperText,
+  type UploadedArtifact,
   clarificationTargetFromQuestions,
   createInitialGuidedState,
   guidedComposerReducer,
-  type UploadedArtifact,
 } from "../src/app/post/guided-state";
 
 function readyUpload(): UploadedArtifact {
@@ -57,13 +57,16 @@ test("clarification routes missing or ambiguous artifacts back to uploads", () =
 });
 
 test("apply clarification reopens the targeted prompt and resets later state", () => {
-  let state = createInitialGuidedState("UTC", Date.parse("2026-03-18T00:00:00.000Z"));
+  let state = createInitialGuidedState("UTC");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "problem",
     value: "Rank ligands by binding affinity.",
   });
-  state = guidedComposerReducer(state, { type: "set_uploads", uploads: [readyUpload()] });
+  state = guidedComposerReducer(state, {
+    type: "set_uploads",
+    uploads: [readyUpload()],
+  });
   state = guidedComposerReducer(state, { type: "confirm_uploads" });
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
@@ -86,4 +89,3 @@ test("apply clarification reopens the targeted prompt and resets later state", (
   assert.equal(state.fields.winningCondition.status, "suggested");
   assert.equal(state.fields.rewardTotal.status, "suggested");
 });
-

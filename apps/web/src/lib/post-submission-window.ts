@@ -1,4 +1,5 @@
 const QUICK_TEST_BUFFER_MINUTES = 2;
+export const MINIMUM_PUBLISHABLE_WINDOW_MS = 5 * 60 * 1000;
 
 const QUICK_TEST_WINDOWS: Record<string, number> = {
   "15m": 15,
@@ -32,26 +33,22 @@ export function computeDeadlineIso(windowValue: string): string {
   ).toISOString();
 }
 
-/** Format a deadline date for display. */
-export function formatDeadlineDate(windowValue: string): string {
-  return new Date(computeDeadlineIso(windowValue)).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+export function getSubmissionDeadlineWindowState(
+  deadlineIso: string,
+  nowMs = Date.now(),
+  minimumRemainingMs = MINIMUM_PUBLISHABLE_WINDOW_MS,
+) {
+  const deadlineMs = Date.parse(deadlineIso);
+  if (Number.isNaN(deadlineMs)) {
+    return "invalid" as const;
+  }
 
-/** Format the earliest deterministic point where review can end. */
-export function formatFinalizationCheckDate(
-  windowValue: string,
-  disputeWindowHours: string,
-): string {
-  const deadlineMs = new Date(computeDeadlineIso(windowValue)).getTime();
-  const earliestFinalizeCheckMs =
-    deadlineMs + Number(disputeWindowHours) * 3600000;
-  return new Date(earliestFinalizeCheckMs).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const remainingMs = deadlineMs - nowMs;
+  if (remainingMs <= 0) {
+    return "expired" as const;
+  }
+  if (remainingMs < minimumRemainingMs) {
+    return "too_close" as const;
+  }
+  return "ok" as const;
 }

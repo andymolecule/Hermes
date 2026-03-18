@@ -1,10 +1,6 @@
 "use client";
 
-import type {
-  GuidedFieldKey,
-  GuidedPromptConfig,
-  InputKind,
-} from "./guided-state";
+import type { GuidedFieldKey, GuidedPromptConfig } from "./guided-state";
 
 type GuidedPromptDefinition = GuidedPromptConfig & {
   placeholder?: string;
@@ -48,14 +44,25 @@ export const GUIDED_DISPUTE_WINDOW_OPTIONS = [
   { label: "90 days", value: "2160" },
 ] as const satisfies readonly { label: string; value: string }[];
 
-export const INPUT_KIND_LABELS: Record<InputKind, string> = {
-  textarea: "Long answer",
-  file: "File upload",
-  currency: "Currency",
-  select: "Select",
-  date: "Date",
-  text: "Text",
-};
+export const GUIDED_SELECT_DEFAULTS = {
+  distribution: "winner_take_all",
+  deadline: "7",
+  disputeWindow: "168",
+} as const;
+
+export const GUIDED_UPLOAD_HINTS = [
+  "train.csv",
+  "hidden_labels.csv",
+  "evaluation_features.csv",
+  "reference_output.csv",
+] as const;
+
+export function buildUploadHintCopy() {
+  return GUIDED_UPLOAD_HINTS.map((hint, index) => ({
+    hint,
+    trailing: index < GUIDED_UPLOAD_HINTS.length - 1 ? ", " : ".",
+  }));
+}
 
 export const GUIDED_PROMPTS: Record<
   (typeof GUIDED_PROMPT_ORDER)[number],
@@ -102,8 +109,7 @@ export const GUIDED_PROMPTS: Record<
     prompt: "When should submissions close?",
     inputKind: "select",
     options: [...GUIDED_SUBMISSION_WINDOW_OPTIONS],
-    helper:
-      "The deadline is computed from now when the challenge is published.",
+    helper: "The deadline is locked when you generate the review contract.",
   },
   disputeWindow: {
     id: "disputeWindow",

@@ -91,6 +91,7 @@ export const challengeIntentSchema = z.object({
   reward_total: z.string().trim().min(1).max(AUTHORING_MAX_REWARD_TOTAL_LENGTH),
   distribution: distributionSchema.default("winner_take_all"),
   deadline: z.string().datetime({ offset: true }),
+  dispute_window_hours: z.number().int().nonnegative().optional(),
   domain: z.string().trim().min(1).max(AUTHORING_MAX_DOMAIN_LENGTH).default("other"),
   tags: z
     .array(z.string().trim().min(1).max(AUTHORING_MAX_TAG_LENGTH))

@@ -11,6 +11,7 @@ const baseIntent = {
   reward_total: "500",
   distribution: "winner_take_all" as const,
   deadline: "2026-12-31T00:00:00.000Z",
+  dispute_window_hours: 168,
   domain: "drug_discovery",
   tags: ["docking"],
   timezone: "UTC",
@@ -37,6 +38,21 @@ const validRequest = createPostingSessionRequestSchema.parse({
 });
 
 assert.equal(validRequest.uploaded_artifacts.length, 2);
+assert.equal(validRequest.intent?.dispute_window_hours, 168);
+
+const testnetWindow = createPostingSessionRequestSchema.parse({
+  intent: {
+    ...baseIntent,
+    dispute_window_hours: 0,
+  },
+  uploaded_artifacts: baseArtifacts,
+});
+
+assert.equal(
+  testnetWindow.intent?.dispute_window_hours,
+  0,
+  "managed authoring should preserve explicit testnet dispute windows",
+);
 
 const duplicateUri = compilePostingSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",

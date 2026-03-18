@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type UploadedArtifact,
   buildManagedIntentFromGuidedState,
   buildPostingArtifactsFromGuidedState,
   createInitialGuidedState,
   guidedComposerReducer,
-  type UploadedArtifact,
 } from "../src/app/post/guided-state";
 
 function uploads(): UploadedArtifact[] {
@@ -26,7 +26,7 @@ function uploads(): UploadedArtifact[] {
 }
 
 test("payload builder maps guided answers onto the existing managed intent shape", () => {
-  let state = createInitialGuidedState("Asia/Singapore", Date.parse("2026-03-18T00:00:00.000Z"));
+  let state = createInitialGuidedState("Asia/Singapore");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "problem",
@@ -50,23 +50,35 @@ test("payload builder maps guided answers onto the existing managed intent shape
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "deadline",
-    value: "2026-04-15T09:00",
+    value: "14",
+  });
+  state = guidedComposerReducer(state, {
+    type: "answer_prompt",
+    field: "disputeWindow",
+    value: "336",
   });
 
   const intent = buildManagedIntentFromGuidedState(state);
-  assert.equal(intent.description, "Predict treatment response from these assay files.");
-  assert.equal(intent.title, "Predict treatment response from these assay files");
+  assert.equal(
+    intent.description,
+    "Predict treatment response from these assay files.",
+  );
+  assert.equal(
+    intent.title,
+    "Predict treatment response from these assay files",
+  );
   assert.equal(intent.payoutCondition, "Highest R² on the hidden labels wins.");
   assert.equal(intent.rewardTotal, "800");
   assert.equal(intent.distribution, "top_3");
-  assert.equal(intent.deadline, "2026-04-15T09:00");
+  assert.equal(intent.deadline, "14");
+  assert.equal(intent.disputeWindowHours, "336");
   assert.equal(intent.domain, "other");
   assert.equal(intent.tags, "");
   assert.equal(intent.timezone, "Asia/Singapore");
 });
 
 test("manual title edits override the suggested title and only ready uploads are serialized", () => {
-  let state = createInitialGuidedState("UTC", Date.parse("2026-03-18T00:00:00.000Z"));
+  let state = createInitialGuidedState("UTC");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "problem",
@@ -85,6 +97,7 @@ test("manual title edits override the suggested title and only ready uploads are
   const artifacts = buildPostingArtifactsFromGuidedState(state.uploads);
 
   assert.equal(intent.title, "KRAS ligand ranking benchmark");
+  assert.equal(intent.disputeWindowHours, "168");
   assert.deepEqual(artifacts, [
     {
       id: "artifact-1",
@@ -96,4 +109,3 @@ test("manual title edits override the suggested title and only ready uploads are
     },
   ]);
 });
-

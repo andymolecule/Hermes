@@ -11,6 +11,7 @@ const baseIntent = {
   reward_total: "30",
   distribution: "winner_take_all" as const,
   deadline: "2026-12-31T00:00:00.000Z",
+  dispute_window_hours: 168,
   domain: "omics",
   tags: [],
   timezone: "UTC",
@@ -130,8 +131,25 @@ test("managed authoring accepts RMSE regression challenges", async () => {
   assert.equal(result.runtime_family, "tabular_regression");
   assert.equal(result.metric, "rmse");
   assert.equal(result.challenge_spec.evaluation.metric, "rmse");
+  assert.equal(result.challenge_spec.dispute_window_hours, 168);
   assert.equal(result.dry_run.status, "validated");
   assert.match(result.confirmation_contract.dry_run_summary, /normalized score/);
+});
+
+test("managed authoring preserves explicit testnet dispute windows", async () => {
+  const result = await compileManagedAuthoringSession(
+    {
+      intent: {
+        ...baseIntent,
+        dispute_window_hours: 0,
+        payout_condition: "Lowest RMSE wins.",
+      },
+      uploadedArtifacts,
+    },
+    buildDryRunDependencies(),
+  );
+
+  assert.equal(result.challenge_spec.dispute_window_hours, 0);
 });
 
 test("managed authoring compiles docking challenges into the docking runtime family", async () => {

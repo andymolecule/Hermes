@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type UploadedArtifact,
   clearGuidedDraft,
   createInitialGuidedState,
   getPromptStatus,
@@ -8,7 +9,6 @@ import {
   isReadyToCompile,
   loadGuidedDraft,
   saveGuidedDraft,
-  type UploadedArtifact,
 } from "../src/app/post/guided-state";
 
 function readyUpload(id = "artifact-1"): UploadedArtifact {
@@ -22,7 +22,7 @@ function readyUpload(id = "artifact-1"): UploadedArtifact {
 }
 
 function buildCompletedDraft() {
-  let state = createInitialGuidedState("UTC", Date.parse("2026-03-18T00:00:00.000Z"));
+  let state = createInitialGuidedState("UTC");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "problem",
@@ -51,7 +51,12 @@ function buildCompletedDraft() {
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
     field: "deadline",
-    value: "2026-03-25T08:00",
+    value: "7",
+  });
+  state = guidedComposerReducer(state, {
+    type: "answer_prompt",
+    field: "disputeWindow",
+    value: "168",
   });
   return state;
 }
@@ -62,7 +67,10 @@ test("guided reducer advances through the prompt order and becomes compile-ready
   assert.equal(state.activePromptId, "solverInstructions");
   assert.equal(isReadyToCompile(state), true);
   assert.equal(state.compileState, "ready_to_compile");
-  assert.equal(state.fields.title.value, "Predict treatment response from these assay files");
+  assert.equal(
+    state.fields.title.value,
+    "Predict treatment response from these assay files",
+  );
 });
 
 test("editing an earlier answer downgrades downstream confirmation state", () => {
@@ -77,7 +85,31 @@ test("editing an earlier answer downgrades downstream confirmation state", () =>
   assert.equal(getPromptStatus(state, "uploads"), "suggested");
   assert.equal(getPromptStatus(state, "winningCondition"), "suggested");
   assert.equal(getPromptStatus(state, "deadline"), "suggested");
+  assert.equal(getPromptStatus(state, "disputeWindow"), "suggested");
   assert.equal(isReadyToCompile(state), false);
+});
+
+test("clearing a manual title restores the suggested title", () => {
+  let state = buildCompletedDraft();
+  state = guidedComposerReducer(state, {
+    type: "set_title",
+    value: "Custom assay bounty",
+  });
+
+  assert.equal(state.fields.title.value, "Custom assay bounty");
+  assert.equal(state.fields.title.source, "user");
+
+  state = guidedComposerReducer(state, {
+    type: "set_title",
+    value: "   ",
+  });
+
+  assert.equal(
+    state.fields.title.value,
+    "Predict treatment response from these assay files",
+  );
+  assert.equal(state.fields.title.source, "system");
+  assert.equal(isReadyToCompile(state), true);
 });
 
 test("guided drafts persist to and from session storage", () => {
@@ -105,3 +137,43 @@ test("guided drafts persist to and from session storage", () => {
   assert.equal(loadGuidedDraft(mockStorage), null);
 });
 
+test("guided drafts reject malformed persisted state", () => {
+  const storage = new Map<string, string>();
+  const mockStorage = {
+    setItem(key: string, value: string) {
+      storage.set(key, value);
+    },
+    getItem(key: string) {
+      return storage.get(key) ?? null;
+    },
+    removeItem(key: string) {
+      storage.delete(key);
+    },
+  };
+
+  mockStorage.setItem(
+    "agora-post-guided-draft",
+    JSON.stringify({
+      fields: {
+        problem: {
+          value: "Predict treatment response from assay files.",
+          status: "locked",
+        },
+        distribution: {
+          value: "bogus",
+          status: "locked",
+        },
+      },
+      uploads: [
+        {
+          id: "artifact-1",
+          file_name: "artifact-1.csv",
+          status: "ready",
+        },
+      ],
+      activePromptId: "problem",
+    }),
+  );
+
+  assert.equal(loadGuidedDraft(mockStorage), null);
+});
