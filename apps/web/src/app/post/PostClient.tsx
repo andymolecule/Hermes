@@ -1,33 +1,27 @@
 "use client";
 
 import {
-  parseCsvHeaders,
   type CompilationResultOutput,
   type PostingSessionOutput,
+  parseCsvHeaders,
 } from "@agora/common";
 import { useChainModal, useConnectModal } from "@rainbow-me/rainbowkit";
 import {
   ArrowRight,
   Check,
-  Coins,
-  Eye,
-  EyeOff,
-  FileText,
-  FlaskConical,
+  ChevronRight,
   Loader2,
-  Shield,
-  Sparkles,
-  TerminalSquare,
+  Pencil,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import {
+  type ReactNode,
   useEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import {
   useAccount,
@@ -49,15 +43,10 @@ import {
 } from "../../lib/wallet/tx";
 import { GuidedComposer } from "./GuidedComposer";
 import {
-  approveUsdc,
-  assertFactoryIsSupported,
-  createChallengeWithApproval,
-  createChallengeWithPermit,
-  finalizeManagedChallengePost,
-  publishManagedPostingSession,
-  signRewardPermit,
-} from "./managed-post-flow";
-import {
+  type GuidedCompileState,
+  type GuidedFieldKey,
+  type ManagedIntentState,
+  type UploadedArtifact,
   buildManagedIntentFromGuidedState,
   buildPostingArtifactsFromGuidedState,
   clarificationTargetFromQuestions,
@@ -68,11 +57,16 @@ import {
   listReadinessIssues,
   loadGuidedDraft,
   saveGuidedDraft,
-  type GuidedCompileState,
-  type GuidedFieldKey,
-  type ManagedIntentState,
-  type UploadedArtifact,
 } from "./guided-state";
+import {
+  approveUsdc,
+  assertFactoryIsSupported,
+  createChallengeWithApproval,
+  createChallengeWithPermit,
+  finalizeManagedChallengePost,
+  publishManagedPostingSession,
+  signRewardPermit,
+} from "./managed-post-flow";
 import {
   getFundingSummaryMessage,
   getRewardUnitsFromInput,
@@ -80,34 +74,16 @@ import {
   usePostFunding,
 } from "./post-funding";
 import { cx } from "./post-ui";
-import { SummaryRail } from "./SummaryRail";
 
 type Step = 1 | 2 | 3;
-type NoticeTone = "info" | "success" | "error" | "warning";
 
-const STEP_COPY: Record<
-  Step,
-  { label: string; title: string; description: string }
-> = {
-  1: {
-    label: "Describe",
-    title: "Answer a few focused questions",
-    description:
-      "Tell Agora what problem to solve, upload the files, and lock the managed draft one answer at a time.",
-  },
-  2: {
-    label: "Confirm",
-    title: "Review the generated contract",
-    description:
-      "Approve the scoring, visibility, and payout contract before you commit money.",
-  },
-  3: {
-    label: "Publish",
-    title: "Fund and send it on-chain",
-    description:
-      "Once the contract looks right, approve funds if needed and publish the challenge.",
-  },
+const STEP_LABELS: Record<Step, string> = {
+  1: "Describe",
+  2: "Review",
+  3: "Publish",
 };
+
+/* ── Utility functions ─────────────────────────────────── */
 
 function toIsoWithOffset(localValue: string) {
   if (!localValue) {
@@ -153,6 +129,8 @@ function formatRuntimeLabel(value: string) {
     .join(" ");
 }
 
+/* ── API helpers ───────────────────────────────────────── */
+
 async function pinDataFile(file: File) {
   const formData = new FormData();
   formData.append("file", file);
@@ -197,15 +175,18 @@ async function compilePostingSession(input: {
   intent: ManagedIntentState;
   uploads: UploadedArtifact[];
 }) {
-  const response = await fetch(`/api/posting/sessions/${input.sessionId}/compile`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      poster_address: input.posterAddress,
-      intent: buildPostingIntent(input.intent),
-      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
-    }),
-  });
+  const response = await fetch(
+    `/api/posting/sessions/${input.sessionId}/compile`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        poster_address: input.posterAddress,
+        intent: buildPostingIntent(input.intent),
+        uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
+      }),
+    },
+  );
 
   if (!response.ok) {
     throw new Error(parseApiErrorMessage(await response.text()));
@@ -237,197 +218,6 @@ function getCompilation(session: PostingSessionOutput | null | undefined) {
   return (session?.compilation ?? null) as CompilationResultOutput | null;
 }
 
-function Notice({
-  tone,
-  children,
-}: {
-  tone: NoticeTone;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cx(
-        "rounded-[20px] border px-4 py-3 text-sm leading-6",
-        tone === "info" && "border-accent-200 bg-accent-50 text-accent-700",
-        tone === "success" &&
-          "border-emerald-200 bg-emerald-50 text-emerald-800",
-        tone === "error" && "border-red-200 bg-red-50 text-red-800",
-        tone === "warning" && "border-amber-200 bg-amber-50 text-amber-900",
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SurfaceCard({
-  eyebrow,
-  title,
-  children,
-  className,
-}: {
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section
-      className={cx(
-        "rounded-[28px] border border-warm-300 bg-white/90 p-6 shadow-[0_18px_55px_rgba(30,27,24,0.06)]",
-        className,
-      )}
-    >
-      <div className="mb-5">
-        <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.24em] text-warm-500">
-          {eyebrow}
-        </div>
-        <h2 className="mt-2 font-display text-[1.85rem] font-semibold leading-tight tracking-[-0.03em] text-warm-900">
-          {title}
-        </h2>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function StepRail({ step }: { step: Step }) {
-  return (
-    <div className="grid gap-3 rounded-[24px] border border-warm-300 bg-white/85 p-3 md:grid-cols-3">
-      {(Object.keys(STEP_COPY) as Array<`${Step}`>).map((key) => {
-        const current = Number(key) as Step;
-        const active = current === step;
-        const complete = current < step;
-        return (
-          <div
-            key={key}
-            className={cx(
-              "rounded-[20px] border px-4 py-4 transition motion-reduce:transition-none",
-              active
-                ? "border-warm-900 bg-warm-900 text-white"
-                : complete
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                  : "border-warm-300 bg-warm-50 text-warm-700",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={cx(
-                  "flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold",
-                  active
-                    ? "border-white/20 bg-white/10 text-white"
-                    : complete
-                      ? "border-emerald-400 bg-white text-emerald-700"
-                      : "border-warm-300 bg-white text-warm-700",
-                )}
-              >
-                {complete ? <Check className="h-4 w-4" /> : current}
-              </div>
-              <div>
-                <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.2em] opacity-70">
-                  Step {current}
-                </div>
-                <div className="mt-1 text-sm font-semibold">
-                  {STEP_COPY[current].label}
-                </div>
-              </div>
-            </div>
-            <p
-              className={cx(
-                "mt-3 text-sm leading-6",
-                active ? "text-white/82" : "text-inherit/80",
-              )}
-            >
-              {STEP_COPY[current].description}
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-warm-200 py-3 text-sm last:border-b-0">
-      <span className="text-warm-600">{label}</span>
-      <span className="text-right font-medium text-warm-900">{value}</span>
-    </div>
-  );
-}
-
-function ArtifactVisibilityGroup({
-  title,
-  icon,
-  artifacts,
-  emptyCopy,
-  tone,
-}: {
-  title: string;
-  icon: ReactNode;
-  artifacts: CompilationResultOutput["resolved_artifacts"];
-  emptyCopy: string;
-  tone: "public" | "private";
-}) {
-  return (
-    <div
-      className={cx(
-        "rounded-[24px] border p-5",
-        tone === "public"
-          ? "border-accent-200 bg-accent-50/60"
-          : "border-warm-300 bg-warm-50",
-      )}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className={cx(
-            "flex h-10 w-10 items-center justify-center rounded-full",
-            tone === "public"
-              ? "bg-white text-accent-700"
-              : "bg-white text-warm-700",
-          )}
-        >
-          {icon}
-        </div>
-        <div>
-          <div className="text-sm font-semibold text-warm-900">{title}</div>
-          <div className="text-xs text-warm-600">
-            {artifacts.length} {artifacts.length === 1 ? "file" : "files"}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        {artifacts.length === 0 ? (
-          <div className="rounded-[18px] border border-dashed border-warm-300 px-4 py-3 text-sm text-warm-600">
-            {emptyCopy}
-          </div>
-        ) : (
-          artifacts.map((artifact) => (
-            <div
-              key={`${artifact.role}:${artifact.uri}`}
-              className="rounded-[18px] border border-warm-200 bg-white px-4 py-3"
-            >
-              <div className="text-sm font-medium text-warm-900">
-                {artifact.file_name ?? artifact.role}
-              </div>
-              <div className="mt-1 text-xs uppercase tracking-[0.14em] text-warm-500">
-                {artifact.role}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 function clearCompiledSessionData(
   current: PostingSessionOutput | null,
 ): PostingSessionOutput | null {
@@ -445,6 +235,59 @@ function clearCompiledSessionData(
   };
 }
 
+/* ── Small UI components ───────────────────────────────── */
+
+function Notice({
+  tone,
+  children,
+}: {
+  tone: "info" | "success" | "error" | "warning";
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cx(
+        "rounded-[2px] border px-4 py-3 text-sm",
+        tone === "info" && "border-accent-200 bg-accent-50 text-accent-700",
+        tone === "success" &&
+          "border-emerald-300 bg-emerald-50 text-emerald-800",
+        tone === "error" && "border-red-300 bg-red-50 text-red-800",
+        tone === "warning" && "border-amber-300 bg-amber-50 text-amber-900",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function StepIndicator({ step }: { step: Step }) {
+  return (
+    <nav aria-label="Posting progress" className="flex items-center gap-1">
+      {([1, 2, 3] as Step[]).map((s, i) => (
+        <div key={s} className="flex items-center gap-1">
+          {i > 0 ? <ChevronRight className="h-3 w-3 text-warm-400" /> : null}
+          <div
+            aria-current={s === step ? "step" : undefined}
+            className={cx(
+              "flex items-center gap-1.5 rounded-[2px] px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider",
+              s === step
+                ? "border-2 border-warm-900 bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                : s < step
+                  ? "border border-warm-300 bg-white text-warm-900"
+                  : "border border-warm-200 bg-warm-50 text-warm-400",
+            )}
+          >
+            {s < step ? <Check className="h-3 w-3" /> : null}
+            {STEP_LABELS[s]}
+          </div>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+/* ── Main component ────────────────────────────────────── */
+
 export function PostClient() {
   const [step, setStep] = useState<Step>(1);
   const [guidedState, dispatch] = useReducer(
@@ -458,8 +301,11 @@ export function PostClient() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
-  const [postedChallengeId, setPostedChallengeId] = useState<string | null>(null);
-  const [expertMode, setExpertMode] = useState(false);
+  const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
+    null,
+  );
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
 
   const guidedStateRef = useRef(guidedState);
   useEffect(() => {
@@ -490,15 +336,18 @@ export function PostClient() {
   const clarificationQuestions = session?.clarification_questions ?? [];
   const reviewSummary = session?.review_summary ?? null;
   const isReviewQueued = session?.state === "needs_review";
-  const rewardInput = compilation?.challenge_spec.reward.total ?? managedIntent.rewardTotal;
+  const rewardInput =
+    compilation?.challenge_spec.reward.total ?? managedIntent.rewardTotal;
   const { feeUsdc, payoutUsdc } = computeProtocolFee(Number(rewardInput || 0));
   const isWrongChain = isConnected && isWrongWalletChain(chainId);
   const publicArtifacts =
-    compilation?.resolved_artifacts.filter((artifact) => artifact.visibility === "public") ??
-    [];
+    compilation?.resolved_artifacts.filter(
+      (artifact) => artifact.visibility === "public",
+    ) ?? [];
   const privateArtifacts =
-    compilation?.resolved_artifacts.filter((artifact) => artifact.visibility === "private") ??
-    [];
+    compilation?.resolved_artifacts.filter(
+      (artifact) => artifact.visibility === "private",
+    ) ?? [];
   const {
     fundingState,
     allowanceReady,
@@ -521,6 +370,8 @@ export function PostClient() {
     allowanceReady,
   });
 
+  /* ── Effects ──────────────────────────────────────────── */
+
   useEffect(() => {
     const restored = loadGuidedDraft();
     if (restored) {
@@ -529,11 +380,8 @@ export function PostClient() {
   }, []);
 
   useEffect(() => {
-    if (expertMode) {
-      return;
-    }
     saveGuidedDraft(guidedState);
-  }, [expertMode, guidedState]);
+  }, [guidedState]);
 
   useEffect(() => {
     if (!guidedState.sessionId || session) {
@@ -552,7 +400,10 @@ export function PostClient() {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
         } else if (restoredSession.state === "needs_review") {
-          dispatch({ type: "set_compile_state", compileState: "needs_review" });
+          dispatch({
+            type: "set_compile_state",
+            compileState: "needs_review",
+          });
           setStep(2);
         } else if (restoredSession.state === "needs_clarification") {
           dispatch({
@@ -632,6 +483,8 @@ export function PostClient() {
     };
   }, [compileReady, session?.id, session?.state]);
 
+  /* ── Handlers ─────────────────────────────────────────── */
+
   function resetInterviewForEdit() {
     setStep(1);
     setStatusMessage(null);
@@ -650,7 +503,6 @@ export function PostClient() {
     if (value.trim().length === 0) {
       return;
     }
-
     resetInterviewForEdit();
     dispatch({ type: "answer_prompt", field, value });
   }
@@ -716,7 +568,9 @@ export function PostClient() {
               : artifact,
           ),
         );
-        setStatusMessage(`Uploaded ${file.name}. Agora can use it during compile.`);
+        setStatusMessage(
+          `Uploaded ${file.name}. Agora can use it during compile.`,
+        );
       } catch (error) {
         updateUploads(
           guidedStateRef.current.uploads.map((artifact) =>
@@ -730,7 +584,9 @@ export function PostClient() {
               : artifact,
           ),
         );
-        setErrorMessage(error instanceof Error ? error.message : "Upload failed.");
+        setErrorMessage(
+          error instanceof Error ? error.message : "Upload failed.",
+        );
       }
     }
   }
@@ -755,13 +611,6 @@ export function PostClient() {
   }
 
   async function handleCompile() {
-    if (expertMode) {
-      setErrorMessage(
-        "Custom scorers still start in the CLI. Next step: switch back to managed mode here, or run `agora post ./challenge.yaml --format json` after preparing your scorer spec.",
-      );
-      return;
-    }
-
     if (!compileReady) {
       setErrorMessage(
         `This draft is not ready to compile yet. Next step: ${draftIssues[0]}`,
@@ -824,7 +673,9 @@ export function PostClient() {
       }
     } catch (error) {
       dispatchCompileState(compileReady ? "ready_to_compile" : "idle");
-      setErrorMessage(error instanceof Error ? error.message : "Compile failed.");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Compile failed.",
+      );
       setStatusMessage(null);
     } finally {
       setIsCompiling(false);
@@ -988,604 +839,469 @@ export function PostClient() {
     }
   }
 
-  function handleContinue() {
-    if (!isConnected && step === 3) {
-      openConnectModal?.();
-      return;
-    }
-    if (isWrongChain && step === 3) {
-      openChainModal?.();
-      return;
-    }
-    if (step === 1) {
-      void handleCompile();
-      return;
-    }
-    if (step === 2) {
-      setStep(3);
-    }
-  }
-
-  function handleToggleExpertMode() {
-    setExpertMode((current) => {
-      const next = !current;
-      setStatusMessage(null);
-      setErrorMessage(null);
-      setSession(null);
-      setStep(1);
-      clearGuidedDraft();
-      dispatch({ type: "reset" });
-      return next;
-    });
-  }
+  /* ── Render ───────────────────────────────────────────── */
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 pb-28 lg:pb-20">
-      <section className="overflow-hidden rounded-[32px] border border-warm-300 bg-[radial-gradient(circle_at_top_left,rgba(47,79,127,0.14),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(217,119,6,0.12),transparent_30%),linear-gradient(135deg,#fffefb,#f5f3ee)] px-6 py-8 shadow-[0_24px_80px_rgba(30,27,24,0.08)] sm:px-8 sm:py-10">
-        <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white/85 px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-warm-600">
-              <Sparkles className="h-3.5 w-3.5 text-accent-600" />
-              Guided Authoring
-            </div>
-            <h1 className="mt-5 max-w-4xl font-display text-[2.9rem] font-semibold leading-[0.92] tracking-[-0.055em] text-warm-900 sm:text-[4.2rem]">
-              Post a science bounty through a guided interview.
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-warm-700 sm:text-lg">
-              Answer one focused question at a time, attach the data, and review
-              the scoring contract Agora generates for you. The Docker, bundle,
-              and scoring machinery stay behind the curtain.
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
-                One answer at a time
-              </span>
-              <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
-                Upload the files
-              </span>
-              <span className="rounded-full border border-warm-300 bg-white/90 px-4 py-2 text-sm text-warm-700">
-                Approve the contract
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-warm-300 bg-white/88 p-5 shadow-[0_14px_40px_rgba(30,27,24,0.06)]">
-            {!expertMode ? (
-              <>
-                <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.24em] text-warm-500">
-                  Example flow
-                </div>
-                <div className="mt-3 rounded-[22px] border border-warm-200 bg-warm-50 p-5">
-                  <div className="text-xl font-semibold text-warm-900">
-                    Predict treatment response from these assay files
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-warm-700">
-                      hidden labels
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-warm-700">
-                      pay if R² &gt; 0.9
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-warm-700">
-                      $500
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-4 text-sm leading-6 text-warm-600">
-                  Agora turns the answers and files into a deterministic managed
-                  contract, then shows you exactly what solvers will see, submit,
-                  and get paid on.
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-warm-900 text-white">
-                    <TerminalSquare className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.24em] text-warm-500">
-                      Expert Mode
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-warm-900">
-                      Custom scorers stay CLI-first in this build
-                    </div>
-                  </div>
-                </div>
-                <p className="mt-4 text-sm leading-6 text-warm-700">
-                  Managed mode is the default. If you need a custom image or a
-                  long-tail runtime, prepare the spec in the terminal and post
-                  from there.
-                </p>
-                <div className="mt-4 rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3 font-mono text-[12px] text-warm-800">
-                  agora post ./challenge.yaml --format json
-                </div>
-              </>
-            )}
-          </div>
+    <div className="mx-auto w-full max-w-3xl space-y-6 pb-24">
+      {/* Header */}
+      <header className="rounded-[2px] border-2 border-warm-900 bg-white p-6 shadow-[4px_4px_0px_var(--color-warm-900)]">
+        <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
+          Agora · Post
         </div>
-      </section>
+        <h1 className="mt-3 font-display text-[2.25rem] font-bold leading-[0.95] tracking-[-0.03em] text-warm-900 sm:text-[2.75rem]">
+          Create a science bounty
+        </h1>
+        <p className="mt-3 max-w-lg text-[15px] leading-6 text-warm-600">
+          Describe your problem, upload data, and Agora compiles a deterministic
+          scoring contract.
+        </p>
+      </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-warm-300 bg-white/85 px-5 py-4">
-        <div>
-          <div className="text-sm font-semibold text-warm-900">Challenge mode</div>
-          <div className="text-sm text-warm-600">
-            Use managed mode for the guided path. Switch to expert mode only if
-            you need a custom scorer runtime.
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleToggleExpertMode}
-          className={cx(
-            "rounded-full px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",
-            expertMode
-              ? "bg-warm-900 text-white"
-              : "border border-warm-300 bg-white text-warm-800 hover:bg-warm-50",
-          )}
-        >
-          {expertMode ? "Back to managed mode" : "Switch to expert mode"}
-        </button>
-      </div>
+      {/* Step indicator */}
+      <StepIndicator step={step} />
 
+      {/* Notices */}
       {statusMessage ? <Notice tone="info">{statusMessage}</Notice> : null}
       {errorMessage ? <Notice tone="error">{errorMessage}</Notice> : null}
       {postedChallengeId ? (
         <Notice tone="success">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              Challenge published. Challenge ID:{" "}
+              Challenge published. ID:{" "}
               <span className="font-mono">{postedChallengeId}</span>
             </div>
             <Link
               href={`/challenges/${postedChallengeId}`}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-50 motion-reduce:transition-none"
+              className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider"
             >
               View challenge
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </Notice>
       ) : null}
 
-      {expertMode ? (
-        <SurfaceCard eyebrow="CLI path" title="When to use expert mode">
-          <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-[24px] border border-warm-200 bg-warm-50 p-5">
-              <div className="flex items-center gap-3">
-                <Shield className="h-5 w-5 text-warm-700" />
-                <div className="text-sm font-semibold text-warm-900">
-                  Best for custom scorers
-                </div>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-warm-700">
-                Use the CLI when the managed compiler cannot safely map your
-                challenge, or when you need your own scorer image and runtime
-                settings.
-              </p>
-            </div>
+      {/* ── Step 1: Describe ───────────────────────────── */}
+      {step === 1 ? (
+        <GuidedComposer
+          state={guidedState}
+          clarificationQuestions={clarificationQuestions}
+          isCompiling={isCompiling}
+          onEditPrompt={handleEditPrompt}
+          onAnswerPrompt={handlePromptAnswer}
+          onSkipOptionalPrompt={handleSkipOptionalPrompt}
+          onFilesSelected={handleFilesSelected}
+          onRenameUpload={handleRenameUpload}
+          onRemoveUpload={handleRemoveUpload}
+          onConfirmUploads={handleConfirmUploads}
+        />
+      ) : null}
 
-            <div className="rounded-[24px] border border-warm-300 bg-white p-5">
-              <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.24em] text-warm-500">
-                Command
-              </div>
-              <div className="mt-3 rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3 font-mono text-[12px] text-warm-800">
-                agora post ./challenge.yaml --format json
-              </div>
-              <p className="mt-4 text-sm leading-6 text-warm-700">
-                The managed web flow is still the recommended path for
-                reproducibility, tabular prediction, docking, and ranking-style
-                challenges.
-              </p>
+      {/* ── Step 2: Review ─────────────────────────────── */}
+      {step === 2 && compilation ? (
+        <div className="space-y-4">
+          {/* Title card */}
+          <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+              Challenge title
             </div>
-          </div>
-        </SurfaceCard>
-      ) : (
-        <>
-          <StepRail step={step} />
-
-          {step === 1 ? (
-            <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-              <SurfaceCard eyebrow="Step 1" title={STEP_COPY[1].title}>
-                <GuidedComposer
-                  state={guidedState}
-                  clarificationQuestions={clarificationQuestions}
-                  isCompiling={isCompiling}
-                  onEditPrompt={handleEditPrompt}
-                  onAnswerPrompt={handlePromptAnswer}
-                  onSkipOptionalPrompt={handleSkipOptionalPrompt}
-                  onFilesSelected={handleFilesSelected}
-                  onRenameUpload={handleRenameUpload}
-                  onRemoveUpload={handleRemoveUpload}
-                  onConfirmUploads={handleConfirmUploads}
+            {editingTitle ? (
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  aria-label="Challenge title"
+                  className="min-w-0 flex-1 rounded-[2px] border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
                 />
-              </SurfaceCard>
-
-              <SummaryRail
-                state={guidedState}
-                onEditPrompt={handleEditPrompt}
-                onSetTitle={handleTitleChange}
-              />
-            </div>
-          ) : null}
-
-          {step === 2 && compilation ? (
-            <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-              <SurfaceCard eyebrow="Step 2" title="Agora's read of the challenge">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div className="rounded-[22px] border border-warm-300 bg-warm-50 p-4">
-                    <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.2em] text-warm-500">
-                      Runtime family
-                    </div>
-                    <div className="mt-3 text-lg font-semibold text-warm-900">
-                      {formatRuntimeLabel(compilation.runtime_family)}
-                    </div>
-                  </div>
-                  <div className="rounded-[22px] border border-warm-300 bg-warm-50 p-4">
-                    <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.2em] text-warm-500">
-                      Metric
-                    </div>
-                    <div className="mt-3 text-lg font-semibold text-warm-900">
-                      {compilation.metric}
-                    </div>
-                  </div>
-                  <div className="rounded-[22px] border border-warm-300 bg-warm-50 p-4">
-                    <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.2em] text-warm-500">
-                      Dry-run sample
-                    </div>
-                    <div className="mt-3 text-sm font-semibold text-warm-900">
-                      {compilation.dry_run.sample_score ?? compilation.dry_run.status}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 rounded-[24px] border border-warm-300 bg-white p-5">
-                  <div className="flex items-start gap-3">
-                    <FlaskConical className="mt-1 h-5 w-5 text-accent-600" />
-                    <div>
-                      <div className="text-sm font-semibold text-warm-900">
-                        Solvers will submit
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-warm-700">
-                        {compilation.confirmation_contract.solver_submission}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-[24px] border border-warm-300 bg-white p-5">
-                  <div className="flex items-start gap-3">
-                    <Shield className="mt-1 h-5 w-5 text-warm-700" />
-                    <div>
-                      <div className="text-sm font-semibold text-warm-900">
-                        Scoring contract
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-warm-700">
-                        {compilation.confirmation_contract.scoring_summary}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <ArtifactVisibilityGroup
-                    title="Visible to solvers"
-                    icon={<Eye className="h-5 w-5" />}
-                    artifacts={publicArtifacts}
-                    emptyCopy="No solver-visible artifacts were resolved."
-                    tone="public"
-                  />
-                  <ArtifactVisibilityGroup
-                    title="Hidden for evaluation"
-                    icon={<EyeOff className="h-5 w-5" />}
-                    artifacts={privateArtifacts}
-                    emptyCopy="No private evaluation artifacts were resolved."
-                    tone="private"
-                  />
-                </div>
-              </SurfaceCard>
-
-              <SurfaceCard eyebrow="Poster contract" title="Approve this like a marketplace contract">
-                <div className="space-y-4">
-                  {isReviewQueued && reviewSummary ? (
-                    <Notice tone="warning">
-                      <div className="space-y-2">
-                        <div className="font-semibold text-amber-950">
-                          Operator review required before publish
-                        </div>
-                        <div>{reviewSummary.summary}</div>
-                      </div>
-                    </Notice>
-                  ) : null}
-
-                  <div className="rounded-[22px] border border-warm-300 bg-warm-50 p-4">
-                    <div className="text-sm font-semibold text-warm-900">
-                      What stays public vs private
-                    </div>
-                    <ul className="mt-3 space-y-2 text-sm leading-6 text-warm-700">
-                      {compilation.confirmation_contract.public_private_summary.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="rounded-[22px] border border-warm-300 bg-white p-4">
-                    <div className="flex items-start gap-3">
-                      <Coins className="mt-1 h-5 w-5 text-warm-700" />
-                      <div>
-                        <div className="text-sm font-semibold text-warm-900">
-                          Reward and payout
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-warm-700">
-                          {compilation.confirmation_contract.reward_summary}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-warm-300 bg-white p-4">
-                    <div className="flex items-start gap-3">
-                      <FileText className="mt-1 h-5 w-5 text-warm-700" />
-                      <div>
-                        <div className="text-sm font-semibold text-warm-900">
-                          Deadline
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-warm-700">
-                          {compilation.confirmation_contract.deadline_summary}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-accent-200 bg-accent-50 p-4">
-                    <div className="flex items-start gap-3">
-                      <Sparkles className="mt-1 h-5 w-5 text-accent-700" />
-                      <div>
-                        <div className="text-sm font-semibold text-warm-900">
-                          Dry-run result
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-warm-700">
-                          {compilation.confirmation_contract.dry_run_summary}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {compilation.warnings.length ? (
-                    <Notice tone="warning">
-                      {compilation.warnings.join(" ")}
-                    </Notice>
-                  ) : null}
-
-                  {isReviewQueued && reviewSummary?.reason_codes.length ? (
-                    <div className="rounded-[22px] border border-warm-300 bg-white p-4">
-                      <div className="text-sm font-semibold text-warm-900">
-                        Why it was queued
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {reviewSummary.reason_codes.map((code) => (
-                          <span
-                            key={code}
-                            className="rounded-full border border-warm-200 bg-warm-50 px-3 py-1 text-xs font-mono uppercase tracking-[0.12em] text-warm-700"
-                          >
-                            {code}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </SurfaceCard>
-            </div>
-          ) : null}
-
-          {step === 3 && compilation ? (
-            <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-              <SurfaceCard eyebrow="Step 3" title="Fund and publish the challenge">
-                <div className="space-y-5">
-                  <div className="rounded-[24px] border border-warm-300 bg-warm-50 p-5">
-                    <div className="text-[11px] font-mono font-semibold uppercase tracking-[0.2em] text-warm-500">
-                      Reward summary
-                    </div>
-                    <div className="mt-3 font-display text-4xl font-semibold tracking-[-0.04em] text-warm-900">
-                      {formatUsdc(Number(rewardInput || 0))} USDC
-                    </div>
-                    <p className="mt-3 text-sm leading-6 text-warm-700">
-                      Protocol fee: {formatUsdc(feeUsdc)} USDC. Net payout pool:{" "}
-                      {formatUsdc(payoutUsdc)} USDC.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[24px] border border-warm-300 bg-white p-5">
-                    <div className="text-sm font-semibold text-warm-900">
-                      Wallet and funding readiness
-                    </div>
-                    {!isConnected ? (
-                      <p className="mt-3 text-sm leading-6 text-warm-700">
-                        Connect your wallet to fund and publish the bounty.
-                      </p>
-                    ) : isWrongChain ? (
-                      <p className="mt-3 text-sm leading-6 text-warm-700">
-                        {getWrongChainMessage(chainId)}
-                      </p>
-                    ) : (
-                      <div className="mt-4 rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-2">
-                        <SummaryRow
-                          label="Funding method"
-                          value={fundingState.method}
-                        />
-                        <SummaryRow
-                          label="Allowance ready"
-                          value={allowanceReady ? "Yes" : "No"}
-                        />
-                        <SummaryRow
-                          label="Balance ready"
-                          value={balanceReady ? "Yes" : "No"}
-                        />
-                      </div>
-                    )}
-
-                    <div className="mt-4 rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3 text-sm leading-6 text-warm-700">
-                      {fundingSummary}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    {!isConnected ? (
-                      <button
-                        type="button"
-                        onClick={() => openConnectModal?.()}
-                        className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white"
-                      >
-                        <Wallet className="h-4 w-4" />
-                        Connect wallet
-                      </button>
-                    ) : isWrongChain ? (
-                      <button
-                        type="button"
-                        onClick={() => openChainModal?.()}
-                        className="rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white"
-                      >
-                        Switch to {APP_CHAIN_NAME}
-                      </button>
-                    ) : (
-                      <>
-                        {fundingState.method === "approve" && !allowanceReady ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleApprove();
-                            }}
-                            disabled={isApproving}
-                            className="inline-flex items-center gap-2 rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-                          >
-                            {isApproving ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : null}
-                            Approve USDC
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handlePublish();
-                          }}
-                          disabled={
-                            isPublishing ||
-                            (fundingState.method === "approve" && !allowanceReady)
-                          }
-                          className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {isPublishing ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : null}
-                          Publish challenge
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </SurfaceCard>
-
-              <SurfaceCard eyebrow="Final review" title="What goes live when you publish">
-                <div className="space-y-4">
-                  <div className="rounded-[22px] border border-warm-300 bg-warm-50 p-4">
-                    <div className="text-sm font-semibold text-warm-900">
-                      Solver contract
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-warm-700">
-                      {compilation.confirmation_contract.solver_submission}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-warm-300 bg-white p-4">
-                    <div className="text-sm font-semibold text-warm-900">
-                      Scoring contract
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-warm-700">
-                      {compilation.confirmation_contract.scoring_summary}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[22px] border border-warm-300 bg-white p-4">
-                    <div className="text-sm font-semibold text-warm-900">
-                      Visibility contract
-                    </div>
-                    <ul className="mt-2 space-y-2 text-sm leading-6 text-warm-700">
-                      {compilation.confirmation_contract.public_private_summary.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <details className="rounded-[22px] border border-warm-300 bg-warm-900 text-warm-50">
-                    <summary className="cursor-pointer list-none px-4 py-4 text-sm font-semibold">
-                      Canonical pinned spec preview
-                    </summary>
-                    <pre className="overflow-x-auto border-t border-white/10 px-4 py-4 font-mono text-[12px] leading-6 text-warm-100">
-                      {JSON.stringify(compilation.challenge_spec, null, 2)}
-                    </pre>
-                  </details>
-                </div>
-              </SurfaceCard>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-warm-300 bg-white/85 px-5 py-4">
-            <div className="text-sm leading-6 text-warm-600">
-              {step === 1
-                ? "Answer the interview and lock each required answer before Agora compiles the managed contract."
-                : step === 2
-                  ? isReviewQueued
-                    ? "Agora compiled the contract, but an operator must review it before you can fund and publish."
-                    : "Read the review contract carefully. This is the promise Agora will enforce."
-                  : "Once you publish, the escrow and settlement flow stays the same."}
-            </div>
-
-            <div className="flex gap-3">
-              {step > 1 ? (
                 <button
                   type="button"
-                  onClick={() => setStep((current) => (current === 3 ? 2 : 1))}
-                  className="rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 motion-reduce:transition-none"
+                  onClick={() => {
+                    handleTitleChange(titleDraft);
+                    setEditingTitle(false);
+                  }}
+                  className="btn-primary rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
                 >
-                  Back
+                  Save
                 </button>
-              ) : null}
-              {step < 3 ? (
-                step === 2 && isReviewQueued ? (
-                  <div className="rounded-full border border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-900">
-                    Awaiting operator review
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <h2 className="font-display text-xl font-bold tracking-tight text-warm-900">
+                  {managedIntent.title || "Untitled"}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTitleDraft(managedIntent.title);
+                    setEditingTitle(true);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-[2px] border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Review queued warning */}
+          {isReviewQueued && reviewSummary ? (
+            <Notice tone="warning">
+              <div className="space-y-1">
+                <div className="font-semibold">
+                  Operator review required before publish
+                </div>
+                <div>{reviewSummary.summary}</div>
+              </div>
+            </Notice>
+          ) : null}
+
+          {/* Contract summary */}
+          <div className="space-y-4 rounded-[2px] border border-warm-300 bg-white p-5">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+              Contract summary
+            </div>
+
+            <div className="space-y-3 text-sm leading-6 text-warm-700">
+              <p>{compilation.confirmation_contract.scoring_summary}</p>
+              <p>{compilation.confirmation_contract.solver_submission}</p>
+              <p>{compilation.confirmation_contract.reward_summary}</p>
+              <p>{compilation.confirmation_contract.deadline_summary}</p>
+              <p>{compilation.confirmation_contract.dry_run_summary}</p>
+            </div>
+
+            <div className="flex rounded-[2px] border-[2.5px] border-warm-900 bg-white shadow-[5px_5px_0px_var(--color-warm-900)]">
+              <div className="flex-1 border-r-[2.5px] border-warm-900 p-4">
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+                  Runtime
+                </div>
+                <div className="mt-1 font-display text-lg font-bold tracking-tight text-warm-900">
+                  {formatRuntimeLabel(compilation.runtime_family)}
+                </div>
+              </div>
+              <div
+                className={cx(
+                  "flex-1 p-4",
+                  compilation.dry_run.sample_score != null &&
+                    "border-r-[2.5px] border-warm-900",
+                )}
+              >
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+                  Metric
+                </div>
+                <div className="mt-1 font-display text-lg font-bold tracking-tight text-warm-900">
+                  {compilation.metric}
+                </div>
+              </div>
+              {compilation.dry_run.sample_score != null ? (
+                <div className="flex-1 p-4">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+                    Sample
                   </div>
+                  <div className="mt-1 font-display text-lg font-bold tracking-tight text-emerald-700">
+                    {compilation.dry_run.sample_score}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Public / private files */}
+            <div className="grid gap-4 border-t border-warm-200 pt-4 sm:grid-cols-2">
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+                  Visible to solvers
+                </div>
+                {publicArtifacts.length === 0 ? (
+                  <div className="mt-1 text-sm text-warm-400">None</div>
                 ) : (
+                  publicArtifacts.map((artifact) => (
+                    <div
+                      key={`${artifact.role}:${artifact.uri}`}
+                      className="mt-1 text-sm text-warm-700"
+                    >
+                      {artifact.file_name ?? artifact.role}
+                      <span className="ml-1 font-mono text-[10px] uppercase text-warm-400">
+                        {artifact.role}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div>
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+                  Hidden for evaluation
+                </div>
+                {privateArtifacts.length === 0 ? (
+                  <div className="mt-1 text-sm text-warm-400">None</div>
+                ) : (
+                  privateArtifacts.map((artifact) => (
+                    <div
+                      key={`${artifact.role}:${artifact.uri}`}
+                      className="mt-1 text-sm text-warm-700"
+                    >
+                      {artifact.file_name ?? artifact.role}
+                      <span className="ml-1 font-mono text-[10px] uppercase text-warm-400">
+                        {artifact.role}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Public/private summary */}
+            {compilation.confirmation_contract.public_private_summary.length >
+            0 ? (
+              <ul className="list-inside list-disc border-t border-warm-200 pt-4 text-sm text-warm-600">
+                {compilation.confirmation_contract.public_private_summary.map(
+                  (line) => (
+                    <li key={line}>{line}</li>
+                  ),
+                )}
+              </ul>
+            ) : null}
+
+            {/* Warnings */}
+            {compilation.warnings.length > 0 ? (
+              <Notice tone="warning">{compilation.warnings.join(" ")}</Notice>
+            ) : null}
+          </div>
+
+          {/* Review reason codes */}
+          {isReviewQueued && reviewSummary?.reason_codes.length ? (
+            <div className="flex flex-wrap gap-2">
+              {reviewSummary.reason_codes.map((code) => (
+                <span
+                  key={code}
+                  className="rounded-[2px] border border-warm-300 bg-warm-50 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-warm-600"
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Raw spec */}
+          <details className="rounded-[2px] border border-warm-300">
+            <summary className="cursor-pointer px-4 py-3 font-mono text-xs font-bold uppercase tracking-wider text-warm-500">
+              Raw spec preview
+            </summary>
+            <pre className="overflow-x-auto border-t border-warm-300 bg-warm-50 px-4 py-4 font-mono text-[11px] leading-5 text-warm-700">
+              {JSON.stringify(compilation.challenge_spec, null, 2)}
+            </pre>
+          </details>
+        </div>
+      ) : null}
+
+      {/* ── Step 3: Publish ────────────────────────────── */}
+      {step === 3 && compilation ? (
+        <div className="space-y-4">
+          {/* Reward card */}
+          <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+              Reward
+            </div>
+            <div className="mt-3 flex items-baseline gap-3">
+              <span className="font-display text-[2.75rem] font-bold leading-none tracking-[-0.03em] text-warm-900">
+                {formatUsdc(Number(rewardInput || 0))}
+              </span>
+              <span className="font-mono text-lg font-bold uppercase tracking-wider text-warm-500">
+                USDC
+              </span>
+            </div>
+            <div className="mt-3 flex gap-4 text-sm text-warm-600">
+              <span>
+                Protocol fee:{" "}
+                <span className="font-mono text-warm-900">
+                  {formatUsdc(feeUsdc)}
+                </span>
+              </span>
+              <span>
+                Net payout:{" "}
+                <span className="font-mono text-warm-900">
+                  {formatUsdc(payoutUsdc)}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          {/* Wallet card */}
+          <div className="rounded-[2px] border border-warm-300 bg-white p-5">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+              Wallet
+            </div>
+            {!isConnected ? (
+              <p className="mt-2 text-sm text-warm-600">
+                Connect your wallet to fund and publish the bounty.
+              </p>
+            ) : isWrongChain ? (
+              <p className="mt-2 text-sm text-warm-600">
+                {getWrongChainMessage(chainId)}
+              </p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between border-b border-warm-200 py-2 text-sm">
+                  <span className="text-warm-500">Method</span>
+                  <span className="font-mono text-warm-900">
+                    {fundingState.method}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-warm-200 py-2 text-sm">
+                  <span className="text-warm-500">Allowance</span>
+                  <span className="font-mono text-warm-900">
+                    {allowanceReady ? "Ready" : "Needed"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-warm-500">Balance</span>
+                  <span className="font-mono text-warm-900">
+                    {balanceReady ? "Ready" : "Insufficient"}
+                  </span>
+                </div>
+                <div className="rounded-[2px] border border-warm-200 bg-warm-50 px-3 py-2 text-sm text-warm-600">
+                  {fundingSummary}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Final review summary */}
+          <div className="rounded-[2px] border border-warm-300 bg-warm-50 p-5">
+            <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
+              What goes live
+            </div>
+            <div className="mt-2 space-y-1 text-sm text-warm-700">
+              <div>{compilation.confirmation_contract.solver_submission}</div>
+              <div>{compilation.confirmation_contract.scoring_summary}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Action bar ─────────────────────────────────── */}
+      <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[2px] border-2 border-warm-900 bg-white px-5 py-4 shadow-[4px_4px_0px_var(--color-warm-900)]">
+        <div className="text-sm text-warm-600">
+          {step === 1
+            ? "Lock answers, then compile."
+            : step === 2
+              ? isReviewQueued
+                ? "Waiting for operator review."
+                : "Review the contract, then continue."
+              : "Fund and publish your challenge."}
+        </div>
+
+        <div className="flex gap-3">
+          {step > 1 ? (
+            <button
+              type="button"
+              onClick={() =>
+                setStep((current) => (current === 3 ? 2 : 1) as Step)
+              }
+              className="btn-secondary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+            >
+              Back
+            </button>
+          ) : null}
+
+          {step === 1 ? (
+            <button
+              type="button"
+              onClick={() => {
+                void handleCompile();
+              }}
+              disabled={isCompiling || !compileReady}
+              className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+            >
+              {isCompiling ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              Generate contract
+            </button>
+          ) : null}
+
+          {step === 2 && !isReviewQueued ? (
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+            >
+              Continue to publish
+            </button>
+          ) : null}
+
+          {step === 2 && isReviewQueued ? (
+            <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-wider text-amber-900">
+              Awaiting review
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <>
+              {!isConnected ? (
+                <button
+                  type="button"
+                  onClick={() => openConnectModal?.()}
+                  className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                >
+                  <Wallet className="h-4 w-4" />
+                  Connect wallet
+                </button>
+              ) : isWrongChain ? (
+                <button
+                  type="button"
+                  onClick={() => openChainModal?.()}
+                  className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
+                >
+                  Switch to {APP_CHAIN_NAME}
+                </button>
+              ) : (
+                <>
+                  {fundingState.method === "approve" && !allowanceReady ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleApprove();
+                      }}
+                      disabled={isApproving}
+                      className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
+                    >
+                      {isApproving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      Approve USDC
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {
-                      void handleContinue();
+                      void handlePublish();
                     }}
-                    disabled={isCompiling || (step === 1 && !compileReady)}
-                    className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={
+                      isPublishing ||
+                      (fundingState.method === "approve" && !allowanceReady)
+                    }
+                    className="btn-primary inline-flex items-center gap-2 rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
                   >
-                    {isCompiling ? (
+                    {isPublishing ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}
-                    {step === 1 ? "Generate review contract" : "Continue to publish"}
+                    Publish challenge
                   </button>
-                )
-              ) : null}
-            </div>
-          </div>
+                </>
+              )}
+            </>
+          ) : null}
+        </div>
+      </div>
 
-          <div className="rounded-[28px] border border-warm-300 bg-white/80 p-6 text-sm leading-7 text-warm-600">
-            Managed authoring currently supports reproducibility, tabular
-            regression, tabular classification, docking, and ranking. If Agora cannot
-            confidently map your files into one of those runtimes, it will
-            either ask for clarification or queue the draft for operator review
-            instead of publishing a broken contract.
-          </div>
-        </>
-      )}
+      {/* Footer */}
+      <div className="text-center text-xs text-warm-500">
+        Need a custom scorer?{" "}
+        <span className="font-mono text-warm-700">
+          agora post ./challenge.yaml
+        </span>{" "}
+        supports advanced configuration from the CLI.
+      </div>
     </div>
   );
 }

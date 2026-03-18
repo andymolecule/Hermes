@@ -24,8 +24,8 @@ export const GUIDED_PROMPT_ORDER = [
 
 export const GUIDED_DISTRIBUTION_OPTIONS = [
   { label: "Winner takes all", value: "winner_take_all" },
-  { label: "Top 3 split", value: "top_3" },
-  { label: "Proportional", value: "proportional" },
+  { label: "Top 3 split (60 / 25 / 15)", value: "top_3" },
+  { label: "Proportional to score", value: "proportional" },
 ] as const satisfies readonly { label: string; value: string }[];
 
 export const INPUT_KIND_LABELS: Record<InputKind, string> = {
@@ -48,18 +48,18 @@ export const GUIDED_PROMPTS: Record<
     placeholder:
       "Explain the task in plain language. What should solvers predict, reproduce, rank, or optimize?",
     helper:
-      "Start with the scientific question. We will ask for files, payout, and deadline next.",
+      "Start with the scientific question. Files, payout, and deadline come next.",
   },
   uploads: {
     id: "uploads",
-    prompt: "Upload the files Agora should use to define and score this bounty.",
+    prompt: "Upload the data files for this bounty.",
     inputKind: "file",
     helper:
-      "Use descriptive file aliases so Agora can infer which data should stay public and which should stay hidden for evaluation.",
+      "Descriptive file names help Agora figure out which data is public and which stays hidden for scoring.",
   },
   winningCondition: {
     id: "winningCondition",
-    prompt: "What should count as a winning result?",
+    prompt: "What counts as a winning result?",
     inputKind: "textarea",
     placeholder:
       "Example: Highest Spearman correlation on the hidden labels wins.",
@@ -69,6 +69,7 @@ export const GUIDED_PROMPTS: Record<
     prompt: "How much USDC should this bounty pay?",
     inputKind: "currency",
     placeholder: "500",
+    helper: "Agora charges a 10% protocol fee. Solvers receive the rest.",
   },
   distribution: {
     id: "distribution",
@@ -83,7 +84,7 @@ export const GUIDED_PROMPTS: Record<
   },
   solverInstructions: {
     id: "solverInstructions",
-    prompt: "Anything solvers should know before they start?",
+    prompt: "Anything else solvers should know?",
     inputKind: "textarea",
     optional: true,
     canSkip: true,
@@ -91,4 +92,3 @@ export const GUIDED_PROMPTS: Record<
       "Optional: scientific caveats, accepted formats, allowed assumptions, or forbidden shortcuts.",
   },
 };
-

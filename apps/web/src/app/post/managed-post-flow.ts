@@ -1,10 +1,10 @@
 import {
   CHALLENGE_LIMITS,
+  type ChallengeSpecOutput,
   SUBMISSION_LIMITS,
   computeSpecHash,
   erc20Abi,
   getPinSpecAuthorizationTypedData,
-  type ChallengeSpecOutput,
 } from "@agora/common";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
 import { type Abi, parseSignature, parseUnits, zeroAddress } from "viem";

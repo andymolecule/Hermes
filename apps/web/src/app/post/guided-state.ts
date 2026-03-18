@@ -74,7 +74,9 @@ export type GuidedComposerState = {
     title: GuidedDraftField<string>;
     winningCondition: GuidedDraftField<string>;
     rewardTotal: GuidedDraftField<string>;
-    distribution: GuidedDraftField<"winner_take_all" | "top_3" | "proportional">;
+    distribution: GuidedDraftField<
+      "winner_take_all" | "top_3" | "proportional"
+    >;
     deadline: GuidedDraftField<string>;
     solverInstructions: GuidedDraftField<string>;
   };
@@ -157,7 +159,10 @@ const REQUIRED_PROMPTS = [
   "rewardTotal",
   "distribution",
   "deadline",
-] as const satisfies readonly Exclude<GuidedFieldKey, "title" | "solverInstructions">[];
+] as const satisfies readonly Exclude<
+  GuidedFieldKey,
+  "title" | "solverInstructions"
+>[];
 
 const UPLOAD_HINTS = [
   "train.csv",
@@ -251,7 +256,9 @@ export function answerSummaryForPrompt(
   field: Exclude<GuidedFieldKey, "title">,
 ) {
   if (field === "uploads") {
-    const readyUploads = state.uploads.filter((artifact) => artifact.status === "ready");
+    const readyUploads = state.uploads.filter(
+      (artifact) => artifact.status === "ready",
+    );
     if (readyUploads.length === 0) {
       return "No files confirmed yet.";
     }
@@ -286,7 +293,7 @@ export function answerSummaryForPrompt(
       return state.fields.deadline.value?.trim() ?? "";
     case "solverInstructions":
       return hasTextValue(state.fields.solverInstructions.value)
-        ? state.fields.solverInstructions.value?.trim() ?? ""
+        ? (state.fields.solverInstructions.value?.trim() ?? "")
         : "No extra solver instructions.";
   }
 }
@@ -302,7 +309,9 @@ export function getLastVisitedPromptIndex(state: GuidedComposerState) {
   return index;
 }
 
-function rebuildTranscript(state: GuidedComposerState): GuidedConversationMessage[] {
+function rebuildTranscript(
+  state: GuidedComposerState,
+): GuidedConversationMessage[] {
   const lastVisitedPromptIndex = getLastVisitedPromptIndex(state);
   const transcript: GuidedConversationMessage[] = [];
 
@@ -388,7 +397,9 @@ function cloneState(state: GuidedComposerState): GuidedComposerState {
     uploads: state.uploads.map((artifact) => ({ ...artifact })),
     transcript: state.transcript.map((message) => ({
       ...message,
-      targetFields: message.targetFields ? [...message.targetFields] : undefined,
+      targetFields: message.targetFields
+        ? [...message.targetFields]
+        : undefined,
       inputOptions: message.inputOptions
         ? message.inputOptions.map((option) => ({ ...option }))
         : undefined,
@@ -606,7 +617,8 @@ export function guidedComposerReducer(
       return finalizeState(nextState);
     }
     case "confirm_uploads": {
-      nextState.uploadsStatus = nextState.uploads.length > 0 ? "locked" : "empty";
+      nextState.uploadsStatus =
+        nextState.uploads.length > 0 ? "locked" : "empty";
       const nextPrompt = nextIncompletePrompt(
         nextState,
         promptIndex("uploads") + 1,
@@ -669,13 +681,17 @@ export function buildPostingArtifactsFromGuidedState(
 }
 
 export function isReadyToCompile(state: GuidedComposerState) {
-  const readyUploads = state.uploads.filter((artifact) => artifact.status === "ready");
+  const readyUploads = state.uploads.filter(
+    (artifact) => artifact.status === "ready",
+  );
   const reward = Number(state.fields.rewardTotal.value);
   const deadline = Date.parse(state.fields.deadline.value ?? "");
 
   return (
     trimText(state.fields.title.value).length > 0 &&
-    REQUIRED_PROMPTS.every((promptId) => getPromptStatus(state, promptId) === "locked") &&
+    REQUIRED_PROMPTS.every(
+      (promptId) => getPromptStatus(state, promptId) === "locked",
+    ) &&
     readyUploads.length > 0 &&
     !state.uploads.some((artifact) => artifact.status === "uploading") &&
     Number.isFinite(reward) &&
@@ -726,7 +742,10 @@ export function listReadinessIssues(state: GuidedComposerState) {
   return issues;
 }
 
-export function saveGuidedDraft(state: GuidedComposerState, storage = window.sessionStorage) {
+export function saveGuidedDraft(
+  state: GuidedComposerState,
+  storage = window.sessionStorage,
+) {
   storage.setItem(
     STORAGE_KEY,
     JSON.stringify({
@@ -768,7 +787,9 @@ export function clearGuidedDraft(storage = window.sessionStorage) {
 export function clarificationTargetFromQuestions(
   questions: ClarificationQuestionOutput[],
 ) {
-  const reasonCodes = new Set(questions.map((question) => question.reason_code));
+  const reasonCodes = new Set(
+    questions.map((question) => question.reason_code),
+  );
   if (reasonCodes.has("MANAGED_THRESHOLD_UNSUPPORTED")) {
     return "winningCondition" as const;
   }
@@ -795,6 +816,10 @@ export function clarificationHelperText(
     case "problem":
       return "Tighten the problem statement so Agora can map the files and scoring rules safely.";
   }
+}
+
+export function cx(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
 }
 
 export function buildUploadHintCopy() {

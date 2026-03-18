@@ -1,11 +1,17 @@
 "use client";
 
-import { CircleAlert, Loader2, Pencil, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClarificationQuestionOutput } from "@agora/common";
-import { GUIDED_PROMPTS, GUIDED_PROMPT_ORDER } from "./guided-prompts";
-import { cx, truncateMiddle } from "./post-ui";
+import { Check, CircleAlert, Loader2, Pencil, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  GUIDED_DISTRIBUTION_OPTIONS,
+  GUIDED_PROMPTS,
+  GUIDED_PROMPT_ORDER,
+} from "./guided-prompts";
+import {
+  type GuidedComposerState,
+  type GuidedFieldKey,
+  type UploadedArtifact,
   answerSummaryForPrompt,
   buildUploadHintCopy,
   clarificationHelperText,
@@ -14,10 +20,14 @@ import {
   getLastVisitedPromptIndex,
   getPromptStatus,
   readyUploadCount,
-  type GuidedComposerState,
-  type GuidedFieldKey,
-  type UploadedArtifact,
 } from "./guided-state";
+import { cx, truncateMiddle } from "./post-ui";
+
+const STATUS_DOT: Record<string, string> = {
+  ready: "bg-emerald-500",
+  uploading: "bg-amber-400 animate-pulse",
+  error: "bg-red-500",
+};
 
 function UploadEditor({
   uploads,
@@ -41,7 +51,6 @@ function UploadEditor({
     if (!files || files.length === 0) {
       return;
     }
-
     onFilesSelected(files);
   }
 
@@ -49,10 +58,10 @@ function UploadEditor({
     <div className="space-y-4">
       <label
         className={cx(
-          "flex cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed px-5 py-8 text-center transition motion-reduce:transition-none",
+          "flex cursor-pointer flex-col items-center justify-center rounded-[2px] border-2 border-dashed px-5 py-8 text-center transition motion-reduce:transition-none",
           dragActive
-            ? "border-accent-500 bg-white"
-            : "border-warm-300 bg-warm-50 hover:border-accent-400 hover:bg-white",
+            ? "border-warm-900 bg-warm-50"
+            : "border-warm-300 bg-white hover:border-warm-900",
         )}
         onDragEnter={(event) => {
           event.preventDefault();
@@ -60,7 +69,9 @@ function UploadEditor({
         }}
         onDragLeave={(event) => {
           event.preventDefault();
-          if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          if (
+            event.currentTarget.contains(event.relatedTarget as Node | null)
+          ) {
             return;
           }
           setDragActive(false);
@@ -77,13 +88,12 @@ function UploadEditor({
           handleFiles(event.dataTransfer.files);
         }}
       >
-        <UploadCloud className="h-10 w-10 text-warm-500" />
-        <div className="mt-3 text-base font-semibold text-warm-900">
+        <Upload className="h-8 w-8 text-warm-500" />
+        <div className="mt-3 text-sm font-semibold text-warm-900">
           Drop files here or click to upload
         </div>
-        <div className="mt-2 max-w-md text-sm leading-6 text-warm-600">
-          Add the data, hidden labels, reference outputs, or evaluation files Agora
-          should use during compile.
+        <div className="mt-1 text-xs text-warm-500">
+          CSV, SDF, PDB, or other data files
         </div>
         <input
           type="file"
@@ -96,86 +106,75 @@ function UploadEditor({
         />
       </label>
 
-      <div className="space-y-3">
-        {uploads.length === 0 ? (
-          <div className="rounded-[20px] border border-warm-200 bg-white px-4 py-4 text-sm text-warm-600">
-            No files uploaded yet.
-          </div>
-        ) : (
-          uploads.map((artifact) => (
+      {uploads.length > 0 ? (
+        <div className="divide-y divide-warm-200 rounded-[2px] border border-warm-300 bg-white">
+          {uploads.map((artifact) => (
             <div
               key={artifact.id}
-              className="rounded-[20px] border border-warm-300 bg-white px-4 py-4"
+              className="flex items-center gap-3 px-4 py-3"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div
-                  className={cx(
-                    "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                    artifact.status === "ready" &&
-                      "bg-emerald-100 text-emerald-800",
-                    artifact.status === "uploading" &&
-                      "bg-accent-50 text-accent-700",
-                    artifact.status === "error" && "bg-red-50 text-red-700",
-                  )}
-                >
-                  {artifact.status}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onRemoveUpload(artifact.id)}
-                  className="text-xs font-medium text-warm-500 transition hover:text-warm-900 motion-reduce:transition-none"
-                >
-                  Remove
-                </button>
-              </div>
-
-              <label className="mt-3 grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-warm-500">
-                  File alias
+              <span
+                className={cx(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  STATUS_DOT[artifact.status] ?? "bg-warm-300",
+                )}
+              />
+              <input
+                value={artifact.file_name}
+                onChange={(event) =>
+                  onRenameUpload(artifact.id, event.target.value)
+                }
+                aria-label="File name"
+                className="min-w-0 flex-1 bg-transparent text-sm text-warm-900 outline-none placeholder:text-warm-400"
+                placeholder="file_name.csv"
+              />
+              {artifact.uri ? (
+                <span className="shrink-0 font-mono text-[10px] text-warm-400">
+                  {truncateMiddle(artifact.uri)}
                 </span>
-                <input
-                  value={artifact.file_name}
-                  onChange={(event) => onRenameUpload(artifact.id, event.target.value)}
-                  className="rounded-[16px] border border-warm-300 bg-warm-50 px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
-                />
-              </label>
-
-              <div
-                className="mt-2 break-all font-mono text-[11px] text-warm-500"
-                title={artifact.uri ?? artifact.error ?? "Uploading to IPFS..."}
+              ) : artifact.error ? (
+                <span className="shrink-0 text-[10px] text-red-600">
+                  {artifact.error}
+                </span>
+              ) : (
+                <span className="shrink-0 text-[10px] text-warm-400">
+                  Uploading...
+                </span>
+              )}
+              <button
+                type="button"
+                aria-label={`Remove ${artifact.file_name || "file"}`}
+                onClick={() => onRemoveUpload(artifact.id)}
+                className="shrink-0 text-warm-400 transition hover:text-warm-900 motion-reduce:transition-none"
               >
-                {artifact.uri
-                  ? truncateMiddle(artifact.uri)
-                  : artifact.error ?? "Uploading to IPFS..."}
-              </div>
-
-              {artifact.detected_columns?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {artifact.detected_columns.slice(0, 6).map((column) => (
-                    <span
-                      key={column}
-                      className="rounded-full border border-warm-200 bg-warm-50 px-2.5 py-1 font-mono text-[11px] text-warm-700"
-                    >
-                      {column}
-                    </span>
-                  ))}
-                  {artifact.detected_columns.length > 6 ? (
-                    <span className="rounded-full border border-warm-200 bg-warm-50 px-2.5 py-1 font-mono text-[11px] text-warm-700">
-                      +{artifact.detected_columns.length - 6} more
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      ) : null}
 
-      <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
-        Agora reads file aliases during compile. Good examples:{" "}
+      {uploads.some((artifact) => artifact.detected_columns?.length) ? (
+        <div className="flex flex-wrap gap-1.5">
+          {uploads
+            .flatMap((artifact) => artifact.detected_columns ?? [])
+            .slice(0, 8)
+            .map((column) => (
+              <span
+                key={column}
+                className="rounded-[2px] border border-warm-200 bg-warm-50 px-2 py-0.5 font-mono text-[10px] text-warm-700"
+              >
+                {column}
+              </span>
+            ))}
+        </div>
+      ) : null}
+
+      <div className="rounded-[2px] border border-warm-300 bg-warm-50 px-4 py-3 text-xs leading-5 text-warm-600">
+        Descriptive names help Agora map files during compile.{" "}
         {hints.map(({ hint, trailing }) => (
           <span key={hint}>
-            <span className="font-mono">{hint}</span>
+            <span className="font-mono text-warm-800">{hint}</span>
             {trailing}
           </span>
         ))}
@@ -185,7 +184,7 @@ function UploadEditor({
         type="button"
         onClick={onConfirm}
         disabled={disabled}
-        className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn-primary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
       >
         Confirm files
       </button>
@@ -245,14 +244,13 @@ export function GuidedComposer({
   const activePromptValue =
     activePromptId && activePromptId !== "uploads"
       ? (getFieldValue(state, activePromptId) ??
-          (activePromptId === "distribution" ? "winner_take_all" : ""))
+        (activePromptId === "distribution" ? "winner_take_all" : ""))
       : "";
 
   useEffect(() => {
     if (!activePromptId || activePromptId === "uploads") {
       return;
     }
-
     setDraftValue(activePromptValue);
   }, [activePromptId, activePromptValue]);
 
@@ -260,15 +258,38 @@ export function GuidedComposer({
     if (!activePromptId) {
       return;
     }
-
     promptRefs.current[activePromptId]?.scrollIntoView({
       behavior: "smooth",
       block: "center",
     });
   }, [activePromptId]);
 
+  const answeredCount = GUIDED_PROMPT_ORDER.filter((id) => {
+    const s = getPromptStatus(state, id);
+    return (
+      s === "locked" ||
+      s === "suggested" ||
+      (id === "uploads" && state.uploads.length > 0)
+    );
+  }).length;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        <div className="h-1.5 flex-1 rounded-full bg-warm-200">
+          <div
+            className="h-1.5 rounded-full bg-warm-900 transition-all duration-500"
+            style={{
+              width: `${(answeredCount / GUIDED_PROMPT_ORDER.length) * 100}%`,
+            }}
+          />
+        </div>
+        <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-warm-400">
+          {answeredCount}/{GUIDED_PROMPT_ORDER.length}
+        </span>
+      </div>
+
       {GUIDED_PROMPT_ORDER.map((promptId, index) => {
         if (index > lastVisitedIndex && promptId !== activePromptId) {
           return null;
@@ -286,72 +307,86 @@ export function GuidedComposer({
           status === "suggested" ||
           (promptId === "uploads" && state.uploads.length > 0);
 
-        return (
-          <div
-            key={promptId}
-            ref={(node) => {
-              promptRefs.current[promptId] = node;
-            }}
-            className={cx(
-              "space-y-3 rounded-[28px] border border-warm-300 bg-white/90 p-5 shadow-[0_18px_55px_rgba(30,27,24,0.06)] transition motion-reduce:transition-none",
-              isActive && "border-warm-900 shadow-[0_20px_60px_rgba(30,27,24,0.1)]",
-              dimmed && "opacity-45",
-            )}
-          >
-            <div className="flex gap-3">
-              <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warm-900 text-sm font-semibold text-white">
-                {index + 1}
+        if (hasAnswer && !isActive) {
+          return (
+            <div
+              key={promptId}
+              ref={(node) => {
+                promptRefs.current[promptId] = node;
+              }}
+              className={cx(
+                "flex items-center gap-3 rounded-[2px] border border-warm-300 bg-white px-4 py-3",
+                dimmed && "opacity-40",
+              )}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[2px] bg-emerald-600 text-white">
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3 text-sm leading-6 text-warm-900">
+                <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
                   {prompt.prompt}
                 </div>
-                {prompt.helper ? (
-                  <div className="mt-2 text-sm leading-6 text-warm-600">
-                    {prompt.helper}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {hasAnswer ? (
-              <div className="ml-12 rounded-[18px] border border-accent-200 bg-accent-50/80 px-4 py-3 text-sm leading-6 text-warm-900">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1 whitespace-pre-wrap">{answer}</div>
-                  {!isActive ? (
-                    <button
-                      type="button"
-                      onClick={() => onEditPrompt(promptId)}
-                      className="inline-flex items-center gap-1 rounded-full border border-accent-200 bg-white px-3 py-1 text-xs font-medium text-accent-700 transition hover:bg-accent-50 motion-reduce:transition-none"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      Edit
-                    </button>
-                  ) : null}
+                <div className="mt-0.5 truncate text-sm text-warm-900">
+                  {answer}
                 </div>
               </div>
-            ) : null}
+              <button
+                type="button"
+                onClick={() => onEditPrompt(promptId)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-[2px] border border-warm-300 bg-white px-2.5 py-1 text-xs font-medium text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit
+              </button>
+            </div>
+          );
+        }
 
-            {isActive ? (
-              <div className="ml-12 space-y-4">
-                {activeClarifications.length > 0 ? (
-                  <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
-                    <div className="font-semibold">
-                      {clarificationHelperText(clarificationTarget ?? "problem")}
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      {activeClarifications.map((question) => (
-                        <div key={question.id}>
-                          <div className="font-medium text-warm-900">
-                            {question.prompt}
-                          </div>
-                          <div className="mt-1 text-warm-700">{question.next_step}</div>
-                        </div>
-                      ))}
-                    </div>
+        if (isActive) {
+          return (
+            <div
+              key={promptId}
+              ref={(node) => {
+                promptRefs.current[promptId] = node;
+              }}
+              className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px] bg-warm-900 font-mono text-xs font-bold text-white">
+                  {index + 1}
+                </div>
+                <h3 className="font-display text-lg font-semibold tracking-tight text-warm-900">
+                  {prompt.prompt}
+                </h3>
+              </div>
+
+              {prompt.helper ? (
+                <p className="ml-10 mt-2 text-sm text-warm-600">
+                  {prompt.helper}
+                </p>
+              ) : null}
+
+              {activeClarifications.length > 0 ? (
+                <div className="ml-10 mt-4 rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <div className="font-semibold">
+                    {clarificationHelperText(clarificationTarget ?? "problem")}
                   </div>
-                ) : null}
+                  <div className="mt-2 space-y-2">
+                    {activeClarifications.map((question) => (
+                      <div key={question.id}>
+                        <div className="font-medium text-warm-900">
+                          {question.prompt}
+                        </div>
+                        <div className="mt-0.5 text-warm-700">
+                          {question.next_step}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
+              <div className="ml-10 mt-4">
                 {prompt.inputKind === "file" ? (
                   <UploadEditor
                     uploads={state.uploads}
@@ -361,7 +396,9 @@ export function GuidedComposer({
                     onConfirm={onConfirmUploads}
                     disabled={
                       readyUploadCount(state) === 0 ||
-                      state.uploads.some((artifact) => artifact.status === "uploading")
+                      state.uploads.some(
+                        (artifact) => artifact.status === "uploading",
+                      )
                     }
                   />
                 ) : (
@@ -372,13 +409,13 @@ export function GuidedComposer({
                       if (promptId === "uploads") {
                         return;
                       }
-
                       const normalizedValue =
-                        prompt.inputKind === "select" ? draftValue : draftValue.trim();
+                        prompt.inputKind === "select"
+                          ? draftValue
+                          : draftValue.trim();
                       if (!normalizedValue) {
                         return;
                       }
-
                       onAnswerPrompt(promptId, normalizedValue);
                     }}
                   >
@@ -386,49 +423,73 @@ export function GuidedComposer({
                       <textarea
                         value={draftValue}
                         onChange={(event) => setDraftValue(event.target.value)}
-                        rows={5}
+                        rows={4}
+                        aria-label={prompt.prompt}
                         placeholder={prompt.placeholder}
-                        className="w-full rounded-[20px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
+                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
                       />
                     ) : prompt.inputKind === "currency" ? (
-                      <input
-                        value={draftValue}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        inputMode="decimal"
-                        placeholder={prompt.placeholder}
-                        className="w-full rounded-[20px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
-                      />
+                      <div className="flex items-center gap-2">
+                        <input
+                          value={draftValue}
+                          onChange={(event) =>
+                            setDraftValue(event.target.value)
+                          }
+                          inputMode="decimal"
+                          aria-label={prompt.prompt}
+                          placeholder={prompt.placeholder}
+                          className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+                        />
+                        <span className="shrink-0 font-mono text-sm font-bold text-warm-500">
+                          USDC
+                        </span>
+                      </div>
                     ) : prompt.inputKind === "date" ? (
                       <input
                         type="datetime-local"
                         value={draftValue}
                         onChange={(event) => setDraftValue(event.target.value)}
-                        className="w-full rounded-[20px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
+                        aria-label={prompt.prompt}
+                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
                       />
                     ) : prompt.inputKind === "select" ? (
-                      <select
-                        value={draftValue}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        className="w-full rounded-[20px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
+                      <div
+                        className="flex flex-wrap gap-2"
+                        role="radiogroup"
+                        aria-label={prompt.prompt}
                       >
-                        {prompt.options?.map((option) => (
-                          <option key={option.value} value={option.value}>
+                        {GUIDED_DISTRIBUTION_OPTIONS.map((option) => (
+                          // biome-ignore lint/a11y/useSemanticElements: styled toggle buttons are intentional
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={draftValue === option.value}
+                            onClick={() => setDraftValue(option.value)}
+                            className={cx(
+                              "rounded-[2px] border px-4 py-2.5 text-sm font-medium transition motion-reduce:transition-none",
+                              draftValue === option.value
+                                ? "border-warm-900 bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                                : "border-warm-300 bg-white text-warm-700 hover:border-warm-900",
+                            )}
+                          >
                             {option.label}
-                          </option>
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     ) : (
                       <input
                         value={draftValue}
                         onChange={(event) => setDraftValue(event.target.value)}
+                        aria-label={prompt.prompt}
                         placeholder={prompt.placeholder}
-                        className="w-full rounded-[20px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-accent-500 motion-reduce:transition-none"
+                        className="w-full rounded-[2px] border border-warm-300 bg-white px-4 py-3 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
                       />
                     )}
 
                     {prompt.optional ? (
-                      <div className="rounded-[18px] border border-warm-200 bg-warm-50 px-4 py-3 text-sm text-warm-600">
-                        You can skip this for now and still compile the managed draft.
+                      <div className="text-xs text-warm-500">
+                        Optional — you can skip this and still compile.
                       </div>
                     ) : null}
 
@@ -436,37 +497,50 @@ export function GuidedComposer({
                       <button
                         type="submit"
                         disabled={submitDisabled}
-                        className="inline-flex items-center gap-2 rounded-full bg-warm-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        className="btn-primary rounded-[2px] px-6 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider disabled:pointer-events-none disabled:opacity-40"
                       >
                         Continue
                       </button>
                       {prompt.canSkip ? (
                         <button
                           type="button"
-                          onClick={() => onSkipOptionalPrompt("solverInstructions")}
-                          className="rounded-full border border-warm-300 bg-white px-5 py-3 text-sm font-medium text-warm-900 transition hover:bg-warm-50 motion-reduce:transition-none"
+                          onClick={() =>
+                            onSkipOptionalPrompt("solverInstructions")
+                          }
+                          className="btn-secondary rounded-[2px] px-5 py-2.5 font-mono text-sm font-semibold uppercase tracking-wider"
                         >
-                          Skip for now
+                          Skip
                         </button>
                       ) : null}
                     </div>
                   </form>
                 )}
               </div>
-            ) : null}
-          </div>
-        );
+            </div>
+          );
+        }
+
+        return null;
       })}
 
       {!state.activePromptId ? (
-        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm leading-6 text-emerald-900">
-          <div className="flex items-start gap-3">
-            {isCompiling ? <Loader2 className="mt-0.5 h-4 w-4 animate-spin" /> : null}
+        <div className="rounded-[2px] border-2 border-emerald-600 bg-emerald-50 p-5 shadow-[4px_4px_0px_var(--color-emerald-600)]">
+          <div className="flex items-center gap-3">
+            {isCompiling ? (
+              <Loader2 className="h-5 w-5 animate-spin text-emerald-700" />
+            ) : (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px] bg-emerald-600 text-white">
+                <Check className="h-4 w-4" strokeWidth={3} />
+              </div>
+            )}
             <div>
-              <div className="font-semibold">All required answers are locked.</div>
-              <div className="mt-1">
-                Generate the review contract when you are ready. You can still edit
-                any earlier answer from the transcript or summary rail.
+              <div className="font-display text-base font-semibold tracking-tight text-emerald-900">
+                All answers locked
+              </div>
+              <div className="mt-0.5 text-sm text-emerald-700">
+                {isCompiling
+                  ? "Compiling your challenge into a scoring contract..."
+                  : "Generate the review contract when you are ready."}
               </div>
             </div>
           </div>
@@ -474,39 +548,29 @@ export function GuidedComposer({
       ) : null}
 
       {state.compileState === "needs_review" ? (
-        <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-900">
-          Agora compiled a contract, but an operator must review it before you can
-          publish.
+        <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Agora compiled a contract, but an operator must review it before you
+          can publish.
         </div>
       ) : null}
 
       {state.compileState === "ready" ? (
-        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm leading-6 text-emerald-900">
-          Agora locked the managed contract. Continue to review the contract
-          before funding and publish.
+        <div className="rounded-[2px] border border-emerald-400 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Contract locked. Continue to review before funding.
         </div>
       ) : null}
 
-      {state.compileState === "needs_clarification" && clarificationQuestions.length === 0 ? (
-        <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-900">
-          Agora needs a little more context before it can lock the challenge
-          contract.
-        </div>
-      ) : null}
-
-      {state.compileState === "idle" && activePromptId && activePromptIndex > 0 ? (
-        <div className="rounded-[24px] border border-warm-200 bg-warm-50 px-5 py-4 text-sm leading-6 text-warm-700">
-          Edit earlier answers whenever you need. Agora will ask you to reconfirm any
-          answers below the one you changed before compile is enabled again.
+      {state.compileState === "needs_clarification" &&
+      clarificationQuestions.length === 0 ? (
+        <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Agora needs more context before it can lock the contract.
         </div>
       ) : null}
 
       {state.uploads.some((artifact) => artifact.status === "error") ? (
-        <div className="rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-sm leading-6 text-red-800">
-          <div className="flex items-start gap-3">
-            <CircleAlert className="mt-0.5 h-4 w-4" />
-            <div>One or more uploads failed. Remove them and upload again before compile.</div>
-          </div>
+        <div className="flex items-center gap-2 rounded-[2px] border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <CircleAlert className="h-4 w-4 shrink-0" />
+          One or more uploads failed. Remove and re-upload before compile.
         </div>
       ) : null}
     </div>
