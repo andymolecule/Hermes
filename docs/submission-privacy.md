@@ -90,7 +90,7 @@ sequenceDiagram
     API->>API: compute resultHash
     API->>DB: store submission_intent + attempt reconcile
     Solver->>Chain: submit(resultHash)
-    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (best-effort)
+    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (required confirmation)
     API->>DB: upsert on-chain submission + reconcile intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
@@ -117,7 +117,7 @@ The contract does not store the plaintext answer and does not store the IPFS CID
 
 ### In Supabase
 
-- `submission_intents` stores pre-registered `(challenge_id, solver_address, result_hash) -> (result_cid, result_format)` mappings before the on-chain submit is sent.
+- `submission_intents` stores the pre-registered `(challenge_id, solver_address, result_hash) -> (result_cid, result_format)` mapping before the on-chain submit is sent. This intent is the required registration record for a scoreable submission.
 - `submissions.result_cid` points to the IPFS object used for scoring.
 - `submissions.result_format` is either `plain_v0` or `sealed_submission_v2`.
 - For sealed submissions, `result_cid` points to the sealed envelope, not the replay artifact.
@@ -214,8 +214,8 @@ This is why the system should be described as public-hidden answer privacy durin
 7. The browser uploads only `sealed-submission.json` to IPFS.
 8. The browser pre-registers a `submission_intent` and receives the canonical `resultHash`.
 9. The browser submits that `resultHash` on-chain.
-10. The browser makes a best-effort submit-confirmation call to the API.
-11. If that best-effort call fails, the stored `submission_intent` still lets the API/indexer reconcile the on-chain submission later.
+10. The browser confirms the submission with the API.
+11. Scoring requires the on-chain submission and the pre-registered `submission_intent` to be linked. If confirmation or indexing does not establish that link, the submission must be investigated instead of being treated as scoreable automatically later.
 
 Important consequence:
 

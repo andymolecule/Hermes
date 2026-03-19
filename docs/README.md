@@ -11,11 +11,12 @@ Documentation index and reading order for the Agora repository.
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
 | 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
 | 5 | [Authoring Callbacks](authoring-callbacks.md) | How do external hosts verify and process authoring lifecycle callbacks safely? | Integrations, backend |
-| 6 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 7 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 8 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 9 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 10 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 6 | [Authoring Rollout](authoring-rollout.md) | How do I cut over the new authoring/draft/submission model safely? | Operators, DevOps |
+| 7 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 8 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 9 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 10 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 11 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -24,6 +25,7 @@ Documentation index and reading order for the Agora repository.
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
 - **Building or reviewing external host integrations?** Read [Authoring Callbacks](authoring-callbacks.md).
+- **Rolling out the new authoring/draft/submission changes?** Read [Authoring Rollout](authoring-rollout.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
@@ -46,6 +48,7 @@ Documentation index and reading order for the Agora repository.
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
 | External host callback verification and replay rules | [authoring-callbacks.md](authoring-callbacks.md) |
+| Authoring/draft/submission rollout migrations and env cutover | [authoring-rollout.md](authoring-rollout.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
@@ -66,6 +69,7 @@ Documentation index and reading order for the Agora repository.
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 - **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
 - **[authoring-callbacks.md](authoring-callbacks.md)** — Callback contract, replay window, idempotency, and host verification rules
+- **[authoring-rollout.md](authoring-rollout.md)** — Migrations, env vars, Railway cutover, and Beach smoke checks for the authoring rollout
 
 ## Support Docs
 

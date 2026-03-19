@@ -246,7 +246,7 @@ sequenceDiagram
     API->>API: compute resultHash
     API->>DB: store submission_intent + attempt reconcile
     Solver->>Chain: submit(resultHash)
-    Solver->>API: POST /api/submissions (best-effort)
+    Solver->>API: POST /api/submissions (required confirmation)
     API->>DB: upsert on-chain submission + reconcile intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
@@ -260,7 +260,7 @@ sequenceDiagram
 Current privacy boundary:
 - The browser uploads only the sealed envelope while the challenge is open. Plaintext answer bytes are not uploaded directly.
 - The active public key is served by `GET /api/submissions/public-key`; the worker must hold the matching private key for that `kid`.
-- Submission metadata is pre-registered as a `submission_intent` before the on-chain submit. If the best-effort post-submit API call fails, the indexer can still reconcile the on-chain submission to the stored CID later.
+- Submission metadata is pre-registered as a `submission_intent` before the on-chain submit. That intent is now the strict prerequisite for a scoreable submission: the API and indexer only attach on-chain submissions to already-registered intents, and unmatched on-chain submissions must be investigated instead of reconciled later.
 - `sealed_submission_v2` authenticates `challengeId`, `solverAddress`, `fileName`, and `mimeType` as AES-GCM additional data, so those fields cannot be tampered with without breaking decryption.
 - This is anti-copy privacy, not full metadata opacity. Wallet address and transaction remain on-chain. After scoring begins, replay artifacts may be published for public verification.
 - Official scorer code and images should stay public for reproducibility, but hidden evaluation material belongs in mounted artifacts or evaluation bundles, not inside the image itself.
