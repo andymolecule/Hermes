@@ -1,6 +1,6 @@
 # Reproducibility Test Data
 
-Test fixtures for the current Agora reproducibility flow using the CSV comparison scorer in `containers/repro-scorer`.
+Test fixtures for the current Agora reproducibility flow using the CSV comparison scorer in `containers/gems-match-scorer`.
 
 This folder is meant to feel like a small but believable computational reproducibility bounty:
 - public input data is given to solvers

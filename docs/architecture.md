@@ -545,7 +545,7 @@ erDiagram
         int dispute_window_hours
         string spec_cid
         string runtime_family
-        jsonb evaluation_json
+        jsonb evaluation_plan_json
         jsonb artifacts_json
         int winning_on_chain_sub_id
         string winner_solver_address

@@ -1,6 +1,6 @@
 # Prediction Test Data
 
-Test fixtures for the current Agora prediction flow using the regression scorer in `containers/regression-scorer`.
+Test fixtures for the current Agora prediction flow using the tabular scorer in `containers/gems-tabular-scorer`.
 
 This folder is designed for two related workflows:
 - posting a prediction challenge through the web UI as a human poster
@@ -251,12 +251,12 @@ Recommended plain-English bounty summary:
 If you want to test the scorer directly without the app:
 
 ```bash
-docker build -t regression-scorer containers/regression-scorer/
+docker build -t gems-tabular-scorer containers/gems-tabular-scorer/
 
 docker run --rm \
   -v $(pwd)/challenges/test-data/prediction:/input:ro \
   -v /tmp/regression-output:/output \
-  regression-scorer
+  gems-tabular-scorer
 
 cat /tmp/regression-output/score.json
 ```

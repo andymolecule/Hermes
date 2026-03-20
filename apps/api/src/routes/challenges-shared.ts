@@ -10,6 +10,7 @@ import {
   getEffectiveChallengeStatus,
   isChallengeStatus,
   resolveChallengeEvaluation,
+  resolveChallengeRuntimeConfig,
 } from "@agora/common";
 import {
   countSubmissionsForChallenge,
@@ -262,8 +263,10 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
         ? toOptionalInteger(row.max_submissions_per_solver)
         : null,
     submission_contract:
-      "submission_contract_json" in row
-        ? (row.submission_contract_json ?? null)
+      "evaluation_plan_json" in row
+        ? (resolveChallengeRuntimeConfig(
+            row as ChallengeRow & ChallengeListRow,
+          ).submissionContract ?? null)
         : null,
   };
 }

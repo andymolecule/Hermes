@@ -141,8 +141,8 @@ function getScorerTransparencyInfo(value: string | null | undefined): ScorerTran
         "Writes deterministic JSON score output for reproducible replay.",
       ],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/repro-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-match-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-match-scorer/Dockerfile" },
       ],
     };
   }
@@ -158,8 +158,8 @@ function getScorerTransparencyInfo(value: string | null | undefined): ScorerTran
         "Writes deterministic JSON score output for reproducible replay.",
       ],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/regression-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-tabular-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-tabular-scorer/Dockerfile" },
       ],
     };
   }
@@ -169,8 +169,8 @@ function getScorerTransparencyInfo(value: string | null | undefined): ScorerTran
       summary: "Official managed scorer for ranking-style and docking-style challenges.",
       details: ["The container reference is public and the scoring logic is available for solver-side inspection and dry-run previews."],
       sourceLinks: [
-        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/score.py" },
-        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/docking-scorer/Dockerfile" },
+        { label: "score.py", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-ranking-scorer/score.py" },
+        { label: "Dockerfile", href: "https://github.com/andymolecule/Agora/blob/main/containers/gems-ranking-scorer/Dockerfile" },
       ],
     };
   }

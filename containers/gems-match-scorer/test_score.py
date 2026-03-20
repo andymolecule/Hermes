@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-MODULE_PATH = ROOT_DIR / "containers" / "repro-scorer" / "score.py"
+MODULE_PATH = ROOT_DIR / "containers" / "gems-match-scorer" / "score.py"
 
 
 def load_scorer_module():
@@ -30,7 +30,7 @@ def run_case(
     submission_payload: str | bytes,
 ):
     module = load_scorer_module()
-    workspace = Path(tempfile.mkdtemp(prefix="agora-repro-scorer-"))
+    workspace = Path(tempfile.mkdtemp(prefix="agora-gems-match-scorer-"))
     input_dir = workspace / "input"
     output_dir = workspace / "output"
     input_dir.mkdir()

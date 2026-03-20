@@ -188,7 +188,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("runtime_family, evaluation_json, evaluation_plan_json")
+    .select("runtime_family, evaluation_plan_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {

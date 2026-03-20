@@ -9,7 +9,7 @@ This folder is useful for:
 
 Important current limitation:
 - the official docking runtime family exists
-- and `containers/docking-scorer/score.py` now evaluates CSV docking predictions against hidden reference scores
+- and `containers/gems-ranking-scorer/score.py` now evaluates CSV docking predictions against hidden reference scores
 - so this folder can be used as a realistic managed-authoring benchmark as long as the challenge fits the built-in CSV docking contract
 
 This folder is still aligned to the new model:

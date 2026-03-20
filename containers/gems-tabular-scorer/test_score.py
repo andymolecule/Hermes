@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT_DIR / "challenges" / "test-data" / "prediction"
-MODULE_PATH = ROOT_DIR / "containers" / "regression-scorer" / "score.py"
+MODULE_PATH = ROOT_DIR / "containers" / "gems-tabular-scorer" / "score.py"
 
 
 def load_scorer_module():
@@ -62,7 +62,7 @@ def run_case(
     ground_truth_text: str | None = None,
 ):
     module = load_scorer_module()
-    workspace = Path(tempfile.mkdtemp(prefix="agora-regression-scorer-"))
+    workspace = Path(tempfile.mkdtemp(prefix="agora-gems-tabular-scorer-"))
     input_dir = workspace / "input"
     output_dir = workspace / "output"
     input_dir.mkdir()

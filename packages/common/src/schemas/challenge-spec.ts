@@ -394,16 +394,6 @@ export const challengeSpecSchema = _baseSpecShape;
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
-export interface ChallengeEvaluationCacheRow {
-  runtime_family: string;
-  metric: string;
-  scorer_image?: string | null;
-  evaluation_bundle?: string | null;
-  evaluator_contract?: z.output<
-    typeof semiCustomEvaluatorContractSchema
-  > | null;
-}
-
 export interface ChallengeEvaluationPlanCacheRow {
   runtime_family: string;
   metric: string;
@@ -425,10 +415,7 @@ export interface ChallengeEvaluationPlanCacheRow {
 
 export interface ChallengeEvalRow {
   evaluation_plan_json?: ChallengeEvaluationPlanCacheRow | null;
-  evaluation_json?: ChallengeEvaluationCacheRow | null;
   artifacts_json?: ChallengeArtifact[] | null;
-  submission_contract_json?: SubmissionContractOutput | null;
-  scoring_env_json?: Record<string, string> | null;
 }
 
 export interface ResolvedChallengeEvaluation {
@@ -650,83 +637,36 @@ export function resolveChallengeEvaluation(
         resolveRuntimeFamilyMount(evaluationPlan.runtime_family),
     };
   }
-
-  const evaluation = spec.evaluation_json;
-  if (!evaluation) {
-    throw new Error(
-      "Challenge is missing evaluation_plan_json. Next step: rebuild the challenge projection and retry.",
-    );
-  }
-
-  const semiCustomExecution = resolveSemiCustomExecutionPlan(
-    evaluation.evaluator_contract,
+  throw new Error(
+    "Challenge is missing evaluation_plan_json. Next step: rebuild the challenge projection and retry.",
   );
-  const evaluationBundleCid = semiCustomExecution
-    ? spec.artifacts_json?.find(
-        (artifact) =>
-          artifact.role === semiCustomExecution.evaluation_artifact_role,
-      )?.uri
-    : (evaluation.evaluation_bundle ?? undefined);
-
-  return {
-    runtimeFamily: evaluation.runtime_family,
-    image: evaluation.scorer_image ?? "",
-    metric: evaluation.metric,
-    evaluationBundleCid,
-    evaluatorContract: evaluation.evaluator_contract ?? undefined,
-    semiCustomExecution,
-    mount:
-      semiCustomExecution?.mount ??
-      resolveRuntimeFamilyMount(evaluation.runtime_family),
-  };
 }
 
 export function resolveChallengeRuntimeConfig(
   row: ChallengeEvalRow,
 ): ResolvedChallengeRuntimeConfig {
   const evaluationPlan = row.evaluation_plan_json;
-  if (evaluationPlan) {
-    const semiCustomExecution = resolveSemiCustomExecutionPlan(
-      evaluationPlan.evaluator_contract,
+  if (!evaluationPlan) {
+    throw new Error(
+      "Challenge is missing evaluation_plan_json. Next step: rebuild the challenge projection and retry.",
     );
-    return {
-      env:
-        evaluationPlan.env ??
-        row.scoring_env_json ??
-        resolveRuntimeFamilyRuntimeDefaults(evaluationPlan.runtime_family)?.env ??
-        undefined,
-      submissionContract:
-        evaluationPlan.submission_contract ??
-        row.submission_contract_json ??
-        undefined,
-      evaluationContract:
-        evaluationPlan.evaluation_contract ??
-        semiCustomExecution?.evaluation_contract ??
-        undefined,
-      policies:
-        evaluationPlan.policies ?? semiCustomExecution?.policies ?? undefined,
-    };
-  }
-
-  const evaluation = row.evaluation_json;
-  if (!evaluation) {
-    return {
-      env: row.scoring_env_json ?? undefined,
-      submissionContract: row.submission_contract_json ?? undefined,
-    };
   }
 
   const semiCustomExecution = resolveSemiCustomExecutionPlan(
-    evaluation.evaluator_contract,
+    evaluationPlan.evaluator_contract,
   );
   return {
     env:
-      row.scoring_env_json ??
-      resolveRuntimeFamilyRuntimeDefaults(evaluation.runtime_family)?.env ??
+      evaluationPlan.env ??
+      resolveRuntimeFamilyRuntimeDefaults(evaluationPlan.runtime_family)?.env ??
       undefined,
-    submissionContract: row.submission_contract_json ?? undefined,
-    evaluationContract: semiCustomExecution?.evaluation_contract,
-    policies: semiCustomExecution?.policies,
+    submissionContract: evaluationPlan.submission_contract ?? undefined,
+    evaluationContract:
+      evaluationPlan.evaluation_contract ??
+      semiCustomExecution?.evaluation_contract ??
+      undefined,
+    policies:
+      evaluationPlan.policies ?? semiCustomExecution?.policies ?? undefined,
   };
 }
 

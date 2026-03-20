@@ -1,7 +1,6 @@
 import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
-  type ChallengeEvaluation,
   type ChallengeEvaluationPlanCacheRow,
   type ChallengeSpecOutput,
   type ChallengeStatus,
@@ -10,8 +9,6 @@ import {
   canonicalizeChallengeSpec,
   defaultMinimumScoreForEvaluation,
   getChallengeCompatibilityTypeFromEvaluation,
-  resolveChallengeEvaluation,
-  resolveScoringEnvironmentFromSpec,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -30,11 +27,8 @@ export interface ChallengeInsert {
   challenge_type: string;
   runtime_family: string;
   spec_cid: string;
-  evaluation_json: ChallengeEvaluation;
   evaluation_plan_json: ChallengeEvaluationPlanCacheRow;
   artifacts_json: ChallengeArtifact[];
-  submission_contract_json?: ChallengeSpecOutput["submission_contract"] | null;
-  scoring_env_json?: Record<string, string> | null;
   minimum_score?: number | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;
@@ -77,8 +71,6 @@ export async function buildChallengeInsert(
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
-  const resolvedEvalPlan = resolveChallengeEvaluation(canonicalSpec);
-  const scoringEnv = resolveScoringEnvironmentFromSpec(canonicalSpec);
   const evaluationPlan = buildChallengeEvaluationPlanCache(canonicalSpec);
 
   return {
@@ -97,23 +89,8 @@ export async function buildChallengeInsert(
     ),
     runtime_family: canonicalSpec.evaluation.runtime_family,
     spec_cid: input.specCid,
-    evaluation_json: {
-      runtime_family: resolvedEvalPlan.runtimeFamily,
-      metric: resolvedEvalPlan.metric,
-      ...(resolvedEvalPlan.image
-        ? { scorer_image: resolvedEvalPlan.image }
-        : {}),
-      ...(resolvedEvalPlan.evaluationBundleCid
-        ? { evaluation_bundle: resolvedEvalPlan.evaluationBundleCid }
-        : {}),
-      ...(resolvedEvalPlan.evaluatorContract
-        ? { evaluator_contract: resolvedEvalPlan.evaluatorContract }
-        : {}),
-    },
     evaluation_plan_json: evaluationPlan,
     artifacts_json: canonicalSpec.artifacts,
-    submission_contract_json: canonicalSpec.submission_contract,
-    scoring_env_json: scoringEnv ?? null,
     minimum_score:
       canonicalSpec.minimum_score ??
       defaultMinimumScoreForEvaluation(canonicalSpec.evaluation) ??
@@ -150,7 +127,7 @@ export async function upsertChallenge(
   if (error) {
     if (error.message.includes("evaluation_plan_json")) {
       throw new Error(
-        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: apply migrations 029_add_challenge_evaluation_plan.sql and 030_make_challenge_runtime_caches_optional.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: apply the latest challenge-runtime migrations (029 through 031), reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(`Failed to upsert challenge: ${error.message}`);

@@ -59,13 +59,6 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 011_rename_worker_runtime_executor_ready.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "challenge_scoring_config_columns",
-    table: "challenges",
-    select: "submission_contract_json,scoring_env_json",
-    nextStep:
-      "Apply migration 007_cache_challenge_scoring_config.sql, then reload the PostgREST schema cache before restarting services.",
-  },
-  {
     id: "challenge_evaluation_plan_column",
     table: "challenges",
     select: "evaluation_plan_json",
@@ -80,11 +73,11 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       "Apply migration 012_add_factory_challenge_id.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
-    id: "challenge_runtime_v3_columns",
+    id: "challenge_runtime_columns",
     table: "challenges",
-    select: "runtime_family,evaluation_json,artifacts_json",
+    select: "runtime_family,evaluation_plan_json,artifacts_json",
     nextStep:
-      "Reset the database to the latest baseline schema, then reload the PostgREST schema cache before restarting services.",
+      "Apply migrations 029_add_challenge_evaluation_plan.sql and 031_drop_legacy_challenge_runtime_caches.sql, then reload the PostgREST schema cache before restarting services.",
   },
   {
     id: "challenge_source_attribution_columns",

@@ -15,7 +15,12 @@ const nextOutputDir = path.join(appRoot, ".next");
 applyAgoraRuntimeEnv();
 
 if (args[0] === "build" && fs.existsSync(nextOutputDir)) {
-  fs.rmSync(nextOutputDir, { recursive: true, force: true });
+  fs.rmSync(nextOutputDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 100,
+  });
 }
 
 const child = spawn(process.execPath, [nextBin, ...args], {

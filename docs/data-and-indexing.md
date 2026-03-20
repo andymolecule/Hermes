@@ -25,7 +25,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Scoreable submissions require a pre-registered `submission_intent` and a linked `submissions.submission_intent_id`
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
-- Worker scoring reads cached `evaluation_plan_json` from the DB first; `submission_contract_json` and `scoring_env_json` remain compatibility caches, and IPFS spec fetch is legacy fallback only
+- Worker scoring reads canonical `evaluation_plan_json` from the DB; it is the single cached execution contract for scorer image, mount, env, submission contract, evaluation contract, and runtime policies
 - Authoring state is now split by concern: `authoring_drafts` for canonical draft state, `authoring_source_links` for stable external source identity, `authoring_callback_targets` for registered host callback URLs, `published_challenge_links` for publish outcome, `authoring_sponsor_budget_reservations` for sponsor-capacity accounting, and `authoring_callback_deliveries` for callback retry
 - Published challenges can now carry external-source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for Beach/OpenClaw lineage and sponsor-budget accounting
 
@@ -87,10 +87,7 @@ erDiagram
         string spec_cid
         string runtime_family
         jsonb evaluation_plan_json
-        jsonb evaluation_json
         jsonb artifacts_json
-        jsonb submission_contract_json
-        jsonb scoring_env_json
         int winning_on_chain_sub_id
         string winner_solver_address
         string tx_hash
@@ -302,7 +299,7 @@ erDiagram
 
 ### Table Descriptions
 
-- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_plan_json` (canonical cached scoring plan: scorer image, bundle, mount, env, contracts, and policy metadata), `evaluation_json` (legacy compatibility cache for image + metric metadata), `artifacts_json` (public/private artifact cache), `submission_contract_json` (compatibility cache for solver artifact contract), and `scoring_env_json` (compatibility cache for resolved scoring env such as tolerance). `challenge_type` remains a compatibility and display field, but execution behavior should key off `evaluation_plan_json` and the resolved evaluation plan helpers.
+- **challenges** — Projected from `ChallengeCreated` events + IPFS spec parsing. Key fields: `contract_address` (unique on-chain identity), `status` (projected lifecycle state), `reward_amount` (USDC, 6 decimals), `deadline` (UTC timestamp), `spec_cid` (IPFS pointer to challenge YAML), `runtime_family` (managed runtime selection), `evaluation_plan_json` (canonical cached scoring plan: scorer image, bundle, mount, env, contracts, and policy metadata), and `artifacts_json` (public/private artifact cache). `challenge_type` remains a compatibility and display field, but execution behavior should key off `evaluation_plan_json` and the resolved evaluation plan helpers.
 
 - **submissions** — Projected from `Submitted` + `Scored` events. Key fields: `on_chain_sub_id` (contract-level submission index), `result_hash` (keccak256 of result CID, anchored on-chain), `submission_intent_id` (required link to the pre-registered submission intent), `result_cid` (IPFS pointer to the registered submission file), `score` (WAD-scaled score string), and `scored` (boolean, set true when `Scored` event is indexed). Additional columns: `result_format` (enum: `plain_v0` for direct/public payloads or `sealed_submission_v2` for sealed envelopes), `proof_bundle_cid` (IPFS CID of the proof bundle), `proof_bundle_hash` (on-chain hash of the proof bundle), and `scored_at` (timestamp when the score was posted). For `sealed_submission_v2`, `result_cid` points to the sealed envelope, not the plaintext replay artifact.
 

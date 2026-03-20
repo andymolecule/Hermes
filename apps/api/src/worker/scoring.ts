@@ -25,7 +25,6 @@ import {
   SealedSubmissionError,
   buildProofBundle,
   executeScoringPipeline,
-  resolveScoringRuntimeConfig,
   resolveSubmissionSource,
   scoreToWad,
 } from "@agora/scorer";
@@ -188,23 +187,6 @@ export async function scoreSubmissionAndBuildProof(
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
   const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
-  const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: cachedRuntimeConfig.env,
-    submissionContract: cachedRuntimeConfig.submissionContract,
-    evaluationContract: cachedRuntimeConfig.evaluationContract,
-    policies: cachedRuntimeConfig.policies,
-    specCid: challenge.spec_cid,
-    onLegacyFallback: async (specCid) => {
-      log(
-        "warn",
-        "Challenge is missing cached scoring config; falling back to IPFS spec fetch",
-        {
-          ...phaseMeta,
-          specCid,
-        },
-      );
-    },
-  });
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
     submissionSource = await resolveSubmissionSource({
@@ -232,11 +214,11 @@ export async function scoreSubmissionAndBuildProof(
       : undefined,
     mount: evalPlan.mount,
     submission: submissionSource,
-    submissionContract: scoringSpecConfig.submissionContract,
-    evaluationContract: scoringSpecConfig.evaluationContract,
+    submissionContract: cachedRuntimeConfig.submissionContract,
+    evaluationContract: cachedRuntimeConfig.evaluationContract,
     metric: evalPlan.metric,
-    policies: scoringSpecConfig.policies,
-    env: scoringSpecConfig.env,
+    policies: cachedRuntimeConfig.policies,
+    env: cachedRuntimeConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
     strictPull: isProduction,

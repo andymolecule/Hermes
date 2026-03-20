@@ -26,11 +26,11 @@ jobs:
       matrix:
         include:
           - name: gems-match-scorer
-            context: containers/repro-scorer
+            context: containers/gems-match-scorer
           - name: gems-tabular-scorer
-            context: containers/regression-scorer
+            context: containers/gems-tabular-scorer
           - name: gems-ranking-scorer
-            context: containers/docking-scorer
+            context: containers/gems-ranking-scorer
           - name: gems-generated-scorer
             context: containers/gems-generated-scorer
 

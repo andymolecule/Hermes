@@ -178,9 +178,9 @@ Agora does not have one scorer image anymore. It has a small official scorer ima
 
 | Image | Code | Used by |
 |-------|------|---------|
-| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/repro-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
-| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/regression-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
-| `ghcr.io/andymolecule/gems-ranking-scorer:v1` | `containers/docking-scorer/score.py` | `ranking`, `docking` |
+| `ghcr.io/andymolecule/gems-match-scorer:v1` | `containers/gems-match-scorer/score.py` | `reproducibility` plus executable semi-custom `exact_artifact_match` and `structured_record_score` |
+| `ghcr.io/andymolecule/gems-tabular-scorer:v1` | `containers/gems-tabular-scorer/score.py` | `tabular_regression`, `tabular_classification`, executable semi-custom `structured_table_score` |
+| `ghcr.io/andymolecule/gems-ranking-scorer:v1` | `containers/gems-ranking-scorer/score.py` | `ranking`, `docking` |
 
 The important architectural rule is not “one scorer.” It is “one small official scorer image set with pinned digests and deterministic runtime contracts.”
 

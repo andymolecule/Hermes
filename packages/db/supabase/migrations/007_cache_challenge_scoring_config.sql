@@ -1,3 +1,1 @@
-alter table challenges
-  add column if not exists submission_contract_json jsonb default null,
-  add column if not exists scoring_env_json jsonb default null;
+-- No-op after evaluation_plan_json became the single challenge runtime cache.

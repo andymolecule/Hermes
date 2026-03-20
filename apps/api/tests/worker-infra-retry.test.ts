@@ -17,7 +17,7 @@ const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
   runtime_family: "reproducibility",
-  evaluation_json: {
+  evaluation_plan_json: {
     runtime_family: "reproducibility",
     metric: "exact_match",
     scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",

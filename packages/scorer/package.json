@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort) && python3 ../../containers/regression-scorer/test_score.py && python3 ../../containers/repro-scorer/test_score.py && python3 ../../containers/docking-scorer/test_score.py"
+    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort) && python3 ../../containers/gems-tabular-scorer/test_score.py && python3 ../../containers/gems-match-scorer/test_score.py && python3 ../../containers/gems-ranking-scorer/test_score.py"
   },
   "devDependencies": {
     "@types/node": "^25.3.0"
