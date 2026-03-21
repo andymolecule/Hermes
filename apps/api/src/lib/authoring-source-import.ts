@@ -154,13 +154,13 @@ export async function upsertExternalAuthoringDraftFromSource(input: {
   }
 
   input.logger?.info(
-    {
-      event: "authoring.drafts.created",
-      provider: input.provider,
-      draftId: session.id,
-      externalId,
-      questionCount: authoringIr.clarification.open_questions.length,
-    },
+      {
+        event: "authoring.drafts.created",
+        provider: input.provider,
+        draftId: session.id,
+        externalId,
+        questionCount: authoringIr.questions.pending.length,
+      },
     "Created authoring draft from external source",
   );
 

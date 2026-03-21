@@ -3,7 +3,7 @@ import {
   authoringDraftSchema,
 } from "@agora/common";
 import type { AuthoringDraftRow } from "@agora/db";
-import { buildClarificationQuestionsFromAuthoringIr } from "./managed-authoring-ir.js";
+import { getPendingAuthoringQuestions } from "./managed-authoring-ir.js";
 
 export const EXTERNAL_DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -29,8 +29,7 @@ export function toAuthoringDraftPayload(
     return null;
   }
 
-  const clarificationQuestions =
-    getAuthoringDraftClarificationQuestions(authoringDraft);
+  const questions = getAuthoringDraftQuestions(authoringDraft);
   const approvedConfirmation =
     getAuthoringDraftApprovedConfirmation(authoringDraft);
 
@@ -42,7 +41,7 @@ export function toAuthoringDraftPayload(
     authoring_ir: authoringDraft.authoring_ir_json ?? null,
     uploaded_artifacts: authoringDraft.uploaded_artifacts_json ?? [],
     compilation: authoringDraft.compilation_json ?? null,
-    clarification_questions: clarificationQuestions,
+    questions,
     approved_confirmation: approvedConfirmation,
     published_challenge_id: authoringDraft.published_challenge_id ?? null,
     published_spec_cid: authoringDraft.published_spec_cid ?? null,
@@ -54,11 +53,11 @@ export function toAuthoringDraftPayload(
   });
 }
 
-export function getAuthoringDraftClarificationQuestions(
+export function getAuthoringDraftQuestions(
   draft: Pick<AuthoringDraftRow, "authoring_ir_json">,
 ) {
   if (draft.authoring_ir_json) {
-    return buildClarificationQuestionsFromAuthoringIr(draft.authoring_ir_json);
+    return getPendingAuthoringQuestions(draft.authoring_ir_json);
   }
   return [];
 }
@@ -79,7 +78,7 @@ export function buildAuthoringDraftAssessment(
     | "failure_message"
   >,
 ) {
-  const clarificationQuestions = getAuthoringDraftClarificationQuestions(draft);
+  const questions = getAuthoringDraftQuestions(draft);
   const runtimeFamily =
     draft.compilation_json?.runtime_family ??
     draft.authoring_ir_json?.evaluation.runtime_family ??
@@ -98,15 +97,15 @@ export function buildAuthoringDraftAssessment(
   ];
 
   const missing =
-    draft.state === "needs_clarification"
-      ? clarificationQuestions.map((question) => question.prompt)
+    draft.state === "needs_input"
+      ? questions.map((question) => question.field)
       : draft.state === "failed"
           ? [draft.failure_message ?? "compile_failed"]
           : (draft.authoring_ir_json?.intent.missing_fields ?? []);
 
   const suggestions = [
-    ...clarificationQuestions
-      .map((question) => question.next_step)
+    ...questions
+      .map((question) => question.prompt)
       .filter((value): value is string => typeof value === "string"),
     ...(draft.compilation_json?.warnings ?? []),
   ];

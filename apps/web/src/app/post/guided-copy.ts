@@ -1,9 +1,9 @@
 "use client";
 
-import type { clarificationTargetFromQuestions } from "./guided-state";
+import type { questionTargetFromQuestions } from "./guided-state";
 
-export function clarificationHelperText(
-  target: ReturnType<typeof clarificationTargetFromQuestions>,
+export function questionHelperText(
+  target: ReturnType<typeof questionTargetFromQuestions>,
 ) {
   switch (target) {
     case "winningCondition":

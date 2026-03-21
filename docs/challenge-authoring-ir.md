@@ -108,15 +108,15 @@ type AuthoringIntakeState = {
     compile_error_codes: string[];
     compile_error_message: string | null;
   };
-  clarification: {
-    open_questions: Array<{
+  questions: {
+    pending: Array<{
       id: string;
+      field: string;
+      kind: string;
       prompt: string;
-      reason_code: string;
-      next_step: string;
-      blocks_publish: boolean;
+      why: string | null;
+      reason_codes: string[];
     }>;
-    resolved_assumptions: string[];
   };
 };
 ```
@@ -154,7 +154,7 @@ It validates:
 Compile output should collapse to three operational states:
 
 - `ready`
-- `needs_clarification`
+- `needs_input`
 - `failed`
 
 That is the truth surface the rest of the system should read.
@@ -173,9 +173,9 @@ The assisted flow currently targets supported Gems families only:
 
 If a challenge needs a different evaluator model, it should fail clearly and point the poster toward the explicit custom scorer workflow rather than pretending the assisted flow can compile it.
 
-## Clarification model
+## Question model
 
-Clarification should be compiler-driven.
+Question generation should be compiler-driven.
 
 That means:
 
@@ -196,7 +196,7 @@ Managed drafts should stay simple:
 - `draft`
 - `compiling`
 - `ready`
-- `needs_clarification`
+- `needs_input`
 - `published`
 - `failed`
 

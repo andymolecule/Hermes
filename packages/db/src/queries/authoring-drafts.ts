@@ -21,7 +21,7 @@ const AUTHORING_DRAFT_STATE_VALUES: AuthoringDraftState[] = [
   "draft",
   "compiling",
   "ready",
-  "needs_clarification",
+  "needs_input",
   "published",
   "failed",
 ];
@@ -87,7 +87,7 @@ function createEmptyAuthoringDraftStateCounts(): AuthoringDraftStateCounts {
     draft: 0,
     compiling: 0,
     ready: 0,
-    needs_clarification: 0,
+    needs_input: 0,
     published: 0,
     failed: 0,
   };

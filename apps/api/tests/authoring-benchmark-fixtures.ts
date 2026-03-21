@@ -7,7 +7,7 @@ const BENCHMARK_ROOT = path.resolve(
   "challenges/test-data/authoring-benchmarks",
 );
 
-type BenchmarkCompileState = "ready" | "needs_clarification";
+type BenchmarkCompileState = "ready" | "needs_input";
 
 type BenchmarkJson = {
   id: string;
@@ -241,7 +241,6 @@ export function buildAuthoringBenchmarkDependencies(
           reason_codes: ["benchmark_managed_fit"],
           warnings: [],
           missing_fields: [],
-          questions: [],
           artifact_assignments: benchmarkCase.benchmark.compile_invariants.artifact_roles.map(
             (artifact, artifactIndex) => ({
               artifact_index: artifactIndex,
@@ -259,7 +258,6 @@ export function buildAuthoringBenchmarkDependencies(
             "Challenge description needs the explicit custom scorer workflow.",
           ],
           missing_fields: [],
-          questions: [],
           artifact_assignments: [],
         };
 

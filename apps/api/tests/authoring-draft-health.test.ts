@@ -10,7 +10,7 @@ const emptyCounts = {
   draft: 0,
   compiling: 0,
   ready: 0,
-  needs_clarification: 0,
+  needs_input: 0,
   published: 0,
   failed: 0,
 } as const;

@@ -1,10 +1,10 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  type AuthoringQuestionOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type ChallengeSpecOutput,
-  type ClarificationQuestionOutput,
   type CompilationResultOutput,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
@@ -16,6 +16,7 @@ import {
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
+import { buildAuthoringQuestions } from "./authoring-questions.js";
 import { assignArtifactsFromProposal } from "./managed-authoring-artifacts.js";
 import {
   type SupportedRuntimeFamily,
@@ -27,11 +28,10 @@ import {
 } from "./managed-authoring-confirmation.js";
 import { executeManagedAuthoringDryRun } from "./managed-authoring-dry-run.js";
 import {
-  buildClarificationQuestionsFromAuthoringIr,
   buildManagedAuthoringIr,
 } from "./managed-authoring-ir.js";
 
-const CLARIFICATION_ERROR_CODES = new Set([
+const NEEDS_INPUT_ERROR_CODES = new Set([
   "MANAGED_ARTIFACTS_INCOMPLETE",
   "MANAGED_ARTIFACTS_AMBIGUOUS",
   "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
@@ -40,9 +40,9 @@ const CLARIFICATION_ERROR_CODES = new Set([
 ]);
 
 export interface ManagedAuthoringDraftOutcome {
-  state: "ready" | "needs_clarification" | "failed";
+  state: "ready" | "needs_input" | "failed";
   compilation?: CompilationResultOutput;
-  clarificationQuestions?: ClarificationQuestionOutput[];
+  questions?: AuthoringQuestionOutput[];
   authoringIr: ChallengeAuthoringIrOutput;
   message?: string;
 }
@@ -235,7 +235,9 @@ export async function compileManagedAuthoringDraftOutcome(
       runtimeFamily: result.proposal.runtimeFamily,
       metric: result.proposal.metric,
       artifactAssignments: result.proposal.artifactAssignments,
-      resolvedAssumptions: result.proposal.reasonCodes,
+      assessmentOutcome: "ready",
+      assessmentReasonCodes: result.proposal.reasonCodes,
+      assessmentWarnings: result.proposal.warnings,
     });
     return {
       state: "ready",
@@ -247,33 +249,54 @@ export async function compileManagedAuthoringDraftOutcome(
   } catch (error) {
     if (
       error instanceof AgoraError &&
-      CLARIFICATION_ERROR_CODES.has(error.code)
+      NEEDS_INPUT_ERROR_CODES.has(error.code)
     ) {
+      const reasonCodes = Array.isArray(error.details?.reasonCodes)
+        ? (error.details.reasonCodes as string[])
+        : [];
+      const warnings = Array.isArray(error.details?.warnings)
+        ? (error.details.warnings as string[])
+        : [];
+      const missingFields = Array.isArray(error.details?.missingFields)
+        ? (error.details.missingFields as string[])
+        : [];
+      const runtimeFamily =
+        typeof error.details?.runtimeFamily === "string"
+          ? (error.details.runtimeFamily as SupportedRuntimeFamily)
+          : undefined;
+      const questions = buildAuthoringQuestions({
+        missingFields,
+        uploadedArtifacts: input.uploadedArtifacts,
+        runtimeFamily,
+        reasonCodes,
+        compileErrorCode: error.code,
+        missingArtifactRoles: Array.isArray(error.details?.missingRoles)
+          ? (error.details.missingRoles as string[])
+          : undefined,
+      });
       const authoringIr = buildManagedAuthoringIr({
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
         origin: { provider: "direct" },
-        runtimeFamily:
-          typeof error.details?.runtimeFamily === "string"
-            ? (error.details.runtimeFamily as SupportedRuntimeFamily)
-            : undefined,
+        runtimeFamily,
         metric:
           typeof error.details?.metric === "string"
             ? error.details.metric
             : null,
-        clarificationQuestions: Array.isArray(error.details?.questions)
-          ? (error.details.questions as ClarificationQuestionOutput[])
-          : undefined,
+        questions,
         compileError: {
           code: error.code,
           message: error.message,
         },
+        assessmentOutcome: "needs_input",
+        assessmentReasonCodes: reasonCodes,
+        assessmentWarnings: warnings,
+        missingFields: questions.map((question) => question.field),
       });
       return {
-        state: "needs_clarification",
+        state: "needs_input",
         authoringIr,
-        clarificationQuestions:
-          buildClarificationQuestionsFromAuthoringIr(authoringIr),
+        questions,
         message:
           error.message ||
           "Agora needs a little more context before it can lock the challenge contract.",
@@ -295,6 +318,10 @@ export async function compileManagedAuthoringDraftOutcome(
           code: error.code,
           message: error.message,
         },
+        assessmentOutcome: "failed",
+        assessmentReasonCodes: Array.isArray(error.details?.reasonCodes)
+          ? (error.details.reasonCodes as string[])
+          : [],
       });
       return {
         state: "failed",

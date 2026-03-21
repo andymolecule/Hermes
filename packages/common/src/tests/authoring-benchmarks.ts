@@ -10,7 +10,7 @@ const benchmarkRoot = path.resolve(
 
 const compileStateSchema = z.enum([
   "ready",
-  "needs_clarification",
+  "needs_input",
   "failed",
 ]);
 

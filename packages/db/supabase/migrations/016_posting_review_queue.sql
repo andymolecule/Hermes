@@ -12,7 +12,7 @@ alter table posting_sessions
         'draft',
         'compiling',
         'ready',
-        'needs_clarification',
+        'needs_input',
         'published',
         'failed'
       )

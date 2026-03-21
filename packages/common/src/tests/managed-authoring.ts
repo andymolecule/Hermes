@@ -108,7 +108,7 @@ assert.equal(
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
-  version: 2,
+  version: 3,
   origin: {
     provider: "direct",
     external_id: null,
@@ -132,6 +132,13 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     current: baseIntent,
     missing_fields: [],
   },
+  assessment: {
+    input_hash: null,
+    outcome: "ready",
+    reason_codes: [],
+    warnings: [],
+    missing_fields: [],
+  },
   evaluation: {
     runtime_family: "docking",
     metric: "spearman",
@@ -153,24 +160,31 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     compile_error_codes: [],
     compile_error_message: "none",
   },
-  clarification: {
-    open_questions: [],
-    resolved_assumptions: [],
+  questions: {
+    pending: [],
   },
 });
 
 const authoringDraft = authoringDraftSchema.parse({
   id: "f5567c15-8e0b-4afe-8d0c-7f511b592c05",
-  state: "needs_clarification",
+  state: "needs_input",
   intent: null,
   authoring_ir: authoringIr,
   uploaded_artifacts: baseArtifacts,
-  clarification_questions: [
+  questions: [
     {
       id: "hidden-labels",
+      field: "artifact_roles",
+      kind: "artifact_role_map",
+      label: "Artifact roles",
       prompt: "Which file contains the hidden docking scores?",
-      reason_code: "artifact_roles_missing",
-      next_step: "Upload or identify the hidden evaluation artifact.",
+      why: "Agora needs the evaluation files mapped before it can compile.",
+      required: true,
+      blocking: true,
+      options: [],
+      artifact_options: [],
+      artifact_roles: [],
+      reason_codes: ["artifact_roles_missing"],
     },
   ],
   expires_at: "2026-12-31T00:00:00.000Z",

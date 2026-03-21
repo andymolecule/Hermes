@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   AgoraError,
   type AuthoringArtifactOutput,
@@ -21,23 +22,13 @@ import {
   markDraftCompiling,
   refreshDraftIr,
 } from "./authoring-draft-transitions.js";
-import { buildManagedAuthoringIr } from "./managed-authoring-ir.js";
+import { buildAuthoringQuestions } from "./authoring-questions.js";
+import {
+  buildManagedAuthoringIr,
+  deriveManagedIntentCandidate,
+  extractMissingIntentFields,
+} from "./managed-authoring-ir.js";
 import { compileManagedAuthoringDraftOutcome } from "./managed-authoring.js";
-
-const REQUIRED_MANAGED_INTENT_FIELDS = [
-  "title",
-  "description",
-  "payout_condition",
-  "reward_total",
-  "deadline",
-] as const;
-
-function listMissingManagedIntentFields(intent: Record<string, unknown>) {
-  return REQUIRED_MANAGED_INTENT_FIELDS.filter((field) => {
-    const value = intent[field];
-    return typeof value !== "string" || value.trim().length === 0;
-  });
-}
 
 function draftBusyError() {
   return new AgoraError(
@@ -76,6 +67,44 @@ function buildOrigin(input: DraftOrigin) {
     ingested_at: input.ingested_at,
     raw_context: input.raw_context ?? null,
   };
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+  if (typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+    .join(",")}}`;
+}
+
+function computeAssessmentInputHash(input: {
+  intentCandidate: Record<string, unknown>;
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  sourceTitle?: string | null;
+  sourceMessages?: ExternalSourceMessageOutput[];
+  origin: DraftOrigin;
+}) {
+  return createHash("sha256")
+    .update(
+      stableSerialize({
+        intent: input.intentCandidate,
+        uploaded_artifacts: input.uploadedArtifacts,
+        source_title: input.sourceTitle ?? null,
+        source_messages: input.sourceMessages ?? [],
+        origin: input.origin,
+      }),
+    )
+    .digest("hex");
 }
 
 export type AuthoringIntakeWorkflowDependencies = {
@@ -130,23 +159,55 @@ export function createAuthoringIntakeWorkflow(
         throw draftBusyError();
       }
 
-      const baseAuthoringIr = buildManagedAuthoringIrImpl({
-        intent: input.intentCandidate ?? null,
+      const effectiveIntentCandidate = deriveManagedIntentCandidate({
+        intent: input.intentCandidate,
+        sourceTitle: input.sourceTitle,
+      });
+      const assessmentInputHash = computeAssessmentInputHash({
+        intentCandidate: effectiveIntentCandidate,
         uploadedArtifacts: input.uploadedArtifacts,
-        sourceTitle: input.sourceTitle ?? null,
-        sourceMessages: input.sourceMessages ?? [],
-        origin: buildOrigin(input.origin),
+        sourceTitle: input.sourceTitle,
+        sourceMessages: input.sourceMessages,
+        origin: input.origin,
       });
 
-      const missingFields = listMissingManagedIntentFields(
-        input.intentCandidate ?? {},
-      );
+      if (
+        input.session?.authoring_ir_json?.assessment.input_hash ===
+        assessmentInputHash
+      ) {
+        input.logger?.info(
+          {
+            event: "authoring.intake.cache_hit",
+            draftId: input.session.id,
+            provider: input.origin.provider,
+          },
+          "Reused cached authoring intake assessment",
+        );
+        return { draft: input.session };
+      }
+
+      const missingFields = extractMissingIntentFields(effectiveIntentCandidate);
       if (missingFields.length > 0) {
+        const questions = buildAuthoringQuestions({
+          missingFields,
+          uploadedArtifacts: input.uploadedArtifacts,
+        });
+        const baseAuthoringIr = buildManagedAuthoringIrImpl({
+          intent: effectiveIntentCandidate,
+          uploadedArtifacts: input.uploadedArtifacts,
+          sourceTitle: input.sourceTitle ?? null,
+          sourceMessages: input.sourceMessages ?? [],
+          origin: buildOrigin(input.origin),
+          questions,
+          assessmentInputHash,
+          assessmentOutcome: "needs_input",
+          missingFields,
+        });
         const draft = input.session
           ? await refreshDraftIrImpl({
               db: input.db,
               session: input.session,
-              state: "needs_clarification",
+              state: "needs_input",
               intentJson: null,
               authoringIrJson: baseAuthoringIr,
               uploadedArtifactsJson: input.uploadedArtifacts,
@@ -157,7 +218,7 @@ export function createAuthoringIntakeWorkflow(
           : await createDraftImpl({
               db: input.db,
               posterAddress: input.posterAddress,
-              state: "needs_clarification",
+              state: "needs_input",
               intentJson: null,
               authoringIrJson: baseAuthoringIr,
               uploadedArtifactsJson: input.uploadedArtifacts,
@@ -169,7 +230,7 @@ export function createAuthoringIntakeWorkflow(
       }
 
       const parsedIntent = challengeIntentSchema.safeParse(
-        input.intentCandidate,
+        effectiveIntentCandidate,
       );
       if (!parsedIntent.success) {
         throw new AgoraError(
@@ -190,6 +251,7 @@ export function createAuthoringIntakeWorkflow(
         sourceTitle: input.sourceTitle ?? parsedIntent.data.title,
         sourceMessages: input.sourceMessages ?? [],
         origin: buildOrigin(input.origin),
+        assessmentInputHash,
       });
 
       const draftSeed = input.session
@@ -256,6 +318,10 @@ export function createAuthoringIntakeWorkflow(
             uploaded_artifact_ids: input.uploadedArtifacts.map(
               (artifact, index) => artifact.id ?? `${index}:${artifact.uri}`,
             ),
+          },
+          assessment: {
+            ...outcome.authoringIr.assessment,
+            input_hash: assessmentInputHash,
           },
         };
 

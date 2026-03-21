@@ -215,7 +215,7 @@ function createDraft(
   };
 }
 
-test("managed draft submit creates a clarification draft when required fields are missing", async () => {
+test("managed draft submit creates a needs-input draft when required fields are missing", async () => {
   let storedDraft: AuthoringDraftRow | null = null;
   const router = createAuthoringDraftRoutes({
     createSupabaseClient: () => ({}) as never,
@@ -251,14 +251,11 @@ test("managed draft submit creates a clarification draft when required fields ar
   assert.equal(response.status, 200);
   const payload = (await response.json()) as {
     data: {
-      draft: { state: string; clarification_questions: Array<{ id: string }> };
+      draft: { state: string; questions: Array<{ id: string }> };
     };
   };
-  assert.equal(payload.data.draft.state, "needs_clarification");
-  assert.equal(
-    payload.data.draft.clarification_questions[0]?.id,
-    "challenge-description",
-  );
+  assert.equal(payload.data.draft.state, "needs_input");
+  assert.equal(payload.data.draft.questions[0]?.id, "challenge-description");
 });
 
 test("managed draft submit compiles a ready draft on the happy path", async () => {

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  authoringQuestionFieldSchema,
+  authoringQuestionSchema,
+} from "../authoring/intake-questions.js";
+import {
   authoringSourceDraftFieldsSchema,
   authoringSourceRawContextSchema,
   externalSourceArtifactRefSchema,
@@ -181,17 +185,6 @@ export const confirmationContractSchema = z.object({
   dry_run_summary: z.string().trim().min(1),
 });
 
-export const clarificationQuestionSchema = z.object({
-  id: z.string().trim().min(1),
-  prompt: z.string().trim().min(1),
-  reason_code: z.string().trim().min(1),
-  next_step: z.string().trim().min(1),
-});
-
-const authoringOpenQuestionSchema = clarificationQuestionSchema.extend({
-  blocks_publish: z.boolean(),
-});
-
 const authoringArtifactSchemaV1 = z.object({
   id: z.string().trim().min(1),
   uri: authoringUriSchema,
@@ -233,7 +226,7 @@ const authoringArtifactSchemaV1 = z.object({
 });
 
 export const challengeAuthoringIrSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   origin: z.object({
     provider: externalSourceProviderSchema,
     external_id: z.string().trim().min(1).nullable().optional(),
@@ -257,7 +250,14 @@ export const challengeAuthoringIrSchema = z.object({
   }),
   intent: z.object({
     current: partialChallengeIntentSchema,
-    missing_fields: z.array(z.string().trim().min(1)),
+    missing_fields: z.array(authoringQuestionFieldSchema),
+  }),
+  assessment: z.object({
+    input_hash: z.string().trim().min(1).nullable(),
+    outcome: z.enum(["ready", "needs_input", "failed"]).nullable(),
+    reason_codes: z.array(z.string().trim().min(1)).default([]),
+    warnings: z.array(z.string().trim().min(1)).default([]),
+    missing_fields: z.array(authoringQuestionFieldSchema).default([]),
   }),
   evaluation: z.object({
     runtime_family: z.string().trim().min(1).nullable(),
@@ -274,16 +274,15 @@ export const challengeAuthoringIrSchema = z.object({
     compile_error_codes: z.array(z.string().trim().min(1)),
     compile_error_message: z.string().trim().min(1).nullable(),
   }),
-  clarification: z.object({
-    open_questions: z.array(authoringOpenQuestionSchema),
-    resolved_assumptions: z.array(z.string().trim().min(1)),
+  questions: z.object({
+    pending: z.array(authoringQuestionSchema),
   }),
 });
 
 export const submitAuthoringSourceDraftRequestSchema =
   authoringSourceDraftFieldsSchema
     .extend({
-      intent: challengeIntentSchema,
+      intent: partialChallengeIntentSchema.optional(),
     })
     .superRefine((value, ctx) => {
       const seenUrls = new Set<string>();
@@ -345,7 +344,7 @@ export const AUTHORING_DRAFT_STATES = [
   "draft",
   "compiling",
   "ready",
-  "needs_clarification",
+  "needs_input",
   "published",
   "failed",
 ] as const;
@@ -363,8 +362,8 @@ export const authoringDraftCardSchema = z.object({
   submission_deadline: z.string().datetime({ offset: true }).nullable(),
   routing_mode: authoringRoutingModeSchema.nullable(),
   ambiguity_classes: z.array(authoringAmbiguityClassSchema),
-  clarification_count: z.number().int().nonnegative(),
-  next_question: clarificationQuestionSchema.nullable(),
+  question_count: z.number().int().nonnegative(),
+  next_question: authoringQuestionSchema.nullable(),
   published_challenge_id: z.string().uuid().nullable(),
   published_spec_cid: z.string().trim().min(1).nullable(),
   callback_registered: z.boolean(),
@@ -427,7 +426,7 @@ export const authoringDraftStateCountsSchema = z.object({
   draft: z.number().int().nonnegative(),
   compiling: z.number().int().nonnegative(),
   ready: z.number().int().nonnegative(),
-  needs_clarification: z.number().int().nonnegative(),
+  needs_input: z.number().int().nonnegative(),
   published: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
 });
@@ -464,7 +463,7 @@ export const authoringDraftSchema = z
       .max(AUTHORING_MAX_ARTIFACTS)
       .default([]),
     compilation: compilationResultSchema.nullable().optional(),
-    clarification_questions: z.array(clarificationQuestionSchema).default([]),
+    questions: z.array(authoringQuestionSchema).default([]),
     approved_confirmation: confirmationContractSchema.nullable().optional(),
     published_challenge_id: z.string().uuid().nullable().optional(),
     published_spec_cid: z.string().trim().min(1).nullable().optional(),
@@ -548,9 +547,6 @@ export type AuthoringAmbiguityClassOutput = z.output<
 >;
 export type ConfirmationContractOutput = z.output<
   typeof confirmationContractSchema
->;
-export type ClarificationQuestionOutput = z.output<
-  typeof clarificationQuestionSchema
 >;
 export type DryRunPreviewOutput = z.output<typeof dryRunPreviewSchema>;
 export type CompilationResultOutput = z.output<typeof compilationResultSchema>;

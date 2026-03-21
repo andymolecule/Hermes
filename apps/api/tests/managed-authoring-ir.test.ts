@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  buildClarificationQuestionsFromAuthoringIr,
-  buildManagedAuthoringIr,
-} from "../src/lib/managed-authoring-ir.js";
+import { createAuthoringQuestion } from "@agora/common";
+import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
 
 const uploadedArtifacts = [
   {
@@ -28,7 +26,7 @@ test("managed authoring intake state records missing required intent fields", ()
     uploadedArtifacts: [],
   });
 
-  assert.equal(authoringIr.version, 2);
+  assert.equal(authoringIr.version, 3);
   assert.equal(authoringIr.origin.provider, "direct");
   assert.deepEqual(authoringIr.intent.missing_fields, [
     "title",
@@ -37,7 +35,7 @@ test("managed authoring intake state records missing required intent fields", ()
     "reward_total",
     "deadline",
   ]);
-  assert.equal(authoringIr.clarification.open_questions[0]?.id, "challenge-title");
+  assert.equal(authoringIr.questions.pending.length, 0);
   assert.equal(authoringIr.evaluation.runtime_family, null);
 });
 
@@ -67,7 +65,8 @@ test("managed authoring intake state preserves compiler-selected runtime and art
         visibility: "private",
       },
     ],
-    resolvedAssumptions: ["matched_tabular_regression"],
+    assessmentOutcome: "ready",
+    assessmentReasonCodes: ["matched_tabular_regression"],
   });
 
   assert.equal(authoringIr.intent.missing_fields.length, 0);
@@ -75,12 +74,12 @@ test("managed authoring intake state preserves compiler-selected runtime and art
   assert.equal(authoringIr.evaluation.metric, "r2");
   assert.equal(authoringIr.evaluation.artifact_assignments[0]?.artifact_id, "train");
   assert.equal(
-    authoringIr.clarification.resolved_assumptions[0],
+    authoringIr.assessment.reason_codes[0],
     "matched_tabular_regression",
   );
 });
 
-test("managed authoring intake state turns compile errors into targeted clarification prompts", () => {
+test("managed authoring intake state persists canonical pending questions", () => {
   const authoringIr = buildManagedAuthoringIr({
     intent: {
       title: "Ranking challenge",
@@ -96,25 +95,19 @@ test("managed authoring intake state turns compile errors into targeted clarific
       code: "MANAGED_ARTIFACTS_AMBIGUOUS",
       message: "Agora could not determine which file contains the hidden labels.",
     },
+    questions: [
+      createAuthoringQuestion({
+        field: "artifact_roles",
+        reasonCodes: ["MANAGED_ARTIFACTS_AMBIGUOUS"],
+      }),
+    ],
+    assessmentOutcome: "needs_input",
+    missingFields: ["artifact_roles"],
   });
 
   assert.deepEqual(authoringIr.evaluation.compile_error_codes, [
     "MANAGED_ARTIFACTS_AMBIGUOUS",
   ]);
-  assert.equal(
-    authoringIr.clarification.open_questions[0]?.id,
-    "artifact-roles",
-  );
-});
-
-test("clarification questions derived from intake state strip persistence-only fields", () => {
-  const authoringIr = buildManagedAuthoringIr({
-    intent: null,
-    uploadedArtifacts: [],
-  });
-
-  const questions = buildClarificationQuestionsFromAuthoringIr(authoringIr);
-  assert.equal(questions.length, 5);
-  assert.equal(questions[0]?.id, "challenge-title");
-  assert.equal("blocks_publish" in (questions[0] ?? {}), false);
+  assert.equal(authoringIr.questions.pending[0]?.id, "artifact-roles");
+  assert.equal(authoringIr.assessment.missing_fields[0], "artifact_roles");
 });

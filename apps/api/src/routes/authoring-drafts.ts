@@ -183,14 +183,14 @@ export function createAuthoringDraftRoutes(
       nowIso: checkedAt,
       staleCompilingAfterMs: AUTHORING_DRAFT_STALE_COMPILING_THRESHOLD_MS,
     });
-    const counts = {
-      draft: snapshot.counts.draft ?? 0,
-      compiling: snapshot.counts.compiling ?? 0,
-      ready: snapshot.counts.ready ?? 0,
-      needs_clarification: snapshot.counts.needs_clarification ?? 0,
-      published: snapshot.counts.published ?? 0,
-      failed: snapshot.counts.failed ?? 0,
-    };
+      const counts = {
+        draft: snapshot.counts.draft ?? 0,
+        compiling: snapshot.counts.compiling ?? 0,
+        ready: snapshot.counts.ready ?? 0,
+        needs_input: snapshot.counts.needs_input ?? 0,
+        published: snapshot.counts.published ?? 0,
+        failed: snapshot.counts.failed ?? 0,
+      };
 
     return c.json({
       data: buildAuthoringDraftHealthResponse({

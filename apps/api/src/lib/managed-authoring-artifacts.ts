@@ -80,7 +80,7 @@ export function assignArtifactsFromProposal(input: {
   );
   if (missingRoles.length > 0) {
     throw new AgoraError(
-      `Managed authoring compiler could not assign all required artifact roles (${missingRoles.join(", ")}). Next step: rename the uploaded files to clarify their roles or use Expert Mode.`,
+      `Managed authoring compiler could not assign all required artifact roles (${missingRoles.join(", ")}). Next step: rename the uploaded files to make their roles explicit or use Expert Mode.`,
       {
         code: "MANAGED_ARTIFACTS_AMBIGUOUS",
         status: 422,

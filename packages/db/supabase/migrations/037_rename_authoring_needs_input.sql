@@ -1,12 +1,8 @@
 update authoring_drafts
 set
-  state = 'failed',
-  failure_message = coalesce(
-    nullif(failure_message, ''),
-    'Managed authoring review was removed. Next step: resubmit the draft through /api/authoring/drafts/submit or switch to the explicit custom scorer workflow.'
-  ),
+  state = 'needs_input',
   updated_at = now()
-where state = 'needs_review';
+where state = 'needs_clarification';
 
 alter table authoring_drafts
   drop constraint if exists authoring_drafts_state_check;

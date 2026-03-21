@@ -195,7 +195,6 @@ test("managed authoring compiles a supported tabular regression challenge", asyn
             reason_codes: ["matched_tabular_regression"],
             warnings: [],
             missing_fields: [],
-            questions: [],
             artifact_assignments: [
               {
                 artifact_index: 0,
@@ -246,7 +245,6 @@ test("managed authoring preserves explicit testnet dispute windows", async () =>
             reason_codes: ["matched_tabular_regression"],
             warnings: [],
             missing_fields: [],
-            questions: [],
             artifact_assignments: [
               {
                 artifact_index: 0,
@@ -297,7 +295,6 @@ test("managed authoring compiles a supported docking challenge", async () => {
             reason_codes: ["matched_docking"],
             warnings: [],
             missing_fields: [],
-            questions: [],
             artifact_assignments: [
               {
                 artifact_index: 0,
@@ -327,7 +324,7 @@ test("managed authoring compiles a supported docking challenge", async () => {
   });
 });
 
-test("managed authoring returns clarification questions when Anthropic needs more input", async () => {
+test("managed authoring returns canonical questions when Anthropic needs more input", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringDraftOutcome(
       {
@@ -346,22 +343,15 @@ test("managed authoring returns clarification questions when Anthropic needs mor
             reason_codes: ["missing_metric_definition"],
             warnings: [],
             missing_fields: ["payout_condition"],
-            questions: [
-              {
-                id: "winning-definition",
-                prompt: "Which metric should Agora optimize?",
-                reason_code: "missing_metric_definition",
-                next_step: "Name the metric and resubmit.",
-              },
-            ],
             artifact_assignments: [],
           }),
       },
     );
 
-    assert.equal(result.state, "needs_clarification");
-    assert.equal(result.clarificationQuestions?.length, 1);
-    assert.equal(result.clarificationQuestions?.[0]?.id, "winning-definition");
+    assert.equal(result.state, "needs_input");
+    assert.equal(result.questions?.length, 1);
+    assert.equal(result.questions?.[0]?.id, "winning-definition");
+    assert.equal(result.questions?.[0]?.field, "payout_condition");
     assert.equal(
       result.authoringIr.evaluation.compile_error_codes[0],
       "MANAGED_COMPILER_NEEDS_INPUT",
@@ -391,7 +381,6 @@ test("managed authoring fails cleanly when no supported Gems scorer fits", async
             reason_codes: ["no_supported_runtime_fit"],
             warnings: [],
             missing_fields: [],
-            questions: [],
             artifact_assignments: [],
           }),
       },

@@ -28,7 +28,7 @@ import {
 } from "@agora/db";
 import {
   buildAuthoringDraftAssessment,
-  getAuthoringDraftClarificationQuestions,
+  getAuthoringDraftQuestions,
   toAuthoringDraftPayload,
 } from "./authoring-draft-payloads.js";
 
@@ -322,21 +322,19 @@ function draftTitle(session: AuthoringDraftRow) {
 }
 
 function draftSummary(session: AuthoringDraftRow) {
-  const clarificationQuestions =
-    getAuthoringDraftClarificationQuestions(session);
+  const questions = getAuthoringDraftQuestions(session);
   if (session.state === "failed") {
     return session.failure_message;
   }
-  if (clarificationQuestions.length > 0) {
-    return clarificationQuestions[0]?.next_step ?? null;
+  if (questions.length > 0) {
+    return questions[0]?.prompt ?? null;
   }
   if (session.compilation_json?.confirmation_contract) {
     return session.compilation_json.confirmation_contract.scoring_summary;
   }
 
   return (
-    session.authoring_ir_json?.clarification.open_questions[0]?.next_step ??
-    null
+    session.authoring_ir_json?.questions.pending[0]?.prompt ?? null
   );
 }
 
@@ -444,8 +442,7 @@ export function buildAuthoringDraftCard(
   session: AuthoringDraftRow,
 ): AuthoringDraftCardOutput {
   const provider = draftProvider(session);
-  const clarificationQuestions =
-    getAuthoringDraftClarificationQuestions(session);
+  const questions = getAuthoringDraftQuestions(session);
   return authoringDraftCardSchema.parse({
     draft_id: session.id,
     provider,
@@ -457,8 +454,8 @@ export function buildAuthoringDraftCard(
     submission_deadline: session.intent_json?.deadline ?? null,
     routing_mode: null,
     ambiguity_classes: [],
-    clarification_count: clarificationQuestions.length,
-    next_question: clarificationQuestions[0] ?? null,
+    question_count: questions.length,
+    next_question: questions[0] ?? null,
     published_challenge_id: session.published_challenge_id ?? null,
     published_spec_cid: session.published_spec_cid ?? null,
     callback_registered:

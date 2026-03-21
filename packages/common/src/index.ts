@@ -3,6 +3,7 @@ export * from "./types/score-job.js";
 export * from "./types/submission.js";
 export * from "./types/scoring.js";
 export * from "./errors.js";
+export * from "./authoring/intake-questions.js";
 export * from "./challenges/index.js";
 export * from "./schemas/challenge-spec.js";
 export * from "./schemas/authoring-source.js";

@@ -61,7 +61,7 @@ Quick reference for key terms used across Agora documentation and code.
 
 | Term | Definition |
 |------|-----------|
-| **Authoring IR** (`ChallengeAuthoringIR`) | Proposed typed intermediate representation between open-ended poster language and the final challenge spec. It should capture objective, artifacts, submission shape, privacy, economics, routing, and unresolved clarifications before compile/publish. |
+| **Authoring IR** (`ChallengeAuthoringIR`) | Typed intermediate representation between open-ended poster language and the final challenge spec. It captures objective, artifacts, submission shape, privacy, economics, routing, and any remaining blocking questions before compile/publish. |
 | **Expert Mode** | Manual or advanced authoring path used when a challenge cannot be safely expressed through the managed posting flow. |
 
 ## Infrastructure

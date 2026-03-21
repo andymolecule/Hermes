@@ -1,9 +1,10 @@
 "use client";
 
-import type { ClarificationQuestionOutput } from "@agora/common";
+import type { AuthoringQuestionOutput } from "@agora/common";
 import { Check, CircleAlert, Loader2, Pencil, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clarificationHelperText } from "./guided-copy";
+import { AuthoringQuestionList } from "./AuthoringQuestionList";
+import { questionHelperText } from "./guided-copy";
 import {
   GUIDED_PROMPTS,
   GUIDED_PROMPT_ORDER,
@@ -15,10 +16,10 @@ import {
   type GuidedFieldKey,
   type UploadedArtifact,
   answerSummaryForPrompt,
-  clarificationTargetFromQuestions,
   getFieldValue,
   getLastVisitedPromptIndex,
   getPromptStatus,
+  questionTargetFromQuestions,
 } from "./guided-state";
 import { cx, truncateMiddle } from "./post-ui";
 
@@ -212,7 +213,7 @@ function UploadEditor({
 
 export function GuidedComposer({
   state,
-  clarificationQuestions,
+  questions,
   isCompiling,
   onEditPrompt,
   onAnswerPrompt,
@@ -223,7 +224,7 @@ export function GuidedComposer({
   onConfirmUploads,
 }: {
   state: GuidedComposerState;
-  clarificationQuestions: ClarificationQuestionOutput[];
+  questions: AuthoringQuestionOutput[];
   isCompiling: boolean;
   onEditPrompt: (field: Exclude<GuidedFieldKey, "title">) => void;
   onAnswerPrompt: (
@@ -241,19 +242,15 @@ export function GuidedComposer({
   const activePromptIndex = activePromptId
     ? GUIDED_PROMPT_ORDER.indexOf(activePromptId)
     : lastVisitedIndex;
-  const clarificationTarget = useMemo(
+  const questionTarget = useMemo(
     () =>
-      clarificationQuestions.length > 0
-        ? clarificationTargetFromQuestions(clarificationQuestions)
-        : null,
-    [clarificationQuestions],
+      questions.length > 0 ? questionTargetFromQuestions(questions) : null,
+    [questions],
   );
-  const activeClarifications = useMemo(
+  const activeQuestions = useMemo(
     () =>
-      clarificationTarget && clarificationTarget === activePromptId
-        ? clarificationQuestions
-        : [],
-    [activePromptId, clarificationQuestions, clarificationTarget],
+      questionTarget && questionTarget === activePromptId ? questions : [],
+    [activePromptId, questionTarget, questions],
   );
   const promptRefs = useRef<
     Partial<Record<Exclude<GuidedFieldKey, "title">, HTMLDivElement | null>>
@@ -384,23 +381,14 @@ export function GuidedComposer({
                 </p>
               ) : null}
 
-              {activeClarifications.length > 0 ? (
-                <div className="ml-10 mt-4 rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <div className="font-semibold">
-                    {clarificationHelperText(clarificationTarget ?? "problem")}
+              {activeQuestions.length > 0 ? (
+                <div className="ml-10 mt-4">
+                  <div className="mb-2 rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <div className="font-semibold">
+                      {questionHelperText(questionTarget ?? "problem")}
+                    </div>
                   </div>
-                  <div className="mt-2 space-y-2">
-                    {activeClarifications.map((question) => (
-                      <div key={question.id}>
-                        <div className="font-medium text-warm-900">
-                          {question.prompt}
-                        </div>
-                        <div className="mt-0.5 text-warm-700">
-                          {question.next_step}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <AuthoringQuestionList questions={activeQuestions} />
                 </div>
               ) : null}
 
@@ -560,8 +548,7 @@ export function GuidedComposer({
         </div>
       ) : null}
 
-      {state.compileState === "needs_clarification" &&
-      clarificationQuestions.length === 0 ? (
+      {state.compileState === "needs_input" && questions.length === 0 ? (
         <div className="rounded-[2px] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Agora needs more context before it can lock the contract.
         </div>

@@ -48,25 +48,51 @@ export function getAuthoringDraftRequestStatus(error: unknown) {
   return undefined;
 }
 
-function buildPostingIntent(intent: ManagedIntentState) {
-  const disputeWindowInput = intent.disputeWindowHours.trim();
-  return {
-    title: intent.title,
-    description: intent.description,
-    payout_condition: intent.payoutCondition,
-    reward_total: intent.rewardTotal,
-    distribution: intent.distribution,
-    deadline: computeDeadlineIso(intent.deadline),
-    dispute_window_hours:
-      disputeWindowInput.length > 0 ? Number(disputeWindowInput) : undefined,
-    domain: intent.domain,
-    tags: intent.tags
+function buildPostingIntent(intent: Partial<ManagedIntentState>) {
+  const disputeWindowInput = intent.disputeWindowHours?.trim() ?? "";
+  const payload: Record<string, unknown> = {};
+
+  if (intent.title?.trim()) {
+    payload.title = intent.title.trim();
+  }
+  if (intent.description?.trim()) {
+    payload.description = intent.description.trim();
+  }
+  if (intent.payoutCondition?.trim()) {
+    payload.payout_condition = intent.payoutCondition.trim();
+  }
+  if (intent.rewardTotal?.trim()) {
+    payload.reward_total = intent.rewardTotal.trim();
+  }
+  if (
+    typeof intent.distribution === "string" &&
+    intent.distribution.length > 0
+  ) {
+    payload.distribution = intent.distribution;
+  }
+  if (intent.deadline?.trim()) {
+    payload.deadline = computeDeadlineIso(intent.deadline.trim());
+  }
+  if (disputeWindowInput.length > 0) {
+    payload.dispute_window_hours = Number(disputeWindowInput);
+  }
+  if (intent.domain?.trim()) {
+    payload.domain = intent.domain.trim();
+  }
+  if (intent.tags?.trim()) {
+    payload.tags = intent.tags
       .split(",")
       .map((tag) => tag.trim().toLowerCase())
-      .filter(Boolean),
-    solver_instructions: intent.solverInstructions,
-    timezone: intent.timezone,
-  };
+      .filter(Boolean);
+  }
+  if (intent.solverInstructions?.trim()) {
+    payload.solver_instructions = intent.solverInstructions.trim();
+  }
+  if (intent.timezone?.trim()) {
+    payload.timezone = intent.timezone.trim();
+  }
+
+  return payload;
 }
 
 export function getCompilation(
@@ -86,7 +112,7 @@ export function clearCompiledSessionData(
     ...current,
     state: "draft",
     compilation: null,
-    clarification_questions: [],
+    questions: [],
     failure_message: null,
   };
 }
@@ -107,7 +133,7 @@ export async function pinDataFile(file: File) {
 export async function submitAuthoringDraft(input: {
   draftId: string;
   posterAddress?: `0x${string}`;
-  intent: ManagedIntentState;
+  intent: Partial<ManagedIntentState>;
   uploads: UploadedArtifact[];
 }) {
   const response = await fetch("/api/authoring/drafts/submit", {

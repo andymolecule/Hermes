@@ -2,7 +2,7 @@
 
 import type {
   AuthoringDraftOutput,
-  ClarificationQuestionOutput,
+  AuthoringQuestionOutput,
 } from "@agora/common";
 import { z } from "zod";
 import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
@@ -54,7 +54,7 @@ export type GuidedCompileState =
   | "idle"
   | "ready_to_compile"
   | "compiling"
-  | "needs_clarification"
+  | "needs_input"
   | "ready";
 
 export type GuidedComposerState = {
@@ -128,7 +128,7 @@ type GuidedAnswerAction =
       draftId: string | null;
     }
   | {
-      type: "apply_clarification";
+      type: "apply_questions";
       field: Exclude<GuidedFieldKey, "title">;
     }
   | {
@@ -169,7 +169,7 @@ const guidedCompileStateSchema = z.enum([
   "idle",
   "ready_to_compile",
   "compiling",
-  "needs_clarification",
+  "needs_input",
   "ready",
 ]);
 const distributionValueSchema = z.enum([
@@ -770,9 +770,9 @@ export function guidedComposerReducer(
       nextState.draftId = action.draftId;
       return nextState;
     }
-    case "apply_clarification": {
+    case "apply_questions": {
       invalidateFromPrompt(nextState, action.field);
-      nextState.compileState = "needs_clarification";
+      nextState.compileState = "needs_input";
       return nextState;
     }
   }
@@ -863,10 +863,10 @@ export function hydrateGuidedStateFromAuthoringDraft(
       nextState.compileState = "ready";
       nextState.activePromptId = null;
       break;
-    case "needs_clarification":
-      nextState.compileState = "needs_clarification";
-      nextState.activePromptId = clarificationTargetFromQuestions(
-        draft.clarification_questions ?? [],
+    case "needs_input":
+      nextState.compileState = "needs_input";
+      nextState.activePromptId = questionTargetFromQuestions(
+        draft.questions ?? [],
       );
       break;
     case "compiling":
@@ -1007,23 +1007,25 @@ export function clearGuidedDraft(storage = window.sessionStorage) {
   storage.removeItem(STORAGE_KEY);
 }
 
-export function clarificationTargetFromQuestions(
-  questions: ClarificationQuestionOutput[],
+export function questionTargetFromQuestions(
+  questions: AuthoringQuestionOutput[],
 ) {
-  const reasonCodes = new Set(
-    questions.map((question) => question.reason_code),
-  );
-  if (reasonCodes.has("MANAGED_THRESHOLD_UNSUPPORTED")) {
-    return "winningCondition" as const;
-  }
-  if (reasonCodes.has("MANAGED_ARTIFACTS_INCOMPLETE")) {
-    return "uploads" as const;
-  }
-  if (
-    reasonCodes.has("MANAGED_ARTIFACTS_AMBIGUOUS") ||
-    reasonCodes.has("MANAGED_ARTIFACT_ASSIGNMENTS_INVALID")
-  ) {
-    return "uploads" as const;
+  for (const question of questions) {
+    switch (question.field) {
+      case "payout_condition":
+      case "metric":
+        return "winningCondition";
+      case "reward_total":
+        return "rewardTotal";
+      case "distribution":
+        return "distribution";
+      case "deadline":
+        return "deadline";
+      case "artifact_roles":
+        return "uploads";
+      default:
+        return "problem";
+    }
   }
   return "problem" as const;
 }

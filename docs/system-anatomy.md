@@ -916,7 +916,7 @@ Both wrappers converge into the same flow:
   persisted draft state:
     draft
       -> compiling
-      -> ready | needs_clarification | failed
+      -> ready | needs_input | failed
       -> published
 ```
 
@@ -935,7 +935,7 @@ sequenceDiagram
     IR-->>API: authoring_ir_json
     API->>DB: persist draft snapshot
     API->>CMP: compileManagedAuthoringDraftOutcome(...)
-    CMP-->>API: ready or needs_clarification or failed
+    CMP-->>API: ready or needs_input or failed
     API->>DB: persist compilation result and draft state
 ```
 
@@ -951,7 +951,7 @@ flowchart TD
 
     Draft --> Submit
     Submit -->|"ready"| Publish
-    Submit -->|"needs_clarification or failed"| Draft
+    Submit -->|"needs_input or failed"| Draft
     Publish --> DraftMeta
     Draft --> Callback
     DraftMeta --> Callback
@@ -983,9 +983,9 @@ Important distinction:
 3. **Scoreability and compile gating**
 
 - supported Gems proposal + successful dry-run → `ready`
-- missing intent fields or ambiguous artifact roles → `needs_clarification`
+- missing intent fields or ambiguous artifact roles → `needs_input`
 - unsupported evaluator shape → `failed` with an explicit custom-scorer next step
-- unresolved ambiguity → `needs_clarification`
+- unresolved ambiguity → `needs_input`
 
 So the architecture already distinguishes between:
 

@@ -10,7 +10,7 @@ Authoring callbacks are a host-sync mechanism, not a source of truth.
 
 Agora remains canonical for:
 - draft state
-- clarification state
+- needs-input state
 - compile state
 - publish state
 

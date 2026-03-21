@@ -420,7 +420,7 @@ Practical rule for OpenClaw:
 | State | Meaning |
 |-------|---------|
 | `ready` | submit produced a scoreable challenge contract candidate |
-| `needs_clarification` | submit found specific missing information and returned the next blocking questions |
+| `needs_input` | submit found specific missing information and returned the next blocking questions |
 | `failed` | submit could not complete safely |
 
 ## Step 5: Register a Callback Endpoint

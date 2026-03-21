@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clarificationHelperText } from "../src/app/post/guided-copy";
+import { questionHelperText } from "../src/app/post/guided-copy";
 import {
   type UploadedArtifact,
-  clarificationTargetFromQuestions,
+  questionTargetFromQuestions,
   createInitialGuidedState,
   guidedComposerReducer,
 } from "../src/app/post/guided-state";
@@ -17,46 +17,70 @@ function readyUpload(): UploadedArtifact {
   };
 }
 
-test("clarification routes unsupported thresholds back to winning condition", () => {
-  const target = clarificationTargetFromQuestions([
+test("questions route unsupported thresholds back to winning condition", () => {
+  const target = questionTargetFromQuestions([
     {
       id: "threshold-policy",
+      field: "payout_condition",
+      kind: "short_text",
+      label: "Winning condition",
       prompt: "Do you want Agora to rank submissions without a threshold?",
-      reason_code: "MANAGED_THRESHOLD_UNSUPPORTED",
-      next_step: "Remove the explicit threshold and compile again.",
+      why: "Agora needs a deterministic winning condition.",
+      required: true,
+      blocking: true,
+      options: [],
+      artifact_options: [],
+      artifact_roles: [],
+      reason_codes: ["MANAGED_THRESHOLD_UNSUPPORTED"],
     },
   ]);
 
   assert.equal(target, "winningCondition");
-  assert.match(clarificationHelperText(target), /winning condition/i);
+  assert.match(questionHelperText(target), /winning condition/i);
 });
 
-test("clarification routes missing or ambiguous artifacts back to uploads", () => {
+test("questions route missing or ambiguous artifacts back to uploads", () => {
   assert.equal(
-    clarificationTargetFromQuestions([
+    questionTargetFromQuestions([
       {
         id: "missing-artifacts",
+        field: "artifact_roles",
+        kind: "artifact_role_map",
+        label: "Artifact roles",
         prompt: "What file is still missing?",
-        reason_code: "MANAGED_ARTIFACTS_INCOMPLETE",
-        next_step: "Upload the missing file.",
+        why: "Agora needs the evaluation files mapped before it can compile.",
+        required: true,
+        blocking: true,
+        options: [],
+        artifact_options: [],
+        artifact_roles: [],
+        reason_codes: ["MANAGED_ARTIFACTS_INCOMPLETE"],
       },
     ]),
     "uploads",
   );
   assert.equal(
-    clarificationTargetFromQuestions([
+    questionTargetFromQuestions([
       {
         id: "artifact-roles",
+        field: "artifact_roles",
+        kind: "artifact_role_map",
+        label: "Artifact roles",
         prompt: "Which file is train data and which is hidden labels?",
-        reason_code: "MANAGED_ARTIFACTS_AMBIGUOUS",
-        next_step: "Rename the files and retry.",
+        why: "Agora needs the evaluation files mapped before it can compile.",
+        required: true,
+        blocking: true,
+        options: [],
+        artifact_options: [],
+        artifact_roles: [],
+        reason_codes: ["MANAGED_ARTIFACTS_AMBIGUOUS"],
       },
     ]),
     "uploads",
   );
 });
 
-test("apply clarification reopens the targeted prompt and resets later state", () => {
+test("apply questions reopens the targeted prompt and resets later state", () => {
   let state = createInitialGuidedState("UTC");
   state = guidedComposerReducer(state, {
     type: "answer_prompt",
@@ -79,12 +103,12 @@ test("apply clarification reopens the targeted prompt and resets later state", (
     value: "300",
   });
   state = guidedComposerReducer(state, {
-    type: "apply_clarification",
+    type: "apply_questions",
     field: "uploads",
   });
 
   assert.equal(state.activePromptId, "uploads");
-  assert.equal(state.compileState, "needs_clarification");
+  assert.equal(state.compileState, "needs_input");
   assert.equal(state.uploadsStatus, "collecting");
   assert.equal(state.fields.winningCondition.status, "suggested");
   assert.equal(state.fields.rewardTotal.status, "suggested");

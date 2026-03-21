@@ -15,7 +15,6 @@ import {
   type GuidedFieldKey,
   type UploadedArtifact,
   buildManagedIntentFromGuidedState,
-  clarificationTargetFromQuestions,
   clearGuidedDraft,
   createInitialGuidedState,
   guidedComposerReducer,
@@ -23,6 +22,7 @@ import {
   isReadyToCompile,
   listReadinessIssues,
   loadGuidedDraft,
+  questionTargetFromQuestions,
   saveGuidedDraft,
 } from "./guided-state";
 import {
@@ -76,7 +76,7 @@ export function usePostAuthoringWorkflow(input: {
     [guidedState],
   );
   const compilation = getCompilation(session);
-  const clarificationQuestions = session?.clarification_questions ?? [];
+  const questions = session?.questions ?? [];
 
   const dispatchCompileState = useCallback(
     (compileState: GuidedCompileState) => {
@@ -148,12 +148,10 @@ export function usePostAuthoringWorkflow(input: {
         if (restoredSession.state === "ready") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
-        } else if (restoredSession.state === "needs_clarification") {
+        } else if (restoredSession.state === "needs_input") {
           dispatch({
-            type: "apply_clarification",
-            field: clarificationTargetFromQuestions(
-              restoredSession.clarification_questions ?? [],
-            ),
+            type: "apply_questions",
+            field: questionTargetFromQuestions(restoredSession.questions ?? []),
           });
           setStep(1);
         } else if (restoredSession.state === "published") {
@@ -350,12 +348,10 @@ export function usePostAuthoringWorkflow(input: {
       setSession(compiledSession);
       dispatch({ type: "set_draft_id", draftId: compiledSession.id });
 
-      if (compiledSession.state === "needs_clarification") {
+      if (compiledSession.state === "needs_input") {
         dispatch({
-          type: "apply_clarification",
-          field: clarificationTargetFromQuestions(
-            compiledSession.clarification_questions ?? [],
-          ),
+          type: "apply_questions",
+          field: questionTargetFromQuestions(compiledSession.questions ?? []),
         });
         setStep(1);
         setStatusMessage(
@@ -416,7 +412,7 @@ export function usePostAuthoringWorkflow(input: {
     session,
     setSession,
     compilation,
-    clarificationQuestions,
+    questions,
     compileReady,
     draftIssues,
     isCompiling,

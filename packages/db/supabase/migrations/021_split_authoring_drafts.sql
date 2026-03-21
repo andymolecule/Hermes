@@ -18,7 +18,7 @@ create table if not exists authoring_drafts (
         'draft',
         'compiling',
         'ready',
-        'needs_clarification',
+        'needs_input',
         'published',
         'failed'
       )

@@ -1,5 +1,6 @@
 import {
   AgoraError,
+  AUTHORING_QUESTION_FIELDS,
   type AuthoringArtifactOutput,
   type ChallengeIntentOutput,
   lookupManagedRuntimeFamily,
@@ -43,17 +44,7 @@ const compilerToolResultSchema = z.object({
   metric: z.string().trim().min(1).nullable(),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   warnings: z.array(z.string().trim().min(1)).default([]),
-  missing_fields: z.array(z.string().trim().min(1)).default([]),
-  questions: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1),
-        prompt: z.string().trim().min(1),
-        reason_code: z.string().trim().min(1),
-        next_step: z.string().trim().min(1),
-      }),
-    )
-    .default([]),
+  missing_fields: z.array(z.enum(AUTHORING_QUESTION_FIELDS)).default([]),
   artifact_assignments: z
     .array(
       z.object({
@@ -91,7 +82,7 @@ function buildSystemPrompt() {
     "You map poster intent and uploaded artifact metadata to one supported Agora Gems scoring family.",
     "Choose only from the supported runtime catalog.",
     "Do not invent runtime families, metrics, or artifact roles.",
-    "If the task is still missing required information, return outcome=needs_input with specific questions.",
+    `If the task is still missing required information, return outcome=needs_input and choose missing_fields only from: ${AUTHORING_QUESTION_FIELDS.join(", ")}.`,
     "If the task does not fit any current Gems scorer cleanly, return outcome=unsupported with specific reason codes.",
     "Do not produce prose outside the tool result.",
     `Supported runtime catalog: ${JSON.stringify(buildCompilerCatalog())}`,
@@ -147,20 +138,9 @@ function buildToolDefinition() {
         },
         missing_fields: {
           type: "array",
-          items: { type: "string" },
-        },
-        questions: {
-          type: "array",
           items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              id: { type: "string" },
-              prompt: { type: "string" },
-              reason_code: { type: "string" },
-              next_step: { type: "string" },
-            },
-            required: ["id", "prompt", "reason_code", "next_step"],
+            type: "string",
+            enum: [...AUTHORING_QUESTION_FIELDS],
           },
         },
         artifact_assignments: {
@@ -187,7 +167,6 @@ function buildToolDefinition() {
         "reason_codes",
         "warnings",
         "missing_fields",
-        "questions",
         "artifact_assignments",
       ],
     },
@@ -295,8 +274,9 @@ export class AnthropicCompilerProvider {
             status: 422,
             details: {
               missingFields: parsed.missing_fields,
-              questions: parsed.questions,
               reasonCodes: parsed.reason_codes,
+              warnings: parsed.warnings,
+              runtimeFamily: parsed.runtime_family,
             },
           },
         );
@@ -322,9 +302,13 @@ export class AnthropicCompilerProvider {
             code: "MANAGED_COMPILER_NEEDS_INPUT",
             status: 422,
             details: {
-              missingFields: parsed.missing_fields,
-              questions: parsed.questions,
+              missingFields:
+                parsed.missing_fields.length > 0
+                  ? parsed.missing_fields
+                  : ["metric"],
               reasonCodes: parsed.reason_codes,
+              warnings: parsed.warnings,
+              runtimeFamily: parsed.runtime_family,
             },
           },
         );
