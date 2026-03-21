@@ -661,18 +661,21 @@ erDiagram
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
 | `GET` | `/api/authoring/health` | — | — | Managed authoring backlog health |
-| `POST` | `/api/authoring/drafts/submit` | Rate limit | — | Upsert and compile a managed authoring draft in one call |
-| `POST` | `/api/authoring/drafts/:id/publish` | Rate limit | — | Publish a managed draft on-chain |
+| `POST` | `/api/authoring/uploads` | Rate limit | — | Upload and pin direct authoring artifacts for a session |
+| `POST` | `/api/authoring/sessions` | Rate limit | — | Start a managed authoring session from rough context and uploaded artifacts |
+| `GET` | `/api/authoring/sessions/:id` | — | — | Read direct session state |
+| `POST` | `/api/authoring/sessions/:id/respond` | Rate limit | — | Answer canonical follow-up questions or add context to a managed session |
+| `POST` | `/api/authoring/sessions/:id/publish` | Rate limit | — | Publish a managed session on-chain after deterministic validation passes |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
-| `POST` | `/api/authoring/external/drafts/submit` | Partner bearer | — | Upsert and compile an external/partner-managed authoring draft |
-| `GET` | `/api/authoring/external/drafts/:id` | Partner bearer | — | Read external draft state |
-| `GET` | `/api/authoring/external/drafts/:id/card` | Partner bearer | — | Read compact draft card view |
-| `POST` | `/api/authoring/external/drafts/:id/publish` | Partner bearer | — | Sponsor and publish an external draft |
-| `POST` | `/api/authoring/external/drafts/:id/webhook` | Partner bearer | — | Register/update a callback URL for draft events |
 | `POST` | `/api/authoring/callbacks/sweep` | Operator token | — | Sweep pending authoring callback deliveries |
-| `POST` | `/api/integrations/beach/drafts/submit` | Partner bearer | — | Submit a Beach thread plus intent into the external authoring flow |
+| `POST` | `/api/integrations/beach/uploads` | Partner bearer | — | Upload and pin Beach/OpenClaw artifacts for a session |
+| `POST` | `/api/integrations/beach/sessions` | Partner bearer | — | Start a Beach/OpenClaw intake session from rough context and uploaded artifacts |
+| `GET` | `/api/integrations/beach/sessions/:id` | Partner bearer | — | Read Beach/OpenClaw session state |
+| `POST` | `/api/integrations/beach/sessions/:id/respond` | Partner bearer | — | Answer canonical follow-up questions or add context to a Beach/OpenClaw session |
+| `POST` | `/api/integrations/beach/sessions/:id/webhook` | Partner bearer | — | Register/update a callback URL for Beach session events |
+| `POST` | `/api/integrations/beach/sessions/:id/publish` | Partner bearer | — | Confirm and publish a Beach/OpenClaw session through Agora's sponsor flow |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
 
 > **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.

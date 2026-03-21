@@ -1,6 +1,10 @@
 "use client";
 
-import type { CompilationResultOutput } from "@agora/common";
+import type {
+  AuthoringQuestionOutput,
+  AuthoringSessionAnswerOutput,
+  CompilationResultOutput,
+} from "@agora/common";
 import {
   FileText,
   Loader2,
@@ -30,8 +34,14 @@ interface ChatComposerProps {
   messages: ChatMessage[];
   isStreaming: boolean;
   streamingText: string;
+  pendingQuestions?: AuthoringQuestionOutput[];
   uploads: UploadedArtifact[];
   onSendMessage: (text: string) => void;
+  onSubmitAnswers?: (input: {
+    answers: AuthoringSessionAnswerOutput[];
+    message?: string;
+  }) => void;
+  onCannotAnswer?: (reason?: string) => void;
   onFilesSelected: (files: FileList) => void;
   onRemoveUpload: (id: string) => void;
   disabled?: boolean;
@@ -345,6 +355,218 @@ function UploadStrip({
   );
 }
 
+function QuestionResponsePanel(input: {
+  questions: AuthoringQuestionOutput[];
+  disabled: boolean;
+  onSubmit: (input: {
+    answers: AuthoringSessionAnswerOutput[];
+    note?: string;
+  }) => void;
+  onCannotAnswer?: (reason?: string) => void;
+}) {
+  const [textAnswers, setTextAnswers] = useState<Record<string, string>>({});
+  const [artifactAnswers, setArtifactAnswers] = useState<
+    Record<string, string>
+  >({});
+  const [note, setNote] = useState("");
+
+  function setTextAnswer(questionId: string, value: string) {
+    setTextAnswers((current) => ({
+      ...current,
+      [questionId]: value,
+    }));
+  }
+
+  function setArtifactAnswer(questionId: string, role: string, value: string) {
+    setArtifactAnswers((current) => ({
+      ...current,
+      [`${questionId}:${role}`]: value,
+    }));
+  }
+
+  function buildAnswers() {
+    const answers: AuthoringSessionAnswerOutput[] = [];
+
+    for (const question of input.questions) {
+      if (question.kind === "artifact_role_map") {
+        const assignments = question.artifact_roles
+          .map((role) => {
+            const artifactId = artifactAnswers[`${question.id}:${role.role}`];
+            if (!artifactId) {
+              return null;
+            }
+            return {
+              role: role.role,
+              artifact_id: artifactId,
+              visibility: role.visibility,
+            };
+          })
+          .filter(
+            (assignment): assignment is NonNullable<typeof assignment> =>
+              assignment != null,
+          );
+        if (assignments.length === question.artifact_roles.length) {
+          answers.push({
+            question_id: question.id,
+            value: assignments,
+          });
+        }
+        continue;
+      }
+
+      const value = textAnswers[question.id]?.trim();
+      if (value) {
+        answers.push({
+          question_id: question.id,
+          value,
+        });
+      }
+    }
+
+    return answers;
+  }
+
+  const readyAnswers = buildAnswers();
+  const allAnswered =
+    input.questions.length > 0 &&
+    readyAnswers.length === input.questions.length;
+
+  return (
+    <div className="border-t border-warm-200 bg-warm-50/50 px-4 py-4">
+      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
+        Required Answers
+      </div>
+      <div className="mt-3 space-y-4">
+        {input.questions.map((question) => (
+          <div key={question.id} className="space-y-2 rounded-md bg-white p-3">
+            <div className="text-sm font-medium text-warm-900">
+              {question.label}
+            </div>
+            <div className="text-sm text-warm-600">{question.prompt}</div>
+
+            {question.kind === "single_select" ? (
+              <div className="flex flex-wrap gap-2">
+                {question.options.map((option) => {
+                  const selected = textAnswers[question.id] === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTextAnswer(question.id, option.id)}
+                      disabled={input.disabled}
+                      className={`rounded-[2px] border px-2 py-1.5 text-left font-mono text-[11px] uppercase tracking-wider ${
+                        selected
+                          ? "border-warm-900 bg-warm-900 text-white"
+                          : "border-warm-200 bg-warm-50 text-warm-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {question.kind === "artifact_role_map" ? (
+              <div className="space-y-2">
+                {question.artifact_roles.map((role) => (
+                  <label
+                    key={role.role}
+                    className="block text-sm text-warm-700"
+                  >
+                    <div className="mb-1 font-medium text-warm-800">
+                      {role.label}
+                    </div>
+                    <select
+                      value={
+                        artifactAnswers[`${question.id}:${role.role}`] ?? ""
+                      }
+                      onChange={(event) =>
+                        setArtifactAnswer(
+                          question.id,
+                          role.role,
+                          event.target.value,
+                        )
+                      }
+                      disabled={input.disabled}
+                      className="w-full rounded-md border border-warm-200 bg-white px-3 py-2 text-sm text-warm-800 outline-none focus:border-warm-400"
+                    >
+                      <option value="">Select uploaded file</option>
+                      {question.artifact_options.map((artifact) => (
+                        <option key={artifact.id} value={artifact.id}>
+                          {artifact.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
+            {question.kind === "short_text" ||
+            question.kind === "currency_amount" ? (
+              <textarea
+                value={textAnswers[question.id] ?? ""}
+                onChange={(event) =>
+                  setTextAnswer(question.id, event.target.value)
+                }
+                disabled={input.disabled}
+                rows={question.kind === "currency_amount" ? 1 : 3}
+                placeholder={
+                  question.kind === "currency_amount"
+                    ? "Enter total USDC amount"
+                    : "Enter a concrete answer"
+                }
+                className="w-full resize-none rounded-md border border-warm-200 bg-white px-3 py-2 text-sm text-warm-800 outline-none focus:border-warm-400"
+              />
+            ) : null}
+          </div>
+        ))}
+
+        <div className="space-y-2 rounded-md bg-white p-3">
+          <div className="text-sm font-medium text-warm-900">
+            Optional extra context
+          </div>
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            disabled={input.disabled}
+            rows={2}
+            placeholder="Add any clarifying note for Agora..."
+            className="w-full resize-none rounded-md border border-warm-200 bg-white px-3 py-2 text-sm text-warm-800 outline-none focus:border-warm-400"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              input.onSubmit({
+                answers: readyAnswers,
+                note: note.trim() || undefined,
+              });
+            }}
+            disabled={!allAnswered || input.disabled}
+            className="rounded-md bg-warm-900 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Submit Answers
+          </button>
+          {input.onCannotAnswer ? (
+            <button
+              type="button"
+              onClick={() => input.onCannotAnswer?.(note.trim() || undefined)}
+              disabled={input.disabled}
+              className="rounded-md border border-warm-300 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-warm-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              I Don&apos;t Have This
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Streaming compile state ──────────────────────────── */
 
 function StreamingCompileState({ streamingText }: { streamingText: string }) {
@@ -405,8 +627,11 @@ export function ChatComposer({
   messages,
   isStreaming,
   streamingText,
+  pendingQuestions = [],
   uploads,
   onSendMessage,
+  onSubmitAnswers,
+  onCannotAnswer,
   onFilesSelected,
   onRemoveUpload,
   disabled = false,
@@ -416,6 +641,10 @@ export function ChatComposer({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasPendingQuestions = pendingQuestions.length > 0;
+  const pendingQuestionKey = pendingQuestions
+    .map((question) => question.id)
+    .join("|");
 
   /* Auto-scroll to bottom on new messages */
   // biome-ignore lint/correctness/useExhaustiveDependencies: messages and streamingText are intentional triggers for scroll
@@ -529,6 +758,21 @@ export function ChatComposer({
       {/* Upload strip */}
       <UploadStrip uploads={uploads} onRemove={onRemoveUpload} />
 
+      {hasPendingQuestions && onSubmitAnswers ? (
+        <QuestionResponsePanel
+          key={pendingQuestionKey}
+          questions={pendingQuestions}
+          disabled={disabled || isStreaming}
+          onSubmit={({ answers, note }) => {
+            onSubmitAnswers({
+              answers,
+              message: note,
+            });
+          }}
+          onCannotAnswer={onCannotAnswer}
+        />
+      ) : null}
+
       {/* Input bar */}
       <div className="bg-warm-50/40 px-4 py-3">
         <div className="flex items-end gap-2">
@@ -550,32 +794,41 @@ export function ChatComposer({
             onChange={handleFileInputChange}
           />
 
-          {/* Text input */}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isStreaming
-                ? "Thinking..."
-                : "Describe your challenge, ask a question, or drop files..."
-            }
-            disabled={disabled || isStreaming}
-            rows={1}
-            className="flex-1 resize-none rounded-md bg-warm-50 px-3 py-2.5 text-[14px] text-warm-800 outline-none transition placeholder:text-warm-400 focus:bg-white focus:ring-1 focus:ring-warm-200 disabled:opacity-50 motion-reduce:transition-none"
-          />
+          {!hasPendingQuestions ? (
+            <>
+              {/* Text input */}
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isStreaming
+                    ? "Thinking..."
+                    : "Describe your challenge, ask a question, or drop files..."
+                }
+                disabled={disabled || isStreaming}
+                rows={1}
+                className="flex-1 resize-none rounded-md bg-warm-50 px-3 py-2.5 text-[14px] text-warm-800 outline-none transition placeholder:text-warm-400 focus:bg-white focus:ring-1 focus:ring-warm-200 disabled:opacity-50 motion-reduce:transition-none"
+              />
 
-          {/* Send */}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!input.trim() || disabled || isStreaming}
-            className="mb-0.5 flex-shrink-0 rounded-md bg-warm-900 p-2.5 text-white transition-all duration-200 hover:bg-warm-800 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed motion-reduce:transition-none"
-            aria-label="Send message"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+              {/* Send */}
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!input.trim() || disabled || isStreaming}
+                className="mb-0.5 flex-shrink-0 rounded-md bg-warm-900 p-2.5 text-white transition-all duration-200 hover:bg-warm-800 hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 motion-reduce:transition-none"
+                aria-label="Send message"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
+            <div className="flex-1 rounded-md bg-warm-100 px-3 py-2 text-sm text-warm-700">
+              Answer the blocking questions above or mark that you do not have
+              the missing information.
+            </div>
+          )}
         </div>
       </div>
     </div>

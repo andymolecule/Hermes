@@ -94,8 +94,8 @@ Quick reference for key terms used across Agora documentation and code.
 | **CLI** | Canonical local execution surface. `agora` command with subcommands for the full challenge lifecycle. |
 | **SIWE** | Sign-In With Ethereum. Authentication flow used by the web frontend. |
 | **x402** | HTTP payment protocol used for paid API routes (agent discovery, verification). |
-| **Authoring callback** | Signed webhook from Agora to an external authoring host announcing a draft or challenge lifecycle event such as `draft_updated`, `challenge_created`, or `challenge_finalized`. It is a push signal, not the canonical state source. |
-| **`x-agora-event-id`** | Deterministic idempotency key on authoring callbacks derived from `draft_id`, `event`, and `occurred_at`. Hosts should use it to deduplicate retries. |
+| **Authoring callback** | Signed webhook from Agora to an external authoring host announcing a compile, publish, or challenge lifecycle event such as `draft_compiled`, `challenge_created`, or `challenge_finalized`. It is a push signal, not the canonical state source. |
+| **`x-agora-event-id`** | Deterministic idempotency key on authoring callbacks derived from the persisted session id (currently carried as `draft_id`), `event`, and `occurred_at`. Hosts should use it to deduplicate retries. |
 | **Replay window** | Host-side timestamp validity window for callback verification. Recommended default: reject any callback whose `x-agora-timestamp` is more than 5 minutes away from wall-clock time. |
 
 ## Deployment

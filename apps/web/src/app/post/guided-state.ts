@@ -1,8 +1,8 @@
 "use client";
 
 import type {
-  AuthoringDraftOutput,
   AuthoringQuestionOutput,
+  AuthoringSessionOutput,
 } from "@agora/common";
 import { z } from "zod";
 import { formatSubmissionWindowLabel } from "../../lib/post-submission-window";
@@ -799,42 +799,60 @@ export function buildManagedIntentFromGuidedState(
 }
 
 export function hydrateGuidedStateFromAuthoringDraft(
-  draft: AuthoringDraftOutput,
+  draft: AuthoringSessionOutput,
   nowMs = Date.now(),
 ): GuidedComposerState {
-  const timezone = draft.intent?.timezone?.trim() || resolveBrowserTimezone();
+  const timezone =
+    draft.structured_fields?.timezone?.trim() || resolveBrowserTimezone();
   const nextState = createInitialGuidedState(timezone);
-  const intent = draft.intent ?? null;
+  const intent = draft.structured_fields ?? null;
 
   if (intent) {
-    setFieldValue(nextState, "problem", intent.description, "locked");
-    nextState.fields.title = buildManualTitleField(
-      intent.description,
-      intent.title,
-    );
-    setFieldValue(
-      nextState,
-      "winningCondition",
-      intent.payout_condition,
-      "locked",
-    );
-    setFieldValue(nextState, "rewardTotal", intent.reward_total, "locked");
-    setFieldValue(nextState, "distribution", intent.distribution, "locked");
-    setFieldValue(
-      nextState,
-      "deadline",
-      inferSubmissionWindowValue(intent.deadline, nowMs),
-      "locked",
-    );
-    setFieldValue(
-      nextState,
-      "disputeWindow",
-      String(
-        intent.dispute_window_hours ??
-          Number(GUIDED_SELECT_DEFAULTS.disputeWindow),
-      ),
-      "locked",
-    );
+    const description = intent.description ?? "";
+    if (hasTextValue(description)) {
+      setFieldValue(nextState, "problem", description, "locked");
+    }
+    if (hasTextValue(intent.title)) {
+      nextState.fields.title = buildManualTitleField(
+        description,
+        intent.title ?? "",
+      );
+    }
+    if (hasTextValue(intent.payout_condition)) {
+      setFieldValue(
+        nextState,
+        "winningCondition",
+        intent.payout_condition ?? "",
+        "locked",
+      );
+    }
+    if (hasTextValue(intent.reward_total)) {
+      setFieldValue(
+        nextState,
+        "rewardTotal",
+        intent.reward_total ?? "",
+        "locked",
+      );
+    }
+    if (intent.distribution) {
+      setFieldValue(nextState, "distribution", intent.distribution, "locked");
+    }
+    if (hasTextValue(intent.deadline)) {
+      setFieldValue(
+        nextState,
+        "deadline",
+        inferSubmissionWindowValue(intent.deadline ?? "", nowMs),
+        "locked",
+      );
+    }
+    if (typeof intent.dispute_window_hours === "number") {
+      setFieldValue(
+        nextState,
+        "disputeWindow",
+        String(intent.dispute_window_hours),
+        "locked",
+      );
+    }
     if (hasTextValue(intent.solver_instructions)) {
       setFieldValue(
         nextState,
@@ -845,7 +863,7 @@ export function hydrateGuidedStateFromAuthoringDraft(
     }
   }
 
-  nextState.uploads = draft.uploaded_artifacts.map((artifact) => ({
+  nextState.uploads = draft.artifacts.map((artifact) => ({
     id: artifact.id ?? artifact.uri,
     uri: artifact.uri,
     file_name: artifact.file_name ?? artifact.id ?? "uploaded-artifact",
@@ -858,20 +876,16 @@ export function hydrateGuidedStateFromAuthoringDraft(
   nextState.draftId = draft.id;
 
   switch (draft.state) {
-    case "ready":
+    case "publishable":
     case "published":
       nextState.compileState = "ready";
       nextState.activePromptId = null;
       break;
-    case "needs_input":
+    case "awaiting_input":
       nextState.compileState = "needs_input";
       nextState.activePromptId = questionTargetFromQuestions(
         draft.questions ?? [],
       );
-      break;
-    case "compiling":
-      nextState.compileState = "compiling";
-      nextState.activePromptId = null;
       break;
     default:
       nextState.compileState = isReadyToCompile(nextState)

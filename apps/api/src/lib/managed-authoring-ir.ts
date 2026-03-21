@@ -1,5 +1,6 @@
 import {
   type AuthoringArtifactOutput,
+  type AuthoringInteractionStateOutput,
   type AuthoringQuestionFieldOutput,
   type AuthoringQuestionOutput,
   type ChallengeAuthoringIrOutput,
@@ -86,6 +87,7 @@ export function buildManagedAuthoringIr(input: {
     code?: string | null;
     message?: string | null;
   } | null;
+  interaction?: AuthoringInteractionStateOutput | null;
   rejectionReasons?: string[];
   assessmentInputHash?: string | null;
   assessmentOutcome?: "ready" | "needs_input" | "failed" | null;
@@ -110,7 +112,8 @@ export function buildManagedAuthoringIr(input: {
       raw_context: input.origin?.raw_context ?? null,
     },
     source: {
-      title: trimmed(input.sourceTitle) ?? trimmed(effectiveIntent.title) ?? null,
+      title:
+        trimmed(input.sourceTitle) ?? trimmed(effectiveIntent.title) ?? null,
       poster_messages: (input.sourceMessages ?? []).map((message) => ({
         id: message.id,
         role: message.role,
@@ -155,9 +158,19 @@ export function buildManagedAuthoringIr(input: {
     questions: {
       pending: input.questions ?? [],
     },
+    interaction: input.interaction ?? {
+      answered_questions: [],
+      latest_message: null,
+      overrides: {
+        metric: null,
+        artifact_assignments: [],
+      },
+    },
   });
 }
 
-export function getPendingAuthoringQuestions(authoringIr: ChallengeAuthoringIrOutput) {
+export function getPendingAuthoringQuestions(
+  authoringIr: ChallengeAuthoringIrOutput,
+) {
   return authoringIr.questions.pending;
 }

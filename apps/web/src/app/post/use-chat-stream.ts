@@ -1,20 +1,18 @@
 "use client";
 
-import type { CompilationResultOutput } from "@agora/common";
+import type {
+  AuthoringQuestionOutput,
+  AuthoringSessionAnswerOutput,
+  CompilationResultOutput,
+} from "@agora/common";
 import { useCallback, useRef, useState } from "react";
 import type { ChatMessage } from "./chat-types";
 import type { UploadedArtifact } from "./guided-state";
 import {
-  getAuthoringDraftRequestStatus,
-  pinDataFile,
-  submitAuthoringDraft,
+  getAuthoringSessionRequestStatus,
+  pinAuthoringFile,
+  submitAuthoringSession,
 } from "./post-authoring-api";
-
-interface IntakeField {
-  key: string;
-  value: string;
-  source: "user" | "inferred";
-}
 
 interface UseChatStreamOptions {
   posterAddress?: `0x${string}`;
@@ -29,25 +27,18 @@ const INITIAL_MESSAGE: ChatMessage = {
   timestamp: new Date(),
 };
 
-/**
- * Manages the chat conversation and bridges to the existing
- * authoring draft / compile pipeline.
- *
- * MVP: wraps the existing `submitAuthoringDraft` call and formats
- * responses as chat messages.  A future pass will stream from
- * `POST /api/authoring/drafts/stream` via SSE.
- */
+/** Manages the chat conversation against the server-owned authoring session API. */
 export function useChatStream(options: UseChatStreamOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [compilation, setCompilation] =
     useState<CompilationResultOutput | null>(null);
+  const [pendingQuestions, setPendingQuestions] = useState<
+    AuthoringQuestionOutput[]
+  >([]);
   const [uploads, setUploads] = useState<UploadedArtifact[]>([]);
-  const [draftId, setDraftId] = useState<string>("");
-
-  const fieldsRef = useRef<IntakeField[]>([]);
-  const messagesRef = useRef<ChatMessage[]>([INITIAL_MESSAGE]);
+  const [sessionId, setSessionId] = useState<string>("");
   const idCounter = useRef(1);
 
   function nextId() {
@@ -60,137 +51,133 @@ export function useChatStream(options: UseChatStreamOptions) {
       id: nextId(),
       timestamp: new Date(),
     };
-    setMessages((prev) => {
-      const next = [...prev, full];
-      messagesRef.current = next;
-      return next;
-    });
+    setMessages((prev) => [...prev, full]);
     return full;
   }
 
-  /* ── Parse user text for intent fields ──────────────── */
+  function describeAnswer(
+    question: AuthoringQuestionOutput,
+    answer: AuthoringSessionAnswerOutput,
+  ) {
+    if (question.kind === "artifact_role_map" && Array.isArray(answer.value)) {
+      return answer.value
+        .map((assignment) =>
+          typeof assignment === "string"
+            ? assignment
+            : `${assignment.role}: ${assignment.artifact_id}`,
+        )
+        .join(", ");
+    }
 
-  function extractFieldsFromText(text: string) {
-    const fields: IntakeField[] = [];
+    if (typeof answer.value === "string") {
+      const selectedOption = question.options.find(
+        (option) => option.id === answer.value,
+      );
+      return selectedOption?.label ?? answer.value;
+    }
 
-    const rewardMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:usdc|usd|\$)/i);
-    if (rewardMatch?.[1]) {
-      fields.push({
-        key: "rewardTotal",
-        value: rewardMatch[1],
-        source: "user",
+    if (typeof answer.value === "number" || typeof answer.value === "boolean") {
+      return String(answer.value);
+    }
+
+    return Array.isArray(answer.value) ? answer.value.join(", ") : "Answered";
+  }
+
+  function summarizeAnswers(input: {
+    questions: AuthoringQuestionOutput[];
+    answers: AuthoringSessionAnswerOutput[];
+    message?: string;
+  }) {
+    const questionById = new Map(
+      input.questions.map((question) => [question.id, question]),
+    );
+    const lines = input.answers.map((answer) => {
+      const question = questionById.get(answer.question_id);
+      const label = question?.label ?? answer.question_id;
+      return `${label}: ${question ? describeAnswer(question, answer) : "Answered"}`;
+    });
+    if (input.message?.trim()) {
+      lines.push(`Context: ${input.message.trim()}`);
+    }
+    return lines.join("\n");
+  }
+
+  function applySessionResponse(
+    session: Awaited<ReturnType<typeof submitAuthoringSession>>,
+  ) {
+    setSessionId(session.id);
+
+    if (session.state === "publishable" && session.compilation) {
+      setPendingQuestions([]);
+      const comp = session.compilation as CompilationResultOutput;
+      setCompilation(comp);
+      options.onCompileReady?.(comp);
+      appendMessage({
+        role: "assistant",
+        content:
+          "Your challenge is ready to publish. Review the details in the panel on the right and hit Publish when you're happy.",
+        card: comp,
       });
+      return;
     }
 
-    const deadlineMatch = text.match(/(\d+)\s*(?:day|days|d)\b/i);
-    if (deadlineMatch?.[1]) {
-      fields.push({ key: "deadline", value: deadlineMatch[1], source: "user" });
-    }
-
-    if (/winner.?take/i.test(text)) {
-      fields.push({
-        key: "distribution",
-        value: "winner_take_all",
-        source: "user",
+    if (session.state === "awaiting_input") {
+      const questions = session.questions ?? [];
+      setCompilation(null);
+      setPendingQuestions(questions);
+      appendMessage({
+        role: "assistant",
+        content:
+          questions.length > 0
+            ? "I need a few more blocking inputs before I can lock the contract."
+            : "I need a bit more context before I can lock the contract.",
+        questions,
       });
-    } else if (/top.?3/i.test(text)) {
-      fields.push({ key: "distribution", value: "top_3", source: "user" });
-    } else if (/proportional/i.test(text)) {
-      fields.push({
-        key: "distribution",
-        value: "proportional",
-        source: "user",
+      return;
+    }
+
+    setPendingQuestions([]);
+    setCompilation(null);
+
+    if (session.state === "rejected") {
+      appendMessage({
+        role: "assistant",
+        content:
+          session.reasons[0] ??
+          "This challenge type isn't supported by the managed runtime yet. You can try rephrasing or use Expert Mode from the CLI.",
       });
+      return;
     }
 
-    return fields;
+    appendMessage({
+      role: "assistant",
+      content:
+        "I've saved your session. Add more details or files and I'll try compiling again.",
+    });
   }
 
-  function mergeFields(incoming: IntakeField[]) {
-    for (const field of incoming) {
-      const existing = fieldsRef.current.findIndex((f) => f.key === field.key);
-      if (existing >= 0) {
-        fieldsRef.current[existing] = field;
-      } else {
-        fieldsRef.current.push(field);
-      }
-    }
-  }
-
-  function getField(key: string) {
-    return fieldsRef.current.find((f) => f.key === key)?.value;
-  }
-
-  /* ── Build the managed intent for the compile call ──── */
-
-  function buildManagedIntentFromChat(problemText: string) {
-    return {
-      title: problemText.slice(0, 120),
-      description: problemText,
-      rewardTotal: getField("rewardTotal") ?? "",
-      distribution: getField("distribution") as
-        | "winner_take_all"
-        | "top_3"
-        | "proportional"
-        | undefined,
-      deadline: getField("deadline") ?? "",
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    };
-  }
-
-  /* ── Attempt compile ────────────────────────────────── */
-
-  async function attemptCompile(problemText: string) {
+  async function submitSessionUpdate(input: {
+    message?: string;
+    answers?: AuthoringSessionAnswerOutput[];
+    cannotAnswer?: boolean;
+    reason?: string;
+  }) {
     setIsStreaming(true);
-    setStreamingText("Compiling your challenge...");
+    setStreamingText("Sending this to Agora...");
 
     try {
-      const intent = buildManagedIntentFromChat(problemText);
-      const draft = await submitAuthoringDraft({
-        draftId,
+      const session = await submitAuthoringSession({
+        sessionId: sessionId || undefined,
         posterAddress: options.posterAddress,
-        intent,
+        message: input.message,
+        answers: input.answers,
+        cannotAnswer: input.cannotAnswer,
+        reason: input.reason,
         uploads: uploads.filter((u) => u.status === "ready"),
       });
-
-      setDraftId(draft.id);
-
-      if (draft.state === "ready" && draft.compilation) {
-        const comp = draft.compilation as CompilationResultOutput;
-        setCompilation(comp);
-        options.onCompileReady?.(comp);
-        appendMessage({
-          role: "assistant",
-          content:
-            "Your challenge is ready to publish. Review the details in the panel on the right and hit Publish when you're happy.",
-          card: comp,
-        });
-      } else if (draft.state === "needs_input") {
-        const questions = draft.questions ?? [];
-        appendMessage({
-          role: "assistant",
-          content:
-            questions.length > 0
-              ? "I need a few more blocking inputs before I can lock the contract."
-              : "I need a bit more context before I can lock the contract.",
-          questions,
-        });
-      } else if (draft.state === "failed") {
-        appendMessage({
-          role: "assistant",
-          content:
-            draft.failure_message ??
-            "This challenge type isn't supported by the managed runtime yet. You can try rephrasing or use Expert Mode from the CLI.",
-        });
-      } else {
-        appendMessage({
-          role: "assistant",
-          content:
-            "I've saved your draft. Add more details or files and I'll try compiling again.",
-        });
-      }
+      applySessionResponse(session);
     } catch (error) {
-      const status = getAuthoringDraftRequestStatus(error);
+      const status = getAuthoringSessionRequestStatus(error);
       const message =
         status && status >= 500
           ? "Agora authoring is temporarily unavailable. Retry in a moment."
@@ -210,8 +197,6 @@ export function useChatStream(options: UseChatStreamOptions) {
     }
   }
 
-  /* ── Public: send a text message ────────────────────── */
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: inner functions are stable refs within the hook closure
   const sendMessage = useCallback(
     (text: string) => {
@@ -219,26 +204,56 @@ export function useChatStream(options: UseChatStreamOptions) {
       if (!trimmed) return;
 
       appendMessage({ role: "user", content: trimmed });
-
-      const newFields = extractFieldsFromText(trimmed);
-      mergeFields(newFields);
-
-      // Collect the full problem description from all user messages
-      const allUserText = [
-        ...messagesRef.current,
-        { role: "user" as const, content: trimmed },
-      ]
-        .filter((m) => m.role === "user")
-        .map((m) => m.content)
-        .filter((content) => {
-          const extracted = extractFieldsFromText(content);
-          return extracted.length === 0 || content.trim().length > 80;
-        })
-        .join("\n\n");
-
-      void attemptCompile(allUserText);
+      void submitSessionUpdate({ message: trimmed });
     },
-    [uploads],
+    [options.onCompileReady, options.posterAddress, sessionId, uploads],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: inner functions are stable refs within the hook closure
+  const submitAnswers = useCallback(
+    (input: { answers: AuthoringSessionAnswerOutput[]; message?: string }) => {
+      if (input.answers.length === 0) {
+        return;
+      }
+
+      appendMessage({
+        role: "user",
+        content: summarizeAnswers({
+          questions: pendingQuestions,
+          answers: input.answers,
+          message: input.message,
+        }),
+      });
+      void submitSessionUpdate({
+        message: input.message,
+        answers: input.answers,
+      });
+    },
+    [
+      pendingQuestions,
+      options.onCompileReady,
+      options.posterAddress,
+      sessionId,
+      uploads,
+    ],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: inner functions are stable refs within the hook closure
+  const cannotAnswer = useCallback(
+    (reason?: string) => {
+      appendMessage({
+        role: "user",
+        content:
+          reason?.trim() && reason.trim().length > 0
+            ? `I don't have the remaining required information.\n\n${reason.trim()}`
+            : "I don't have the remaining required information to continue this challenge.",
+      });
+      void submitSessionUpdate({
+        cannotAnswer: true,
+        reason,
+      });
+    },
+    [options.onCompileReady, options.posterAddress, sessionId, uploads],
   );
 
   /* ── Public: handle file uploads ────────────────────── */
@@ -268,10 +283,12 @@ export function useChatStream(options: UseChatStreamOptions) {
       if (!artifact) continue;
 
       try {
-        const { cid } = await pinDataFile(file);
+        const uploaded = await pinAuthoringFile(file);
         const ready: UploadedArtifact = {
           ...artifact,
-          uri: `ipfs://${cid}`,
+          id: uploaded.id ?? artifact.id,
+          uri: uploaded.uri,
+          detected_columns: uploaded.detected_columns,
           status: "ready",
         };
         results.push(ready);
@@ -311,9 +328,12 @@ export function useChatStream(options: UseChatStreamOptions) {
     isStreaming,
     streamingText,
     compilation,
+    pendingQuestions,
     uploads,
-    draftId,
+    sessionId,
     sendMessage,
+    submitAnswers,
+    cannotAnswer,
     sendFiles,
     removeUpload,
   };

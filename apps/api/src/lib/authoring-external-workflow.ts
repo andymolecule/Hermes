@@ -1,7 +1,10 @@
 import {
   AgoraError,
+  type AuthoringArtifactOutput,
+  type AuthoringInteractionStateOutput,
   type AuthoringPartnerProviderOutput,
   type CreateAuthoringSourceDraftRequestOutput,
+  type ExternalSourceMessageOutput,
   type PublishExternalAuthoringDraftRequestOutput,
   type SubmitAuthoringSourceDraftRequestOutput,
   canonicalizeChallengeSpec,
@@ -26,7 +29,10 @@ import {
   EXTERNAL_DRAFT_EXPIRY_MS,
   isAuthoringDraftExpired,
 } from "./authoring-draft-payloads.js";
-import { registerDraftCallback } from "./authoring-draft-transitions.js";
+import {
+  failDraft,
+  registerDraftCallback,
+} from "./authoring-draft-transitions.js";
 import {
   buildDraftNotFoundError,
   buildDraftUpdatedState,
@@ -308,6 +314,120 @@ export function createAuthoringExternalWorkflow(
         }
 
         return result.draft;
+      } catch (error) {
+        if (error instanceof AuthoringDraftWriteConflictError) {
+          throw draftConflictError(error);
+        }
+        throw error;
+      }
+    },
+
+    async submitSession(input: {
+      provider: AuthoringPartnerProviderOutput;
+      session?: AuthoringDraftRow | null;
+      intentCandidate: Record<string, unknown> | null | undefined;
+      uploadedArtifacts: AuthoringArtifactOutput[];
+      sourceTitle?: string | null;
+      sourceMessages?: ExternalSourceMessageOutput[];
+      interaction?: AuthoringInteractionStateOutput | null;
+      externalId?: string | null;
+      externalUrl?: string | null;
+      rawContext?: Record<string, unknown> | null;
+      logger?: AgoraLogger;
+    }) {
+      try {
+        const db = createSupabaseClientImpl(true);
+        const result = await intakeWorkflow.submitDraft({
+          db,
+          session: input.session,
+          intentCandidate: input.intentCandidate,
+          uploadedArtifacts: input.uploadedArtifacts,
+          sourceTitle: input.sourceTitle ?? null,
+          sourceMessages: input.sourceMessages ?? [],
+          interaction: input.interaction,
+          origin: {
+            provider: input.provider,
+            external_id:
+              input.externalId ??
+              input.session?.authoring_ir_json?.origin.external_id ??
+              null,
+            external_url:
+              input.externalUrl ??
+              input.session?.authoring_ir_json?.origin.external_url ??
+              null,
+            ingested_at:
+              input.session?.authoring_ir_json?.origin.ingested_at ??
+              new Date().toISOString(),
+            raw_context:
+              input.rawContext ??
+              input.session?.authoring_ir_json?.origin.raw_context ??
+              null,
+          },
+          draftExpiryMs: EXTERNAL_DRAFT_EXPIRY_MS,
+          readyExpiryMs: EXTERNAL_DRAFT_EXPIRY_MS,
+          createAuthoringDraftImpl,
+          getAuthoringDraftByIdImpl,
+          updateAuthoringDraftImpl,
+        });
+
+        await safelyDeliverDraftLifecycleEvent(
+          {
+            event:
+              result.draft.state === "failed"
+                ? "draft_compile_failed"
+                : "draft_compiled",
+            session: result.draft,
+            logger: input.logger,
+          },
+          deliverAuthoringDraftLifecycleEventImpl,
+        );
+
+        return result;
+      } catch (error) {
+        if (error instanceof AuthoringDraftWriteConflictError) {
+          throw draftConflictError(error);
+        }
+        throw error;
+      }
+    },
+
+    async rejectSession(input: {
+      id: string;
+      provider: AuthoringPartnerProviderOutput;
+      reason: string;
+      logger?: AgoraLogger;
+    }) {
+      try {
+        const db = createSupabaseClientImpl(true);
+        const draft = await readPartnerDraft({
+          id: input.id,
+          provider: input.provider,
+          createSupabaseClientImpl,
+          getAuthoringDraftByIdImpl,
+        });
+        const rejectedDraft = await failDraft({
+          db,
+          session: draft,
+          intentJson: draft.intent_json,
+          authoringIrJson: draft.authoring_ir_json ?? null,
+          uploadedArtifactsJson: draft.uploaded_artifacts_json ?? [],
+          compilationJson: draft.compilation_json ?? null,
+          message: input.reason,
+          expiresInMs: EXTERNAL_DRAFT_EXPIRY_MS,
+          updateAuthoringDraftImpl,
+          getAuthoringDraftByIdImpl,
+        });
+
+        await safelyDeliverDraftLifecycleEvent(
+          {
+            event: "draft_compile_failed",
+            session: rejectedDraft,
+            logger: input.logger,
+          },
+          deliverAuthoringDraftLifecycleEventImpl,
+        );
+
+        return rejectedDraft;
       } catch (error) {
         if (error instanceof AuthoringDraftWriteConflictError) {
           throw draftConflictError(error);

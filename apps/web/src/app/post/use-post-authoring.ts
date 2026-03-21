@@ -1,6 +1,5 @@
 "use client";
 
-import { parseCsvHeaders } from "@agora/common";
 import {
   useCallback,
   useEffect,
@@ -27,11 +26,11 @@ import {
 } from "./guided-state";
 import {
   clearCompiledSessionData,
-  getAuthoringDraft,
-  getAuthoringDraftRequestStatus,
+  getAuthoringSession,
+  getAuthoringSessionRequestStatus,
   getCompilation,
-  pinDataFile,
-  submitAuthoringDraft,
+  pinAuthoringFile,
+  submitAuthoringSession,
 } from "./post-authoring-api";
 
 type Step = PostStep;
@@ -51,7 +50,7 @@ export function usePostAuthoringWorkflow(input: {
     () => createInitialGuidedState(),
   );
   const [session, setSession] = useState<Awaited<
-    ReturnType<typeof getAuthoringDraft>
+    ReturnType<typeof getAuthoringSession>
   > | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -132,7 +131,7 @@ export function usePostAuthoringWorkflow(input: {
 
     let cancelled = false;
 
-    void getAuthoringDraft(restoreDraftId)
+    void getAuthoringSession(restoreDraftId)
       .then((restoredSession) => {
         if (cancelled) {
           return;
@@ -145,10 +144,10 @@ export function usePostAuthoringWorkflow(input: {
             state: hydrateGuidedStateFromAuthoringDraft(restoredSession),
           });
         }
-        if (restoredSession.state === "ready") {
+        if (restoredSession.state === "publishable") {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(2);
-        } else if (restoredSession.state === "needs_input") {
+        } else if (restoredSession.state === "awaiting_input") {
           dispatch({
             type: "apply_questions",
             field: questionTargetFromQuestions(restoredSession.questions ?? []),
@@ -158,7 +157,7 @@ export function usePostAuthoringWorkflow(input: {
           dispatch({ type: "set_compile_state", compileState: "ready" });
           setStep(3);
           setStatusMessage(
-            "This draft was already pinned and is ready for on-chain publish confirmation.",
+            "This session was already pinned and is ready for on-chain publish confirmation.",
           );
         }
       })
@@ -167,13 +166,13 @@ export function usePostAuthoringWorkflow(input: {
           return;
         }
         clearRemoteAuthoringDraft(
-          getAuthoringDraftRequestStatus(error) === 404
+          getAuthoringSessionRequestStatus(error) === 404
             ? hostedDraftId
-              ? "This linked draft is no longer available. Next step: reopen the host workflow and create a fresh handoff."
-              : "Your saved compiled draft expired. Next step: regenerate it from your draft answers."
+              ? "This linked session is no longer available. Next step: reopen the host workflow and create a fresh handoff."
+              : "Your saved compiled session expired. Next step: regenerate it from your session answers."
             : hostedDraftId
-              ? "Could not restore the linked draft. Next step: reopen the host workflow and try the publish handoff again."
-              : "Could not restore the saved compiled draft. Next step: regenerate it from your draft answers.",
+              ? "Could not restore the linked session. Next step: reopen the host workflow and try the publish handoff again."
+              : "Could not restore the saved compiled session. Next step: regenerate it from your session answers.",
         );
       });
 
@@ -251,22 +250,15 @@ export function usePostAuthoringWorkflow(input: {
         ]);
 
         try {
-          const [pinResult, headers] = await Promise.all([
-            pinDataFile(file),
-            file.type.includes("csv")
-              ? file
-                  .slice(0, 4096)
-                  .text()
-                  .then((text) => parseCsvHeaders(text))
-              : Promise.resolve([]),
-          ]);
+          const pinResult = await pinAuthoringFile(file);
           updateUploads(
             guidedStateRef.current.uploads.map((artifact) =>
               artifact.id === localId
                 ? {
                     ...artifact,
-                    uri: pinResult.cid,
-                    detected_columns: headers,
+                    id: pinResult.id ?? artifact.id,
+                    uri: pinResult.uri,
+                    detected_columns: pinResult.detected_columns,
                     status: "ready",
                   }
                 : artifact,
@@ -325,7 +317,7 @@ export function usePostAuthoringWorkflow(input: {
   const handleCompile = useCallback(async () => {
     if (!compileReady) {
       setErrorMessage(
-        `This draft is not ready to compile yet. Next step: ${draftIssues[0]}`,
+        `This session is not ready to compile yet. Next step: ${draftIssues[0]}`,
       );
       setStatusMessage(null);
       return;
@@ -339,8 +331,8 @@ export function usePostAuthoringWorkflow(input: {
         "Compiling your challenge into a deterministic scoring contract...",
       );
 
-      const compiledSession = await submitAuthoringDraft({
-        draftId: guidedStateRef.current.draftId ?? "",
+      const compiledSession = await submitAuthoringSession({
+        sessionId: guidedStateRef.current.draftId ?? undefined,
         posterAddress,
         intent: managedIntent,
         uploads: guidedStateRef.current.uploads,
@@ -348,7 +340,7 @@ export function usePostAuthoringWorkflow(input: {
       setSession(compiledSession);
       dispatch({ type: "set_draft_id", draftId: compiledSession.id });
 
-      if (compiledSession.state === "needs_input") {
+      if (compiledSession.state === "awaiting_input") {
         dispatch({
           type: "apply_questions",
           field: questionTargetFromQuestions(compiledSession.questions ?? []),
@@ -357,12 +349,12 @@ export function usePostAuthoringWorkflow(input: {
         setStatusMessage(
           "Agora needs a little more context before it can lock the challenge contract.",
         );
-      } else if (compiledSession.state === "failed") {
+      } else if (compiledSession.state === "rejected") {
         dispatchCompileState(compileReady ? "ready_to_compile" : "idle");
         setStep(1);
         setStatusMessage(null);
         setErrorMessage(
-          compiledSession.failure_message ??
+          compiledSession.reasons[0] ??
             "Agora could not compile this challenge into a supported Gems contract.",
         );
       } else {

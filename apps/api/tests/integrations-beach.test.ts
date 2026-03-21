@@ -185,7 +185,7 @@ function createReadyCompileOutcome(session: AuthoringDraftRow) {
   };
 }
 
-test("beach integration submits a thread into a beach-owned compiled draft", async () => {
+test("beach session start compiles a publishable beach-owned session", async () => {
   const quotaCalls: string[] = [];
   let storedSession = createSession({ state: "draft", intent_json: null });
 
@@ -202,20 +202,6 @@ test("beach integration submits a thread into a beach-owned compiled draft", asy
       return storedSession as never;
     },
     getAuthoringDraftById: async () => storedSession as never,
-    getAuthoringSourceLink: async () => null as never,
-    upsertAuthoringSourceLink: async (_db, payload) =>
-      ({
-        provider: payload.provider,
-        external_id: payload.external_id,
-        draft_id: payload.draft_id,
-        external_url: payload.external_url ?? null,
-        created_at: "2026-03-18T00:05:00.000Z",
-        updated_at: "2026-03-18T00:05:00.000Z",
-      }) as never,
-    normalizeExternalArtifactsForDraft: async ({ artifacts }) =>
-      artifacts.map((artifact) =>
-        buildStubArtifactFromSourceUrl(artifact.source_url),
-      ),
     updateAuthoringDraft: async (_db, patch) => {
       storedSession = {
         ...storedSession,
@@ -231,7 +217,7 @@ test("beach integration submits a thread into a beach-owned compiled draft", asy
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -244,10 +230,10 @@ test("beach integration submits a thread into a beach-owned compiled draft", asy
           title: "Find a good challenge framing",
           poster_agent_handle: "lab-alpha",
         },
-        intent: createIntent(),
         raw_context: {
           revision: "rev-7",
         },
+        structured_fields: createIntent(),
         messages: [
           {
             id: "msg-1",
@@ -263,10 +249,9 @@ test("beach integration submits a thread into a beach-owned compiled draft", asy
           },
         ],
         artifacts: [
-          {
-            url: "https://cdn.beach.science/uploads/train.csv",
-            mime_type: "text/csv",
-          },
+          buildStubArtifactFromSourceUrl(
+            "https://cdn.beach.science/uploads/train.csv",
+          ),
         ],
       }),
     }),
@@ -274,49 +259,85 @@ test("beach integration submits a thread into a beach-owned compiled draft", asy
 
   assert.equal(response.status, 200);
   assert.deepEqual(quotaCalls, [
-    "partner:beach_science|/api/integrations/beach/drafts/submit",
+    "partner:beach_science|/api/integrations/beach/sessions",
   ]);
 
   const payload = (await response.json()) as {
     data: {
       thread: { id: string; url: string; poster_agent_handle: string | null };
-      card: { provider: string; state: string };
-      draft: {
-        authoring_ir?: {
-          origin?: {
-            provider?: string;
-            external_id?: string | null;
-            raw_context?: Record<string, unknown> | null;
-          };
+      session: {
+        state: string;
+        blocked_by_layer: string | null;
+        origin: {
+          provider?: string;
+          external_id?: string | null;
+          external_url?: string | null;
         };
-      };
-      assessment: {
-        publishable: boolean;
-        runtime_family: string | null;
-        metric: string | null;
+        compilation: {
+          runtime_family: string;
+          metric: string;
+        } | null;
       };
     };
   };
   assert.equal(payload.data.thread.id, "thread-42");
   assert.equal(payload.data.thread.url, "https://beach.science/thread/42");
   assert.equal(payload.data.thread.poster_agent_handle, "lab-alpha");
-  assert.equal(payload.data.card.provider, "beach_science");
-  assert.equal(payload.data.card.state, "ready");
+  assert.equal(payload.data.session.state, "publishable");
+  assert.equal(payload.data.session.blocked_by_layer, null);
+  assert.equal(payload.data.session.origin.provider, "beach_science");
+  assert.equal(payload.data.session.origin.external_id, "thread-42");
   assert.equal(
-    payload.data.draft.authoring_ir?.origin?.provider,
-    "beach_science",
+    payload.data.session.origin.external_url,
+    "https://beach.science/thread/42",
   );
   assert.equal(
-    payload.data.draft.authoring_ir?.origin?.external_id,
-    "thread-42",
+    payload.data.session.compilation?.runtime_family,
+    "tabular_regression",
   );
+  assert.equal(payload.data.session.compilation?.metric, "r2");
+});
+
+test("beach webhook registration returns the session with callback status", async () => {
+  let storedSession = createSession();
+
+  const router = createBeachIntegrationsRouter({
+    getAuthoringDraftById: async () => storedSession as never,
+    updateAuthoringDraft: async (_db, patch) => {
+      storedSession = {
+        ...storedSession,
+        ...patch,
+        updated_at: "2026-03-18T01:00:00.000Z",
+      } as AuthoringDraftRow;
+      return storedSession as never;
+    },
+    createSupabaseClient: () => ({}) as never,
+    readAuthoringPartnerRuntimeConfig: partnerConfig,
+    consumeWriteQuota: allowPartnerQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request(`http://localhost/sessions/${storedSession.id}/webhook`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer beach-secret",
+      },
+      body: JSON.stringify({
+        callback_url: "https://hooks.beach.science/agora",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: { session: { callback_registered: boolean } };
+  };
+  assert.equal(payload.data.session.callback_registered, true);
   assert.equal(
-    payload.data.draft.authoring_ir?.origin?.raw_context?.revision,
-    "rev-7",
+    storedSession.source_callback_url,
+    "https://hooks.beach.science/agora",
   );
-  assert.equal(payload.data.assessment.publishable, true);
-  assert.equal(payload.data.assessment.runtime_family, "tabular_regression");
-  assert.equal(payload.data.assessment.metric, "r2");
 });
 
 test("beach integration rejects unknown partner keys", async () => {
@@ -326,7 +347,7 @@ test("beach integration rejects unknown partner keys", async () => {
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -337,14 +358,7 @@ test("beach integration rejects unknown partner keys", async () => {
           id: "thread-42",
           url: "https://beach.science/thread/42",
         },
-        intent: createIntent(),
-        messages: [
-          {
-            id: "msg-1",
-            body: "We want a challenge.",
-            authored_by_poster: true,
-          },
-        ],
+        summary: "We want a challenge.",
       }),
     }),
   );
@@ -363,7 +377,7 @@ test("beach integration validates that a poster-authored message is present", as
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -375,7 +389,6 @@ test("beach integration validates that a poster-authored message is present", as
           url: "https://beach.science/thread/42",
           poster_agent_handle: "lab-alpha",
         },
-        intent: createIntent(),
         messages: [
           {
             id: "msg-1",
@@ -407,7 +420,7 @@ test("beach integration returns rate-limit errors for repeated submit traffic", 
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -418,14 +431,7 @@ test("beach integration returns rate-limit errors for repeated submit traffic", 
           id: "thread-42",
           url: "https://beach.science/thread/42",
         },
-        intent: createIntent(),
-        messages: [
-          {
-            id: "msg-1",
-            body: "We want a challenge.",
-            authored_by_poster: true,
-          },
-        ],
+        summary: "We want a challenge.",
       }),
     }),
   );

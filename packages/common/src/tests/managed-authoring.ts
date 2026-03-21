@@ -3,7 +3,7 @@ import { createAuthoringSourceDraftRequestSchema } from "../schemas/authoring-so
 import {
   authoringDraftSchema,
   challengeAuthoringIrSchema,
-  submitManagedAuthoringDraftRequestSchema,
+  createAuthoringSessionRequestSchema,
 } from "../schemas/managed-authoring.js";
 
 const baseIntent = {
@@ -33,19 +33,19 @@ const baseArtifacts = [
   },
 ];
 
-const validSubmitRequest = submitManagedAuthoringDraftRequestSchema.parse({
+const validSubmitRequest = createAuthoringSessionRequestSchema.parse({
   poster_address: "0x00000000000000000000000000000000000000aa",
-  intent: baseIntent,
-  uploaded_artifacts: baseArtifacts,
+  structured_fields: baseIntent,
+  artifacts: baseArtifacts,
 });
 
-assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
-assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
+assert.equal(validSubmitRequest.artifacts.length, 2);
+assert.equal(validSubmitRequest.structured_fields?.dispute_window_hours, 168);
 
-const duplicateUri = submitManagedAuthoringDraftRequestSchema.safeParse({
+const duplicateUri = createAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
-  intent: baseIntent,
-  uploaded_artifacts: [
+  structured_fields: baseIntent,
+  artifacts: [
     baseArtifacts[0],
     {
       id: "duplicate",
@@ -61,9 +61,9 @@ assert.equal(
   "managed authoring should reject duplicate artifact URIs",
 );
 
-const unsupportedUri = submitManagedAuthoringDraftRequestSchema.safeParse({
-  intent: baseIntent,
-  uploaded_artifacts: [
+const unsupportedUri = createAuthoringSessionRequestSchema.safeParse({
+  structured_fields: baseIntent,
+  artifacts: [
     {
       id: "local",
       uri: "file:///tmp/secret.csv",
@@ -78,9 +78,9 @@ assert.equal(
   "managed authoring should only accept pinned or hosted artifact URIs",
 );
 
-const tooManyArtifacts = submitManagedAuthoringDraftRequestSchema.safeParse({
-  intent: baseIntent,
-  uploaded_artifacts: Array.from({ length: 13 }, (_value, index) => ({
+const tooManyArtifacts = createAuthoringSessionRequestSchema.safeParse({
+  structured_fields: baseIntent,
+  artifacts: Array.from({ length: 13 }, (_value, index) => ({
     id: `artifact-${index}`,
     uri: `ipfs://artifact-${index}`,
     file_name: `artifact-${index}.csv`,
@@ -90,21 +90,21 @@ const tooManyArtifacts = submitManagedAuthoringDraftRequestSchema.safeParse({
 assert.equal(
   tooManyArtifacts.success,
   false,
-  "managed authoring should cap uploaded artifacts per draft",
+  "managed authoring should cap uploaded artifacts per session",
 );
 
-const tooManyTags = submitManagedAuthoringDraftRequestSchema.safeParse({
-  intent: {
+const tooManyTags = createAuthoringSessionRequestSchema.safeParse({
+  structured_fields: {
     ...baseIntent,
     tags: Array.from({ length: 13 }, (_value, index) => `tag-${index}`),
   },
-  uploaded_artifacts: baseArtifacts,
+  artifacts: baseArtifacts,
 });
 
 assert.equal(
   tooManyTags.success,
   false,
-  "managed authoring should cap tag count per draft",
+  "managed authoring should cap tag count per session",
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({

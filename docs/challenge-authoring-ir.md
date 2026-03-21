@@ -58,8 +58,9 @@ There is no separate `clarify` endpoint and no separate `compile` endpoint in th
 
 The public assisted-authoring surface should converge on:
 
-- `POST /api/authoring/drafts/submit`
-- `POST /api/authoring/drafts/:id/publish`
+- `POST /api/authoring/sessions`
+- `POST /api/authoring/sessions/:id/respond`
+- `POST /api/authoring/sessions/:id/publish`
 
 Partner wrappers such as Beach may still exist for auth and normalization, but they should call the same intake workflow internally.
 

@@ -4,6 +4,8 @@
 
 A reverse-engineered, bottom-up walkthrough of Agora as it exists in the current codebase: what each layer does, what data it handles, where determinism is enforced, and how the system climbs from Docker scorers up to the browser, CLI, MCP server, and partner integrations.
 
+Status: this document describes the current implementation on `main`. For the intended future-state redesign of the shared web plus Beach/OpenClaw intake/session model, see [Agent Intake Session Spec](agent-intake-session-spec.md).
+
 This document is a systems map, not the normative spec. Source-of-truth rules still live in the code and the narrower docs:
 
 - `docs/architecture.md`
@@ -712,11 +714,13 @@ authoring_drafts
   uploaded_artifacts_json
   compilation_json
   source_callback_url
+  source_callback_registered_at
   published_spec_cid
+  published_return_to
   published_challenge_id
 
 authoring_source_links
-  provider + external_id -> draft_id
+  provider + external_id -> current draft_id
 
 authoring_callback_deliveries
   durable callback outbox / retry queue
@@ -856,17 +860,20 @@ Submission flow:
 
 Direct authoring:
   GET  /api/authoring/health
-  POST /api/authoring/drafts/submit
-  POST /api/authoring/drafts/:id/publish
+  POST /api/authoring/uploads
+  POST /api/authoring/sessions
+  GET  /api/authoring/sessions/:id
+  POST /api/authoring/sessions/:id/respond
+  POST /api/authoring/sessions/:id/publish
 
 External authoring / partner integration:
-  POST /api/authoring/external/drafts/submit
-  GET  /api/authoring/external/drafts/:id
-  GET  /api/authoring/external/drafts/:id/card
-  POST /api/authoring/external/drafts/:id/publish
-  POST /api/authoring/external/drafts/:id/webhook
   POST /api/authoring/callbacks/sweep
-  POST /api/integrations/beach/drafts/submit
+  POST /api/integrations/beach/uploads
+  POST /api/integrations/beach/sessions
+  GET  /api/integrations/beach/sessions/:id
+  POST /api/integrations/beach/sessions/:id/respond
+  POST /api/integrations/beach/sessions/:id/webhook
+  POST /api/integrations/beach/sessions/:id/publish
 
 Other active surfaces:
   GET  /api/me/portfolio
@@ -891,19 +898,20 @@ Sealed submission privacy is an anti-copy boundary while the challenge is open, 
 
 ## Layer 9: The Authoring Pipeline (Draft → Challenge Spec)
 
-### One workflow, two wrappers
+### One workflow, multiple public contracts
 
 ```text
-Direct managed submit
-  /api/authoring/drafts/submit
+Preferred direct session flow
+  /api/authoring/sessions
+  /api/authoring/sessions/:id/respond
 
-External partner submit
-  /api/authoring/external/drafts/submit
-  /api/integrations/beach/drafts/submit
+Preferred Beach session flow
+  /api/integrations/beach/sessions
+  /api/integrations/beach/sessions/:id/respond
 
-Both wrappers converge into the same flow:
-  intent_json
-  + uploaded_artifacts_json
+The preferred session paths converge into the same flow:
+  session context + partial structured fields
+  + direct uploaded artifacts
   + source/origin context
         │
         ▼
@@ -926,17 +934,17 @@ Both wrappers converge into the same flow:
 sequenceDiagram
     participant U as User or partner
     participant API as Authoring API
+    participant ART as artifact ingest
     participant DB as authoring_drafts
-    participant IR as IR builder
-    participant CMP as compiler and dry-run
+    participant IW as intake workflow
 
-    U->>API: submit draft context + artifacts + intent
-    API->>IR: buildManagedAuthoringIr(...)
-    IR-->>API: authoring_ir_json
-    API->>DB: persist draft snapshot
-    API->>CMP: compileManagedAuthoringDraftOutcome(...)
-    CMP-->>API: ready or needs_input or failed
-    API->>DB: persist compilation result and draft state
+    U->>API: submit session context + artifacts + partial fields
+    API->>ART: normalize uploaded artifacts
+    ART-->>API: canonical artifact refs
+    API->>DB: create or refresh internal session snapshot
+    API->>IW: build IR + compile + dry-run
+    IW-->>API: ready or needs_input or failed
+    API->>DB: persist canonical session state + assessment
 ```
 
 ### Publish branch
@@ -945,7 +953,7 @@ sequenceDiagram
 flowchart TD
     Draft["authoring_drafts row"]
     Submit["submit"]
-    Publish["publish -> pin spec -> sponsor approve -> create challenge"]
+    Publish["publish -> resolve return_to -> pin spec -> sponsor budget -> approve -> create challenge"]
     DraftMeta["draft row publish + callback metadata"]
     Callback["callback outbox"]
 
@@ -962,6 +970,8 @@ Important distinction:
 - `routing.mode` is still the IR’s interpretation of what kind of evaluator path the draft may need
 - `outcome.state` is the submit/compile result
 - `authoring_drafts.state` is the persisted workflow state in the database
+- the Beach/OpenClaw session flow does not refresh unpublished draft lineage by source id; each new bounty attempt starts a fresh session
+- publishing an already-published external draft is idempotent and returns the stored published metadata instead of creating another on-chain challenge
 - for Beach/OpenClaw, the partner route is now the primary publish path; it does not need to bounce back out to a browser wallet because Agora can use its internal sponsor signer for the MVP agent-native flow
 - the browser-based direct authoring path still exists, but it is now the exception path for human intervention rather than the core external integration model
 
@@ -997,16 +1007,17 @@ So the architecture already distinguishes between:
 
 ## Layer 10: The External Partner Callback System
 
-**Files:** `apps/api/src/lib/authoring-drafts.ts`, `packages/db/src/queries/authoring-drafts.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
+**Files:** `apps/api/src/lib/authoring-drafts.ts`, `apps/api/src/lib/authoring-external-workflow.ts`, `packages/chain/src/indexer/settlement.ts`, `packages/db/src/queries/authoring-callback-deliveries.ts`
 
 ### What it does
 
-Agora can notify external partners when an authoring draft changes state. This is a signed push channel layered on top of the partner draft API.
+Agora can notify external partners when an authoring draft or its published challenge changes state. This is a signed push channel layered on top of the partner draft API, not a replacement for polling the canonical draft endpoints.
 
 ### Delivery flow
 
 ```text
-Draft state changes
+Draft compile / publish updates
+or challenge settlement updates
       │
       ▼
 Resolve callback target
@@ -1014,10 +1025,13 @@ Resolve callback target
       │
       ▼
 Build event payload
-  { event, draft_id, provider, state, card }
+  draft family:    { event, draft_id, provider, state, card }
+  challenge family:{ event, draft_id, provider, challenge }
       │
       ▼
 Sign with HMAC
+  explicit callback secret
+  or partner bearer key fallback
   x-agora-event
   x-agora-event-id
   x-agora-timestamp
@@ -1044,14 +1058,18 @@ success   failure
 
 | Event | When |
 |-------|------|
-| `draft_updated` | partner added messages or artifacts |
-| `draft_compiled` | compile succeeded |
+| `draft_compiled` | compile completed without a hard failure, including `ready` and `needs_input` outcomes |
 | `draft_compile_failed` | compile failed |
 | `draft_published` | publish completed |
 | `challenge_created` | sponsor-backed publish created an on-chain challenge |
 | `challenge_finalized` | indexer observed final settlement and enqueued a host callback |
 
-The durable outbox is important here: callback delivery is not coupled to the request/response lifetime of the originating draft mutation.
+Important shape distinction:
+
+- draft lifecycle callbacks include `state` and `card`
+- challenge lifecycle callbacks include `challenge` and do not include `state` or `card`
+
+The durable outbox is important here: callback delivery is not coupled to the request/response lifetime of the originating draft mutation, and `challenge_finalized` is enqueued by the indexer into the same retryable callback system.
 
 ---
 

@@ -60,8 +60,8 @@ export async function assertFactoryIsSupported(input: {
   });
 }
 
-export async function publishManagedAuthoringDraft(input: {
-  draftId: string;
+export async function publishManagedAuthoringSession(input: {
+  sessionId: string;
   spec: ChallengeSpecOutput;
   address: `0x${string}`;
   chainId: number;
@@ -90,11 +90,12 @@ export async function publishManagedAuthoringDraft(input: {
   });
 
   const publishResponse = await fetch(
-    `/api/authoring/drafts/${input.draftId}/publish`,
+    `/api/authoring/sessions/${input.sessionId}/publish`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        confirm_publish: true,
         auth: {
           address: input.address,
           nonce,

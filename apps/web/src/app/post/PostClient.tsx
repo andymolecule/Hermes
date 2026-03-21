@@ -15,9 +15,12 @@ export function PostClient() {
   const searchParams = useSearchParams();
   const [expertMode, setExpertMode] = useState(false);
 
-  const hostedDraftId = searchParams.get("draft")?.trim() || null;
+  const hostedDraftId =
+    searchParams.get("session")?.trim() ||
+    searchParams.get("draft")?.trim() ||
+    null;
 
-  /* If a hosted draft was passed in (Beach flow), always use managed/chat mode */
+  /* If a hosted session was passed in (Beach flow), always use managed/chat mode. */
   if (hostedDraftId && !expertMode) {
     return <ChatPostClient />;
   }

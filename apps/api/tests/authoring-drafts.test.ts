@@ -76,7 +76,7 @@ test("deliverAuthoringDraftLifecycleEvent signs callback payloads with the partn
   let capturedEventId: string | null = null;
 
   const delivered = await deliverAuthoringDraftLifecycleEvent({
-    event: "draft_updated",
+    event: "draft_compiled",
     session,
     fetchImpl: async (input, init) => {
       capturedUrl = String(input);
@@ -217,7 +217,7 @@ test("deliverAuthoringDraftLifecycleEvent ignores callback urls on direct drafts
   let queuedRetry = false;
 
   const delivered = await deliverAuthoringDraftLifecycleEvent({
-    event: "draft_updated",
+    event: "draft_compiled",
     session,
     fetchImpl: async () => {
       fetchCalled = true;
@@ -426,9 +426,9 @@ test("sweepPendingAuthoringDraftLifecycleEvents reschedules failed callbacks unt
     draft_id: session.id,
     provider: "beach_science",
     callback_url: "https://hooks.beach.science/agora",
-    event: "draft_updated",
+    event: "draft_compiled",
     payload_json: {
-      event: "draft_updated",
+      event: "draft_compiled",
       occurred_at: "2026-03-18T00:00:01.000Z",
       draft_id: session.id,
       provider: "beach_science",

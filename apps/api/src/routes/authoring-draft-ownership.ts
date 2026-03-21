@@ -1,6 +1,8 @@
 export interface AuthoringDraftOwnershipError {
   status: 401 | 403;
-  code: "AUTHORING_DRAFT_ADDRESS_REQUIRED" | "AUTHORING_DRAFT_ADDRESS_MISMATCH";
+  code:
+    | "AUTHORING_SESSION_ADDRESS_REQUIRED"
+    | "AUTHORING_SESSION_ADDRESS_MISMATCH";
   message: string;
 }
 
@@ -32,16 +34,16 @@ export function getAuthoringDraftOwnershipError(input: {
   if (!requesterAddress) {
     return {
       status: 401,
-      code: "AUTHORING_DRAFT_ADDRESS_REQUIRED",
-      message: `This authoring draft is already bound to wallet ${draftPosterAddress}. Next step: reconnect that wallet and retry ${input.action}.`,
+      code: "AUTHORING_SESSION_ADDRESS_REQUIRED",
+      message: `This authoring session is already bound to wallet ${draftPosterAddress}. Next step: reconnect that wallet and retry ${input.action}.`,
     };
   }
 
   if (requesterAddress !== draftPosterAddress) {
     return {
       status: 403,
-      code: "AUTHORING_DRAFT_ADDRESS_MISMATCH",
-      message: `This authoring draft belongs to wallet ${draftPosterAddress}. Next step: switch back to that wallet and retry ${input.action}.`,
+      code: "AUTHORING_SESSION_ADDRESS_MISMATCH",
+      message: `This authoring session belongs to wallet ${draftPosterAddress}. Next step: switch back to that wallet and retry ${input.action}.`,
     };
   }
 

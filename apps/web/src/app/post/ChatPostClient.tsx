@@ -32,7 +32,7 @@ import {
   createChallengeWithApproval,
   createChallengeWithPermit,
   finalizeManagedChallengePost,
-  publishManagedAuthoringDraft,
+  publishManagedAuthoringSession,
   signRewardPermit,
 } from "./managed-post-flow";
 import {
@@ -47,14 +47,14 @@ import { useChatStream } from "./use-chat-stream";
 
 function buildHostReturnUrl(input: {
   baseUrl: string | null;
-  draftId: string;
+  sessionId: string;
   challengeId: string;
   specCid: string;
 }) {
   if (!input.baseUrl) return null;
   const url = new URL(input.baseUrl);
   url.searchParams.set("agora_event", "challenge_live");
-  url.searchParams.set("agora_draft_id", input.draftId);
+  url.searchParams.set("agora_session_id", input.sessionId);
   url.searchParams.set("agora_challenge_id", input.challengeId);
   url.searchParams.set("agora_spec_cid", input.specCid);
   if (typeof window !== "undefined") {
@@ -96,9 +96,12 @@ export function ChatPostClient() {
     isStreaming,
     streamingText,
     compilation,
+    pendingQuestions,
     uploads,
-    draftId,
+    sessionId,
     sendMessage,
+    submitAnswers,
+    cannotAnswer,
     sendFiles,
     removeUpload,
   } = useChatStream({
@@ -179,8 +182,8 @@ export function ChatPostClient() {
   async function handlePublish() {
     if (!compilation || !publicClient || !writeContractAsync || !address)
       return;
-    if (!draftId) {
-      setErrorMessage("No authoring draft found. Send more messages first.");
+    if (!sessionId) {
+      setErrorMessage("No authoring session found. Send more messages first.");
       return;
     }
 
@@ -208,8 +211,8 @@ export function ChatPostClient() {
       });
 
       setStatusMessage("Pinning the compiled challenge spec...");
-      const prepared = await publishManagedAuthoringDraft({
-        draftId,
+      const prepared = await publishManagedAuthoringSession({
+        sessionId,
         spec: compilation.challenge_spec,
         address,
         chainId: CHAIN_ID,
@@ -276,7 +279,7 @@ export function ChatPostClient() {
       setPostedChallengeId(registration.challengeId);
       const nextHostReturnUrl = buildHostReturnUrl({
         baseUrl: prepared.returnTo,
-        draftId,
+        sessionId,
         challengeId: registration.challengeId,
         specCid: prepared.specCid,
       });
@@ -352,8 +355,11 @@ export function ChatPostClient() {
             messages={messages}
             isStreaming={isStreaming}
             streamingText={streamingText}
+            pendingQuestions={pendingQuestions}
             uploads={uploads}
             onSendMessage={sendMessage}
+            onSubmitAnswers={submitAnswers}
+            onCannotAnswer={cannotAnswer}
             onFilesSelected={(files) => void sendFiles(files)}
             onRemoveUpload={removeUpload}
             disabled={!!postedChallengeId}

@@ -1,6 +1,7 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  type AuthoringInteractionStateOutput,
   type AuthoringQuestionOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
@@ -13,12 +14,14 @@ import {
   readApiServerRuntimeConfig,
   readManagedAuthoringRuntimeConfig,
   validateChallengeScoreability,
+  validateRuntimeMetric,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
 import { buildAuthoringQuestions } from "./authoring-questions.js";
 import { assignArtifactsFromProposal } from "./managed-authoring-artifacts.js";
 import {
+  type CompilerArtifactAssignment,
   type SupportedRuntimeFamily,
   compileManagedAuthoringProposal,
 } from "./managed-authoring-compiler.js";
@@ -27,9 +30,7 @@ import {
   parsePayoutThreshold,
 } from "./managed-authoring-confirmation.js";
 import { executeManagedAuthoringDryRun } from "./managed-authoring-dry-run.js";
-import {
-  buildManagedAuthoringIr,
-} from "./managed-authoring-ir.js";
+import { buildManagedAuthoringIr } from "./managed-authoring-ir.js";
 
 const NEEDS_INPUT_ERROR_CODES = new Set([
   "MANAGED_ARTIFACTS_INCOMPLETE",
@@ -52,10 +53,74 @@ interface DraftCompilation {
   compilation: CompilationResultOutput;
 }
 
+function resolveInteractionArtifactAssignments(input: {
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  interaction?: AuthoringInteractionStateOutput | null;
+}): CompilerArtifactAssignment[] | null {
+  const overrides = input.interaction?.overrides.artifact_assignments ?? [];
+  if (overrides.length === 0) {
+    return null;
+  }
+
+  return overrides.map((assignment) => {
+    const artifactIndex = input.uploadedArtifacts.findIndex(
+      (artifact) =>
+        artifact.id === assignment.artifact_id ||
+        artifact.uri === assignment.artifact_id,
+    );
+    if (artifactIndex < 0) {
+      throw new AgoraError(
+        `Answered artifact role ${assignment.role} referenced an unknown uploaded artifact (${assignment.artifact_id}). Next step: upload the missing file or answer with a valid artifact id and retry.`,
+        {
+          code: "AUTHORING_SESSION_ARTIFACT_NOT_FOUND",
+          status: 400,
+          details: {
+            artifactId: assignment.artifact_id,
+            role: assignment.role,
+          },
+        },
+      );
+    }
+
+    return {
+      artifactIndex,
+      role: assignment.role,
+      visibility: assignment.visibility ?? "public",
+    };
+  });
+}
+
+function resolveInteractionMetric(input: {
+  interaction?: AuthoringInteractionStateOutput | null;
+}) {
+  const metric = input.interaction?.overrides.metric?.trim() ?? "";
+  return metric.length > 0 ? metric : null;
+}
+
+function createProposalFromInteractionOverride(input: {
+  error: AgoraError;
+  runtimeFamily: SupportedRuntimeFamily;
+  metric: string;
+  artifactAssignments: CompilerArtifactAssignment[] | null;
+}) {
+  return {
+    runtimeFamily: input.runtimeFamily,
+    metric: input.metric,
+    reasonCodes: Array.isArray(input.error.details?.reasonCodes)
+      ? (input.error.details.reasonCodes as string[])
+      : [],
+    warnings: Array.isArray(input.error.details?.warnings)
+      ? (input.error.details.warnings as string[])
+      : [],
+    artifactAssignments: input.artifactAssignments ?? [],
+  };
+}
+
 async function compileManagedAuthoringDraft(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    interaction?: AuthoringInteractionStateOutput | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -73,11 +138,93 @@ async function compileManagedAuthoringDraft(
     );
   }
 
-  const proposal = await compileManagedAuthoringProposal({
-    intent: input.intent,
-    uploadedArtifacts: input.uploadedArtifacts,
-    fetchImpl: dependencies.fetchImpl,
+  const interactionMetric = resolveInteractionMetric({
+    interaction: input.interaction,
   });
+  const interactionArtifactAssignments = resolveInteractionArtifactAssignments({
+    uploadedArtifacts: input.uploadedArtifacts,
+    interaction: input.interaction,
+  });
+
+  let proposal: Awaited<ReturnType<typeof compileManagedAuthoringProposal>>;
+  try {
+    proposal = await compileManagedAuthoringProposal({
+      intent: input.intent,
+      uploadedArtifacts: input.uploadedArtifacts,
+      fetchImpl: dependencies.fetchImpl,
+    });
+  } catch (error) {
+    if (
+      error instanceof AgoraError &&
+      error.code === "MANAGED_COMPILER_NEEDS_INPUT" &&
+      interactionMetric
+    ) {
+      const runtimeFamily =
+        typeof error.details?.runtimeFamily === "string"
+          ? (error.details.runtimeFamily as SupportedRuntimeFamily)
+          : null;
+      if (runtimeFamily) {
+        const metricError = validateRuntimeMetric(
+          runtimeFamily,
+          interactionMetric,
+        );
+        if (metricError) {
+          throw new AgoraError(
+            `${metricError} Next step: answer with one of the supported metric ids and retry.`,
+            {
+              code: "AUTHORING_SESSION_INVALID_METRIC",
+              status: 400,
+              details: {
+                metric: interactionMetric,
+                runtimeFamily,
+              },
+            },
+          );
+        }
+        proposal = createProposalFromInteractionOverride({
+          error,
+          runtimeFamily,
+          metric: interactionMetric,
+          artifactAssignments: interactionArtifactAssignments,
+        });
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  if (interactionMetric) {
+    const metricError = validateRuntimeMetric(
+      proposal.runtimeFamily,
+      interactionMetric,
+    );
+    if (metricError) {
+      throw new AgoraError(
+        `${metricError} Next step: answer with one of the supported metric ids and retry.`,
+        {
+          code: "AUTHORING_SESSION_INVALID_METRIC",
+          status: 400,
+          details: {
+            metric: interactionMetric,
+            runtimeFamily: proposal.runtimeFamily,
+          },
+        },
+      );
+    }
+    proposal = {
+      ...proposal,
+      metric: interactionMetric,
+    };
+  }
+
+  if (interactionArtifactAssignments) {
+    proposal = {
+      ...proposal,
+      artifactAssignments: interactionArtifactAssignments,
+    };
+  }
 
   const assigned = assignArtifactsFromProposal({
     runtimeFamily: proposal.runtimeFamily,
@@ -203,6 +350,7 @@ export async function compileManagedAuthoringSession(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    interaction?: AuthoringInteractionStateOutput | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -218,6 +366,7 @@ export async function compileManagedAuthoringDraftOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
+    interaction?: AuthoringInteractionStateOutput | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -231,6 +380,7 @@ export async function compileManagedAuthoringDraftOutcome(
     const authoringIr = buildManagedAuthoringIr({
       intent: input.intent,
       uploadedArtifacts: input.uploadedArtifacts,
+      interaction: input.interaction,
       origin: { provider: "direct" },
       runtimeFamily: result.proposal.runtimeFamily,
       metric: result.proposal.metric,
@@ -277,6 +427,7 @@ export async function compileManagedAuthoringDraftOutcome(
       const authoringIr = buildManagedAuthoringIr({
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
+        interaction: input.interaction,
         origin: { provider: "direct" },
         runtimeFamily,
         metric:
@@ -310,6 +461,7 @@ export async function compileManagedAuthoringDraftOutcome(
       const authoringIr = buildManagedAuthoringIr({
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
+        interaction: input.interaction,
         origin: { provider: "direct" },
         rejectionReasons: Array.isArray(error.details?.reasonCodes)
           ? (error.details.reasonCodes as string[])

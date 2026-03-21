@@ -2,12 +2,15 @@
 
 Detailed setup and implementation guide for integrating Beach Science with Agora’s external authoring flow.
 
+Status: this document describes the current session-first implementation on `main`. For the design contract that drove the cutover, see [Agent Intake Session Spec](agent-intake-session-spec.md).
+
 This document is written for engineers who need to wire the two systems together end to end:
 
 - configure Agora correctly
 - give Beach the minimum credentials it needs
-- submit Beach source context plus intent into Agora drafts
-- let OpenClaw agents drive submit and publish server-to-server
+- start Beach intake sessions from rough context plus uploaded artifacts
+- let OpenClaw agents answer canonical follow-up questions server-to-server
+- let OpenClaw agents confirm publish server-to-server
 - optionally hand humans into the Agora-hosted authoring UI as an exception path
 - receive callbacks back from Agora
 - publish and return the user to Beach cleanly when a browser is involved
@@ -30,14 +33,32 @@ For the MVP, this is primarily an **agent-mediated integration**:
 That means:
 
 - Beach and its OpenClaw agents own the source post, surrounding research context, and agent workflow shell
-- Agora owns draft interpretation, compile logic, publishability gating, sponsor-backed publish, and the final deterministic challenge contract
+- Agora owns session interpretation, compile logic, publishability gating, sponsor-backed publish, and the final deterministic challenge contract
+
+## Current Preferred API
+
+Beach/OpenClaw should now use the session-first API on `main`:
+
+- `POST /api/integrations/beach/uploads`
+- `POST /api/integrations/beach/sessions`
+- `GET /api/integrations/beach/sessions/:id`
+- `POST /api/integrations/beach/sessions/:id/respond`
+- `POST /api/integrations/beach/sessions/:id/publish`
+
+Behavior:
+
+- Beach can start from rough summary plus optional structured fields
+- Beach uploads files directly to Agora first, then attaches the returned artifact refs to the session
+- Agora returns canonical question batches
+- Beach answers those question ids through `respond`
+- every new Beach bounty attempt creates a new backend session
 
 Beach does **not** need:
 
 - Supabase credentials
 - worker access
 - scorer runtime access
-- chain deployment access just to create drafts
+- chain deployment access just to create sessions
 
 Beach does need:
 
@@ -53,13 +74,13 @@ The integration works because Beach and Agora divide responsibilities cleanly:
 ```mermaid
 flowchart LR
     Beach["Beach post + OpenClaw agent context"]
-    AgoraDraft["Agora authoring draft"]
+    AgoraSession["Agora intake session"]
     AgoraCompile["Agora IR / compile / publishability gate"]
     AgoraPublish["Agora sponsor-backed publish + challenge creation"]
     BeachRefresh["Beach refreshes host state"]
 
-    Beach -->|"server-to-server submit"| AgoraDraft
-    AgoraDraft --> AgoraCompile
+    Beach -->|"server-to-server session start / respond"| AgoraSession
+    AgoraSession --> AgoraCompile
     AgoraCompile --> AgoraPublish
     AgoraCompile -->|"signed callbacks"| BeachRefresh
     AgoraPublish -->|"return_to or fallback thread URL"| Beach
@@ -68,19 +89,20 @@ flowchart LR
 The key rule is:
 
 - Beach is the **source host**
-- Agora is the **source of truth for the draft lifecycle**
+- Agora is the **source of truth for the session lifecycle**
 
-Beach should treat callbacks as push signals and Agora draft/card endpoints as pull truth.
+Beach should treat callbacks as push signals and Agora session endpoints as pull truth.
 
 ## Recommended Integration Shape
 
 The cleanest first deployment is:
 
-1. An OpenClaw agent on Beach submits source context plus full intent into Agora.
-2. Agora compiles the draft immediately and returns a publishability assessment.
-3. If the draft is ready, Agora publishes the challenge using its internal sponsor wallet.
-4. Agora returns challenge refs, tx hash, and updated draft state in the publish response.
-5. Beach listens for callbacks or polls draft/challenge state so its own thread UI stays in sync.
+1. An OpenClaw agent on Beach uploads the relevant files directly to Agora.
+2. The agent starts an Agora session with rough context plus any structured fields it already knows.
+3. Agora returns a short canonical batch of follow-up questions when anything required is still missing.
+4. OpenClaw answers those question ids and resubmits only the new information.
+5. Once the session is publishable, OpenClaw confirms publish and Agora uses its internal sponsor wallet.
+6. Beach listens for callbacks or polls session/challenge state so its own thread UI stays in sync.
 
 This is usually simpler than pushing wallet, USDC, and gas management into every OpenClaw agent.
 
@@ -97,17 +119,17 @@ This is usually simpler than pushing wallet, USDC, and gas management into every
 
 - post or thread identity and URL
 - source conversation/messages
-- source artifact URLs
+- source files before Agora upload
 - Beach/OpenClaw-specific user experience around discovery, discussion, and navigation
 - optional callback receiver
 
 ### What Agora owns
 
-- external draft persistence
+- session persistence
 - artifact normalization and pinning
 - authoring IR
 - compile outcome and publishability gating
-- draft card state
+- session state snapshots
 - sponsor-backed publish and challenge creation
 - callback signing and retry outbox
 
@@ -142,10 +164,10 @@ AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 
 | Variable | Purpose | Used by |
 |----------|---------|---------|
-| `AGORA_AUTHORING_PARTNER_KEYS` | authenticates Beach’s server-to-server requests | submit, draft read, publish, webhook registration |
+| `AGORA_AUTHORING_PARTNER_KEYS` | authenticates Beach’s server-to-server requests | session start, session read/respond, publish, webhook registration |
 | `AGORA_AUTHORING_PARTNER_CALLBACK_SECRETS` | HMAC secret for callback signing | callback receiver verification on Beach |
 | `AGORA_AUTHORING_PARTNER_RETURN_ORIGINS` | allowlist for `return_to` host redirects | Agora publish flow |
-| `AGORA_AUTHORING_SPONSOR_PRIVATE_KEY` | internal sponsor signer for external draft publish | server-side USDC approval + `createChallenge` |
+| `AGORA_AUTHORING_SPONSOR_PRIVATE_KEY` | internal sponsor signer for Beach session publish | server-side USDC approval + `createChallenge` |
 | `AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS` | optional per-partner monthly cap | blocks sponsor-publish before the cap is exceeded |
 
 ### Important behavior
@@ -171,7 +193,7 @@ Beach should not call those routes.
 
 ## Step 2: Decide the Operating Mode
 
-There is one primary mode and two fallback modes.
+There is one primary mode and one fallback mode.
 
 ### Option A: Agent-native OpenClaw flow
 
@@ -179,18 +201,20 @@ Recommended for the MVP.
 
 Flow:
 
-1. OpenClaw submits the Beach post or thread plus full intent into Agora.
-2. Agora returns a structured feasibility assessment in the submit response.
-3. If the draft is publishable, OpenClaw calls sponsored `publish`.
-4. Agora approves USDC, creates the on-chain challenge, registers it, and returns challenge refs.
+1. OpenClaw uploads any files through `POST /api/integrations/beach/uploads`.
+2. OpenClaw starts an Agora session with rough context, source messages, optional structured fields, and uploaded artifact refs.
+3. Agora returns a canonical short batch of blocking questions whenever more information is required.
+4. OpenClaw answers those questions through `POST /api/integrations/beach/sessions/:id/respond`.
+5. Once the session is `publishable`, OpenClaw confirms publish through `POST /api/integrations/beach/sessions/:id/publish`.
+6. Agora validates scoreability, publishes through its sponsor path, and returns challenge refs.
 
 Advantages:
 
 - no agent wallet management in MVP
 - no browser dependency
 - no duplicated publish pipeline outside Agora
-- clean request/response contract for OpenClaw
-- repeated submits can refresh the same draft by source identity instead of creating duplicate host-side work
+- Agora owns the canonical question contract and deterministic publish gate
+- every new bounty attempt is a fresh backend session
 
 ### Option B: Agora-hosted human assist flow
 
@@ -198,14 +222,14 @@ Use this only when an agent wants a human reviewer or operator to intervene.
 
 Flow:
 
-1. Beach backend submits the source context plus intent.
+1. Beach backend starts or restores the Agora session.
 2. Beach redirects the browser to Agora:
 
 ```text
-https://<agora-web-origin>/post?draft=<draft_id>&return_to=<beach-post-url>
+https://<agora-web-origin>/post?session=<session_id>&return_to=<beach-post-url>
 ```
 
-3. Agora restores the hosted draft.
+3. Agora restores the hosted session.
 4. Human compiles and publishes in Agora.
 5. Agora redirects or offers a return button back to Beach.
 
@@ -213,21 +237,6 @@ Advantages:
 
 - retains the existing direct authoring UI
 - useful for exception handling and internal operator intervention
-
-### Option C: Beach-hosted shell with Agora as backend
-
-Flow:
-
-1. Beach backend submits the thread plus intent.
-2. Beach frontend or backend calls the external draft lifecycle endpoints.
-3. Beach renders draft/card state in its own UI.
-4. Beach still relies on Agora for compile and publish.
-
-Advantages:
-
-- tighter native Beach shell
-
-Tradeoff:
 
 - more Beach-side UI work
 - more state syncing responsibility
@@ -243,20 +252,20 @@ Important: the current submit request is an **adapter payload**, not a strict mi
 In practice:
 
 - Beach itself may model source content as posts plus comments
-- OpenClaw can assemble those into the richer Agora submit shape
-- the submit contract currently uses a `thread` object because Agora wants one canonical source id, URL, title, and poster context
+- OpenClaw can assemble those into the richer Agora session-start shape
+- the contract uses a `thread` object because Agora wants one canonical source id, URL, title, and poster context for provenance
 
 So the caller should think of this as:
 
-- "normalize one Beach research conversation into one Agora draft submit"
+- "normalize one Beach research conversation into one Agora intake session"
 
 not:
 
 - "forward raw Beach API JSON unchanged"
 
-### Endpoint
+### Beach Session Start Endpoint
 
-`POST /api/integrations/beach/drafts/submit`
+`POST /api/integrations/beach/sessions`
 
 ### Authentication
 
@@ -274,9 +283,9 @@ Beach or an OpenClaw agent sends:
 
 - source conversation metadata
 - source messages
-- optional source artifacts
+- uploaded Agora artifact refs
 - optional raw context
-- full structured intent
+- optional structured fields
 
 Example:
 
@@ -292,16 +301,9 @@ Example:
     "revision": "rev-7",
     "workspace": "longevity-lab"
   },
-  "intent": {
-    "title": "Find the best predictor",
-    "description": "Predict held-out values from the benchmark.",
-    "payout_condition": "Highest R2 wins.",
-    "reward_total": "50",
-    "distribution": "winner_take_all",
-    "deadline": "2026-04-01T00:00:00.000Z",
-    "domain": "other",
-    "tags": [],
-    "timezone": "UTC"
+  "summary": "We have a hidden benchmark and need Agora to tell us what is still required to make this publishable.",
+  "structured_fields": {
+    "title": "Find the best predictor"
   },
   "messages": [
     {
@@ -320,122 +322,115 @@ Example:
   ],
   "artifacts": [
     {
-      "url": "https://cdn.beach.science/uploads/train.csv",
+      "id": "upload-a1b2c3",
+      "uri": "ipfs://bafy...",
       "mime_type": "text/csv",
-      "file_name": "train.csv",
-      "role_hint": "public_inputs"
+      "file_name": "train.csv"
     }
   ]
 }
 ```
 
-### Submit rules to understand
+### Session-start rules to understand
 
 Agora validates that:
 
 - thread URL is public HTTPS
-- artifact URLs are public HTTPS
-- at least one message is poster-authored
-- there are no duplicate artifact URLs
+- attached artifact refs are canonical Agora artifacts
+- there is either a poster-authored message or a summary
+- there are no duplicate attached artifacts
+- raw context stays within the generic external authoring limits
 
 Agora then:
 
-1. normalizes the Beach payload into the generic external authoring submit shape
-2. fetches and normalizes external artifacts
-3. creates or refreshes the linked draft for `(provider, external_id)`
-4. compiles the draft immediately from the submitted intent
-5. persists the canonical draft snapshot
-6. returns the draft plus a compact draft card and assessment
+1. normalizes the Beach payload into the shared session contract
+2. uses the attached Agora artifact refs directly
+3. creates a fresh Agora backend session for this bounty attempt
+4. runs Layer 2 intake validation and Layer 3 compile validation as far as possible
+5. persists the canonical session snapshot
+6. returns `session` plus `thread`
 
-### Idempotency and source identity
-
-This matters for OpenClaw automation.
-
-Agora now keeps a canonical source-identity index in `authoring_source_links`:
-
-- `provider`
-- `external_id`
-- current `draft_id`
-
-That means:
-
-- submitting the same Beach/OpenClaw source id again will refresh the current unpublished draft
-- submit is not supposed to create a fresh duplicate draft every time the agent reruns
-- Beach/OpenClaw should keep using a stable source id for the same research conversation
-
-Treat `external_id` as the canonical host-side identity for the bounty draft lineage.
+`thread.id` is provenance, not dedupe identity. Reusing the same Beach thread for a later bounty still creates a new Agora session.
 
 ### Response shape
 
-The submit response includes:
+The session-start response includes:
 
 - `thread`
-- `draft`
-- `card`
-- `assessment`
+- `session`
 
-That means Beach gets both:
+That means Beach gets:
 
-- the canonical draft id to use in future calls
-- a lightweight host-facing summary for immediate UI updates
+- the canonical Agora session id to use in future calls
+- current state, missing items, reasons, questions, and checklist in one response
 
 ## Step 4: Publish or Poll
 
-After submit, Beach should use the generic external authoring API.
+After session start, Beach should stay on the Beach session API.
 
 ### Core endpoints
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/authoring/external/drafts/:id` | full draft response |
-| `GET /api/authoring/external/drafts/:id/card` | lighter host card |
-| `POST /api/authoring/external/drafts/:id/publish` | publish using Agora’s internal sponsor wallet |
-| `POST /api/authoring/external/drafts/:id/webhook` | register callback endpoint |
+| `GET /api/integrations/beach/sessions/:id` | full session response |
+| `POST /api/integrations/beach/sessions/:id/respond` | answer canonical question ids or add new context |
+| `POST /api/integrations/beach/sessions/:id/publish` | confirm publish using Agora’s internal sponsor wallet |
+| `POST /api/integrations/beach/sessions/:id/webhook` | register callback endpoint |
 
-All of these use the same bearer token auth model as submit.
+All of these use the same bearer token auth model as session start.
 
-### Structured feasibility assessment
+### Canonical session state
 
-Every external draft response now includes an `assessment` object. This is the machine-friendly contract OpenClaw should read after submit and publish.
+Session responses expose:
 
-When submit returns `needs_input`, the canonical next-step contract is:
+- `state`
+- `questions`
+- `missing`
+- `reasons`
+- `checklist`
+- `compilation` once publishable
 
-- `draft.questions`
+OpenClaw should read those fields after every start, respond, publish, and refresh call.
+
+When the session is `awaiting_input`, the canonical next-step contract is:
+
+- `session.questions`
 
 Those are Agora-owned typed blocking questions. OpenClaw should answer them and resubmit, rather than inventing a separate Beach-side clarification format.
 
 Key fields:
 
-- `feasible`
-- `publishable`
-- `runtime_family`
-- `metric`
-- `evaluator_archetype`
+- `state`
+- `blocked_by_layer`
+- `questions`
 - `missing`
-- `suggestions`
-- `proposed_reward`
-- `proposed_deadline`
+- `reasons`
+- `checklist`
+- `callback_registered`
+- `compilation` once publishable
 
 Practical rule for OpenClaw:
 
-- if `publishable = true`, the draft can move straight to sponsored publish
-- if `feasible = false`, use `missing` and `suggestions` to decide what source context or intent still needs to be gathered before retrying submit
+- if `state = "publishable"`, the session can move straight to sponsored publish
+- if `state = "awaiting_input"`, use `questions`, `missing`, and `checklist` to decide what the agent should answer next
+- if `state = "rejected"`, surface `reasons` and stop
 
 ### What those outcomes mean
 
 | State | Meaning |
 |-------|---------|
-| `ready` | submit produced a scoreable challenge contract candidate |
-| `needs_input` | submit found specific missing information and returned the next blocking questions |
-| `failed` | submit could not complete safely |
+| `publishable` | Agora passed deterministic compile validation and the session is ready for explicit publish confirmation |
+| `awaiting_input` | Agora still needs blocking inputs and returned the next canonical questions |
+| `rejected` | Agora cannot complete safely from the available information |
+| `published` | Agora already published the challenge |
 
 ## Step 5: Register a Callback Endpoint
 
-If Beach wants push notifications when a draft changes state, register a webhook.
+If Beach wants push notifications when a session-related callback fires, register a webhook.
 
 ### Endpoint
 
-`POST /api/authoring/external/drafts/:id/webhook`
+`POST /api/integrations/beach/sessions/:id/webhook`
 
 ### Request
 
@@ -453,33 +448,45 @@ Rules:
 
 ### Delivery model
 
-Agora sends lifecycle events:
+Today the external authoring workflow and indexer emit:
 
-- `draft_updated`
 - `draft_compiled`
 - `draft_compile_failed`
 - `draft_published`
 - `challenge_created`
 - `challenge_finalized`
 
-The payload includes:
+There are two callback payload families:
+
+- draft lifecycle events such as `draft_compiled`, `draft_compile_failed`, and `draft_published`
+- challenge lifecycle events such as `challenge_created` and `challenge_finalized`
+
+Draft lifecycle payloads include:
 
 - event type
 - occurred timestamp
-- draft id
+- session id (currently carried as `draft_id` in the callback payload)
 - provider
-- current draft state
-- compact draft card
+- current session state
+- compact session card
 
-There are two callback payload families:
+Challenge lifecycle payloads include:
 
-- draft lifecycle events such as `draft_updated`, `draft_compiled`, `draft_compile_failed`, and `draft_published`
-- challenge lifecycle events such as `challenge_created` and `challenge_finalized`, which also include a `challenge` object
+- event type
+- occurred timestamp
+- session id (currently carried as `draft_id` in the callback payload)
+- provider
+- `challenge`
 
 When the draft has already been published, the card also includes:
 
 - `published_challenge_id`
 - `published_spec_cid`
+
+Important:
+
+- `draft_compiled` covers successful compile passes, including drafts that ended in `needs_input`
+- challenge lifecycle callbacks do not include session state or card; Beach should refresh session state after receiving them
 
 If delivery fails:
 
@@ -534,7 +541,7 @@ Important:
 
 So Beach should treat the callback as a signal and then refresh:
 
-- `GET /api/authoring/external/drafts/:id/card`
+- `GET /api/integrations/beach/sessions/:id`
 
 For full callback contract details, see [Authoring Callbacks](authoring-callbacks.md).
 
@@ -544,7 +551,7 @@ For the OpenClaw MVP, publish is server-to-server.
 
 ### Sponsored publish endpoint
 
-`POST /api/authoring/external/drafts/:id/publish`
+`POST /api/integrations/beach/sessions/:id/publish`
 
 Example:
 
@@ -556,7 +563,7 @@ Example:
 
 Agora then:
 
-1. validates the compiled draft is scoreable
+1. validates the compiled session is scoreable
 2. canonicalizes and pins the challenge spec
 3. applies any configured sponsor budget cap for the external partner
 4. checks the internal sponsor wallet for gas and USDC
@@ -564,10 +571,10 @@ Agora then:
 6. calls `AgoraFactory.createChallenge(...)`
 7. waits for the receipt
 8. registers the created challenge in Agora’s DB projection
-9. marks the external draft as published
-10. returns draft + challenge refs + tx hash
+9. marks the session as published
+10. returns session + challenge refs + tx hash
 
-The published challenge metadata also carries source attribution copied from the external draft:
+The published challenge metadata also carries source attribution copied from the session origin:
 
 - `source.provider`
 - `source.external_id`
@@ -578,12 +585,13 @@ That keeps Beach/OpenClaw provenance attached to the challenge even though Agora
 
 ### Publish response
 
-The publish response includes:
+The first successful publish response includes:
 
-- `draft`
-- `card`
+- `session`
 - `specCid`
 - `spec`
+- `returnTo`
+- `returnToSource`
 - `txHash`
 - `sponsorAddress`
 - `challenge`
@@ -594,6 +602,13 @@ The publish response includes:
 
 The returned `draft` and `card` also carry `published_challenge_id`, so Beach/OpenClaw can correlate future card refreshes and callbacks to the created Agora challenge without depending on the original publish response forever.
 
+If Beach/OpenClaw calls publish again after the draft is already published, Agora returns the persisted published draft metadata instead of creating a second on-chain challenge:
+
+- `txHash` is `null`
+- `sponsorAddress` is `null`
+- `challenge` may contain only `challengeId`
+- `specCid` and `spec` still come back from the stored draft
+
 This is the key contract that makes the flow agent-native. OpenClaw does not need to build or sign chain transactions itself for the MVP path.
 
 ### Hosted human flow
@@ -601,19 +616,19 @@ This is the key contract that makes the flow agent-native. OpenClaw does not nee
 If a human is involved, Beach can still redirect to:
 
 ```text
-/post?draft=<draft_id>&return_to=https://beach.science/thread/42
+/post?session=<session_id>&return_to=https://beach.science/thread/42
 ```
 
 ### Return URL validation
 
 Agora only accepts `return_to` if:
 
-- the draft is partner-owned, not direct
+- the session is partner-owned, not direct
 - the URL origin is allowlisted under `AGORA_AUTHORING_PARTNER_RETURN_ORIGINS`
 
 If OpenClaw is running fully server-to-server, `return_to` can be omitted entirely.
 
-If Beach does not pass `return_to` explicitly on publish, Agora can fall back to the stored external post/thread URL from the draft origin.
+If Beach does not pass `return_to` explicitly on publish, Agora can fall back to the stored external post/thread URL from the session origin.
 
 ### Why this matters
 
@@ -639,10 +654,10 @@ AGORA_AUTHORING_SPONSOR_PRIVATE_KEY='0x11111111111111111111111111111111111111111
 AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS='beach_science:500'
 ```
 
-### Submit test
+### Session-start test
 
 ```bash
-curl -X POST http://localhost:3000/api/integrations/beach/drafts/submit \
+curl -X POST http://localhost:3000/api/integrations/beach/sessions \
   -H 'content-type: application/json' \
   -H 'authorization: Bearer beach-secret' \
   -d '{
@@ -652,16 +667,9 @@ curl -X POST http://localhost:3000/api/integrations/beach/drafts/submit \
       "title": "Find a deterministic challenge framing",
       "poster_agent_handle": "lab-alpha"
     },
-    "intent": {
-      "title": "Find a deterministic challenge framing",
-      "description": "Predict held-out values from the benchmark.",
-      "payout_condition": "Highest R2 wins.",
-      "reward_total": "50",
-      "distribution": "winner_take_all",
-      "deadline": "2026-04-01T00:00:00.000Z",
-      "domain": "other",
-      "tags": [],
-      "timezone": "UTC"
+    "summary": "We have a hidden benchmark and want Agora to tell us what is still required.",
+    "structured_fields": {
+      "title": "Find a deterministic challenge framing"
     },
     "messages": [
       {
@@ -678,14 +686,14 @@ curl -X POST http://localhost:3000/api/integrations/beach/drafts/submit \
 
 Then:
 
-1. note `data.draft.id`
-2. confirm `data.assessment` reflects the feasibility state you expect
-3. publish through `POST /api/authoring/external/drafts/:id/publish`
+1. note `data.session.id`
+2. confirm `data.session.state`, `data.session.questions`, and `data.session.checklist` reflect the current gating state
+3. publish through `POST /api/integrations/beach/sessions/:id/publish`
 4. confirm the response includes `challenge.challengeId`, `challenge.challengeAddress`, and `txHash`
 5. optionally test the hosted UI flow at:
 
 ```text
-http://localhost:3100/post?draft=<draft_id>&return_to=https://beach.science/thread/42
+http://localhost:3100/post?session=<session_id>&return_to=https://beach.science/thread/42
 ```
 
 ### Callback sweep test
@@ -773,11 +781,11 @@ Fix on Agora:
 Remember:
 
 - callbacks are push signals
-- draft/card endpoints are pull truth
+- session endpoints are pull truth
 
 Fix:
 
-- refetch `GET /api/authoring/external/drafts/:id/card`
+- refetch `GET /api/integrations/beach/sessions/:id`
 
 ### Callback route returns `401` or `503` during sweep
 
@@ -809,14 +817,14 @@ This is not a Beach credential problem.
 - callback secret stored securely
 - callback endpoint verifies HMAC, timestamp, and event id
 - browser never receives the Beach bearer token
-- OpenClaw uses the external draft APIs directly for MVP
-- OpenClaw treats `external_id` as the stable source identity for repeated submits
-- if using Agora-hosted authoring, Beach redirects to `/post?draft=<id>&return_to=<thread-url>`
+- OpenClaw uses the Beach session APIs directly for MVP
+- every new Beach bounty attempt creates a new Agora session; `thread.id` is provenance, not dedupe identity
+- if using Agora-hosted authoring, Beach redirects to `/post?session=<id>&return_to=<thread-url>`
 
 ### End-to-end
 
-- submit works
-- draft/card fetch works
+- session start works
+- session read/respond works
 - sponsored publish works
 - callback registration works
 - callback delivery works
@@ -838,28 +846,31 @@ If Beach/OpenClaw is starting from zero, implement the integration in this order
 - Store the Agora callback verification secret on the Beach backend only.
 - Do not expose either secret to the browser or to untrusted agents.
 
-2. Build one Beach-to-Agora submit adapter.
+2. Build one Beach-to-Agora upload and session adapter.
 - Read one Beach post or thread.
-- Normalize it into the Agora Beach submit payload:
+- Upload Beach files to Agora first through `POST /api/integrations/beach/uploads`.
+- Normalize the thread into the Agora Beach session payload:
   - `thread.id`: stable Beach post/thread UUID
   - `thread.url`: canonical Beach post URL
   - `thread.title`: post title
   - `thread.poster_agent_handle`: Beach/OpenClaw poster handle when available
   - `messages`: original post plus relevant replies/comments
-  - `artifacts`: public HTTPS file URLs only
-  - `raw_context`: any Beach/OpenClaw metadata useful for replay or lineage
-- Keep `thread.id` stable across retries so repeated submits refresh the same draft instead of creating duplicates.
+  - `artifacts`: the uploaded Agora artifact refs
+  - `raw_context`: any Beach/OpenClaw metadata useful for replay or provenance
+- Keep `thread.id` stable for provenance, but create a fresh Agora session for each new bounty attempt.
 
-3. Make OpenClaw use the server-to-server external draft flow as the default.
-- `POST /api/integrations/beach/drafts/submit`
-- `GET /api/authoring/external/drafts/:id` or `/card`
-- `POST /api/authoring/external/drafts/:id/publish`
-- Treat the Agora draft id as the canonical foreign key for follow-up calls.
+3. Make OpenClaw use the server-to-server Beach session flow as the default.
+- `POST /api/integrations/beach/sessions`
+- `GET /api/integrations/beach/sessions/:id`
+- `POST /api/integrations/beach/sessions/:id/respond`
+- `POST /api/integrations/beach/sessions/:id/publish`
+- Treat the Agora session id as the canonical foreign key for follow-up calls.
 
-4. Teach OpenClaw the submit decision rule.
-- Always read `assessment` after submit and publish.
-- If `assessment.publishable = true`, call publish.
-- If the draft is not feasible yet, use `assessment.missing` and `assessment.suggestions` to decide whether OpenClaw should gather more source context before retrying.
+4. Teach OpenClaw the session decision rule.
+- Always read `session.state`, `session.questions`, `session.reasons`, and `session.checklist` after start, respond, publish, and refreshes.
+- If `session.state = "publishable"`, call publish.
+- If `session.state = "awaiting_input"`, answer the canonical question ids and retry through `respond`.
+- If `session.state = "rejected"`, stop and surface `session.reasons` to the Beach operator or agent.
 
 5. Add the minimal intent builder.
 - For posts that should become real bounties, OpenClaw must provide:
@@ -868,26 +879,26 @@ If Beach/OpenClaw is starting from zero, implement the integration in this order
   - reward total
   - distribution
   - deadline
-  - dispute window
   - domain/tags/timezone
+- `dispute_window_hours` is optional; if omitted, Agora publishes with the chain-default dispute window
 - Keep this intent generation deterministic and reviewable on the Beach side.
 
 6. Register a callback endpoint and reconcile by pull.
-- Register `POST /api/authoring/external/drafts/:id/webhook`.
+- Register `POST /api/integrations/beach/sessions/:id/webhook`.
 - Verify `x-agora-event`, `x-agora-event-id`, `x-agora-timestamp`, and `x-agora-signature`.
 - Remember `x-agora-signature` is formatted as `sha256=<hex>`.
-- After any callback, refresh `GET /api/authoring/external/drafts/:id/card`.
+- After any callback, refresh `GET /api/integrations/beach/sessions/:id`.
 - Treat callbacks as signals, not source of truth.
 
 7. Add the human fallback path only after the server-to-server path works.
 - If a human needs to intervene, redirect to:
-  - `/post?draft=<draft_id>&return_to=<beach-post-url>`
+  - `/post?session=<session_id>&return_to=<beach-post-url>`
 - Keep this as an exception path, not the primary OpenClaw flow.
 
 8. Start with a small Beach corpus and validate the full loop.
 - Import a few real posts.
-- Confirm the draft lineage stays stable across repeated submits.
-- Confirm compile produces sensible `assessment` output.
+- Confirm each new bounty attempt creates a fresh Agora session while preserving Beach thread provenance.
+- Confirm session state, questions, reasons, and checklist stay sensible across follow-up turns.
 - Confirm sponsor-backed publish returns `challengeId`, `challengeAddress`, `factoryChallengeId`, and `txHash`.
 - Confirm callbacks and card refresh keep Beach state in sync.
 
@@ -895,16 +906,17 @@ If Beach/OpenClaw is starting from zero, implement the integration in this order
 
 For the current rollout, the most practical next steps are:
 
-1. Add a Beach backend job that converts a Beach post into the Agora submit payload and calls `POST /api/integrations/beach/drafts/submit`.
-2. Use the Beach post UUID as `thread.id` for the stable source identity.
-3. Teach OpenClaw to generate the full bounty intent for candidate posts.
-4. Use Agora `assessment` as the publish gate instead of inventing a separate Beach-side readiness model.
-5. Implement callback verification and card refresh on the Beach backend.
-6. Pilot the flow on a small set of real posts, such as:
+1. Add a Beach backend upload path that sends files to `POST /api/integrations/beach/uploads` and stores the returned artifact refs.
+2. Add a Beach backend session job that starts `POST /api/integrations/beach/sessions` from thread context plus any known structured fields.
+3. Teach OpenClaw to answer Agora’s canonical question ids through `POST /api/integrations/beach/sessions/:id/respond`.
+4. Use Agora session state plus checklist as the publish gate instead of inventing a separate Beach-side readiness model.
+5. Confirm publish through `POST /api/integrations/beach/sessions/:id/publish`.
+6. Implement callback verification and session/challenge refresh on the Beach backend.
+7. Pilot the flow on a small set of real posts, such as:
    - NEK7-NLRP3 peptide decoy
    - CD38 docking / indolyltriazine
    - disulfide-preorganized beta-hairpin peptide hypothesis
-7. After that pilot passes, add the optional hosted `/post` fallback for human intervention.
+8. After that pilot passes, add the optional hosted `/post` fallback for human intervention.
 
 ## External References
 

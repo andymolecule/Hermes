@@ -2,14 +2,14 @@
 
 Callback contract for external authoring hosts such as Beach Science.
 
-This document defines how Agora notifies an external host that an authoring draft changed state, how hosts should verify those callbacks, and how hosts should reconcile current state after receiving them.
+This document defines how Agora notifies an external host that an authoring session changed state, how hosts should verify those callbacks, and how hosts should reconcile current state after receiving them.
 
 ## Purpose
 
 Authoring callbacks are a host-sync mechanism, not a source of truth.
 
 Agora remains canonical for:
-- draft state
+- session state
 - needs-input state
 - compile state
 - publish state
@@ -18,13 +18,13 @@ External hosts should treat callbacks as:
 - a reliable prompt to refresh host UI state
 - not as the only state they store forever
 
-If a callback is missed, the host should recover by calling the draft/card endpoints again.
+If a callback is missed, the host should recover by calling the session endpoint again.
 
 ## Registration
 
 External hosts register a callback endpoint with:
 
-`POST /api/authoring/external/drafts/:id/webhook`
+`POST /api/integrations/beach/sessions/:id/webhook`
 
 The callback URL must be a public HTTPS URL.
 
@@ -34,7 +34,6 @@ Direct Agora `/post` drafts are not eligible for host callbacks.
 
 Agora currently emits these lifecycle events:
 
-- `draft_updated`
 - `draft_compiled`
 - `draft_compile_failed`
 - `draft_published`
@@ -46,7 +45,7 @@ The callback body is a JSON object shaped like `AuthoringCallbackEvent`.
 Draft lifecycle events include:
 - `event`
 - `occurred_at`
-- `draft_id`
+- `draft_id` (this is the persisted session id)
 - `provider`
 - `state`
 - `card`
@@ -54,21 +53,21 @@ Draft lifecycle events include:
 Challenge lifecycle events include:
 - `event`
 - `occurred_at`
-- `draft_id`
+- `draft_id` (this is the persisted session id)
 - `provider`
 - `challenge`
 
-Important: retries resend the original event payload. They do not mutate to the latest draft state.
+Important: retries resend the original event payload. They do not mutate to the latest session state.
 
 That is intentional:
 - the callback says what happened
-- the card endpoint says what is true now
+- the session endpoint says what is true now
 
 After any callback, hosts should fetch:
 
-`GET /api/authoring/external/drafts/:id/card`
+`GET /api/integrations/beach/sessions/:id`
 
-if they need the latest draft summary.
+if they need the latest session state.
 
 ## Headers
 
@@ -227,6 +226,6 @@ function verifyAgoraCallback(input: {
 Keep the boundary simple:
 
 - callbacks are push signals
-- draft/card endpoints are pull truth
+- session endpoints are pull truth
 
 That avoids turning callback delivery into a second source of truth.

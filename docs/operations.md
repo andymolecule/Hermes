@@ -532,12 +532,12 @@ agora reindex --from-block <block_number>
 
 1. Check `GET /api/authoring/health`.
 2. If `drafts.expired > 0`, confirm they are abandoned sessions. The current submit flow recreates or refreshes drafts on the next poster or agent submit, so there is no separate review sweep route anymore.
-3. If `drafts.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster or agent to resubmit the draft through `POST /api/authoring/drafts/submit` or `POST /api/authoring/external/drafts/submit`.
+3. If `drafts.stale_compiling > 0`, inspect recent API logs for interrupted compile requests, then ask the poster or agent to resubmit through `POST /api/authoring/sessions` or `POST /api/integrations/beach/sessions`.
 4. If drafts are stuck after sponsor-funded publish attempts, run `pnpm recover:authoring-publishes -- --stale-minutes=30` before retrying the publish flow.
 
 ### Authoring Callback Backlog
 
-Use this when an external host such as Beach stops reflecting draft state transitions even though drafts are still changing in Agora.
+Use this when an external host such as Beach stops reflecting session state transitions even though authoring sessions are still changing in Agora.
 
 1. Confirm the host callback contract first:
    - host endpoint is still reachable over public HTTPS
@@ -574,7 +574,7 @@ curl -X POST \
 5. Interpretation:
    - `delivered > 0`: host recovered and accepted retried callbacks
    - `rescheduled > 0`: host is still failing; the outbox kept the events for another retry
-   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/authoring/external/drafts/:id/card`
+   - `exhausted > 0`: manual intervention is now required; inspect the host endpoint and refresh host state from `GET /api/integrations/beach/sessions/:id`
    - `conflicted > 0`: another sweep or operator already claimed some deliveries; rerun only if backlog remains
 6. Recommended operator cadence:
    - normal: run every minute from an internal scheduler or cron
@@ -591,14 +591,13 @@ curl -X POST \
 Use an internal network path or secret manager-backed environment where possible; do not hardcode the operator token in a checked-in crontab.
 8. If the sweep route returns `401` or `503`, verify `AGORA_AUTHORING_OPERATOR_TOKEN` is configured consistently on the API and the caller.
 9. If the host remains stale after successful callback delivery, force a host-side pull refresh from:
-   - `GET /api/authoring/external/drafts/:id/card` for draft state
-   - `GET /api/authoring/external/drafts/:id` for fuller draft context
+   - `GET /api/integrations/beach/sessions/:id` for canonical Beach session state
 
 Operational rule:
 - callbacks are push signals
-- draft/card endpoints are pull truth
+- session endpoints are pull truth
 
-Do not try to reconstruct canonical draft state purely from callback history.
+Do not try to reconstruct canonical session state purely from callback history.
 
 ### Oracle Key Issue
 

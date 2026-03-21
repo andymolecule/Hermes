@@ -1,14 +1,16 @@
 "use client";
 
 import type {
-  AuthoringDraftOutput,
+  AuthoringSessionAnswerOutput,
+  AuthoringSessionOutput,
+  AuthoringUploadResponseOutput,
   CompilationResultOutput,
 } from "@agora/common";
 import { computeDeadlineIso } from "../../lib/post-submission-window";
 import type { ManagedIntentState, UploadedArtifact } from "./guided-state";
 import { buildPostingArtifactsFromGuidedState } from "./guided-state";
 
-export type AuthoringDraftRequestError = Error & { status?: number };
+export type AuthoringSessionRequestError = Error & { status?: number };
 
 function parseApiErrorMessage(text: string) {
   try {
@@ -22,21 +24,24 @@ function parseApiErrorMessage(text: string) {
   return text || "Request failed.";
 }
 
-function createAuthoringDraftRequestError(response: Response, message: string) {
-  const error = new Error(message) as AuthoringDraftRequestError;
-  error.name = "AuthoringDraftRequestError";
+function createAuthoringSessionRequestError(
+  response: Response,
+  message: string,
+) {
+  const error = new Error(message) as AuthoringSessionRequestError;
+  error.name = "AuthoringSessionRequestError";
   error.status = response.status;
   return error;
 }
 
-async function toAuthoringDraftRequestError(response: Response) {
-  return createAuthoringDraftRequestError(
+async function toAuthoringSessionRequestError(response: Response) {
+  return createAuthoringSessionRequestError(
     response,
     parseApiErrorMessage(await response.text()),
   );
 }
 
-export function getAuthoringDraftRequestStatus(error: unknown) {
+export function getAuthoringSessionRequestStatus(error: unknown) {
   if (
     error &&
     typeof error === "object" &&
@@ -96,79 +101,100 @@ function buildPostingIntent(intent: Partial<ManagedIntentState>) {
 }
 
 export function getCompilation(
-  session: AuthoringDraftOutput | null | undefined,
+  session: AuthoringSessionOutput | null | undefined,
 ) {
   return (session?.compilation ?? null) as CompilationResultOutput | null;
 }
 
 export function clearCompiledSessionData(
-  current: AuthoringDraftOutput | null,
-): AuthoringDraftOutput | null {
+  current: AuthoringSessionOutput | null,
+): AuthoringSessionOutput | null {
   if (!current) {
     return current;
   }
 
   return {
     ...current,
-    state: "draft",
+    state: "awaiting_input",
+    blocked_by_layer: "layer2",
     compilation: null,
     questions: [],
-    failure_message: null,
+    reasons: [],
   };
 }
 
-export async function pinDataFile(file: File) {
+export async function pinAuthoringFile(file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch("/api/pin-data", {
+  const response = await fetch("/api/authoring/uploads", {
     method: "POST",
     body: formData,
   });
   if (!response.ok) {
-    throw await toAuthoringDraftRequestError(response);
+    throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as { cid: string };
+  const payload = (await response.json()) as {
+    data: AuthoringUploadResponseOutput;
+  };
+  return payload.data.artifact;
 }
 
-export async function submitAuthoringDraft(input: {
-  draftId: string;
+export async function submitAuthoringSession(input: {
+  sessionId?: string;
   posterAddress?: `0x${string}`;
-  intent: Partial<ManagedIntentState>;
+  intent?: Partial<ManagedIntentState>;
+  structuredFields?: Record<string, unknown>;
+  summary?: string;
+  message?: string;
+  answers?: AuthoringSessionAnswerOutput[];
+  cannotAnswer?: boolean;
+  reason?: string;
   uploads: UploadedArtifact[];
 }) {
-  const response = await fetch("/api/authoring/drafts/submit", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      draft_id: input.draftId || undefined,
-      poster_address: input.posterAddress,
-      intent: buildPostingIntent(input.intent),
-      uploaded_artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
-    }),
-  });
+  const requestBody = {
+    poster_address: input.posterAddress,
+    summary: input.summary,
+    message: input.message,
+    structured_fields:
+      input.structuredFields ?? buildPostingIntent(input.intent ?? {}),
+    answers: input.answers,
+    cannot_answer: input.cannotAnswer,
+    reason: input.reason,
+    artifacts: buildPostingArtifactsFromGuidedState(input.uploads),
+  };
+  const response = await fetch(
+    input.sessionId
+      ? `/api/authoring/sessions/${input.sessionId}/respond`
+      : "/api/authoring/sessions",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    },
+  );
 
   if (!response.ok) {
-    throw await toAuthoringDraftRequestError(response);
+    throw await toAuthoringSessionRequestError(response);
   }
 
   const payload = (await response.json()) as {
-    data: { draft: AuthoringDraftOutput };
+    data: { session: AuthoringSessionOutput };
   };
-  return payload.data.draft;
+  return payload.data.session;
 }
 
-export async function getAuthoringDraft(draftId: string) {
-  const response = await fetch(`/api/authoring/drafts/${draftId}`, {
+export async function getAuthoringSession(sessionId: string) {
+  const response = await fetch(`/api/authoring/sessions/${sessionId}`, {
     method: "GET",
     cache: "no-store",
   });
 
   if (!response.ok) {
-    throw await toAuthoringDraftRequestError(response);
+    throw await toAuthoringSessionRequestError(response);
   }
 
   const payload = (await response.json()) as {
-    data: { draft: AuthoringDraftOutput };
+    data: { session: AuthoringSessionOutput };
   };
-  return payload.data.draft;
+  return payload.data.session;
 }

@@ -11,13 +11,14 @@ Documentation index and reading order for the Agora repository.
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
 | 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
 | 5 | [Beach Integration Guide](beach-integration.md) | How does Beach wire into Agora step by step? | Integrations, backend, product engineering |
-| 6 | [Authoring Callbacks](authoring-callbacks.md) | How do external hosts verify and process authoring lifecycle callbacks safely? | Integrations, backend |
-| 7 | [Authoring Rollout](authoring-rollout.md) | How do I cut over the new authoring/draft/submission model safely? | Operators, DevOps |
-| 8 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 9 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 10 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 11 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 12 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 6 | [Agent Intake Session Spec](agent-intake-session-spec.md) | What is the intended future-state intake/session contract for web and Beach/OpenClaw? | Product, integrations, backend |
+| 7 | [Authoring Callbacks](authoring-callbacks.md) | How do external hosts verify and process authoring lifecycle callbacks safely? | Integrations, backend |
+| 8 | [Authoring Rollout](authoring-rollout.md) | How do I cut over the new authoring/draft/submission model safely? | Operators, DevOps |
+| 9 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 10 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 11 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 12 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 13 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -26,6 +27,7 @@ Documentation index and reading order for the Agora repository.
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
 - **Building the Beach host integration?** Read [Beach Integration Guide](beach-integration.md).
+- **Redesigning the intake/session model for Beach/OpenClaw and web?** Read [Agent Intake Session Spec](agent-intake-session-spec.md).
 - **Building or reviewing external host integrations?** Read [Authoring Callbacks](authoring-callbacks.md).
 - **Rolling out the new authoring/draft/submission changes?** Read [Authoring Rollout](authoring-rollout.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
@@ -50,6 +52,7 @@ Documentation index and reading order for the Agora repository.
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
 | Beach-specific host setup and Agora handoff flow | [beach-integration.md](beach-integration.md) |
+| Target future-state intake/session redesign for web and Beach/OpenClaw | [agent-intake-session-spec.md](agent-intake-session-spec.md) |
 | External host callback verification and replay rules | [authoring-callbacks.md](authoring-callbacks.md) |
 | Authoring/draft/submission rollout migrations and env cutover | [authoring-rollout.md](authoring-rollout.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
@@ -72,6 +75,7 @@ Documentation index and reading order for the Agora repository.
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 - **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
 - **[beach-integration.md](beach-integration.md)** — Beach-side setup, import flow, callbacks, and Agora-hosted handoff
+- **[agent-intake-session-spec.md](agent-intake-session-spec.md)** — Target redesign for the shared server-owned intake/session model across web and Beach/OpenClaw
 - **[authoring-callbacks.md](authoring-callbacks.md)** — Callback contract, replay window, idempotency, and host verification rules
 - **[authoring-rollout.md](authoring-rollout.md)** — Migrations, env vars, Railway cutover, and Beach smoke checks for the authoring rollout
 

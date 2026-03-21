@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  type AuthoringInteractionStateOutput,
   type AuthoringPartnerProviderOutput,
   type ExternalSourceMessageOutput,
   challengeIntentSchema,
@@ -104,6 +105,7 @@ function computeAssessmentInputHash(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
   sourceTitle?: string | null;
   sourceMessages?: ExternalSourceMessageOutput[];
+  interaction?: AuthoringInteractionStateOutput | null;
   origin: DraftOrigin;
 }) {
   return createHash("sha256")
@@ -113,6 +115,7 @@ function computeAssessmentInputHash(input: {
         uploaded_artifacts: input.uploadedArtifacts,
         source_title: input.sourceTitle ?? null,
         source_messages: input.sourceMessages ?? [],
+        interaction: input.interaction ?? null,
         origin: input.origin,
       }),
     )
@@ -159,6 +162,7 @@ export function createAuthoringIntakeWorkflow(
       uploadedArtifacts: AuthoringArtifactOutput[];
       sourceTitle?: string | null;
       sourceMessages?: ExternalSourceMessageOutput[];
+      interaction?: AuthoringInteractionStateOutput | null;
       origin: DraftOrigin;
       draftExpiryMs: number;
       readyExpiryMs: number;
@@ -180,6 +184,7 @@ export function createAuthoringIntakeWorkflow(
         uploadedArtifacts: input.uploadedArtifacts,
         sourceTitle: input.sourceTitle,
         sourceMessages: input.sourceMessages,
+        interaction: input.interaction,
         origin: input.origin,
       });
 
@@ -211,6 +216,7 @@ export function createAuthoringIntakeWorkflow(
           uploadedArtifacts: input.uploadedArtifacts,
           sourceTitle: input.sourceTitle ?? null,
           sourceMessages: input.sourceMessages ?? [],
+          interaction: input.interaction,
           origin: buildOrigin(input.origin),
           questions,
           assessmentInputHash,
@@ -264,6 +270,7 @@ export function createAuthoringIntakeWorkflow(
         uploadedArtifacts: input.uploadedArtifacts,
         sourceTitle: input.sourceTitle ?? parsedIntent.data.title,
         sourceMessages: input.sourceMessages ?? [],
+        interaction: input.interaction,
         origin: buildOrigin(input.origin),
         assessmentInputHash,
       });
@@ -305,6 +312,7 @@ export function createAuthoringIntakeWorkflow(
         const outcome = await compileManagedAuthoringDraftOutcomeImpl({
           intent: parsedIntent.data,
           uploadedArtifacts: input.uploadedArtifacts,
+          interaction: input.interaction,
         });
 
         const updatedAuthoringIr = {
@@ -327,6 +335,7 @@ export function createAuthoringIntakeWorkflow(
               (artifact, index) => artifact.id ?? `${index}:${artifact.uri}`,
             ),
           },
+          interaction: input.interaction ?? outcome.authoringIr.interaction,
           assessment: {
             ...outcome.authoringIr.assessment,
             input_hash: assessmentInputHash,

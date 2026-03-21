@@ -215,7 +215,7 @@ function createDraft(
   };
 }
 
-test("managed draft submit creates a needs-input draft when required fields are missing", async () => {
+test("authoring session start creates an awaiting-input session when required fields are missing", async () => {
   let storedDraft: AuthoringDraftRow | null = null;
   const router = createAuthoringDraftRoutes({
     createSupabaseClient: () => ({}) as never,
@@ -233,17 +233,17 @@ test("managed draft submit creates a needs-input draft when required fields are 
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
         poster_address: "0x00000000000000000000000000000000000000aa",
-        intent: {
+        structured_fields: {
           title: "Only a title",
         },
-        uploaded_artifacts: createArtifacts(),
+        artifacts: createArtifacts(),
       }),
     }),
   );
@@ -251,14 +251,19 @@ test("managed draft submit creates a needs-input draft when required fields are 
   assert.equal(response.status, 200);
   const payload = (await response.json()) as {
     data: {
-      draft: { state: string; questions: Array<{ id: string }> };
+      session: {
+        state: string;
+        blocked_by_layer: string | null;
+        questions: Array<{ id: string }>;
+      };
     };
   };
-  assert.equal(payload.data.draft.state, "needs_input");
-  assert.equal(payload.data.draft.questions[0]?.id, "challenge-description");
+  assert.equal(payload.data.session.state, "awaiting_input");
+  assert.equal(payload.data.session.blocked_by_layer, "layer2");
+  assert.equal(payload.data.session.questions[0]?.id, "challenge-description");
 });
 
-test("managed draft submit compiles a ready draft on the happy path", async () => {
+test("authoring session start compiles a publishable session on the happy path", async () => {
   let storedDraft: AuthoringDraftRow | null = null;
   const readyIntent = createIntent();
   const readyArtifacts = createArtifacts();
@@ -317,15 +322,15 @@ test("managed draft submit compiles a ready draft on the happy path", async () =
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
         poster_address: "0x00000000000000000000000000000000000000aa",
-        intent: readyIntent,
-        uploaded_artifacts: readyArtifacts,
+        structured_fields: readyIntent,
+        artifacts: readyArtifacts,
       }),
     }),
   );
@@ -333,21 +338,23 @@ test("managed draft submit compiles a ready draft on the happy path", async () =
   assert.equal(response.status, 200);
   const payload = (await response.json()) as {
     data: {
-      draft: {
+      session: {
         state: string;
+        blocked_by_layer: string | null;
         compilation: { runtime_family: string; metric: string };
       };
     };
   };
-  assert.equal(payload.data.draft.state, "ready");
+  assert.equal(payload.data.session.state, "publishable");
+  assert.equal(payload.data.session.blocked_by_layer, null);
   assert.equal(
-    payload.data.draft.compilation.runtime_family,
+    payload.data.session.compilation.runtime_family,
     "tabular_regression",
   );
-  assert.equal(payload.data.draft.compilation.metric, "r2");
+  assert.equal(payload.data.session.compilation.metric, "r2");
 });
 
-test("managed draft submit returns a conflict when the draft changed concurrently", async () => {
+test("authoring session respond returns a conflict when the session changed concurrently", async () => {
   const storedDraft = createDraft({
     intent_json: createIntent(),
   });
@@ -362,16 +369,15 @@ test("managed draft submit returns a conflict when the draft changed concurrentl
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request(`http://localhost/sessions/${storedDraft.id}/respond`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        draft_id: storedDraft.id,
         poster_address: storedDraft.poster_address,
-        intent: createIntent(),
-        uploaded_artifacts: createArtifacts(),
+        structured_fields: createIntent(),
+        artifacts: createArtifacts(),
       }),
     }),
   );
@@ -379,11 +385,11 @@ test("managed draft submit returns a conflict when the draft changed concurrentl
   assert.equal(response.status, 409);
   assert.equal(
     ((await response.json()) as { code: string }).code,
-    "AUTHORING_DRAFT_CONFLICT",
+    "AUTHORING_SESSION_CONFLICT",
   );
 });
 
-test("managed draft submit returns failed draft data when compile throws", async () => {
+test("authoring session start returns a rejected session when compile throws", async () => {
   let storedDraft: AuthoringDraftRow | null = null;
 
   const router = createAuthoringDraftRoutes({
@@ -413,31 +419,35 @@ test("managed draft submit returns failed draft data when compile throws", async
   });
 
   const response = await router.request(
-    new Request("http://localhost/drafts/submit", {
+    new Request("http://localhost/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
         poster_address: "0x00000000000000000000000000000000000000aa",
-        intent: createIntent(),
-        uploaded_artifacts: createArtifacts(),
+        structured_fields: createIntent(),
+        artifacts: createArtifacts(),
       }),
     }),
   );
 
-  assert.equal(response.status, 422);
+  assert.equal(response.status, 200);
   const payload = (await response.json()) as {
-    error: { code: string; message: string };
-    data: { draft: { state: string; failure_message: string | null } };
+    data: {
+      session: {
+        state: string;
+        blocked_by_layer: string | null;
+        reasons: string[];
+      };
+    };
   };
-  assert.equal(payload.error.code, "AUTHORING_DRAFT_COMPILE_FAILED");
-  assert.equal(payload.error.message, "compiler exploded");
-  assert.equal(payload.data.draft.state, "failed");
-  assert.equal(payload.data.draft.failure_message, "compiler exploded");
+  assert.equal(payload.data.session.state, "rejected");
+  assert.equal(payload.data.session.blocked_by_layer, "layer3");
+  assert.equal(payload.data.session.reasons[0], "compiler exploded");
 });
 
-test("managed draft publish pins and returns the canonical spec", async () => {
+test("authoring session publish pins and returns the canonical spec", async () => {
   let storedDraft = createDraft({
     state: "ready",
     compilation_json: createCompilation(),
@@ -490,12 +500,13 @@ test("managed draft publish pins and returns the canonical spec", async () => {
   );
 
   const response = await router.request(
-    new Request(`http://localhost/drafts/${storedDraft.id}/publish`, {
+    new Request(`http://localhost/sessions/${storedDraft.id}/publish`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
+        confirm_publish: true,
         auth: {
           address: storedDraft.poster_address,
           nonce: "nonce-12345678",
@@ -508,8 +519,12 @@ test("managed draft publish pins and returns the canonical spec", async () => {
 
   assert.equal(response.status, 200);
   const payload = (await response.json()) as {
-    data: { draft: { state: string }; specCid: string };
+    data: {
+      session: { state: string; blocked_by_layer: string | null };
+      specCid: string;
+    };
   };
-  assert.equal(payload.data.draft.state, "published");
+  assert.equal(payload.data.session.state, "published");
+  assert.equal(payload.data.session.blocked_by_layer, null);
   assert.equal(payload.data.specCid, "ipfs://spec-cid");
 });

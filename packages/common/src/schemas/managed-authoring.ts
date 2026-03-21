@@ -117,7 +117,7 @@ function findDuplicateAuthoringArtifacts(
   return null;
 }
 
-const authoringArtifactSchema = z.object({
+export const authoringArtifactSchema = z.object({
   id: z.string().trim().min(1).max(AUTHORING_MAX_ARTIFACT_ID_LENGTH).optional(),
   uri: authoringUriSchema,
   file_name: z
@@ -183,6 +183,35 @@ export const confirmationContractSchema = z.object({
   reward_summary: z.string().trim().min(1),
   deadline_summary: z.string().trim().min(1),
   dry_run_summary: z.string().trim().min(1),
+});
+
+export const authoringInteractionArtifactAssignmentSchema = z.object({
+  role: z.string().trim().min(1),
+  artifact_id: z.string().trim().min(1),
+  visibility: z.enum(["public", "private"]).nullable().default(null),
+});
+
+export const authoringInteractionAnswerLogSchema = z.object({
+  question_id: z.string().trim().min(1),
+  field: authoringQuestionFieldSchema,
+  value_summary: z.string().trim().min(1).nullable().default(null),
+  answered_at: z.string().datetime({ offset: true }),
+});
+
+export const authoringInteractionStateSchema = z.object({
+  answered_questions: z.array(authoringInteractionAnswerLogSchema).default([]),
+  latest_message: z.string().trim().min(1).nullable().default(null),
+  overrides: z
+    .object({
+      metric: z.string().trim().min(1).nullable().default(null),
+      artifact_assignments: z
+        .array(authoringInteractionArtifactAssignmentSchema)
+        .default([]),
+    })
+    .default({
+      metric: null,
+      artifact_assignments: [],
+    }),
 });
 
 const authoringArtifactSchemaV1 = z.object({
@@ -277,6 +306,14 @@ export const challengeAuthoringIrSchema = z.object({
   questions: z.object({
     pending: z.array(authoringQuestionSchema),
   }),
+  interaction: authoringInteractionStateSchema.default({
+    answered_questions: [],
+    latest_message: null,
+    overrides: {
+      metric: null,
+      artifact_assignments: [],
+    },
+  }),
 });
 
 export const submitAuthoringSourceDraftRequestSchema =
@@ -303,9 +340,165 @@ export const submitAuthoringSourceDraftRequestSchema =
 export const registerAuthoringDraftWebhookRequestSchema = z.object({
   callback_url: safePublicHttpsUrlSchema,
 });
+export const registerAuthoringSessionWebhookRequestSchema =
+  registerAuthoringDraftWebhookRequestSchema;
 
 export const publishExternalAuthoringDraftRequestSchema = z.object({
   return_to: safePublicHttpsUrlSchema.optional(),
+});
+
+const authoringSessionAnswerValueSchema = z.union([
+  z.string().trim().min(1),
+  z.number(),
+  z.boolean(),
+  z.array(z.string().trim().min(1)).min(1),
+  z.array(authoringInteractionArtifactAssignmentSchema).min(1),
+]);
+
+export const authoringSessionAnswerSchema = z.object({
+  question_id: z.string().trim().min(1),
+  value: authoringSessionAnswerValueSchema,
+});
+
+export const authoringSessionChecklistItemSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  status: z.enum(["missing", "satisfied", "failed"]),
+  detail: z.string().trim().min(1).nullable().default(null),
+});
+
+export const AUTHORING_SESSION_STATES = [
+  "awaiting_input",
+  "publishable",
+  "rejected",
+  "published",
+] as const;
+
+export const authoringSessionStateSchema = z.enum(AUTHORING_SESSION_STATES);
+export const authoringBlockedByLayerSchema = z.enum(["layer2", "layer3"]);
+
+export const authoringSessionSchema = z.object({
+  id: z.string().uuid(),
+  state: authoringSessionStateSchema,
+  blocked_by_layer: authoringBlockedByLayerSchema.nullable().default(null),
+  origin: z.object({
+    provider: externalSourceProviderSchema,
+    external_id: z.string().trim().min(1).nullable().default(null),
+    external_url: safePublicHttpsUrlSchema.nullable().default(null),
+  }),
+  summary: z.string().trim().min(1).nullable().default(null),
+  structured_fields: partialChallengeIntentSchema.default({}),
+  artifacts: z.array(authoringArtifactSchema).max(AUTHORING_MAX_ARTIFACTS),
+  missing: z.array(z.string().trim().min(1)).default([]),
+  reasons: z.array(z.string().trim().min(1)).default([]),
+  questions: z.array(authoringQuestionSchema).default([]),
+  checklist: z.array(authoringSessionChecklistItemSchema).default([]),
+  callback_registered: z.boolean().default(false),
+  compilation: z
+    .lazy(() => compilationResultSchema)
+    .nullable()
+    .default(null),
+  published: z
+    .object({
+      challenge_id: z.string().uuid().nullable().default(null),
+      spec_cid: z.string().trim().min(1).nullable().default(null),
+      published_at: z
+        .string()
+        .datetime({ offset: true })
+        .nullable()
+        .default(null),
+    })
+    .nullable()
+    .default(null),
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true }),
+});
+
+export const createAuthoringSessionRequestSchema = z
+  .object({
+    poster_address: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    summary: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AUTHORING_MAX_DESCRIPTION_LENGTH)
+      .optional(),
+    message: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AUTHORING_MAX_DESCRIPTION_LENGTH)
+      .optional(),
+    structured_fields: partialChallengeIntentSchema.optional(),
+    artifacts: z
+      .array(authoringArtifactSchema)
+      .max(AUTHORING_MAX_ARTIFACTS)
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    const duplicate = findDuplicateAuthoringArtifacts(value.artifacts);
+    if (duplicate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          duplicate.kind === "id"
+            ? `Duplicate uploaded artifact id "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`
+            : `Duplicate uploaded artifact uri "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`,
+      });
+    }
+  });
+
+export const respondAuthoringSessionRequestSchema = z
+  .object({
+    poster_address: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    message: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AUTHORING_MAX_DESCRIPTION_LENGTH)
+      .optional(),
+    structured_fields: partialChallengeIntentSchema.optional(),
+    answers: z.array(authoringSessionAnswerSchema).max(16).default([]),
+    artifacts: z
+      .array(authoringArtifactSchema)
+      .max(AUTHORING_MAX_ARTIFACTS)
+      .default([]),
+    cannot_answer: z.boolean().optional(),
+    reason: z
+      .string()
+      .trim()
+      .min(1)
+      .max(AUTHORING_MAX_DESCRIPTION_LENGTH)
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    const duplicate = findDuplicateAuthoringArtifacts(value.artifacts);
+    if (duplicate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          duplicate.kind === "id"
+            ? `Duplicate uploaded artifact id "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`
+            : `Duplicate uploaded artifact uri "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`,
+      });
+    }
+  });
+
+export const publishAuthoringSessionRequestSchema = z.object({
+  confirm_publish: z.literal(true),
+  return_to: safePublicHttpsUrlSchema.optional(),
+});
+
+export const authoringUploadResponseSchema = z.object({
+  artifact: authoringArtifactSchema,
 });
 
 export const authoringDraftAssessmentSchema = z.object({
@@ -372,7 +565,6 @@ export const authoringDraftCardSchema = z.object({
 });
 
 const authoringDraftLifecycleEventTypeSchema = z.enum([
-  "draft_updated",
   "draft_compiled",
   "draft_compile_failed",
   "draft_published",
@@ -487,36 +679,7 @@ export const authoringDraftSchema = z
     }
   });
 
-export const submitManagedAuthoringDraftRequestSchema = z
-  .object({
-    draft_id: z.string().uuid().optional(),
-    poster_address: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/)
-      .optional(),
-    intent: partialChallengeIntentSchema.optional(),
-    uploaded_artifacts: z
-      .array(authoringArtifactSchema)
-      .max(AUTHORING_MAX_ARTIFACTS)
-      .optional(),
-  })
-  .superRefine((value, ctx) => {
-    const duplicate = findDuplicateAuthoringArtifacts(
-      value.uploaded_artifacts ?? [],
-    );
-    if (duplicate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["uploaded_artifacts"],
-        message:
-          duplicate.kind === "id"
-            ? `Duplicate uploaded artifact id "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`
-            : `Duplicate uploaded artifact uri "${duplicate.value}" is not allowed. Next step: remove the duplicate and retry.`,
-      });
-    }
-  });
-
-export const publishManagedAuthoringDraftRequestSchema = z.object({
+export const publishManagedAuthoringSessionRequestSchema = z.object({
   auth: z.object({
     address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
     nonce: z.string().min(8).max(128),
@@ -524,6 +687,7 @@ export const publishManagedAuthoringDraftRequestSchema = z.object({
     specHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   }),
   return_to: safePublicHttpsUrlSchema.optional(),
+  confirm_publish: z.literal(true),
 });
 
 export type ChallengeIntentInput = z.input<typeof challengeIntentSchema>;
@@ -542,6 +706,12 @@ export type ChallengeAuthoringIrInput = z.input<
 export type ChallengeAuthoringIrOutput = z.output<
   typeof challengeAuthoringIrSchema
 >;
+export type AuthoringInteractionStateOutput = z.output<
+  typeof authoringInteractionStateSchema
+>;
+export type AuthoringInteractionArtifactAssignmentOutput = z.output<
+  typeof authoringInteractionArtifactAssignmentSchema
+>;
 export type AuthoringAmbiguityClassOutput = z.output<
   typeof authoringAmbiguityClassSchema
 >;
@@ -556,23 +726,57 @@ export type SubmitAuthoringSourceDraftRequestInput = z.input<
 export type SubmitAuthoringSourceDraftRequestOutput = z.output<
   typeof submitAuthoringSourceDraftRequestSchema
 >;
-export type SubmitManagedAuthoringDraftRequestInput = z.input<
-  typeof submitManagedAuthoringDraftRequestSchema
->;
-export type SubmitManagedAuthoringDraftRequestOutput = z.output<
-  typeof submitManagedAuthoringDraftRequestSchema
->;
 export type RegisterAuthoringDraftWebhookRequestInput = z.input<
   typeof registerAuthoringDraftWebhookRequestSchema
 >;
 export type RegisterAuthoringDraftWebhookRequestOutput = z.output<
   typeof registerAuthoringDraftWebhookRequestSchema
 >;
+export type RegisterAuthoringSessionWebhookRequestInput = z.input<
+  typeof registerAuthoringSessionWebhookRequestSchema
+>;
+export type RegisterAuthoringSessionWebhookRequestOutput = z.output<
+  typeof registerAuthoringSessionWebhookRequestSchema
+>;
 export type PublishExternalAuthoringDraftRequestInput = z.input<
   typeof publishExternalAuthoringDraftRequestSchema
 >;
 export type PublishExternalAuthoringDraftRequestOutput = z.output<
   typeof publishExternalAuthoringDraftRequestSchema
+>;
+export type AuthoringSessionAnswerOutput = z.output<
+  typeof authoringSessionAnswerSchema
+>;
+export type AuthoringSessionChecklistItemOutput = z.output<
+  typeof authoringSessionChecklistItemSchema
+>;
+export type AuthoringBlockedByLayerOutput = z.output<
+  typeof authoringBlockedByLayerSchema
+>;
+export type AuthoringSessionState = z.output<
+  typeof authoringSessionStateSchema
+>;
+export type AuthoringSessionOutput = z.output<typeof authoringSessionSchema>;
+export type CreateAuthoringSessionRequestInput = z.input<
+  typeof createAuthoringSessionRequestSchema
+>;
+export type CreateAuthoringSessionRequestOutput = z.output<
+  typeof createAuthoringSessionRequestSchema
+>;
+export type RespondAuthoringSessionRequestInput = z.input<
+  typeof respondAuthoringSessionRequestSchema
+>;
+export type RespondAuthoringSessionRequestOutput = z.output<
+  typeof respondAuthoringSessionRequestSchema
+>;
+export type PublishAuthoringSessionRequestOutput = z.output<
+  typeof publishAuthoringSessionRequestSchema
+>;
+export type PublishManagedAuthoringSessionRequestOutput = z.output<
+  typeof publishManagedAuthoringSessionRequestSchema
+>;
+export type AuthoringUploadResponseOutput = z.output<
+  typeof authoringUploadResponseSchema
 >;
 export type AuthoringDraftAssessmentOutput = z.output<
   typeof authoringDraftAssessmentSchema

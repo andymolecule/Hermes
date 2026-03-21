@@ -434,16 +434,16 @@ Beach does not need:
 
 Submit Beach thread:
 
-- `POST /api/integrations/beach/drafts/submit`
+- `POST /api/integrations/beach/sessions`
 
 Then use generic partner draft lifecycle:
 
 - `GET /api/authoring/external/drafts/:id`
 - `POST /api/authoring/external/drafts/submit`
-- `POST /api/authoring/external/drafts/:id/publish`
+- `POST /api/integrations/beach/sessions/:id/publish`
 - `POST /api/authoring/external/drafts/:id/webhook`
 
-Submit responses now include a structured `assessment` object so OpenClaw can tell whether the draft is feasible, immediately publishable, still missing required input, or rejected.
+Session responses now include canonical `state`, `questions`, `reasons`, and `checklist` fields so OpenClaw can tell whether the session is publishable, still awaiting input, or rejected.
 
 ### Callback Sweep
 
@@ -479,12 +479,12 @@ Authoring-specific checks:
 
 1. create a direct draft in `/post`
 2. compile a direct draft
-3. submit a Beach draft through `/api/integrations/beach/drafts/submit`
-4. confirm the submit response `assessment` is sensible for the draft state
-5. publish it through `/api/authoring/external/drafts/:id/publish`
+3. start a Beach session through `/api/integrations/beach/sessions`
+4. confirm the session response `state`, `questions`, and `checklist` are sensible
+5. publish it through `/api/integrations/beach/sessions/:id/publish`
 6. register a webhook through `/api/authoring/external/drafts/:id/webhook`
 7. confirm `challenge_created` callbacks or polling-visible challenge refs after publish
-8. publish a hosted draft and confirm return-to behavior if humans are in the loop
+8. publish a hosted session and confirm return-to behavior if humans are in the loop
 9. run callback sweep and confirm pending deliveries drain, including `challenge_finalized` when applicable
 
 Useful local regression command:
