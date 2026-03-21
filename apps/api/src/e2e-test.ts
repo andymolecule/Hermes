@@ -16,12 +16,10 @@ import {
   startChallengeScoring,
   submitChallengeResult,
 } from "@agora/chain";
-import {
-  type ChallengeListRow,
-  processChallengeLog,
-  processFactoryLog,
-  reconcileChallengeProjection,
-} from "@agora/chain/indexer/handlers";
+import { processChallengeLog } from "@agora/chain/indexer/challenge-events";
+import { processFactoryLog } from "@agora/chain/indexer/factory-events";
+import { reconcileChallengeProjection } from "@agora/chain/indexer/settlement";
+import type { ChallengeListRow } from "@agora/chain/indexer/shared";
 import {
   OFFICIAL_SCORER_IMAGES,
   SCORE_JOB_STATUS,
@@ -490,9 +488,12 @@ async function assertPredictionPublicApis(input: {
       const detailChallenge = detailBody.data?.challenge;
       const detailCount = readNumber(detailChallenge?.submissions_count);
       if (detailChallenge?.id !== input.challengeId) {
-        throw new Error("Prediction detail route returned the wrong challenge.");
+        throw new Error(
+          "Prediction detail route returned the wrong challenge.",
+        );
       }
-      const detailType = detailChallenge?.challenge_type ?? detailChallenge?.type;
+      const detailType =
+        detailChallenge?.challenge_type ?? detailChallenge?.type;
       if (detailType !== "prediction") {
         throw new Error("Prediction detail route lost the challenge type.");
       }
@@ -506,13 +507,22 @@ async function assertPredictionPublicApis(input: {
       }
       const detailLeaderboard = detailBody.data?.leaderboard ?? [];
       if (detailLeaderboard.length === 0) {
-        throw new Error("Prediction detail route returned an empty leaderboard.");
+        throw new Error(
+          "Prediction detail route returned an empty leaderboard.",
+        );
       }
       if (detailLeaderboard[0]?.id !== input.submissionId) {
-        throw new Error("Prediction detail route did not expose the scored submission.");
+        throw new Error(
+          "Prediction detail route did not expose the scored submission.",
+        );
       }
-      if (detailLeaderboard[0]?.score === null || detailLeaderboard[0]?.score === undefined) {
-        throw new Error("Prediction detail leaderboard row is missing the score.");
+      if (
+        detailLeaderboard[0]?.score === null ||
+        detailLeaderboard[0]?.score === undefined
+      ) {
+        throw new Error(
+          "Prediction detail leaderboard row is missing the score.",
+        );
       }
 
       const leaderboardResponse = await input.app.request(
@@ -529,24 +539,34 @@ async function assertPredictionPublicApis(input: {
         data?: Array<{ id?: string; score?: unknown }>;
       };
       if ((leaderboardBody.data ?? [])[0]?.id !== input.submissionId) {
-        throw new Error("Prediction leaderboard route did not expose the scored submission.");
+        throw new Error(
+          "Prediction leaderboard route did not expose the scored submission.",
+        );
       }
 
       const listResponse = await input.app.request(
         new Request("http://localhost/api/challenges"),
       );
       if (listResponse.status !== 200) {
-        throw new Error(`Prediction list route returned ${listResponse.status}.`);
+        throw new Error(
+          `Prediction list route returned ${listResponse.status}.`,
+        );
       }
       const listBody = (await listResponse.json()) as {
-        data?: Array<{ id?: string; submissions_count?: unknown; status?: string }>;
+        data?: Array<{
+          id?: string;
+          submissions_count?: unknown;
+          status?: string;
+        }>;
       };
       const listRow = (listBody.data ?? []).find(
         (row) => row.id === input.challengeId,
       );
       const listCount = readNumber(listRow?.submissions_count);
       if (!listRow) {
-        throw new Error("Prediction challenge was missing from the public list.");
+        throw new Error(
+          "Prediction challenge was missing from the public list.",
+        );
       }
       if (listRow.status !== "finalized") {
         throw new Error("Prediction challenge list row should be finalized.");
@@ -597,8 +617,14 @@ async function runLifecycleScenario(input: {
   useSealedSubmission: boolean;
   prepared: LifecycleScenarioPrepared;
 }) {
-  const { db, publicClient, app, accountAddress, useSealedSubmission, prepared } =
-    input;
+  const {
+    db,
+    publicClient,
+    app,
+    accountAddress,
+    useSealedSubmission,
+    prepared,
+  } = input;
   const config = loadConfig();
 
   console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
@@ -661,7 +687,10 @@ async function runLifecycleScenario(input: {
           keyId,
           publicKey,
         });
-        return pinJSON(`e2e-${prepared.label}-sealed-submission.json`, envelope);
+        return pinJSON(
+          `e2e-${prepared.label}-sealed-submission.json`,
+          envelope,
+        );
       })()
     : await pinFile(
         prepared.submissionSourcePath,
@@ -702,7 +731,10 @@ async function runLifecycleScenario(input: {
     throw new Error("Submission intent route succeeded without an intent id.");
   }
 
-  const submitTxHash = await submitChallengeResult(challengeAddress, resultHash);
+  const submitTxHash = await submitChallengeResult(
+    challengeAddress,
+    resultHash,
+  );
   await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
   console.log("4. Submission posted:", submitTxHash);
 

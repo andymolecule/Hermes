@@ -13,11 +13,9 @@ import {
   parseChallengeCreatedReceipt,
   parseChallengeCreationCall,
 } from "../factory.js";
-import {
-  persistChallengeCursors,
-  processChallengeLog,
-  processFactoryLog,
-} from "../indexer/handlers.js";
+import { processChallengeLog } from "../indexer/challenge-events.js";
+import { persistChallengeCursors } from "../indexer/cursors.js";
+import { processFactoryLog } from "../indexer/factory-events.js";
 import { DEFAULT_INDEXER_POLLING_CONFIG } from "../indexer/polling.js";
 
 type FakeIndexedEvent = {

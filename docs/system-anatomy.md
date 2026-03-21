@@ -657,11 +657,20 @@ Other important on-chain rules:
 
 ## Layer 6: The Chain Indexer (On-Chain → Database)
 
-**Files:** `packages/chain/src/indexer.ts`, `packages/chain/src/indexer/handlers.ts`
+**Files:** `packages/chain/src/indexer.ts`, `packages/chain/src/indexer/challenge-events.ts`, `packages/chain/src/indexer/factory-events.ts`, `packages/chain/src/indexer/settlement.ts`, `packages/chain/src/indexer/submissions.ts`, `packages/chain/src/indexer/cursors.ts`
 
 ### What it does
 
 The indexer polls Base, parses factory and challenge events, and projects them into Supabase. It is projection logic, not truth logic.
+
+Internally it is now split by concern:
+
+- `indexer.ts` owns the poll loop and top-level cursor coordination
+- `factory-events.ts` owns `ChallengeCreated` projection
+- `challenge-events.ts` owns per-challenge event dispatch, idempotency, and retry handling
+- `submissions.ts` owns submission projection and reserved-intent recovery
+- `settlement.ts` owns status, finalization, payouts, claims, and targeted reconcile
+- `cursors.ts` owns challenge cursor bootstrap and persistence
 
 ### Event → Projection mapping
 

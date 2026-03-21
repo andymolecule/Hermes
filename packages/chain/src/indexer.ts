@@ -20,15 +20,12 @@ import {
 } from "@agora/db";
 import { type Abi, parseEventLogs } from "viem";
 import { getPublicClient } from "./client.js";
+import { processChallengeLog } from "./indexer/challenge-events.js";
 import {
-  type ChallengeListRow,
-  type ParsedLog,
   loadChallengeCursor,
   persistChallengeCursors,
-  processChallengeLog,
-  processFactoryLog,
-  reconcileChallengeProjection,
-} from "./indexer/handlers.js";
+} from "./indexer/cursors.js";
+import { processFactoryLog } from "./indexer/factory-events.js";
 import {
   POLL_INTERVAL_MS,
   chunkedGetLogs,
@@ -37,6 +34,8 @@ import {
   rewindStartBlock,
   sleep,
 } from "./indexer/polling.js";
+import { reconcileChallengeProjection } from "./indexer/settlement.js";
+import type { ChallengeListRow, ParsedLog } from "./indexer/shared.js";
 import {
   captureIndexerException,
   indexerLogger,

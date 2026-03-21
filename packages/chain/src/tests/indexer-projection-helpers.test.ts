@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS, SUBMISSION_RESULT_FORMAT } from "@agora/common";
-import {
-  enqueueChallengeFinalizedCallback,
-  projectOnChainSubmissionFromRegistration,
-} from "../indexer/handlers.js";
+import { enqueueChallengeFinalizedCallback } from "../indexer/settlement.js";
+import { projectOnChainSubmissionFromRegistration } from "../indexer/submissions.js";
 
 test("enqueueChallengeFinalizedCallback creates a durable partner callback for finalized challenges", async () => {
   const queued: Array<{
@@ -130,7 +128,11 @@ test("projectOnChainSubmissionFromRegistration recovers missing submission rows 
         trace_id: "trace-1",
       } as never;
     },
-    ensureScoreJobForRegisteredSubmissionImpl: async (_db, challenge, submission) => {
+    ensureScoreJobForRegisteredSubmissionImpl: async (
+      _db,
+      challenge,
+      submission,
+    ) => {
       ensured.push({
         challenge,
         submission,
@@ -144,8 +146,5 @@ test("projectOnChainSubmissionFromRegistration recovers missing submission rows 
   assert.equal(upserts[0]?.submission_intent_id, "intent-1");
   assert.equal(upserts[0]?.result_cid, "ipfs://bafy-result");
   assert.equal(ensured.length, 1);
-  assert.equal(
-    (ensured[0]?.submission as { id: string }).id,
-    "submission-1",
-  );
+  assert.equal((ensured[0]?.submission as { id: string }).id, "submission-1");
 });

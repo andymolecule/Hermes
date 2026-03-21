@@ -10,14 +10,34 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./indexer/handlers": {
-      "types": "./dist/indexer/handlers.d.ts",
-      "default": "./dist/indexer/handlers.js"
+    "./indexer/challenge-events": {
+      "types": "./dist/indexer/challenge-events.d.ts",
+      "default": "./dist/indexer/challenge-events.js"
+    },
+    "./indexer/cursors": {
+      "types": "./dist/indexer/cursors.d.ts",
+      "default": "./dist/indexer/cursors.js"
+    },
+    "./indexer/factory-events": {
+      "types": "./dist/indexer/factory-events.d.ts",
+      "default": "./dist/indexer/factory-events.js"
+    },
+    "./indexer/settlement": {
+      "types": "./dist/indexer/settlement.d.ts",
+      "default": "./dist/indexer/settlement.js"
+    },
+    "./indexer/shared": {
+      "types": "./dist/indexer/shared.d.ts",
+      "default": "./dist/indexer/shared.js"
+    },
+    "./indexer/submissions": {
+      "types": "./dist/indexer/submissions.d.ts",
+      "default": "./dist/indexer/submissions.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/tests/challenge-definition.test.ts src/tests/factory.test.ts src/tests/indexer-handlers.test.ts src/tests/indexer-polling.test.ts src/tests/indexer-status-projection.ts src/tests/tx-preflight.test.ts src/tests/tx-write.test.ts src/tests/viem-chain.test.ts && node --import tsx src/tests/chain-integration.ts",
+    "test": "node --import tsx --test src/tests/challenge-definition.test.ts src/tests/factory.test.ts src/tests/indexer-polling.test.ts src/tests/indexer-projection-helpers.test.ts src/tests/indexer-status-projection.ts src/tests/tx-preflight.test.ts src/tests/tx-write.test.ts src/tests/viem-chain.test.ts && node --import tsx src/tests/chain-integration.ts",
     "indexer": "node ../../scripts/run-node-with-root-env.mjs dist/indexer.js",
     "indexer:local": "node dist/indexer.js"
   },

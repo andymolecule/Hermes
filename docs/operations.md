@@ -404,6 +404,7 @@ The indexer now separates:
 - **Replay cursor** for reorg/retry safety
 - **Factory high-water cursor** for health and lag reporting
 - **Targeted repair** for challenge-local drift (`agora repair-challenge`)
+- **Internal modules by concern** — `indexer.ts` drives polling, `factory-events.ts` handles factory-side creation projection, `challenge-events.ts` dispatches per-challenge logs, `submissions.ts` owns submission projection/recovery, `settlement.ts` owns payout/finalization repair, and `cursors.ts` owns challenge cursor bootstrap/persist
 
 If the indexer falls behind:
 

@@ -70,10 +70,12 @@ export function buildRepairChallengeCommand() {
           config.AGORA_INDEXER_START_BLOCK !== undefined
             ? BigInt(config.AGORA_INDEXER_START_BLOCK)
             : BigInt(0);
-        const {
-          reconcileChallengeProjection,
-          resolveChallengeInitialFromBlock,
-        } = await import("@agora/chain/indexer/handlers");
+        const { reconcileChallengeProjection } = await import(
+          "@agora/chain/indexer/settlement"
+        );
+        const { resolveChallengeInitialFromBlock } = await import(
+          "@agora/chain/indexer/cursors"
+        );
         const challengeFromBlock = await resolveChallengeInitialFromBlock(
           challenge.tx_hash,
           publicClient,

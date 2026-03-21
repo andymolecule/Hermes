@@ -393,7 +393,12 @@ Manual fallback:
   - `apps/mcp-server/src/tools/*` (adapter tools)
   - stdio mode is full local execution; HTTP mode is read-only by default and should mirror the API, not replace it
 - Indexer:
-  - `packages/chain/src/indexer.ts` (polling, event parsing, idempotent DB writes)
+  - `packages/chain/src/indexer.ts` (poll loop and cursor coordination)
+  - `packages/chain/src/indexer/factory-events.ts` (factory-side challenge creation projection)
+  - `packages/chain/src/indexer/challenge-events.ts` (challenge-event dispatch, idempotency, retry handling)
+  - `packages/chain/src/indexer/submissions.ts` (submission projection and intent-backed recovery)
+  - `packages/chain/src/indexer/settlement.ts` (status, payouts, claims, targeted reconcile)
+  - `packages/chain/src/indexer/cursors.ts` (challenge cursor bootstrap and persistence)
   - exposed health via `/api/indexer-health`
 
 ### Monorepo Structure
