@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type ChallengePayoutWrite,
   replaceChallengePayouts,
@@ -70,6 +73,18 @@ await assert.rejects(
       payoutRows,
     ),
   /001_baseline\.sql/,
+);
+
+const baselineMigration = readFileSync(
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../supabase/migrations/001_baseline.sql",
+  ),
+  "utf8",
+);
+assert.match(
+  baselineMigration,
+  /delete from challenge_payouts as cp\s+where cp\.challenge_id = p_challenge_id;/,
 );
 
 console.log("challenge payout replacement query checks passed");

@@ -567,8 +567,8 @@ returns table (
 language plpgsql
 as $$
 begin
-  delete from challenge_payouts
-  where challenge_id = p_challenge_id;
+  delete from challenge_payouts as cp
+  where cp.challenge_id = p_challenge_id;
 
   if p_payouts is null
      or jsonb_typeof(p_payouts) <> 'array'
