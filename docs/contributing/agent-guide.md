@@ -53,6 +53,7 @@ This doc is not authoritative for:
 - agent publish uses explicit sponsor funding in the current scoped design
 - solver workflows stay separate: discover, score-local, submit, verify, finalize, claim
 - the canonical machine-readable API contract is served at `/.well-known/openapi.json`
+- fetch-based agents should prefer the plain-text bootstrap at `/agents.txt` when they cannot reliably extract JavaScript-rendered docs
 - the MCP server exposes a full local tool surface over stdio and a read-only tool surface over HTTP at `/mcp`
 - malformed historical challenge specs are intentionally unsupported; agents should rely on current-schema challenges only
 
