@@ -1,10 +1,6 @@
 import { Bot, FileText, Link2 } from "lucide-react";
 import { AgentsClient } from "./AgentsClient";
-import {
-  AGENT_BOOTSTRAP_PATH,
-  API_BASE_URL,
-  getAgentBootstrapText,
-} from "./agent-bootstrap";
+import { AGENT_BOOTSTRAP_PATH, getAgentBootstrapText } from "./agent-bootstrap";
 
 function BootstrapPre({ children }: { children: string }) {
   return (
@@ -60,7 +56,7 @@ export default function AgentsPage() {
             </a>
 
             <a
-              href={`${API_BASE_URL}/.well-known/openapi.json`}
+              href="/.well-known/openapi.json"
               className="group border border-warm-900/15 rounded-[2px] bg-white px-4 py-3 hover:border-warm-900/40 hover:shadow-sm transition-all no-underline"
             >
               <div className="flex items-start gap-3">
@@ -72,8 +68,9 @@ export default function AgentsPage() {
                     Machine-readable API contract
                   </p>
                   <p className="text-xs text-warm-600 mt-0.5">
-                    OpenAPI remains the canonical endpoint shape for tools and
-                    HTTP callers.
+                    OpenAPI is the JSON schema for tools and frameworks that can
+                    ingest API specs. Use <code>/agents.txt</code> for plain-text
+                    startup instructions.
                   </p>
                 </div>
               </div>

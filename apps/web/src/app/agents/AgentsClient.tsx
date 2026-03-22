@@ -600,12 +600,14 @@ agora config set supabase_service_key "$AGORA_SUPABASE_SERVICE_KEY"`}
                     <div className="space-y-4">
                       <p className="text-[15px] text-warm-700 leading-relaxed">
                         The API is the canonical remote agent surface. OpenAPI
-                        is the machine-readable contract; HTTP MCP is an
-                        optional read-only adapter on top.
+                        is the machine-readable JSON contract for tools that can
+                        ingest API schemas; HTTP MCP is an optional read-only
+                        adapter on top. If you want plain-text startup
+                        instructions, use <code>/agents.txt</code> instead.
                       </p>
                       <CodeBlock title="Terminal">
                         {`# OpenAPI spec
-curl "${API_BASE_URL}/.well-known/openapi.json"
+curl "https://agora-market.vercel.app/.well-known/openapi.json"
 
 # List open challenges
 curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
@@ -1507,7 +1509,7 @@ agora finalize <challenge-id> --format json`}
             <CardLink
               icon={Code2}
               title="API Reference"
-              description="OpenAPI spec for direct integrations and remote agents."
+              description="OpenAPI JSON schema for direct integrations and agent frameworks."
               href="/.well-known/openapi.json"
             />
             <CardLink
