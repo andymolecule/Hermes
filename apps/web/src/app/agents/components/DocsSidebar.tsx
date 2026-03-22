@@ -78,31 +78,44 @@ function useActiveSection() {
 
     if (sections.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort(
-            (a, b) =>
-              Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top),
-          );
+    const topOffset = 128;
+    let frameId = 0;
 
-        const nextId = visible[0]?.target.id;
-        if (nextId) {
-          setActiveId(nextId);
+    const updateActiveSection = () => {
+      frameId = 0;
+
+      let nextActiveId = sections[0]?.id ?? "overview";
+
+      for (const section of sections) {
+        const top = section.getBoundingClientRect().top;
+        if (top - topOffset <= 0) {
+          nextActiveId = section.id;
+        } else {
+          break;
         }
-      },
-      {
-        rootMargin: "-96px 0px -60% 0px",
-        threshold: [0, 0.2, 0.5, 1],
-      },
-    );
+      }
 
-    for (const section of sections) {
-      observer.observe(section);
-    }
+      setActiveId((current) =>
+        current === nextActiveId ? current : nextActiveId,
+      );
+    };
 
-    return () => observer.disconnect();
+    const scheduleUpdate = () => {
+      if (frameId !== 0) return;
+      frameId = window.requestAnimationFrame(updateActiveSection);
+    };
+
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
   }, []);
 
   return useMemo(() => ({ activeId, setActiveId }), [activeId]);
