@@ -171,6 +171,8 @@ Wallet/session hardening checks now live in:
 `apps/api/src/e2e-test.ts` exercises the dispute branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
 `scripts/e2e-test.sh` remains available as the CLI-driven shell harness for the direct finalization branch (`post -> submit -> verify -> finalize -> claim`).
 
+Shared setup:
+
 1. Create challenge YAML fixture
 2. Post challenge on-chain
 3. Wait for indexer sync
@@ -180,9 +182,18 @@ Wallet/session hardening checks now live in:
 7. Wait for the indexed submission to attach to the registered `submission_intent`
 8. Wait for worker scoring
 9. Verify public replay artifacts
-10. Wait for dispute window
-11. Finalize challenge
-12. Claim payout
+
+Dispute branch (`pnpm smoke:lifecycle`):
+
+1. Open a dispute
+2. Resolve the dispute
+3. Claim payout
+
+Direct finalization branch (`./scripts/e2e-test.sh`):
+
+1. Wait for the dispute window to elapse
+2. Finalize challenge
+3. Claim payout
 
 ### Configuration
 
