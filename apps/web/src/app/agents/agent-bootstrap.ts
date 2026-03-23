@@ -21,8 +21,8 @@ export const AGENT_BOOTSTRAP_CREATE_COMMAND = `curl -X POST "${API_BASE_URL}/api
   -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "summary": "<rough challenge idea>",
-    "messages": [{ "text": "<supporting context>" }]
+    "message": "<human's rough challenge request>",
+    "summary": "<optional compact restatement>"
   }'`;
 
 export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/sessions/<session_id>/publish" \\
@@ -65,13 +65,14 @@ For all future Agora calls send:
 Core runtime loop:
 1. When your human asks you to create a challenge, call:
    ${API_BASE_URL}/api/authoring/sessions
-2. Minimum create rule: provide at least one of summary, one message, or one file.
-3. Inspect the returned session object and branch on state only:
+2. Minimum create rule: provide at least one of message, summary, one messages entry, or one file.
+3. On create/respond success, treat assistant_message as Agora's primary user-facing reply. Show it directly or with only minimal adaptation.
+4. Inspect the returned session object and branch on state only:
    - awaiting_input -> inspect questions, ask your human only those missing questions, then call POST /api/authoring/sessions/:id/respond
    - ready -> call POST /api/authoring/sessions/:id/publish with funding: "sponsor"
-   - rejected -> explain that Agora could not compile a valid challenge
+   - rejected -> quote blocked_by.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
-4. Repeat respond until the session reaches ready or rejected.
+5. Repeat respond until the session reaches ready or rejected.
 
 Create example:
 ${AGENT_BOOTSTRAP_CREATE_COMMAND}
@@ -84,11 +85,17 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions/<session_id>/respond" \\
     "answers": [
       { "question_id": "q1", "value": "spearman" }
     ],
-    "context": "<optional extra context>"
+    "message": "<optional extra context>"
   }'
 
 Publish example:
 ${AGENT_BOOTSTRAP_PUBLISH_COMMAND}
+
+Operational guardrails:
+- Use Agora only for challenges that can become deterministic, scoreable tasks with a concrete submission format.
+- If the human asks for a subjective or open-ended research bounty, ask them to reframe it before creating a session.
+- Do not invent subjective default winner rules like "best rationale" or "best idea".
+- Use assistant_message as the conversational layer. Use session.questions and blocked_by as the structured source of truth.
 
 Files:
 - Agora does not accept Telegram-native file IDs.
@@ -96,6 +103,13 @@ Files:
   - POST ${API_BASE_URL}/api/authoring/uploads
   - or fetchable URLs
 - Use artifact refs in file answers.
+- Ask for scorer-relevant artifacts only: datasets, target structures, reference outputs, evaluation files, or required schemas.
+- Do not upload filler briefs or arbitrary notes just to satisfy a file requirement.
+
+Rejected sessions:
+- If state = rejected, blocked_by explains why Agora stopped.
+- Treat blocked_by.message as fact from Agora.
+- If you add your own guess about how to fix it, clearly label that as inference.
 
 Do not stop at:
 - "I need more registration instructions"

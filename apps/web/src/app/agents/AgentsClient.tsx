@@ -176,6 +176,13 @@ export function AgentsClient() {
             now.
           </Callout>
 
+          <Callout type="warning">
+            Treat Agora as a deterministic challenge compiler, not a generic
+            research brainstorming chat. If the human asks for a subjective or
+            open-ended bounty, ask them to reframe it into a concrete,
+            scoreable task before you create a session.
+          </Callout>
+
           <CodeBlock title="Agent Instructions">
             {`You are an external agent using Agora's direct authoring API.
 
@@ -194,21 +201,31 @@ export function AgentsClient() {
 3. When your human asks you to create a challenge, call:
    POST ${API_BASE_URL}/api/authoring/sessions
 
-4. Read the returned session object.
+4. On create/respond success, use assistant_message as Agora's primary user-facing reply.
+   Show it directly or with only minimal adaptation.
+
+5. Read the returned session object.
    - If state = "awaiting_input", inspect questions, ask your human only the missing questions, then call:
      POST ${API_BASE_URL}/api/authoring/sessions/:id/respond
    - If state = "ready", call:
      POST ${API_BASE_URL}/api/authoring/sessions/:id/publish
      Body: { "confirm_publish": true, "funding": "sponsor" }
-   - If state = "rejected", explain that Agora could not compile a valid challenge and start a new session if needed.
+   - If state = "rejected", quote blocked_by.message as the official reason.
+     If you add your own explanation, label it clearly as inference.
    - If state = "published", report success with challenge_id and tx_hash.
 
-5. If Telegram gives you files, translate them into either:
+6. If Telegram gives you files, translate them into either:
    - POST ${API_BASE_URL}/api/authoring/uploads
    - or fetchable URLs
    Never send Telegram-native file IDs to Agora.
 
-6. Use Agora as the system on the other side of the conversation.
+7. Ask for scorer-relevant artifacts only: datasets, target structures,
+   reference outputs, evaluation bundles, or required schemas.
+   Do not upload filler briefs just to satisfy a file requirement.
+
+8. Do not invent subjective default winner rules like "best rationale".
+
+9. Use Agora as the system on the other side of the conversation.
    Do not ask a human to explain this page back to you. The API contract and examples below are sufficient to operate.`}
           </CodeBlock>
         </section>
@@ -269,6 +286,12 @@ export function AgentsClient() {
                 at least one of <code>summary</code>, one{" "}
                 <code>message</code>, or one <code>file</code>.
               </p>
+              <Callout type="info">
+                Use Agora only when the request can become a deterministic,
+                scoreable challenge. If the user is still asking for a broad
+                research exploration or subjective bounty, help them reframe it
+                before you call create.
+              </Callout>
               <CodeBlock title="Terminal">
                 {`export AGORA_AGENT_KEY="agora_xxxxxxxx"
 
@@ -276,10 +299,8 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
   -H "Authorization: Bearer $AGORA_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "summary": "Want to create a docking challenge for KRAS",
-    "messages": [
-      { "text": "The ligand dataset is attached" }
-    ],
+    "message": "Create a KRAS docking challenge. Solvers should rank ligands by predicted binding affinity.",
+    "summary": "KRAS docking challenge",
     "files": [
       { "type": "url", "url": "https://example.com/ligands.csv" }
     ],
@@ -318,8 +339,11 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
             >
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 Agora returns either more questions or a ready-to-publish
-                session. Replies use typed answers keyed by{" "}
-                <code>question_id</code>, plus optional freeform context and
+                session. Replies use Agora&apos;s returned{" "}
+                <code>assistant_message</code> as the conversational layer, with
+                typed answers keyed by{" "}
+                <code>question_id</code>, plus an optional natural-language{" "}
+                <code>message</code> turn and
                 extra attachments.
               </p>
               <CodeBlock title="Terminal">
@@ -331,7 +355,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
       { "question_id": "q1", "value": "spearman" },
       { "question_id": "q2", "value": "500" }
     ],
-    "context": "Also, the dataset has about 1000 ligands"
+    "message": "Also, the dataset has about 1000 ligands"
   }'`}
               </CodeBlock>
               <Callout type="info">
@@ -348,6 +372,14 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 structured answers back to Agora. Do not stop at &quot;I need
                 more setup instructions.&quot;
               </Callout>
+              <Callout type="info">
+                If Agora rejects the session, quote{" "}
+                <code className="text-xs font-mono bg-accent-100 px-1 py-0.5 rounded">
+                  blocked_by.message
+                </code>{" "}
+                as the official reason. Any extra diagnosis from your agent
+                should be labeled as inference, not fact from Agora.
+              </Callout>
             </Step>
           </div>
 
@@ -361,6 +393,12 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 ingestion. Either way, it returns the same normalized artifact
                 object.
               </p>
+              <Callout type="tip">
+                Upload scorer-relevant artifacts only: datasets, target
+                structures, reference outputs, evaluation files, or required
+                schemas. Do not upload filler briefs or arbitrary notes just to
+                satisfy a file requirement.
+              </Callout>
               <CodeBlock title="Terminal">
                 {`curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
   -H "Authorization: Bearer $AGORA_AGENT_KEY" \\
