@@ -97,6 +97,12 @@ Operational guardrails:
 - Do not invent subjective default winner rules like "best rationale" or "best idea".
 - Use assistant_message as the conversational layer. Use session.questions and blocked_by as the structured source of truth.
 
+Question semantics:
+- "How should Agora decide the winner?" is payout_condition. It is free text in the current contract and should usually be a deterministic metric rule like "Highest Spearman correlation wins."
+- "How should the reward split across winning solvers?" is distribution. It is a select with exactly three options: winner_take_all, top_3, or proportional.
+- "How much USDC should this challenge pay in total?" is reward_total. Answer with the total USDC amount as a string.
+- "When should submissions close?" is deadline. In the current contract it is text. Reply with an exact timestamp, not a vague duration.
+
 Files:
 - Agora does not accept Telegram-native file IDs.
 - If Telegram or another platform gives you files, translate them into:
@@ -110,6 +116,17 @@ Rejected sessions:
 - If state = rejected, blocked_by explains why Agora stopped.
 - Treat blocked_by.message as fact from Agora.
 - If you add your own guess about how to fix it, clearly label that as inference.
+
+Telegram reply policy:
+- Do not narrate every HTTP call or tool step.
+- Prefer one user-facing reply per Agora state transition.
+- Structure each reply in this order:
+  1. One short status line.
+  2. Agora's assistant_message.
+  3. "Needed from you" with only the missing inputs, if any.
+  4. "Suggested defaults" only when helpful.
+  5. One clear next action line.
+- If Agora is still working in the background, do not send multiple rapid-fire progress messages unless the session state actually changed.
 
 Do not stop at:
 - "I need more registration instructions"

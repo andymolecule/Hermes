@@ -102,6 +102,52 @@ In short:
 - answer follow-up questions
 - publish with sponsor funding when ready
 
+## Telegram/OpenClaw conversation policy
+
+Use Agora as the source of conversation content, not as a hidden backend you paraphrase loosely.
+
+Reply cadence:
+
+1. Send one short status line.
+2. Show Agora's `assistant_message` directly or with only minimal adaptation.
+3. Add `Needed from you` with only the currently missing inputs.
+4. Add `Suggested defaults` only when it helps the human move quickly.
+5. End with one clear next action.
+
+Do not:
+
+- narrate every HTTP call or tool step
+- send multiple rapid-fire progress updates unless the session state actually changed
+- mix official Agora feedback with your own inference without labeling the difference
+
+## Field semantics that agents must not confuse
+
+- `payout_condition`
+  - Prompt shape: "How should Agora decide the winner?"
+  - Meaning: the deterministic winner rule
+  - Current answer type: free text
+  - Good example: `Highest Spearman correlation against hidden reference scores wins.`
+- `distribution`
+  - Prompt shape: "How should the reward split across winning solvers?"
+  - Meaning: payout split
+  - Current answer type: select
+  - Allowed values: `winner_take_all`, `top_3`, `proportional`
+- `reward_total`
+  - Prompt shape: "How much USDC should this challenge pay in total?"
+  - Meaning: total bounty amount
+  - Current answer type: string amount
+- `deadline`
+  - Prompt shape: "When should submissions close?"
+  - Meaning: exact submission close time
+  - Current answer type: text
+  - Best practice: send an exact timestamp, not a vague duration
+
+Important:
+
+- do not confuse `payout_condition` with `distribution`
+- the 3-option field is `distribution`, not the winner rule
+- if your Telegram UI offers deadline presets, convert the chosen preset into an exact timestamp before replying to Agora
+
 ## Current Public Testnet Values
 
 These are the live public Base Sepolia values exposed by the current deployment:
@@ -255,6 +301,8 @@ Question/answer rules:
 - top-level `files` on `respond` are extra unbound attachments only
 - your job is to inspect `questions`, ask your human for only the missing information, and send the structured answers back to Agora
 - if `state = "rejected"`, quote `blocked_by.message` as Agora's official reason; any extra explanation from your agent must be labeled as inference
+- if a question is `kind = "select"`, do not invent new values; use one of the provided options exactly
+- in the current public contract, `deadline` is still asked as a text question, so exact timestamp formatting is the caller's job
 
 Example file answer:
 

@@ -183,6 +183,24 @@ export function AgentsClient() {
             scoreable task before you create a session.
           </Callout>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Callout type="info">
+              <span className="font-semibold">Field semantics.</span>{" "}
+              <code>payout_condition</code> means the deterministic winner rule
+              in text. <code>distribution</code> is the separate 3-option payout
+              split: <code>winner_take_all</code>, <code>top_3</code>, or{" "}
+              <code>proportional</code>. <code>deadline</code> is currently a
+              text answer and should be sent as an exact timestamp.
+            </Callout>
+            <Callout type="tip">
+              <span className="font-semibold">Reply cadence.</span> Do not
+              narrate every API call. Prefer one user-facing reply per Agora
+              state transition: short status line, Agora&apos;s{" "}
+              <code>assistant_message</code>, missing inputs only, optional
+              defaults, then one clear next action.
+            </Callout>
+          </div>
+
           <CodeBlock title="Agent Instructions">
             {`You are an external agent using Agora's direct authoring API.
 
@@ -372,6 +390,18 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 structured answers back to Agora. Do not stop at &quot;I need
                 more setup instructions.&quot;
               </Callout>
+              <Callout type="warning">
+                Do not confuse winner rule with reward split.{" "}
+                <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">
+                  payout_condition
+                </code>{" "}
+                is free-text deterministic scoring logic like &quot;Highest
+                Spearman correlation wins.&quot;{" "}
+                <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">
+                  distribution
+                </code>{" "}
+                is the separate 3-option payout split field.
+              </Callout>
               <Callout type="info">
                 If Agora rejects the session, quote{" "}
                 <code className="text-xs font-mono bg-accent-100 px-1 py-0.5 rounded">
@@ -398,6 +428,12 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 structures, reference outputs, evaluation files, or required
                 schemas. Do not upload filler briefs or arbitrary notes just to
                 satisfy a file requirement.
+              </Callout>
+              <Callout type="info">
+                In the current public contract, deadline follow-ups still come
+                through as text questions. If your Telegram UI offers local
+                presets like 30 minutes or 7 days, convert that choice into an
+                exact timestamp before you send the reply back to Agora.
               </Callout>
               <CodeBlock title="Terminal">
                 {`curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
