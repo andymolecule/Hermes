@@ -1,4 +1,5 @@
 import {
+  CHALLENGE_LIMITS,
   type AuthoringArtifactOutput,
   type AuthoringQuestionFieldOutput,
   type AuthoringQuestionOptionOutput,
@@ -25,6 +26,17 @@ function humanize(value: string) {
     .filter((part) => part.length > 0)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatRoleList(roles: Array<{ label: string }>) {
+  const labels = roles.map((role) => role.label.toLowerCase());
+  if (labels.length <= 1) {
+    return labels[0] ?? "the required scorer role";
+  }
+  if (labels.length === 2) {
+    return `${labels[0]} and ${labels[1]}`;
+  }
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 }
 
 function dedupeFields(fields: AuthoringQuestionFieldOutput[]) {
@@ -155,10 +167,33 @@ export function buildAuthoringQuestions(input: {
           artifactRoles: requiredArtifactRoles,
           prompt:
             requiredArtifactRoles.length > 0
-              ? `Which uploaded file should Agora use for ${requiredArtifactRoles
-                  .map((role) => role.label.toLowerCase())
-                  .join(", ")}?`
+              ? `Which uploaded file should Agora use for ${formatRoleList(requiredArtifactRoles)}?`
               : undefined,
+          why:
+            requiredArtifactRoles.length > 0
+              ? `Agora still needs explicit files for ${formatRoleList(requiredArtifactRoles)} before it can continue.`
+              : undefined,
+        });
+      case "reward_total":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          prompt: `How much USDC should this challenge pay in total? Current testnet range: ${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC.`,
+        });
+      case "deadline":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          prompt: "When should submissions close? Provide an exact timestamp.",
+        });
+      case "payout_condition":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          prompt:
+            "What deterministic scoring rule should Agora use to decide the winner?",
+          why:
+            'Use a concrete metric or rule, not a subjective rubric. Example: "Highest Spearman correlation wins."',
         });
       default:
         return createAuthoringQuestion({

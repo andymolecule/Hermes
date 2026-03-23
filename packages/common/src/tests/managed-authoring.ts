@@ -9,7 +9,7 @@ const baseIntent = {
   title: "Dock ligands against KRAS",
   description: "Predict docking scores for the supplied ligand set.",
   payout_condition: "Highest Spearman correlation wins.",
-  reward_total: "500",
+  reward_total: "30",
   distribution: "winner_take_all" as const,
   deadline: "2026-12-31T00:00:00.000Z",
   dispute_window_hours: 168,
@@ -40,6 +40,21 @@ const validSubmitRequest = submitManagedAuthoringSessionRequestSchema.parse({
 
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
 assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
+
+const outOfRangeReward = submitManagedAuthoringSessionRequestSchema.safeParse({
+  poster_address: "0x00000000000000000000000000000000000000aa",
+  intent: {
+    ...baseIntent,
+    reward_total: "100",
+  },
+  uploaded_artifacts: baseArtifacts,
+});
+
+assert.equal(
+  outOfRangeReward.success,
+  false,
+  "managed authoring should reject out-of-range reward totals at intake time",
+);
 
 const duplicateUri = submitManagedAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",

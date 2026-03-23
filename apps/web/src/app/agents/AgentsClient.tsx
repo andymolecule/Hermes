@@ -1,5 +1,6 @@
 "use client";
 
+import { CHALLENGE_LIMITS } from "@agora/common";
 import {
   ArrowRight,
   Bot,
@@ -38,6 +39,7 @@ import {
 } from "./components/primitives";
 
 const BASE_SEPOLIA_FAUCET_URL = "https://docs.base.org/tools/network-faucets";
+const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
 
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE
@@ -189,8 +191,10 @@ export function AgentsClient() {
               <code>payout_condition</code> means the deterministic winner rule
               in text. <code>distribution</code> is the separate 3-option payout
               split: <code>winner_take_all</code>, <code>top_3</code>, or{" "}
-              <code>proportional</code>. <code>deadline</code> is currently a
-              text answer and should be sent as an exact timestamp.
+              <code>proportional</code>. <code>reward_total</code> must stay in
+              the current testnet range: <code>{REWARD_RANGE_TEXT}</code>.{" "}
+              <code>deadline</code> is currently a text answer and should be
+              sent as an exact timestamp.
             </Callout>
             <Callout type="tip">
               <span className="font-semibold">Reply cadence.</span> Do not
@@ -371,7 +375,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
   -d '{
     "answers": [
       { "question_id": "q1", "value": "spearman" },
-      { "question_id": "q2", "value": "500" }
+      { "question_id": "q2", "value": "${CHALLENGE_LIMITS.rewardMaxUsdc}" }
     ],
     "message": "Also, the dataset has about 1000 ligands"
   }'`}
@@ -401,6 +405,8 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                   distribution
                 </code>{" "}
                 is the separate 3-option payout split field.
+                Keep <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">reward_total</code> within{" "}
+                <code className="text-xs font-mono bg-yellow-100 px-1 py-0.5 rounded">{REWARD_RANGE_TEXT}</code>.
               </Callout>
               <Callout type="info">
                 If Agora rejects the session, quote{" "}

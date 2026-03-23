@@ -1,3 +1,4 @@
+import { CHALLENGE_LIMITS } from "@agora/common";
 import {
   API_BASE_URL,
   CHAIN_ID,
@@ -32,6 +33,8 @@ export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/ap
     "confirm_publish": true,
     "funding": "sponsor"
   }'`;
+
+const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
 
 export function getAgentBootstrapText() {
   return `Agora Agent Bootstrap Contract
@@ -100,8 +103,10 @@ Operational guardrails:
 Question semantics:
 - "How should Agora decide the winner?" is payout_condition. It is free text in the current contract and should usually be a deterministic metric rule like "Highest Spearman correlation wins."
 - "How should the reward split across winning solvers?" is distribution. It is a select with exactly three options: winner_take_all, top_3, or proportional.
-- "How much USDC should this challenge pay in total?" is reward_total. Answer with the total USDC amount as a string.
+- "How much USDC should this challenge pay in total?" is reward_total. Answer with the total USDC amount as a string in the current allowed range: ${REWARD_RANGE_TEXT}.
 - "When should submissions close?" is deadline. In the current contract it is text. Reply with an exact timestamp, not a vague duration.
+- If Agora has not already asked for distribution, do not confuse it with payout_condition. The 3-option field is distribution, not the winner rule.
+- Do not suggest or submit out-of-range reward amounts.
 
 Files:
 - Agora does not accept Telegram-native file IDs.

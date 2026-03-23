@@ -40,7 +40,7 @@ function createIntent(overrides: Record<string, unknown> = {}) {
     title: "Docking challenge",
     description: "Rank ligands against KRAS.",
     payout_condition: "Highest Spearman wins.",
-    reward_total: "500",
+    reward_total: "30",
     distribution: "winner_take_all" as const,
     deadline: "2026-04-01T23:59:59.000Z",
     dispute_window_hours: 168,
@@ -101,7 +101,7 @@ function createCompilation() {
     ],
     submission_contract: submissionContract,
     reward: {
-      total: "500",
+      total: "30",
       distribution: "winner_take_all" as const,
     },
     deadline: "2026-04-01T23:59:59.000Z",
@@ -125,7 +125,7 @@ function createCompilation() {
       solver_submission: "CSV with ligand_id,docking_score",
       scoring_summary: "Highest Spearman wins.",
       public_private_summary: ["Ligand set is public"],
-      reward_summary: "500 USDC",
+      reward_summary: "30 USDC",
       deadline_summary: "April 1",
       dry_run_summary: "validated",
     },
@@ -703,7 +703,7 @@ test("POST /sessions/:id/publish prepares a ready wallet-funded web session", as
       payload.usdc_address,
       "0x00000000000000000000000000000000000000f2",
     );
-    assert.equal(payload.reward_units, "500000000");
+    assert.equal(payload.reward_units, "30000000");
     assert.equal(payload.deadline_seconds, 1775087999);
     assert.equal(payload.distribution_type, 0);
     assert.equal(

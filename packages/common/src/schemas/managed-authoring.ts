@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHALLENGE_LIMITS } from "../constants.js";
 import {
   authoringQuestionFieldSchema,
   authoringQuestionSchema,
@@ -34,6 +35,9 @@ const AUTHORING_MAX_FILE_NAME_LENGTH = 255;
 const AUTHORING_MAX_MIME_TYPE_LENGTH = 128;
 const AUTHORING_MAX_DETECTED_COLUMNS = 128;
 const AUTHORING_MAX_COLUMN_NAME_LENGTH = 128;
+const AUTHORING_REWARD_TOTAL_PATTERN = new RegExp(
+  `^\\d+(?:\\.\\d{1,${CHALLENGE_LIMITS.rewardDecimals}})?$`,
+);
 
 const distributionSchema = z.enum(["winner_take_all", "top_3", "proportional"]);
 
@@ -139,6 +143,16 @@ const authoringArtifactSchema = z.object({
     .optional(),
 });
 
+function normalizeRewardTotal(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toString();
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  return value;
+}
+
 export const challengeIntentSchema = z.object({
   title: z.string().trim().min(1).max(AUTHORING_MAX_TITLE_LENGTH),
   description: z.string().trim().min(1).max(AUTHORING_MAX_DESCRIPTION_LENGTH),
@@ -147,7 +161,23 @@ export const challengeIntentSchema = z.object({
     .trim()
     .min(1)
     .max(AUTHORING_MAX_PAYOUT_CONDITION_LENGTH),
-  reward_total: z.string().trim().min(1).max(AUTHORING_MAX_REWARD_TOTAL_LENGTH),
+  reward_total: z
+    .preprocess(
+      normalizeRewardTotal,
+      z.string().trim().min(1).max(AUTHORING_MAX_REWARD_TOTAL_LENGTH),
+    )
+    .refine(
+      (value) => AUTHORING_REWARD_TOTAL_PATTERN.test(value),
+      `reward_total must be a decimal string with at most ${CHALLENGE_LIMITS.rewardDecimals} decimal places. Next step: provide a USDC amount like "10" or "10.5" and retry.`,
+    )
+    .refine((value) => {
+      const parsed = Number(value);
+      return (
+        Number.isFinite(parsed) &&
+        parsed >= CHALLENGE_LIMITS.rewardMinUsdc &&
+        parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
+      );
+    }, `reward_total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
   distribution: distributionSchema.default("winner_take_all"),
   deadline: z.string().datetime({ offset: true }),
   dispute_window_hours: z.number().int().nonnegative().optional(),

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildAuthoringQuestions } from "../src/lib/authoring-questions.js";
 import {
   compileManagedAuthoringSessionOutcome,
   compileManagedAuthoringSession,
@@ -352,11 +353,35 @@ test("managed authoring returns canonical questions when Anthropic needs more in
     assert.equal(result.questions?.length, 1);
     assert.equal(result.questions?.[0]?.id, "winning-definition");
     assert.equal(result.questions?.[0]?.field, "payout_condition");
+    assert.match(
+      result.questions?.[0]?.prompt ?? "",
+      /deterministic scoring rule/i,
+    );
+    assert.match(result.questions?.[0]?.why ?? "", /not a subjective rubric/i);
     assert.equal(
       result.authoringIr.evaluation.compile_error_codes[0],
       "MANAGED_COMPILER_NEEDS_INPUT",
     );
   });
+});
+
+test("authoring questions make reward, deadline, and artifact-role requirements explicit", () => {
+  const questions = buildAuthoringQuestions({
+    missingFields: ["reward_total", "deadline", "artifact_roles"],
+    uploadedArtifacts: dockingArtifacts,
+    runtimeFamily: "docking",
+    missingArtifactRoles: ["target_structure", "reference_scores"],
+    reasonCodes: ["reward_unclear", "deadline_unclear", "missing_artifacts"],
+  });
+
+  assert.equal(questions[0]?.field, "reward_total");
+  assert.match(questions[0]?.prompt ?? "", /1-30 USDC/i);
+  assert.equal(questions[1]?.field, "deadline");
+  assert.match(questions[1]?.prompt ?? "", /exact timestamp/i);
+  assert.equal(questions[2]?.field, "artifact_roles");
+  assert.match(questions[2]?.prompt ?? "", /target structure/i);
+  assert.match(questions[2]?.prompt ?? "", /reference scores/i);
+  assert.match(questions[2]?.why ?? "", /before it can continue/i);
 });
 
 test("managed authoring Anthropic tool schema avoids unsupported integer bounds", async () => {

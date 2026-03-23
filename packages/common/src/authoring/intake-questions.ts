@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHALLENGE_LIMITS } from "../constants.js";
 
 export const AUTHORING_QUESTION_FIELDS = [
   "title",
@@ -94,6 +95,8 @@ const DISTRIBUTION_OPTIONS: AuthoringQuestionOptionOutput[] = [
   },
 ];
 
+const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
+
 const AUTHORING_QUESTION_DEFINITIONS: Record<
   AuthoringQuestionFieldOutput,
   BaseAuthoringQuestionDefinition
@@ -126,8 +129,10 @@ const AUTHORING_QUESTION_DEFINITIONS: Record<
     field: "payout_condition",
     kind: "short_text",
     label: "Winning condition",
-    prompt: "How should Agora decide the winner?",
-    why: "Agora needs a deterministic winning condition to compile the scoring contract.",
+    prompt:
+      "What deterministic scoring rule should Agora use to decide the winner?",
+    why:
+      'Agora needs a deterministic metric or rule, not a subjective rubric. Example: "Highest Spearman correlation wins."',
     required: true,
     blocking: true,
     options: [],
@@ -137,8 +142,8 @@ const AUTHORING_QUESTION_DEFINITIONS: Record<
     field: "reward_total",
     kind: "currency_amount",
     label: "Reward total",
-    prompt: "How much USDC should this challenge pay in total?",
-    why: "Agora cannot prepare a publishable reward contract without the total bounty amount.",
+    prompt: `How much USDC should this challenge pay in total? Current testnet range: ${REWARD_RANGE_TEXT}.`,
+    why: `Agora cannot prepare a publishable reward contract without the total bounty amount, and the current testnet range is ${REWARD_RANGE_TEXT}.`,
     required: true,
     blocking: true,
     options: [],
@@ -159,8 +164,8 @@ const AUTHORING_QUESTION_DEFINITIONS: Record<
     field: "deadline",
     kind: "short_text",
     label: "Submission deadline",
-    prompt: "When should submissions close?",
-    why: "Agora needs a deterministic submission deadline before it can publish the challenge.",
+    prompt: "When should submissions close? Provide an exact timestamp.",
+    why: "Agora needs an exact submission deadline before it can publish the challenge.",
     required: true,
     blocking: true,
     options: [],

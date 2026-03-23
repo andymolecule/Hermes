@@ -136,6 +136,7 @@ Do not:
   - Prompt shape: "How much USDC should this challenge pay in total?"
   - Meaning: total bounty amount
   - Current answer type: string amount
+  - Current testnet allowed range: `1-30` USDC
 - `deadline`
   - Prompt shape: "When should submissions close?"
   - Meaning: exact submission close time
