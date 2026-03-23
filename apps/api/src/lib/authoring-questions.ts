@@ -167,7 +167,7 @@ export function buildAuthoringQuestions(input: {
           artifactRoles: requiredArtifactRoles,
           prompt:
             requiredArtifactRoles.length > 0
-              ? `Which uploaded file should Agora use for ${formatRoleList(requiredArtifactRoles)}?`
+              ? `Which uploaded file should Agora use for ${formatRoleList(requiredArtifactRoles)}? Upload any missing scorer files first if you have not attached them yet.`
               : undefined,
           why:
             requiredArtifactRoles.length > 0

@@ -56,6 +56,103 @@ const compilerToolResultSchema = z.object({
     .default([]),
 });
 
+const RECOVERABLE_UNSUPPORTED_REASON_CODES = new Set([
+  "custom_rubric_scoring",
+  "manual_judging_required",
+  "multi_criteria_evaluation",
+  "no_deterministic_metric",
+  "missing_metric_definition",
+]);
+
+function inferLikelyRuntimeFamily(input: {
+  intent: ChallengeIntentOutput;
+  uploadedArtifacts: AuthoringArtifactOutput[];
+}): SupportedRuntimeFamily | null {
+  const textSignals = [
+    input.intent.title,
+    input.intent.description,
+    input.intent.payout_condition,
+    ...input.intent.tags,
+    ...input.uploadedArtifacts.map((artifact) => artifact.file_name ?? ""),
+    ...input.uploadedArtifacts.flatMap(
+      (artifact) => artifact.detected_columns ?? [],
+    ),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    /\b(dock|docking|ligand|ligands|pdb|pose|poses|target structure|protein structure|pocket)\b/.test(
+      textSignals,
+    )
+  ) {
+    return "docking";
+  }
+
+  return null;
+}
+
+function buildRecoverableUnsupportedDetails(input: {
+  parsed: z.infer<typeof compilerToolResultSchema>;
+  intent: ChallengeIntentOutput;
+  uploadedArtifacts: AuthoringArtifactOutput[];
+}) {
+  if (input.parsed.outcome !== "unsupported") {
+    return null;
+  }
+  if (
+    !input.parsed.reason_codes.some((code) =>
+      RECOVERABLE_UNSUPPORTED_REASON_CODES.has(code),
+    )
+  ) {
+    return null;
+  }
+
+  const runtimeFamily =
+    input.parsed.runtime_family ??
+    inferLikelyRuntimeFamily({
+      intent: input.intent,
+      uploadedArtifacts: input.uploadedArtifacts,
+    });
+  if (!runtimeFamily) {
+    return null;
+  }
+
+  const missingFields = new Set(input.parsed.missing_fields);
+  const family = lookupManagedRuntimeFamily(runtimeFamily);
+  if (
+    input.parsed.reason_codes.some((code) =>
+      [
+        "custom_rubric_scoring",
+        "manual_judging_required",
+        "multi_criteria_evaluation",
+        "no_deterministic_metric",
+        "missing_metric_definition",
+      ].includes(code),
+    )
+  ) {
+    missingFields.add("payout_condition");
+    missingFields.add("metric");
+  }
+
+  const missingRoles =
+    family?.supportedArtifactRoles.filter(
+      (role) =>
+        !input.parsed.artifact_assignments.some(
+          (assignment) => assignment.role === role,
+        ),
+    ) ?? [];
+  if (missingRoles.length > 0) {
+    missingFields.add("artifact_roles");
+  }
+
+  return {
+    runtimeFamily,
+    missingFields: [...missingFields],
+    missingRoles,
+  };
+}
+
 function buildCompilerCatalog() {
   return supportedRuntimeFamilyIds.map((runtimeFamilyId) => {
     const family = lookupManagedRuntimeFamily(runtimeFamilyId);
@@ -267,6 +364,11 @@ export class AnthropicCompilerProvider {
         }>;
       };
       const parsed = compilerToolResultSchema.parse(readToolResult(payload));
+      const recoverableUnsupported = buildRecoverableUnsupportedDetails({
+        parsed,
+        intent: input.intent,
+        uploadedArtifacts: input.uploadedArtifacts,
+      });
 
       if (parsed.outcome === "awaiting_input") {
         throw new AgoraError(
@@ -279,6 +381,23 @@ export class AnthropicCompilerProvider {
               reasonCodes: parsed.reason_codes,
               warnings: parsed.warnings,
               runtimeFamily: parsed.runtime_family,
+            },
+          },
+        );
+      }
+
+      if (recoverableUnsupported) {
+        throw new AgoraError(
+          "Agora recognized a likely Gems scorer family, but it still needs a deterministic metric and the scorer-driving files before it can continue. Next step: answer the returned questions and resubmit.",
+          {
+            code: "MANAGED_COMPILER_NEEDS_INPUT",
+            status: 422,
+            details: {
+              missingFields: recoverableUnsupported.missingFields,
+              missingRoles: recoverableUnsupported.missingRoles,
+              reasonCodes: parsed.reason_codes,
+              warnings: parsed.warnings,
+              runtimeFamily: recoverableUnsupported.runtimeFamily,
             },
           },
         );

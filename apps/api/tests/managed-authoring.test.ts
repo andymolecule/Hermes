@@ -65,6 +65,22 @@ const dockingArtifacts = [
   },
 ];
 
+const weakDockingArtifacts = [
+  {
+    id: "template",
+    uri: "ipfs://bafytemplate",
+    file_name: "mdm2_submission_template.csv",
+    mime_type: "text/csv",
+    detected_columns: ["ligand_id", "docking_score"],
+  },
+  {
+    id: "schema",
+    uri: "ipfs://bafyschema",
+    file_name: "mdm2_submission_schema.md",
+    mime_type: "text/markdown",
+  },
+];
+
 function buildAnthropicToolResponse(input: Record<string, unknown>) {
   return new Response(
     JSON.stringify({
@@ -381,7 +397,55 @@ test("authoring questions make reward, deadline, and artifact-role requirements 
   assert.equal(questions[2]?.field, "artifact_roles");
   assert.match(questions[2]?.prompt ?? "", /target structure/i);
   assert.match(questions[2]?.prompt ?? "", /reference scores/i);
+  assert.match(questions[2]?.prompt ?? "", /upload any missing scorer files first/i);
   assert.match(questions[2]?.why ?? "", /before it can continue/i);
+});
+
+test("managed authoring keeps docking-like subjective drafts in awaiting_input instead of rejecting immediately", async () => {
+  await withCompilerEnv(async () => {
+    const result = await compileManagedAuthoringSessionOutcome(
+      {
+        intent: {
+          ...baseIntent,
+          title: "MDM2 peptide docking challenge with ranked constrained designs",
+          description:
+            "MDM2 peptide docking challenge with ranked constrained designs.",
+          payout_condition:
+            "Winner is the eligible submission with the highest total score under a weighted rubric for reproducibility, mechanistic consistency, and validation plan.",
+          domain: "drug_discovery",
+        },
+        uploadedArtifacts: weakDockingArtifacts,
+      },
+      {
+        fetchImpl: async () =>
+          buildAnthropicToolResponse({
+            outcome: "unsupported",
+            runtime_family: null,
+            metric: null,
+            reason_codes: [
+              "custom_rubric_scoring",
+              "manual_judging_required",
+              "multi_criteria_evaluation",
+              "no_deterministic_metric",
+            ],
+            warnings: [],
+            missing_fields: [],
+            artifact_assignments: [],
+          }),
+      },
+    );
+
+    assert.equal(result.state, "awaiting_input");
+    assert.equal(result.authoringIr.evaluation.runtime_family, "docking");
+    assert.deepEqual(
+      result.questions?.map((question) => question.field),
+      ["payout_condition", "metric", "artifact_roles"],
+    );
+    assert.match(
+      result.questions?.[2]?.prompt ?? "",
+      /target structure|ligand library|reference scores/i,
+    );
+  });
 });
 
 test("managed authoring Anthropic tool schema avoids unsupported integer bounds", async () => {
