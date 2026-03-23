@@ -40,13 +40,13 @@ contract AgoraInvariantHandler is Test {
                 disputeWindowHours: 168,
                 minimumScore: 0,
                 distributionType: IAgoraChallenge.DistributionType.WinnerTakeAll,
-                maxSubmissions: 0,
+                maxSubmissions: 100,
                 maxSubmissionsPerSolver: 0
             })
         );
 
         vm.prank(poster);
-        usdc.transfer(address(challenge), rewardAmount);
+        assertTrue(usdc.transfer(address(challenge), rewardAmount));
 
         fee = (rewardAmount * challenge.PROTOCOL_FEE_BPS()) / 10_000;
     }
@@ -95,7 +95,10 @@ contract AgoraInvariantHandler is Test {
 
     function finalizeIfReady() public {
         if (challenge.status() == IAgoraChallenge.Status.Finalized) return;
-        if (block.timestamp <= challenge.deadline() + (uint256(challenge.disputeWindowHours()) * 1 hours)) {
+        if (challenge.scoringStartedAt() == 0) {
+            return;
+        }
+        if (block.timestamp <= uint256(challenge.scoringStartedAt()) + (uint256(challenge.disputeWindowHours()) * 1 hours)) {
             return;
         }
         (uint256[] memory ids, ) = challenge.getLeaderboard();

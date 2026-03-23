@@ -127,6 +127,25 @@
   },
   {
     "type": "function",
+    "name": "claimableByAddress",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "contractVersion",
     "inputs": [],
     "outputs": [
@@ -421,6 +440,19 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "scoringStartedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -764,6 +796,28 @@
   },
   {
     "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "AddressInsufficientBalance",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "AlreadyScored",
     "inputs": []
   },
@@ -809,6 +863,11 @@
   },
   {
     "type": "error",
+    "name": "FailedInnerCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidAddress",
     "inputs": []
   },
@@ -824,7 +883,17 @@
   },
   {
     "type": "error",
+    "name": "InvalidMinimumScore",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidRewardAmount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidScore",
     "inputs": []
   },
   {
@@ -859,6 +928,11 @@
   },
   {
     "type": "error",
+    "name": "NotASolver",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotOracle",
     "inputs": []
   },
@@ -879,17 +953,23 @@
   },
   {
     "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ScoringIncomplete",
     "inputs": []
   },
   {
     "type": "error",
     "name": "SubmissionsExist",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TransferFailed",
     "inputs": []
   }
 ]

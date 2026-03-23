@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import {AgoraErrors} from "./libraries/AgoraErrors.sol";
 import {AgoraEvents} from "./libraries/AgoraEvents.sol";
@@ -9,6 +10,8 @@ import {AgoraConstants} from "./libraries/AgoraConstants.sol";
 import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
 
 contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     uint16 public constant CONTRACT_VERSION = 2;
     uint256 public constant PROTOCOL_FEE_BPS = 1000; // 10%
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
@@ -27,23 +30,28 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     Status private _status;
     uint256 public override minimumScore;
 
+    uint64 public scoringStartedAt;
     uint64 public disputeStartedAt;
     uint256 public winningSubmissionId;
     bool public winnerSet;
 
     uint256 public scoredCount;
 
-    // Submission limits (0 = unlimited)
+    // Submission limits
     uint256 public maxSubmissions;
     uint256 public maxSubmissionsPerSolver;
     mapping(address => uint256) public solverSubmissionCount;
 
     Submission[] private submissions;
 
+    mapping(address => uint256) public claimableByAddress;
     mapping(address => uint256) public payoutByAddress;
 
     constructor(ChallengeConfig memory cfg) {
-        if (cfg.poster == address(0) || cfg.oracle == address(0) || cfg.treasury == address(0)) {
+        if (
+            address(cfg.usdc) == address(0) || cfg.poster == address(0) || cfg.oracle == address(0)
+                || cfg.treasury == address(0)
+        ) {
             revert AgoraErrors.InvalidAddress();
         }
         if (cfg.rewardAmount < AgoraConstants.MIN_REWARD_USDC || cfg.rewardAmount > AgoraConstants.MAX_REWARD_USDC) {
@@ -61,7 +69,13 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         if (uint8(cfg.distributionType) > uint8(DistributionType.Proportional)) {
             revert AgoraErrors.InvalidDistribution();
         }
-        if (cfg.maxSubmissionsPerSolver > 0 && cfg.maxSubmissions > 0 && cfg.maxSubmissionsPerSolver > cfg.maxSubmissions) {
+        if (cfg.minimumScore > AgoraConstants.MAX_ORACLE_SCORE) {
+            revert AgoraErrors.InvalidMinimumScore();
+        }
+        if (
+            cfg.maxSubmissions == 0 || cfg.maxSubmissions > AgoraConstants.MAX_SUBMISSIONS
+                || (cfg.maxSubmissionsPerSolver > 0 && cfg.maxSubmissionsPerSolver > cfg.maxSubmissions)
+        ) {
             revert AgoraErrors.InvalidSubmissionLimits();
         }
         usdc = cfg.usdc;
@@ -84,12 +98,12 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     }
 
     modifier onlyOracle() {
-        if (msg.sender != oracle) revert AgoraErrors.NotOracle();
+        _requireOracle();
         _;
     }
 
     modifier onlyPoster() {
-        if (msg.sender != poster) revert AgoraErrors.NotPoster();
+        _requirePoster();
         _;
     }
 
@@ -132,12 +146,14 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     function startScoring() external override {
         if (_status != Status.Open) revert AgoraErrors.InvalidStatus();
         if (block.timestamp < deadline) revert AgoraErrors.DeadlineNotPassed();
+        scoringStartedAt = uint64(block.timestamp);
         _setStatus(Status.Scoring);
     }
 
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external override onlyOracle {
         if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
         if (subId >= submissions.length) revert AgoraErrors.InvalidSubmission();
+        if (score > AgoraConstants.MAX_ORACLE_SCORE) revert AgoraErrors.InvalidScore();
         Submission storage submission = submissions[subId];
         if (submission.scored) revert AgoraErrors.AlreadyScored();
 
@@ -154,20 +170,20 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         if (_status == Status.Cancelled) revert AgoraErrors.ChallengeCancelled();
         if (_status == Status.Finalized) revert AgoraErrors.ChallengeFinalized();
         if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
-        if (block.timestamp <= deadline + (uint256(disputeWindowHours) * 1 hours)) {
+        if (block.timestamp <= _disputeWindowEnd()) {
             revert AgoraErrors.DeadlineNotPassed();
         }
 
         // Scoring completeness check: all scored OR grace period elapsed
         bool allScored = scoredCount >= submissions.length;
-        if (!allScored && block.timestamp <= deadline + SCORING_GRACE_PERIOD) {
+        if (!allScored && block.timestamp <= uint256(scoringStartedAt) + SCORING_GRACE_PERIOD) {
             revert AgoraErrors.ScoringIncomplete();
         }
 
         (uint256[] memory winners, uint256[] memory scores) = _computeWinners();
         if (winners.length == 0) {
             _setStatus(Status.Cancelled);
-            if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+            _queueClaim(poster, rewardAmount);
             emit AgoraEvents.Cancelled();
             return;
         }
@@ -191,7 +207,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         winningSubmissionId = winners[0];
 
         if (protocolFee > 0) {
-            if (!usdc.transfer(treasury, protocolFee)) revert AgoraErrors.TransferFailed();
+            _queueClaim(treasury, protocolFee);
         }
 
         emit AgoraEvents.SettlementFinalized(
@@ -208,8 +224,9 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         if (_status == Status.Disputed) revert AgoraErrors.DisputeActive();
         if (_status == Status.Finalized || _status == Status.Cancelled) revert AgoraErrors.InvalidStatus();
         if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
+        if (solverSubmissionCount[msg.sender] == 0) revert AgoraErrors.NotASolver();
 
-        uint256 disputeEnd = deadline + (uint256(disputeWindowHours) * 1 hours);
+        uint256 disputeEnd = _disputeWindowEnd();
         if (block.timestamp >= disputeEnd) revert AgoraErrors.DisputeWindowClosed();
 
         _setStatus(Status.Disputed);
@@ -250,7 +267,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         winningSubmissionId = winnerSubId;
 
         if (protocolFee > 0) {
-            if (!usdc.transfer(treasury, protocolFee)) revert AgoraErrors.TransferFailed();
+            _queueClaim(treasury, protocolFee);
         }
 
         emit AgoraEvents.DisputeResolved(winnerSubId);
@@ -269,7 +286,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         if (submissions.length > 0) revert AgoraErrors.SubmissionsExist();
 
         _setStatus(Status.Cancelled);
-        if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+        _queueClaim(poster, rewardAmount);
         emit AgoraEvents.Cancelled();
     }
 
@@ -278,17 +295,20 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         if (block.timestamp <= disputeStartedAt + 30 days) revert AgoraErrors.DeadlineNotPassed();
 
         _setStatus(Status.Cancelled);
-        if (!usdc.transfer(poster, rewardAmount)) revert AgoraErrors.TransferFailed();
+        _queueClaim(poster, rewardAmount);
         emit AgoraEvents.Cancelled();
     }
 
     function claim() external override nonReentrant {
-        if (_status != Status.Finalized) revert AgoraErrors.InvalidStatus();
-        uint256 payout = payoutByAddress[msg.sender];
-        if (payout == 0) revert AgoraErrors.NothingToClaim();
-        payoutByAddress[msg.sender] = 0;
-        if (!usdc.transfer(msg.sender, payout)) revert AgoraErrors.TransferFailed();
-        emit AgoraEvents.Claimed(msg.sender, payout);
+        if (_status != Status.Finalized && _status != Status.Cancelled) revert AgoraErrors.InvalidStatus();
+        uint256 claimable = claimableByAddress[msg.sender];
+        if (claimable == 0) revert AgoraErrors.NothingToClaim();
+        claimableByAddress[msg.sender] = 0;
+        if (payoutByAddress[msg.sender] > 0) {
+            payoutByAddress[msg.sender] = 0;
+        }
+        usdc.safeTransfer(msg.sender, claimable);
+        emit AgoraEvents.Claimed(msg.sender, claimable);
     }
 
     function getSubmission(uint256 subId) external view override returns (Submission memory) {
@@ -319,8 +339,16 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     }
 
     function _allocatePayout(address solver, uint256 submissionId, uint256 amount, uint8 rank) internal {
+        claimableByAddress[solver] += amount;
         payoutByAddress[solver] += amount;
         emit AgoraEvents.PayoutAllocated(solver, submissionId, rank, amount);
+    }
+
+    function _queueClaim(address claimant, uint256 amount) internal {
+        if (amount == 0) {
+            return;
+        }
+        claimableByAddress[claimant] += amount;
     }
 
     /// @dev Split 60/25/15 among up to 3 winners. When fewer than 3 qualified
@@ -361,6 +389,8 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         for (uint256 i = 0; i < winners.length; i++) {
             uint256 payout = (remaining * scores[i]) / sumScores;
             totalPaid += payout;
+            // casting to 'uint8' is safe because maxSubmissions is capped at 100.
+            // forge-lint: disable-next-line(unsafe-typecast)
             _allocatePayout(submissions[winners[i]].solver, winners[i], payout, uint8(i + 1));
         }
         if (totalPaid < remaining) {
@@ -439,6 +469,19 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         }
 
         return (ids, scores);
+    }
+
+    function _disputeWindowEnd() internal view returns (uint256) {
+        if (scoringStartedAt == 0) revert AgoraErrors.InvalidStatus();
+        return uint256(scoringStartedAt) + (uint256(disputeWindowHours) * 1 hours);
+    }
+
+    function _requireOracle() internal view {
+        if (msg.sender != oracle) revert AgoraErrors.NotOracle();
+    }
+
+    function _requirePoster() internal view {
+        if (msg.sender != poster) revert AgoraErrors.NotPoster();
     }
 
     function _ensureWinnerFirst(

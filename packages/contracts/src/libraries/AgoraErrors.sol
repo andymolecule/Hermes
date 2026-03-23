@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 library AgoraErrors {
     error NotOracle();
     error NotPoster();
+    error NotASolver();
     error InvalidStatus();
     error DeadlinePassed();
     error DeadlineNotPassed();
@@ -25,6 +26,8 @@ library AgoraErrors {
 
     error DeadlineInPast();
     error ScoringIncomplete();
+    error InvalidMinimumScore();
+    error InvalidScore();
     error MinimumScoreNotMet();
     error TransferFailed();
     error TransferFromFailed();

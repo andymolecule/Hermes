@@ -45,7 +45,7 @@ contract AgoraChallengeTest is Test {
             disputeWindowHours: 168,
             minimumScore: 0,
             distributionType: IAgoraChallenge.DistributionType.WinnerTakeAll,
-            maxSubmissions: 0,
+            maxSubmissions: 100,
             maxSubmissionsPerSolver: 0
         });
     }
@@ -57,8 +57,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(poster);
         challenge = new AgoraChallenge(_cfg());
 
-        vm.prank(poster);
-        usdc.transfer(address(challenge), 10e6);
+        _fundChallenge(challenge, 10e6);
     }
 
     function _warpToScoring(AgoraChallenge target) internal {
@@ -71,6 +70,19 @@ contract AgoraChallengeTest is Test {
     function _startScoring(AgoraChallenge target) internal {
         _warpToScoring(target);
         try target.startScoring() {} catch {}
+    }
+
+    function _warpPastSettlementWindow(AgoraChallenge target) internal {
+        _startScoring(target);
+        uint256 disputeEnd = uint256(target.scoringStartedAt()) + (uint256(target.disputeWindowHours()) * 1 hours);
+        uint256 graceEnd = uint256(target.scoringStartedAt()) + uint256(target.SCORING_GRACE_PERIOD());
+        uint256 settlementAt = disputeEnd > graceEnd ? disputeEnd : graceEnd;
+        vm.warp(settlementAt + 1);
+    }
+
+    function _fundChallenge(AgoraChallenge target, uint256 amount) internal {
+        vm.prank(poster);
+        assertTrue(usdc.transfer(address(target), amount));
     }
 
     function _postScore(AgoraChallenge target, uint256 subId, uint256 score, bytes32 proofBundleHash) internal {
@@ -106,9 +118,6 @@ contract AgoraChallengeTest is Test {
         challenge.submit(keccak256("r4"));
         vm.stopPrank();
     }
-
-
-
     function testConstructorRejectsPastDeadline() public {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.deadline = uint64(block.timestamp);
@@ -181,12 +190,17 @@ contract AgoraChallengeTest is Test {
 
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
 
         uint256 treasuryBefore = usdc.balanceOf(treasury);
         challenge.finalize();
 
         uint256 fee = _protocolFee(challenge, 10e6);
+        assertEq(usdc.balanceOf(treasury), treasuryBefore);
+        assertEq(challenge.claimableByAddress(treasury), fee);
+
+        vm.prank(treasury);
+        challenge.claim();
         assertEq(usdc.balanceOf(treasury), treasuryBefore + fee);
     }
 
@@ -196,7 +210,7 @@ contract AgoraChallengeTest is Test {
 
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
 
         uint256 fee = _protocolFee(challenge, 10e6);
         uint256 payout = 10e6 - fee;
@@ -220,7 +234,7 @@ contract AgoraChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(uint256(challenge.deadline()) + 1 hours); // Inside scoring, before dispute window end
+        vm.warp(uint256(challenge.scoringStartedAt()) + 1 hours);
         vm.expectRevert(AgoraErrors.DeadlineNotPassed.selector);
         challenge.finalize();
     }
@@ -230,8 +244,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 30e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
         AgoraChallenge top3 = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(top3), 30e6);
+        _fundChallenge(top3, 30e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -244,7 +257,7 @@ contract AgoraChallengeTest is Test {
         _postScore(top3, subB, 20, keccak256("p2"));
         _postScore(top3, subC, 10, keccak256("p3"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(top3);
         top3.finalize();
 
         uint256 fee = _protocolFee(top3, 30e6);
@@ -262,8 +275,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 30e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
         AgoraChallenge top3 = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(top3), 30e6);
+        _fundChallenge(top3, 30e6);
 
         address solverA = address(0x1);
         address solverB = address(0x2);
@@ -280,7 +292,7 @@ contract AgoraChallengeTest is Test {
         _postScore(top3, subB, 20, keccak256("p2"));
         _postScore(top3, subC, 10, keccak256("p3"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(top3);
 
         uint256 fee = _protocolFee(top3, 30e6);
         uint256 remaining = 30e6 - fee;
@@ -303,8 +315,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.Proportional;
         AgoraChallenge proportional = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(proportional), 20e6);
+        _fundChallenge(proportional, 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = proportional.submit(keccak256("a"));
@@ -314,7 +325,7 @@ contract AgoraChallengeTest is Test {
         _postScore(proportional, subA, 2, keccak256("p1"));
         _postScore(proportional, subB, 1, keccak256("p2"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(proportional);
         proportional.finalize();
 
         uint256 fee = _protocolFee(proportional, 20e6);
@@ -333,8 +344,7 @@ contract AgoraChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad score");
 
         vm.prank(oracle);
@@ -350,8 +360,7 @@ contract AgoraChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad score");
 
         uint256 fee = _protocolFee(challenge, 10e6);
@@ -377,8 +386,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.Proportional;
         AgoraChallenge proportional = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(proportional), 20e6);
+        _fundChallenge(proportional, 20e6);
 
         address solverA = address(0x1);
         address solverB = address(0x2);
@@ -390,9 +398,8 @@ contract AgoraChallengeTest is Test {
         _postScore(proportional, subA, 10, keccak256("p1"));
         _postScore(proportional, subB, 30, keccak256("p2"));
 
-        // Warp to within the dispute window (after deadline at day 1, before deadline + 168h)
-        vm.warp(block.timestamp + 1 days + 12 hours);
-        vm.prank(address(0x999));
+        vm.warp(uint256(proportional.scoringStartedAt()) + 12 hours);
+        vm.prank(solverA);
         proportional.dispute("wrong winner");
 
         // Force winner to be the lower-scoring submission.
@@ -409,7 +416,7 @@ contract AgoraChallengeTest is Test {
         assertEq(proportional.payoutByAddress(solverB), baseB);
     }
 
-    function testFuzzUnlimitedSubmissions(address fuzzSolver) public {
+    function testFuzzSubmissionsWithinConfiguredCap(address fuzzSolver) public {
         vm.assume(fuzzSolver != address(0));
         vm.startPrank(fuzzSolver);
         challenge.submit(keccak256("r1"));
@@ -420,7 +427,7 @@ contract AgoraChallengeTest is Test {
     }
 
     function testFuzzPostScore(uint256 score) public {
-        vm.assume(score > 0);
+        vm.assume(score > 0 && score <= type(uint128).max);
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, score, keccak256("proof"));
@@ -431,6 +438,10 @@ contract AgoraChallengeTest is Test {
     function testCancelBeforeDeadlineWithNoSubmissions() public {
         vm.prank(poster);
         challenge.cancel();
+        assertEq(challenge.claimableByAddress(poster), 10e6);
+
+        vm.prank(poster);
+        challenge.claim();
         assertEq(usdc.balanceOf(poster), 1_000_000e6);
     }
 
@@ -440,7 +451,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
 
         uint256 fee = _protocolFee(challenge, 10e6);
@@ -463,7 +474,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
 
         vm.prank(address(0xDEAD)); // not the winner
@@ -475,7 +486,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
 
         vm.prank(solver);
@@ -492,15 +503,17 @@ contract AgoraChallengeTest is Test {
         challenge.submit(keccak256("result"));
 
         _startScoring(challenge);
-        // Warp into dispute window and dispute
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad");
 
-        // Warp past 30 days from dispute start
-        vm.warp(block.timestamp + 31 days);
+        vm.warp(uint256(challenge.disputeStartedAt()) + 30 days + 1);
         uint256 posterBefore = usdc.balanceOf(poster);
         challenge.timeoutRefund();
+        assertEq(usdc.balanceOf(poster), posterBefore);
+        assertEq(challenge.claimableByAddress(poster), 10e6);
+
+        vm.prank(poster);
+        challenge.claim();
         assertEq(usdc.balanceOf(poster), posterBefore + 10e6);
     }
 
@@ -513,12 +526,10 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         challenge.submit(keccak256("result"));
         _startScoring(challenge);
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad");
 
-        // Only 10 days, not 30
-        vm.warp(block.timestamp + 10 days);
+        vm.warp(uint256(challenge.disputeStartedAt()) + 10 days);
         vm.expectRevert(AgoraErrors.DeadlineNotPassed.selector);
         challenge.timeoutRefund();
     }
@@ -578,19 +589,31 @@ contract AgoraChallengeTest is Test {
         new AgoraChallenge(cfg);
     }
 
-
-
-    function testConstructorAcceptsZeroDisputeWindow() public {
+    function testConstructorRejectsZeroDisputeWindow() public {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.disputeWindowHours = 0;
-        AgoraChallenge c = new AgoraChallenge(cfg);
-        assertEq(c.disputeWindowHours(), 0);
+        vm.expectRevert(AgoraErrors.InvalidDisputeWindow.selector);
+        new AgoraChallenge(cfg);
     }
 
     function testConstructorRevertsDisputeWindowTooLong() public {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.disputeWindowHours = 2200;
         vm.expectRevert(AgoraErrors.InvalidDisputeWindow.selector);
+        new AgoraChallenge(cfg);
+    }
+
+    function testConstructorRejectsZeroMaxSubmissions() public {
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissions = 0;
+        vm.expectRevert(AgoraErrors.InvalidSubmissionLimits.selector);
+        new AgoraChallenge(cfg);
+    }
+
+    function testConstructorRejectsSubmissionCapAboveProtocolLimit() public {
+        IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
+        cfg.maxSubmissions = 101;
+        vm.expectRevert(AgoraErrors.InvalidSubmissionLimits.selector);
         new AgoraChallenge(cfg);
     }
 
@@ -626,9 +649,11 @@ contract AgoraChallengeTest is Test {
     }
 
     function testDisputeRevertsAfterWindow() public {
+        vm.prank(solver);
+        challenge.submit(keccak256("r"));
         _startScoring(challenge);
-        vm.warp(block.timestamp + 8 days);
-        vm.prank(address(0x999));
+        vm.warp(uint256(challenge.scoringStartedAt()) + (uint256(challenge.disputeWindowHours()) * 1 hours) + 1);
+        vm.prank(solver);
         vm.expectRevert(AgoraErrors.DisputeWindowClosed.selector);
         challenge.dispute("too late");
     }
@@ -637,10 +662,9 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         challenge.submit(keccak256("r"));
         _startScoring(challenge);
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("first");
-        vm.prank(address(0xAAA));
+        vm.prank(solver);
         vm.expectRevert(AgoraErrors.DisputeActive.selector);
         challenge.dispute("second");
     }
@@ -650,9 +674,19 @@ contract AgoraChallengeTest is Test {
         challenge.submit(keccak256("r"));
         _warpToScoring(challenge);
 
-        vm.prank(address(0x999));
+        vm.prank(solver);
         vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.dispute("must start scoring first");
+    }
+
+    function testDisputeRejectsNonSolver() public {
+        vm.prank(solver);
+        challenge.submit(keccak256("r"));
+        _startScoring(challenge);
+
+        vm.prank(address(0x999));
+        vm.expectRevert(AgoraErrors.NotASolver.selector);
+        challenge.dispute("grief");
     }
 
     // ===== finalize edge cases =====
@@ -661,7 +695,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
         vm.expectRevert(AgoraErrors.ChallengeFinalized.selector);
         challenge.finalize();
@@ -671,10 +705,9 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         challenge.submit(keccak256("r"));
         _startScoring(challenge);
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad");
-        vm.warp(block.timestamp + 3 days);
+        vm.warp(uint256(challenge.scoringStartedAt()) + 3 days);
         vm.expectRevert(AgoraErrors.DisputeActive.selector);
         challenge.finalize();
     }
@@ -707,6 +740,16 @@ contract AgoraChallengeTest is Test {
         challenge.postScore(999, 100e18, keccak256("proof"));
     }
 
+    function testPostScoreRejectsOversizedScore() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+        _startScoring(challenge);
+
+        vm.prank(oracle);
+        vm.expectRevert(AgoraErrors.InvalidScore.selector);
+        challenge.postScore(subId, uint256(type(uint128).max) + 1, keccak256("proof"));
+    }
+
     // ===== resolveDispute edge cases =====
 
     function testResolveDisputeRevertsNotDisputed() public {
@@ -720,6 +763,7 @@ contract AgoraChallengeTest is Test {
     function testPublicStateVariables() public view {
         assertEq(challenge.rewardAmount(), 10e6);
         assertEq(challenge.disputeWindowHours(), 168);
+        assertEq(challenge.maxSubmissions(), 100);
     }
 
     // ===== Additional edge case coverage =====
@@ -729,14 +773,13 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
         AgoraChallenge top3 = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(top3), 20e6);
+        _fundChallenge(top3, 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
         _postScore(top3, subA, 100, keccak256("p1"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(top3);
         top3.finalize();
 
         uint256 fee = _protocolFee(top3, 20e6);
@@ -750,8 +793,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
         AgoraChallenge top3 = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(top3), 20e6);
+        _fundChallenge(top3, 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -760,7 +802,7 @@ contract AgoraChallengeTest is Test {
         _postScore(top3, subA, 100, keccak256("p1"));
         _postScore(top3, subB, 50, keccak256("p2"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(top3);
         top3.finalize();
 
         uint256 fee = _protocolFee(top3, 20e6);
@@ -778,10 +820,15 @@ contract AgoraChallengeTest is Test {
         challenge.submit(keccak256("result"));
         // Submit but don't score — past grace period, finalize cancels and refunds poster
         _startScoring(challenge);
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         uint256 posterBefore = usdc.balanceOf(poster);
         challenge.finalize();
         assertEq(uint8(challenge.status()), uint8(IAgoraChallenge.Status.Cancelled));
+        assertEq(usdc.balanceOf(poster), posterBefore);
+        assertEq(challenge.claimableByAddress(poster), 10e6);
+
+        vm.prank(poster);
+        challenge.claim();
         assertEq(usdc.balanceOf(poster), posterBefore + 10e6);
     }
 
@@ -794,7 +841,7 @@ contract AgoraChallengeTest is Test {
         _postScore(challenge, subA, 50e18, keccak256("p1"));
         _postScore(challenge, subB, 100e18, keccak256("p2"));
 
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
 
         uint256 fee = _protocolFee(challenge, 10e6);
@@ -808,8 +855,7 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.distributionType = IAgoraChallenge.DistributionType.TopThree;
         AgoraChallenge top3 = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(top3), 20e6);
+        _fundChallenge(top3, 20e6);
 
         vm.prank(address(0x1));
         uint256 subA = top3.submit(keccak256("a"));
@@ -818,8 +864,7 @@ contract AgoraChallengeTest is Test {
         _postScore(top3, subA, 100, keccak256("p1"));
         _postScore(top3, subB, 50, keccak256("p2"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(address(0x1));
         top3.dispute("unfair");
 
         // Resolve with the lower scorer as winner
@@ -840,7 +885,7 @@ contract AgoraChallengeTest is Test {
         vm.prank(solver);
         uint256 subId = challenge.submit(keccak256("result"));
         _postScore(challenge, subId, 100e18, keccak256("proof"));
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(challenge);
         challenge.finalize();
         vm.prank(poster);
         vm.expectRevert(AgoraErrors.InvalidStatus.selector);
@@ -854,6 +899,46 @@ contract AgoraChallengeTest is Test {
         vm.prank(oracle);
         vm.expectRevert(AgoraErrors.InvalidStatus.selector);
         challenge.postScore(0, 100e18, keccak256("proof"));
+    }
+
+    function testCancelQueuesClaimWhenPosterCannotReceiveTransfers() public {
+        usdc.setBlocked(poster, true);
+
+        vm.prank(poster);
+        challenge.cancel();
+
+        assertEq(uint8(challenge.status()), uint8(IAgoraChallenge.Status.Cancelled));
+        assertEq(challenge.claimableByAddress(poster), 10e6);
+    }
+
+    function testFinalizeQueuesTreasuryClaimWhenTreasuryCannotReceiveTransfers() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+        _postScore(challenge, subId, 100e18, keccak256("proof"));
+        usdc.setBlocked(treasury, true);
+
+        _warpPastSettlementWindow(challenge);
+        challenge.finalize();
+
+        uint256 fee = _protocolFee(challenge, 10e6);
+        uint256 payout = 10e6 - fee;
+        assertEq(challenge.claimableByAddress(treasury), fee);
+        assertEq(challenge.payoutByAddress(solver), payout);
+    }
+
+    function testFinalizeWindowAnchorsToScoringStart() public {
+        vm.prank(solver);
+        uint256 subId = challenge.submit(keccak256("result"));
+
+        vm.warp(uint256(challenge.deadline()) + 6 days);
+        challenge.startScoring();
+
+        vm.prank(oracle);
+        challenge.postScore(subId, 100e18, keccak256("proof"));
+
+        vm.warp(uint256(challenge.scoringStartedAt()) + 1 hours);
+        vm.expectRevert(AgoraErrors.DeadlineNotPassed.selector);
+        challenge.finalize();
     }
 
     function testGetLeaderboardWithUnscoredSubmissions() public {
@@ -876,8 +961,7 @@ contract AgoraChallengeTest is Test {
         uint256 subId = challenge.submit(keccak256("result"));
 
         _startScoring(challenge);
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad");
 
         vm.prank(oracle);
@@ -890,8 +974,7 @@ contract AgoraChallengeTest is Test {
         challenge.submit(keccak256("result"));
 
         _startScoring(challenge);
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         challenge.dispute("bad");
 
         vm.prank(oracle);
@@ -904,19 +987,23 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.minimumScore = 90e18;
         AgoraChallenge gated = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(gated), 20e6);
+        _fundChallenge(gated, 20e6);
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));
         _postScore(gated, subId, 10e18, keccak256("proof"));
 
         // Past dispute window and scoring grace period.
-        vm.warp(block.timestamp + 9 days);
+        _warpPastSettlementWindow(gated);
         uint256 posterBefore = usdc.balanceOf(poster);
         gated.finalize();
 
         assertEq(uint8(gated.status()), uint8(IAgoraChallenge.Status.Cancelled));
+        assertEq(usdc.balanceOf(poster), posterBefore);
+        assertEq(gated.claimableByAddress(poster), 20e6);
+
+        vm.prank(poster);
+        gated.claim();
         assertEq(usdc.balanceOf(poster), posterBefore + 20e6);
     }
 
@@ -925,15 +1012,13 @@ contract AgoraChallengeTest is Test {
         cfg.rewardAmount = 20e6;
         cfg.minimumScore = 90e18;
         AgoraChallenge gated = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(gated), 20e6);
+        _fundChallenge(gated, 20e6);
 
         vm.prank(solver);
         uint256 subId = gated.submit(keccak256("result"));
         _postScore(gated, subId, 10e18, keccak256("proof"));
 
-        vm.warp(block.timestamp + 1 days + 1 hours);
-        vm.prank(address(0x999));
+        vm.prank(solver);
         gated.dispute("below minimum");
 
         vm.prank(oracle);
@@ -947,8 +1032,7 @@ contract AgoraChallengeTest is Test {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissions = 2;
         AgoraChallenge limited = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(limited), 10e6);
+        _fundChallenge(limited, 10e6);
 
         vm.prank(address(0x1));
         limited.submit(keccak256("a"));
@@ -965,8 +1049,7 @@ contract AgoraChallengeTest is Test {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissionsPerSolver = 2;
         AgoraChallenge limited = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(limited), 10e6);
+        _fundChallenge(limited, 10e6);
 
         vm.startPrank(solver);
         limited.submit(keccak256("a"));
@@ -980,8 +1063,7 @@ contract AgoraChallengeTest is Test {
         limited.submit(keccak256("d"));
     }
 
-    function testZeroLimitsAreUnlimited() public {
-        // Default setUp challenge has 0, 0 — should allow many submissions
+    function testConfiguredSubmissionCapAllowsExpectedVolume() public {
         vm.startPrank(solver);
         for (uint256 i = 0; i < 10; i++) {
             challenge.submit(keccak256(abi.encodePacked(i)));
@@ -1002,8 +1084,7 @@ contract AgoraChallengeTest is Test {
         IAgoraChallenge.ChallengeConfig memory cfg = _cfg();
         cfg.maxSubmissionsPerSolver = 3;
         AgoraChallenge limited = new AgoraChallenge(cfg);
-        vm.prank(poster);
-        usdc.transfer(address(limited), 10e6);
+        _fundChallenge(limited, 10e6);
 
         assertEq(limited.solverSubmissionCount(solver), 0);
         vm.prank(solver);

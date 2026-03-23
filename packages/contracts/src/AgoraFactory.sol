@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {AgoraChallenge} from "./AgoraChallenge.sol";
 import {IAgoraChallenge} from "./interfaces/IAgoraChallenge.sol";
@@ -10,6 +11,8 @@ import {AgoraErrors} from "./libraries/AgoraErrors.sol";
 import {AgoraEvents} from "./libraries/AgoraEvents.sol";
 
 contract AgoraFactory is Ownable {
+    using SafeERC20 for IERC20;
+
     uint16 public constant CONTRACT_VERSION = 2;
 
     IERC20 public immutable usdc;
@@ -118,8 +121,12 @@ contract AgoraFactory is Ownable {
         challenges[challengeId] = challengeAddr;
         challengeCount += 1;
 
-        bool success = usdc.transferFrom(msg.sender, challengeAddr, rewardAmount);
-        if (!success) revert AgoraErrors.TransferFromFailed();
+        uint256 balanceBefore = usdc.balanceOf(challengeAddr);
+        usdc.safeTransferFrom(msg.sender, challengeAddr, rewardAmount);
+        uint256 balanceAfter = usdc.balanceOf(challengeAddr);
+        if (balanceAfter != balanceBefore + rewardAmount) {
+            revert AgoraErrors.TransferFromFailed();
+        }
 
         emit AgoraEvents.ChallengeCreated(challengeId, challengeAddr, msg.sender, rewardAmount);
         if (labTBA != address(0)) {
