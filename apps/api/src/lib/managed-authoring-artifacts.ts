@@ -37,6 +37,66 @@ function defaultVisibilityForRole(role: string): "public" | "private" {
   }
 }
 
+function artifactText(artifact: AuthoringArtifactOutput) {
+  return `${artifact.file_name ?? ""} ${(artifact.detected_columns ?? []).join(" ")}`
+    .toLowerCase()
+    .replace(/[_\-.]+/g, " ");
+}
+
+function inferRankingArtifactIndex(input: {
+  role: string;
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  usedIndexes: Set<number>;
+}) {
+  const candidates = input.uploadedArtifacts
+    .map((artifact, index) => ({
+      artifact,
+      index,
+      text: artifactText(artifact),
+    }))
+    .filter(({ index }) => !input.usedIndexes.has(index));
+
+  if (input.role === "reference_ranking") {
+    return (
+      candidates.find(({ text }) =>
+        /\b(reference|ground[_ -]?truth|truth)\b/.test(text),
+      )?.index ?? null
+    );
+  }
+
+  if (input.role === "ranking_inputs") {
+    return (
+      candidates.find(
+        ({ text }) =>
+          /\b(candidate|candidates|input|inputs|library|ligand)\b/.test(text) &&
+          !/\b(reference|ground[_ -]?truth|truth)\b/.test(text),
+      )?.index ?? null
+    );
+  }
+
+  return null;
+}
+
+function inferArtifactAssignment(input: {
+  runtimeFamily: SupportedRuntimeFamily;
+  role: string;
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  usedIndexes: Set<number>;
+}): CompilerArtifactAssignment | null {
+  if (input.runtimeFamily === "ranking") {
+    const artifactIndex = inferRankingArtifactIndex(input);
+    if (artifactIndex !== null) {
+      return {
+        artifactIndex,
+        role: input.role,
+        visibility: defaultVisibilityForRole(input.role),
+      };
+    }
+  }
+
+  return null;
+}
+
 export function assignArtifactsFromProposal(input: {
   runtimeFamily: SupportedRuntimeFamily;
   uploadedArtifacts: AuthoringArtifactOutput[];
@@ -44,7 +104,7 @@ export function assignArtifactsFromProposal(input: {
 }): ResolvedManagedArtifacts | null {
   const family = lookupManagedRuntimeFamily(input.runtimeFamily);
   const assignments = input.artifactAssignments ?? [];
-  if (!family || assignments.length === 0) {
+  if (!family) {
     return null;
   }
 
@@ -73,6 +133,23 @@ export function assignArtifactsFromProposal(input: {
     }
     usedIndexes.add(assignment.artifactIndex);
     roleToAssignment.set(assignment.role, assignment);
+  }
+
+  for (const role of family.supportedArtifactRoles) {
+    if (roleToAssignment.has(role)) {
+      continue;
+    }
+    const inferredAssignment = inferArtifactAssignment({
+      runtimeFamily: input.runtimeFamily,
+      role,
+      uploadedArtifacts: input.uploadedArtifacts,
+      usedIndexes,
+    });
+    if (!inferredAssignment) {
+      continue;
+    }
+    usedIndexes.add(inferredAssignment.artifactIndex);
+    roleToAssignment.set(role, inferredAssignment);
   }
 
   const missingRoles = family.supportedArtifactRoles.filter(

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAuthoringQuestions } from "../src/lib/authoring-questions.js";
+import { assignArtifactsFromProposal } from "../src/lib/managed-authoring-artifacts.js";
 import {
   compileManagedAuthoringSessionOutcome,
   compileManagedAuthoringSession,
@@ -446,6 +447,44 @@ test("managed authoring keeps docking-like subjective drafts in awaiting_input i
       /target structure|ligand library|reference scores/i,
     );
   });
+});
+
+test("managed artifact assignment infers obvious ranking files from filenames", () => {
+  const resolved = assignArtifactsFromProposal({
+    runtimeFamily: "ranking",
+    uploadedArtifacts: [
+      {
+        id: "candidates",
+        uri: "ipfs://candidates",
+        file_name: "mdm2_candidates.csv",
+        mime_type: "text/csv",
+        detected_columns: ["ligand_id", "sequence"],
+      },
+      {
+        id: "reference",
+        uri: "ipfs://reference",
+        file_name: "mdm2_reference_ranking.csv",
+        mime_type: "text/csv",
+        detected_columns: ["ligand_id", "rank"],
+      },
+      {
+        id: "schema",
+        uri: "ipfs://schema",
+        file_name: "mdm2_benchmark_submission_schema.md",
+        mime_type: "text/markdown",
+      },
+    ],
+    artifactAssignments: [],
+  });
+
+  assert.ok(resolved);
+  assert.equal(resolved?.resolvedArtifacts[0]?.role, "ranking_inputs");
+  assert.equal(resolved?.resolvedArtifacts[0]?.file_name, "mdm2_candidates.csv");
+  assert.equal(resolved?.resolvedArtifacts[1]?.role, "reference_ranking");
+  assert.equal(
+    resolved?.resolvedArtifacts[1]?.file_name,
+    "mdm2_reference_ranking.csv",
+  );
 });
 
 test("managed authoring Anthropic tool schema avoids unsupported integer bounds", async () => {

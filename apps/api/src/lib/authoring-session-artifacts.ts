@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  AgoraError,
   authoringSessionArtifactSchema,
   authoringSessionFileInputSchema,
   type AuthoringArtifactOutput,
@@ -36,13 +37,23 @@ function encodeArtifactPayload(input: {
 }
 
 function decodeArtifactPayload(encoded: string) {
-  return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as {
-    uri: string;
-    file_name: string;
-    mime_type?: string | null;
-    size_bytes?: number;
-    source_url?: string | null;
-  };
+  try {
+    return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as {
+      uri: string;
+      file_name: string;
+      mime_type?: string | null;
+      size_bytes?: number;
+      source_url?: string | null;
+    };
+  } catch {
+    throw new AgoraError(
+      "Artifact reference is invalid. Next step: upload the file again and retry with the returned artifact_id.",
+      {
+        code: "invalid_request",
+        status: 400,
+      },
+    );
+  }
 }
 
 export function encodeAuthoringSessionArtifactId(
@@ -62,8 +73,12 @@ export function encodeAuthoringSessionArtifactId(
 
 export function decodeAuthoringSessionArtifactId(artifactId: string) {
   if (!artifactId.startsWith(ARTIFACT_REF_PREFIX)) {
-    throw new Error(
+    throw new AgoraError(
       "Artifact reference is invalid. Next step: upload the file again and retry with the returned artifact_id.",
+      {
+        code: "invalid_request",
+        status: 400,
+      },
     );
   }
 

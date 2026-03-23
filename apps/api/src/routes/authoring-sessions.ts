@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AgoraError,
   CHALLENGE_LIMITS,
   challengeIntentSchema,
   conversationalAuthoringSessionResponseSchema,
@@ -178,6 +179,18 @@ function cleanText(value?: string | null) {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function describeZodError(error: z.ZodError) {
+  return error.issues[0]?.message ?? "Invalid challenge input.";
+}
+
+function invalidAuthoringIntentError(error: z.ZodError) {
+  return new AgoraError(describeZodError(error), {
+    code: "invalid_request",
+    status: 400,
+    nextAction: "Fix the request values and retry.",
+  });
 }
 
 function appendFreeformContext(
@@ -1024,7 +1037,13 @@ async function persistAssessmentResult(input: {
     };
   }
 
-  const parsedIntent = challengeIntentSchema.parse(effectiveIntentCandidate);
+  const parsedIntentResult = challengeIntentSchema.safeParse(
+    effectiveIntentCandidate,
+  );
+  if (!parsedIntentResult.success) {
+    throw invalidAuthoringIntentError(parsedIntentResult.error);
+  }
+  const parsedIntent = parsedIntentResult.data;
   const outcome = await input.compileManagedAuthoringSessionOutcomeImpl(
     {
       intent: parsedIntent,
@@ -1222,11 +1241,25 @@ export function createAuthoringSessionRoutes(
       }
 
       const db = createSupabaseClientImpl(true);
-      const incomingArtifacts = parsed.data.files?.length
-        ? await normalizeAuthoringSessionFileInputsImpl({
-            files: parsed.data.files,
-          })
-        : [];
+      let incomingArtifacts: StoredAuthoringSessionArtifact[] = [];
+      try {
+        incomingArtifacts = parsed.data.files?.length
+          ? await normalizeAuthoringSessionFileInputsImpl({
+              files: parsed.data.files,
+            })
+          : [];
+      } catch (error) {
+        if (error instanceof AgoraError && error.code === "invalid_request") {
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction:
+              error.nextAction ?? "Fix the file references or upload payload and retry.",
+          });
+        }
+        throw error;
+      }
       const sourceMessages = buildCreateSourceMessages({
         message: parsed.data.message,
         summary: parsed.data.summary,
@@ -1239,40 +1272,60 @@ export function createAuthoringSessionRoutes(
       });
       const intentCandidate = appendFreeformContext({}, freeformSeed);
 
-      const result = await persistAssessmentResult({
-        db,
-        session: null,
-        route: "create",
-        requestId: getRequestId(c) ?? null,
-        principal: c.get("authoringPrincipal"),
-        callerMessage: freeformSeed,
-        files: parsed.data.files,
-        intentCandidate,
-        sourceMessages,
-        origin: parsed.data.provenance
-          ? {
-              provider: toOriginProvider(parsed.data.provenance.source),
-              external_id: parsed.data.provenance.external_id ?? null,
-              external_url: parsed.data.provenance.source_url ?? null,
-            }
-          : undefined,
-        uploadedArtifacts: incomingArtifacts,
-        compileManagedAuthoringSessionOutcomeImpl,
-        createAuthoringSessionImpl,
-        updateAuthoringSessionImpl,
-        appendAuthoringSessionConversationLogImpl,
-      });
-      logConversationEntries(getRequestLogger(c), {
-        sessionId: result.session.id,
-        entries: result.logEntries,
-      });
+      try {
+        const result = await persistAssessmentResult({
+          db,
+          session: null,
+          route: "create",
+          requestId: getRequestId(c) ?? null,
+          principal: c.get("authoringPrincipal"),
+          callerMessage: freeformSeed,
+          files: parsed.data.files,
+          intentCandidate,
+          sourceMessages,
+          origin: parsed.data.provenance
+            ? {
+                provider: toOriginProvider(parsed.data.provenance.source),
+                external_id: parsed.data.provenance.external_id ?? null,
+                external_url: parsed.data.provenance.source_url ?? null,
+              }
+            : undefined,
+          uploadedArtifacts: incomingArtifacts,
+          compileManagedAuthoringSessionOutcomeImpl,
+          createAuthoringSessionImpl,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+        });
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: result.session.id,
+          entries: result.logEntries,
+        });
 
-      return c.json(
-        buildConversationalAuthoringSessionResponse({
-          session: result.session,
-          assistantMessage: result.assistantMessage,
-        }),
-      );
+        return c.json(
+          buildConversationalAuthoringSessionResponse({
+            session: result.session,
+            assistantMessage: result.assistantMessage,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof AuthoringSessionWriteConflictError) {
+          return jsonAuthoringSessionApiError(c, {
+            status: 409,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: "Reload the latest session and retry.",
+          });
+        }
+        if (error instanceof AgoraError && error.code === "invalid_request") {
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: error.nextAction ?? "Fix the request values and retry.",
+          });
+        }
+        throw error;
+      }
     },
   );
 
@@ -1385,14 +1438,45 @@ export function createAuthoringSessionRoutes(
         });
       }
 
-      const artifactsFromAnswers = collectAnswerArtifacts({
-        answers: parsed.data.answers,
-      });
-      const artifactsFromFiles = parsed.data.files?.length
-        ? await normalizeAuthoringSessionFileInputsImpl({
+      let artifactsFromAnswers: StoredAuthoringSessionArtifact[] = [];
+      let artifactsFromFiles: StoredAuthoringSessionArtifact[] = [];
+      try {
+        artifactsFromAnswers = collectAnswerArtifacts({
+          answers: parsed.data.answers,
+        });
+        artifactsFromFiles = parsed.data.files?.length
+          ? await normalizeAuthoringSessionFileInputsImpl({
+              files: parsed.data.files,
+            })
+          : [];
+      } catch (error) {
+        if (error instanceof AgoraError && error.code === "invalid_request") {
+          await appendValidationFailureLog({
+            c,
+            db,
+            session: visible.session,
+            updateAuthoringSessionImpl,
+            appendAuthoringSessionConversationLogImpl,
+            route: "respond",
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction:
+              error.nextAction ?? "Fix the file references or upload payload and retry.",
+            callerMessage: cleanText(parsed.data.message),
+            answers: parsed.data.answers,
             files: parsed.data.files,
-          })
-        : [];
+          });
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction:
+              error.nextAction ?? "Fix the file references or upload payload and retry.",
+          });
+        }
+        throw error;
+      }
       const currentArtifacts = (visible.session.uploaded_artifacts_json ??
         []) as StoredAuthoringSessionArtifact[];
       const uploadedArtifacts = mergeStoredArtifacts(currentArtifacts, [
@@ -1407,11 +1491,45 @@ export function createAuthoringSessionRoutes(
         current: visible.session,
         message: parsed.data.message,
       });
-      const artifactAssignmentsOverride = buildArtifactAssignmentsOverride({
-        session: visible.session,
-        uploadedArtifacts,
-        answers: parsed.data.answers,
-      });
+      let artifactAssignmentsOverride:
+        | Array<{
+            artifactIndex: number;
+            role: string;
+            visibility: "public" | "private";
+          }>
+        | undefined;
+      try {
+        artifactAssignmentsOverride = buildArtifactAssignmentsOverride({
+          session: visible.session,
+          uploadedArtifacts,
+          answers: parsed.data.answers,
+        });
+      } catch (error) {
+        if (error instanceof AgoraError && error.code === "invalid_request") {
+          await appendValidationFailureLog({
+            c,
+            db,
+            session: visible.session,
+            updateAuthoringSessionImpl,
+            appendAuthoringSessionConversationLogImpl,
+            route: "respond",
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: error.nextAction ?? "Fix the artifact answers and retry.",
+            callerMessage: cleanText(parsed.data.message),
+            answers: parsed.data.answers,
+            files: parsed.data.files,
+          });
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: error.nextAction ?? "Fix the artifact answers and retry.",
+          });
+        }
+        throw error;
+      }
       const runtimeFamilyOverride =
         visible.session.compilation_json?.runtime_family ??
         visible.session.authoring_ir_json?.evaluation.runtime_family ??
@@ -1457,6 +1575,29 @@ export function createAuthoringSessionRoutes(
             code: "invalid_request",
             message: error.message,
             nextAction: "Reload the latest session and retry.",
+          });
+        }
+        if (error instanceof AgoraError && error.code === "invalid_request") {
+          await appendValidationFailureLog({
+            c,
+            db,
+            session: visible.session,
+            updateAuthoringSessionImpl,
+            appendAuthoringSessionConversationLogImpl,
+            route: "respond",
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: error.nextAction ?? "Fix the request values and retry.",
+            callerMessage: cleanText(parsed.data.message),
+            answers: parsed.data.answers,
+            files: parsed.data.files,
+          });
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: error.nextAction ?? "Fix the request values and retry.",
           });
         }
         throw error;

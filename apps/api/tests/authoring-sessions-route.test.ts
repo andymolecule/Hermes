@@ -250,6 +250,35 @@ test("POST /sessions creates a new awaiting-input session", async () => {
   assert.equal(storedSession?.conversation_log_json.length, 2);
 });
 
+test("POST /sessions returns invalid_request for malformed artifact refs", async () => {
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+  });
+
+  const response = await router.request("http://localhost/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      files: [
+        {
+          type: "artifact",
+          artifact_id: "agora_artifact_v1_broken",
+        },
+      ],
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "invalid_request");
+  assert.match(payload.error.message, /artifact reference is invalid/i);
+});
+
 test("GET /sessions/:id hides sessions owned by another principal", async () => {
   const router = createAuthoringSessionRoutes({
     requireAuthoringPrincipalMiddleware: withPrincipal({
@@ -356,6 +385,73 @@ test("POST /sessions/:id/respond applies answers and returns ready", async () =>
   assert.equal(payload.session.compilation.metric, "spearman");
   assert.equal(typeof payload.assistant_message, "string");
   assert.equal(storedSession.conversation_log_json.length, 2);
+});
+
+test("POST /sessions/:id/respond returns invalid_request for invalid reward_total answers", async () => {
+  let storedSession = createSession({
+    creator_type: "agent",
+    creator_agent_id: "agent-abc",
+    poster_address: null,
+    intent_json: null,
+    authoring_ir_json: buildManagedAuthoringIr({
+      intent: createIntent({ reward_total: undefined }),
+      uploadedArtifacts: createArtifacts(),
+      sourceTitle: "Docking challenge",
+      sourceMessages: [],
+      origin: { provider: "direct", ingested_at: "2026-03-22T00:00:00.000Z" },
+      questions: buildAuthoringQuestions({
+        missingFields: ["reward_total"],
+        uploadedArtifacts: createArtifacts(),
+      }),
+      assessmentOutcome: "awaiting_input",
+      missingFields: ["reward_total"],
+    }),
+  });
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () => storedSession,
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...storedSession,
+        authoring_ir_json:
+          payload.authoring_ir_json ?? storedSession.authoring_ir_json,
+        conversation_log_json:
+          payload.conversation_log_json ?? storedSession.conversation_log_json,
+        updated_at: "2026-03-22T00:05:00.000Z",
+      });
+      return storedSession;
+    },
+    compileManagedAuthoringSessionOutcome: async () => {
+      throw new Error("compile should not run for invalid reward_total");
+    },
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-123/respond",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        answers: [
+          {
+            question_id: "reward-total",
+            value: "30 USDC",
+          },
+        ],
+      }),
+    },
+  );
+
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "invalid_request");
+  assert.match(payload.error.message, /reward_total/i);
 });
 
 test("POST /sessions/:id/respond accepts file answers as artifact refs", async () => {
