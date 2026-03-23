@@ -7,7 +7,7 @@
   "solver_submissions_root": "solver-submissions",
   "compile_invariants": {
     "challenge_type": "prediction",
-    "runtime_family": "tabular_regression",
+    "template": "official_table_metric_v1",
     "metric": "r2",
     "artifact_roles": [
       {
@@ -35,12 +35,7 @@
   },
   "acceptable_compile_states": ["ready"],
   "disallowed_outcomes": {
-    "runtime_families": [
-      "docking",
-      "reproducibility",
-      "ranking",
-      "tabular_classification"
-    ],
+    "disallowed_templates": [],
     "recommended_actions": []
   },
   "prompt_variants": [

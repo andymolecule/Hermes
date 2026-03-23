@@ -24,7 +24,7 @@ export const scorerRuntimePoliciesSchema = z.object({
 
 export const scorerRuntimeConfigSchema = z.object({
   version: z.literal("v1"),
-  runtime_family: z.string().min(1).optional(),
+  template: z.string().min(1).optional(),
   metric: z.string().min(1).default("custom"),
   mount: z.object({
     evaluation_bundle_name: z.string().min(1).optional(),
@@ -67,7 +67,7 @@ export function createCsvTableEvaluationContract(input: {
 }
 
 export function buildScorerRuntimeConfig(input: {
-  runtimeFamily?: string | null;
+  template?: string | null;
   metric?: string | null;
   mount: {
     evaluationBundleName?: string;
@@ -79,7 +79,7 @@ export function buildScorerRuntimeConfig(input: {
 }): ScorerRuntimeConfigOutput {
   return scorerRuntimeConfigSchema.parse({
     version: "v1",
-    ...(input.runtimeFamily ? { runtime_family: input.runtimeFamily } : {}),
+    ...(input.template ? { template: input.template } : {}),
     metric: input.metric ?? "custom",
     mount: {
       ...(input.mount.evaluationBundleName

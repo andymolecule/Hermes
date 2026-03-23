@@ -108,8 +108,9 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               factory_address: factoryAddress,
               factory_challenge_id: 7,
               evaluation: {
-                runtime_family: "tabular_regression",
+                template: "official_table_metric_v1",
                 metric: "r2",
+                comparator: "maximize",
                 scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
               },
               submission_contract: {
@@ -285,8 +286,9 @@ test("status and get commands expose solver-specific submission limits and claim
               factory_address: factoryAddress,
               factory_challenge_id: 7,
               evaluation: {
-                runtime_family: "tabular_regression",
+                template: "official_table_metric_v1",
                 metric: "r2",
+                comparator: "maximize",
                 scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
               },
               refs: {

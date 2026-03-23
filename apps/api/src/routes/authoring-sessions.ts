@@ -587,55 +587,6 @@ function resolveQuestionById(
   );
 }
 
-function buildArtifactAssignmentsOverride(input: {
-  session: AuthoringSessionRow;
-  uploadedArtifacts: StoredAuthoringSessionArtifact[];
-  answers?: Array<{ question_id: string; value: string | { type: "artifact"; artifact_id: string } }>;
-}) {
-  const assignments = new Map<
-    string,
-    { artifactIndex: number; role: string; visibility: "public" | "private" }
-  >();
-
-  for (const assignment of input.session.authoring_ir_json?.evaluation
-    .artifact_assignments ?? []) {
-    assignments.set(assignment.role, {
-      artifactIndex: assignment.artifact_index,
-      role: assignment.role,
-      visibility: assignment.visibility,
-    });
-  }
-
-  for (const answer of input.answers ?? []) {
-    const question = resolveQuestionById(input.session, answer.question_id);
-    if (!question?.role || typeof answer.value === "string") {
-      continue;
-    }
-
-    const artifact = decodeAuthoringSessionArtifactId(answer.value.artifact_id);
-    const artifactIndex = input.uploadedArtifacts.findIndex(
-      (candidate) =>
-        candidate.id === artifact.id || candidate.uri === artifact.uri,
-    );
-    if (artifactIndex < 0) {
-      continue;
-    }
-
-    assignments.set(question.role, {
-      artifactIndex,
-      role: question.role,
-      visibility:
-        question.role === "hidden_labels" ||
-        question.role === "reference_ranking" ||
-        question.role === "reference_scores"
-          ? "private"
-          : "public",
-    });
-  }
-
-  return Array.from(assignments.values());
-}
-
 function applyAnswerPatch(input: {
   session: AuthoringSessionRow;
   answers?: Array<{ question_id: string; value: string | { type: "artifact"; artifact_id: string } }>;
@@ -645,6 +596,16 @@ function applyAnswerPatch(input: {
     input.session.compilation_json?.metric ??
     input.session.authoring_ir_json?.evaluation.metric ??
     null;
+  let evaluationArtifactIdOverride =
+    input.session.authoring_ir_json?.evaluation.evaluation_artifact_id ?? null;
+  let evaluationIdColumnOverride =
+    input.session.authoring_ir_json?.evaluation.evaluation_columns.id ?? null;
+  let evaluationValueColumnOverride =
+    input.session.authoring_ir_json?.evaluation.evaluation_columns.value ?? null;
+  let submissionIdColumnOverride =
+    input.session.authoring_ir_json?.evaluation.submission_columns.id ?? null;
+  let submissionValueColumnOverride =
+    input.session.authoring_ir_json?.evaluation.submission_columns.value ?? null;
 
   for (const answer of input.answers ?? []) {
     const question = resolveQuestionById(input.session, answer.question_id);
@@ -659,6 +620,9 @@ function applyAnswerPatch(input: {
         throw new Error(
           "File questions require an artifact reference answer. Next step: upload the file first, then retry with the returned artifact_id.",
         );
+      }
+      if (question.field === "evaluation_artifact") {
+        evaluationArtifactIdOverride = answer.value.artifact_id;
       }
       continue;
     }
@@ -704,6 +668,18 @@ function applyAnswerPatch(input: {
       case "metric":
         metricOverride = answer.value;
         break;
+      case "evaluation_id_column":
+        evaluationIdColumnOverride = answer.value;
+        break;
+      case "evaluation_value_column":
+        evaluationValueColumnOverride = answer.value;
+        break;
+      case "submission_id_column":
+        submissionIdColumnOverride = answer.value;
+        break;
+      case "submission_value_column":
+        submissionValueColumnOverride = answer.value;
+        break;
       default:
         break;
     }
@@ -712,6 +688,11 @@ function applyAnswerPatch(input: {
   return {
     intentCandidate,
     metricOverride,
+    evaluationArtifactIdOverride,
+    evaluationIdColumnOverride,
+    evaluationValueColumnOverride,
+    submissionIdColumnOverride,
+    submissionValueColumnOverride,
   };
 }
 
@@ -918,13 +899,13 @@ async function persistAssessmentResult(input: {
   createAuthoringSessionImpl: typeof createAuthoringSession;
   updateAuthoringSessionImpl: typeof updateAuthoringSession;
   appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
-  runtimeFamilyOverride?: string | null;
+  templateOverride?: "official_table_metric_v1" | null;
   metricOverride?: string | null;
-  artifactAssignmentsOverride?: Array<{
-    artifactIndex: number;
-    role: string;
-    visibility: "public" | "private";
-  }>;
+  evaluationArtifactIdOverride?: string | null;
+  evaluationIdColumnOverride?: string | null;
+  evaluationValueColumnOverride?: string | null;
+  submissionIdColumnOverride?: string | null;
+  submissionValueColumnOverride?: string | null;
 }) {
   const sourceTitle =
     cleanText(
@@ -945,6 +926,7 @@ async function persistAssessmentResult(input: {
     const pendingQuestions = buildAuthoringQuestions({
       missingFields,
       uploadedArtifacts: input.uploadedArtifacts,
+      selectedEvaluationArtifactId: input.evaluationArtifactIdOverride ?? null,
     });
     const authoringIr = buildManagedAuthoringIr({
       intent: effectiveIntentCandidate,
@@ -1048,17 +1030,18 @@ async function persistAssessmentResult(input: {
     {
       intent: parsedIntent,
       uploadedArtifacts: input.uploadedArtifacts,
-      runtimeFamilyOverride:
-        input.runtimeFamilyOverride && input.runtimeFamilyOverride.length > 0
-          ? (input.runtimeFamilyOverride as
-              | "reproducibility"
-              | "tabular_regression"
-              | "tabular_classification"
-              | "ranking"
-              | "docking")
-          : undefined,
+      templateOverride: input.templateOverride ?? undefined,
       metricOverride: input.metricOverride ?? undefined,
-      artifactAssignmentsOverride: input.artifactAssignmentsOverride,
+      evaluationArtifactIdOverride:
+        input.evaluationArtifactIdOverride ?? undefined,
+      evaluationIdColumnOverride:
+        input.evaluationIdColumnOverride ?? undefined,
+      evaluationValueColumnOverride:
+        input.evaluationValueColumnOverride ?? undefined,
+      submissionIdColumnOverride:
+        input.submissionIdColumnOverride ?? undefined,
+      submissionValueColumnOverride:
+        input.submissionValueColumnOverride ?? undefined,
     },
     {},
   );
@@ -1491,50 +1474,6 @@ export function createAuthoringSessionRoutes(
         current: visible.session,
         message: parsed.data.message,
       });
-      let artifactAssignmentsOverride:
-        | Array<{
-            artifactIndex: number;
-            role: string;
-            visibility: "public" | "private";
-          }>
-        | undefined;
-      try {
-        artifactAssignmentsOverride = buildArtifactAssignmentsOverride({
-          session: visible.session,
-          uploadedArtifacts,
-          answers: parsed.data.answers,
-        });
-      } catch (error) {
-        if (error instanceof AgoraError && error.code === "invalid_request") {
-          await appendValidationFailureLog({
-            c,
-            db,
-            session: visible.session,
-            updateAuthoringSessionImpl,
-            appendAuthoringSessionConversationLogImpl,
-            route: "respond",
-            status: 400,
-            code: "invalid_request",
-            message: error.message,
-            nextAction: error.nextAction ?? "Fix the artifact answers and retry.",
-            callerMessage: cleanText(parsed.data.message),
-            answers: parsed.data.answers,
-            files: parsed.data.files,
-          });
-          return jsonAuthoringSessionApiError(c, {
-            status: 400,
-            code: "invalid_request",
-            message: error.message,
-            nextAction: error.nextAction ?? "Fix the artifact answers and retry.",
-          });
-        }
-        throw error;
-      }
-      const runtimeFamilyOverride =
-        visible.session.compilation_json?.runtime_family ??
-        visible.session.authoring_ir_json?.evaluation.runtime_family ??
-        null;
-
       try {
         const result = await persistAssessmentResult({
           db,
@@ -1553,9 +1492,23 @@ export function createAuthoringSessionRoutes(
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          runtimeFamilyOverride,
+          templateOverride:
+            (visible.session.compilation_json?.template as
+              | "official_table_metric_v1"
+              | undefined) ??
+            (visible.session.authoring_ir_json?.evaluation.template as
+              | "official_table_metric_v1"
+              | undefined) ??
+            "official_table_metric_v1",
           metricOverride: questionPatch.metricOverride,
-          artifactAssignmentsOverride,
+          evaluationArtifactIdOverride:
+            questionPatch.evaluationArtifactIdOverride,
+          evaluationIdColumnOverride: questionPatch.evaluationIdColumnOverride,
+          evaluationValueColumnOverride:
+            questionPatch.evaluationValueColumnOverride,
+          submissionIdColumnOverride: questionPatch.submissionIdColumnOverride,
+          submissionValueColumnOverride:
+            questionPatch.submissionValueColumnOverride,
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,

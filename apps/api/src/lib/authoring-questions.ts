@@ -5,9 +5,8 @@ import {
   type AuthoringQuestionOptionOutput,
   type AuthoringQuestionOutput,
   createAuthoringQuestion,
-  lookupManagedRuntimeFamily,
+  lookupExecutionTemplate,
 } from "@agora/common";
-import type { SupportedRuntimeFamily } from "./managed-authoring-compiler.js";
 
 const QUESTION_FIELD_ORDER: AuthoringQuestionFieldOutput[] = [
   "description",
@@ -16,7 +15,11 @@ const QUESTION_FIELD_ORDER: AuthoringQuestionFieldOutput[] = [
   "distribution",
   "deadline",
   "metric",
-  "artifact_roles",
+  "evaluation_artifact",
+  "evaluation_id_column",
+  "evaluation_value_column",
+  "submission_id_column",
+  "submission_value_column",
   "title",
 ];
 
@@ -26,17 +29,6 @@ function humanize(value: string) {
     .filter((part) => part.length > 0)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function formatRoleList(roles: Array<{ label: string }>) {
-  const labels = roles.map((role) => role.label.toLowerCase());
-  if (labels.length <= 1) {
-    return labels[0] ?? "the required scorer role";
-  }
-  if (labels.length === 2) {
-    return `${labels[0]} and ${labels[1]}`;
-  }
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 }
 
 function dedupeFields(fields: AuthoringQuestionFieldOutput[]) {
@@ -70,7 +62,11 @@ function normalizeMissingField(value: string): AuthoringQuestionFieldOutput | nu
     case "distribution":
     case "deadline":
     case "metric":
-    case "artifact_roles":
+    case "evaluation_artifact":
+    case "evaluation_id_column":
+    case "evaluation_value_column":
+    case "submission_id_column":
+    case "submission_value_column":
       return value;
     default:
       return null;
@@ -87,7 +83,7 @@ function questionFieldsForCompileError(input: {
     case "MANAGED_ARTIFACTS_INCOMPLETE":
     case "MANAGED_ARTIFACTS_AMBIGUOUS":
     case "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID":
-      fields.push("artifact_roles");
+      fields.push("evaluation_artifact");
       break;
     case "MANAGED_THRESHOLD_UNSUPPORTED":
       fields.push("payout_condition");
@@ -101,10 +97,9 @@ function questionFieldsForCompileError(input: {
 export function buildAuthoringQuestions(input: {
   missingFields?: string[];
   uploadedArtifacts: AuthoringArtifactOutput[];
-  runtimeFamily?: SupportedRuntimeFamily | null;
+  selectedEvaluationArtifactId?: string | null;
   reasonCodes?: string[];
   compileErrorCode?: string | null;
-  missingArtifactRoles?: string[];
 }): AuthoringQuestionOutput[] {
   const normalizedMissingFields = dedupeFields(
     (input.missingFields ?? [])
@@ -120,32 +115,30 @@ export function buildAuthoringQuestions(input: {
     return [];
   }
 
-  const runtimeFamily = input.runtimeFamily
-    ? lookupManagedRuntimeFamily(input.runtimeFamily)
-    : null;
   const artifactOptions = input.uploadedArtifacts.map(toArtifactOption);
-  const requiredArtifactRoles = (
-    input.missingArtifactRoles?.length
-      ? input.missingArtifactRoles
-      : runtimeFamily?.supportedArtifactRoles ?? []
-  ).map((role) => ({
-    role,
-    label: humanize(role),
-    visibility:
-      role === "hidden_labels" ||
-      role === "reference_ranking" ||
-      role === "reference_scores"
-        ? ("private" as const)
-        : ("public" as const),
-  }));
+  const template = lookupExecutionTemplate("official_table_metric_v1");
   const metricOptions =
-    runtimeFamily?.supportedMetrics.map((metric) => ({
+    template?.supportedMetrics.map((metric) => ({
       id: metric.id,
       label: metric.label,
       description:
-        metric.direction === "higher"
+        metric.comparator === "maximize"
           ? "Higher scores are better."
           : "Lower scores are better.",
+    })) ?? [];
+  const selectedEvaluationArtifact =
+    input.selectedEvaluationArtifactId != null
+      ? input.uploadedArtifacts.find(
+          (artifact, index) =>
+            (artifact.id?.trim() || `artifact-${index + 1}`) ===
+            input.selectedEvaluationArtifactId,
+        ) ?? null
+      : null;
+  const selectedColumns =
+    selectedEvaluationArtifact?.detected_columns?.map((column) => ({
+      id: column,
+      label: humanize(column),
+      description: column,
     })) ?? [];
 
   return requestedFields.map((field) => {
@@ -155,24 +148,42 @@ export function buildAuthoringQuestions(input: {
           field,
           reasonCodes: input.reasonCodes,
           options: metricOptions,
-          prompt: runtimeFamily
-            ? `Which ${runtimeFamily.displayName} metric should Agora optimize for this challenge?`
-            : undefined,
+          prompt:
+            "Which metric should Agora use for the official table scorer?",
         });
-      case "artifact_roles":
+      case "evaluation_artifact":
         return createAuthoringQuestion({
           field,
           reasonCodes: input.reasonCodes,
           artifactOptions,
-          artifactRoles: requiredArtifactRoles,
           prompt:
-            requiredArtifactRoles.length > 0
-              ? `Which uploaded file should Agora use for ${formatRoleList(requiredArtifactRoles)}? Upload any missing scorer files first if you have not attached them yet.`
-              : undefined,
+            "Which uploaded file should Agora use as the hidden evaluation table?",
           why:
-            requiredArtifactRoles.length > 0
-              ? `Agora still needs explicit files for ${formatRoleList(requiredArtifactRoles)} before it can continue.`
-              : undefined,
+            "Agora still needs exactly one hidden ground-truth table before it can continue.",
+        });
+      case "evaluation_id_column":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          options: selectedColumns,
+          prompt:
+            "Which column in the hidden evaluation table should Agora use as the ID?",
+        });
+      case "evaluation_value_column":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          options: selectedColumns,
+          prompt:
+            "Which column in the hidden evaluation table should Agora score against?",
+        });
+      case "submission_id_column":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          options: selectedColumns,
+          prompt:
+            "Which column should solvers use as the ID in their submission table?",
         });
       case "reward_total":
         return createAuthoringQuestion({
@@ -194,6 +205,15 @@ export function buildAuthoringQuestions(input: {
             "What deterministic scoring rule should Agora use to decide the winner?",
           why:
             'Use a concrete metric or rule, not a subjective rubric. Example: "Highest Spearman correlation wins."',
+        });
+      case "submission_value_column":
+        return createAuthoringQuestion({
+          field,
+          reasonCodes: input.reasonCodes,
+          prompt:
+            "What should the solver score column be called in the submission table?",
+          why:
+            'Example: "predicted_score". Agora uses this as the submission value column for scoring.',
         });
       default:
         return createAuthoringQuestion({

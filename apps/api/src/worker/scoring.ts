@@ -1,19 +1,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  EXPERT_RUNTIME_FAMILY_ID,
+  executionTemplateIdSchema,
   type RunnerLimits,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
   SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
   resolveChallengeEvaluation,
+  resolveChallengeRunnerLimits,
   resolveChallengeRuntimeConfig,
-  resolveRuntimeFamilyLimits,
   resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
-  validateExpertScorerImage,
 } from "@agora/common";
 import {
   countSubmissionsBySolverForChallengeUpToOnChainSubId,
@@ -41,7 +39,7 @@ export interface ResolvedRunnerPolicy {
     pids: number;
   };
   timeoutMs?: number;
-  source: "runtime_family" | "default";
+  source: "template" | "default";
 }
 
 function policyFromLimits(
@@ -61,41 +59,18 @@ function policyFromLimits(
 
 export function resolveRunnerPolicyForChallenge(challenge: {
   image: string;
-  runtime_family: string;
-  semi_custom_runner_family?: string;
+  template: string;
 }): ResolvedRunnerPolicy {
-  const runtimeFamily = challenge.runtime_family.trim();
-
-  if (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID) {
-    const customIntegrityError = validateExpertScorerImage(challenge.image);
-    if (customIntegrityError) {
-      throw new Error(
-        `Invalid runtime family configuration: ${customIntegrityError}`,
-      );
-    }
-    return { source: "default" };
+  const templateResult = executionTemplateIdSchema.safeParse(challenge.template);
+  if (!templateResult.success) {
+    throw new Error(`Unknown execution template on challenge: ${challenge.template}`);
   }
 
-  if (
-    runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID &&
-    challenge.semi_custom_runner_family?.trim()
-  ) {
-    const runnerLimits = resolveRuntimeFamilyLimits(
-      challenge.semi_custom_runner_family,
-    );
-    if (!runnerLimits) {
-      throw new Error(
-        `Unknown semi-custom runner family: ${challenge.semi_custom_runner_family}`,
-      );
-    }
-    return policyFromLimits(runnerLimits, "runtime_family");
-  }
-
-  const runnerLimits = resolveRuntimeFamilyLimits(runtimeFamily);
+  const runnerLimits = resolveChallengeRunnerLimits(templateResult.data);
   if (!runnerLimits) {
-    throw new Error(`Unknown runtime family on challenge: ${runtimeFamily}`);
+    throw new Error(`Unknown execution template on challenge: ${challenge.template}`);
   }
-  return policyFromLimits(runnerLimits, "runtime_family");
+  return policyFromLimits(runnerLimits, "template");
 }
 
 export interface ScoringOutcomeSuccess {
@@ -174,9 +149,7 @@ export async function scoreSubmissionAndBuildProof(
   const evalPlan = resolveChallengeEvaluation(challenge);
   const runnerPolicy = resolveRunnerPolicyForChallenge({
     image: evalPlan.image,
-    runtime_family: challenge.runtime_family,
-    semi_custom_runner_family:
-      evalPlan.semiCustomExecution?.runner_runtime_family,
+    template: evalPlan.template,
   });
   const phaseMeta = {
     jobId,
@@ -208,7 +181,6 @@ export async function scoreSubmissionAndBuildProof(
   }
   const run = await executeScoringPipeline({
     image: evalPlan.image,
-    runtimeFamily: evalPlan.runtimeFamily,
     evaluationBundle: evalPlan.evaluationBundleCid
       ? { cid: evalPlan.evaluationBundleCid }
       : undefined,
@@ -218,7 +190,6 @@ export async function scoreSubmissionAndBuildProof(
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     metric: evalPlan.metric,
     policies: cachedRuntimeConfig.policies,
-    env: cachedRuntimeConfig.env,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
     strictPull: isProduction,

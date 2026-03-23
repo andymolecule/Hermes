@@ -1,9 +1,10 @@
 import type { ChallengeStatus } from "@agora/common";
 
 export type ChallengeEvaluation = {
-  runtime_family: string;
+  template: string;
   metric: string;
-  scorer_image?: string;
+  comparator: "maximize" | "minimize";
+  scorer_image: string;
 };
 
 export type PublicChallengeArtifact = {

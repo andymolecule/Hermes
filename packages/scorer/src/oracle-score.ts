@@ -91,7 +91,6 @@ export async function oracleScore(
   });
   const run = await executeScoringPipeline({
     image: evalPlan.image,
-    runtimeFamily: evalPlan.runtimeFamily,
     evaluationBundle: { cid: evalPlan.evaluationBundleCid },
     mount: evalPlan.mount,
     submission: submissionSource,
@@ -99,7 +98,6 @@ export async function oracleScore(
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     metric: evalPlan.metric,
     policies: cachedRuntimeConfig.policies,
-    env: cachedRuntimeConfig.env,
     keepWorkspace: true,
   });
 

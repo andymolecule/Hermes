@@ -165,10 +165,19 @@ export const authoringSessionRewardSchema = z
 
 export const authoringSessionCompilationSchema = z
   .object({
-    runtime_family: z.string().trim().min(1),
+    template: z.string().trim().min(1),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
     scorer_image: z.string().trim().min(1),
+    evaluation_artifact_uri: z.string().trim().min(1),
+    evaluation_columns: z
+      .object({
+        required: z.array(z.string().trim().min(1)).min(1),
+        id: z.string().trim().min(1),
+        value: z.string().trim().min(1),
+        allow_extra: z.boolean(),
+      })
+      .strict(),
     submission_contract: authoringSessionSubmissionContractSchema,
     resource_limits: authoringSessionResourceLimitsSchema,
     reward: authoringSessionRewardSchema,
@@ -186,7 +195,7 @@ export const authoringSessionChecklistSchema = z
     reward: z.string().trim().min(1),
     distribution: z.string().trim().min(1),
     deadline: isoDatetimeSchema,
-    runtime_family: z.string().trim().min(1),
+    template: z.string().trim().min(1),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
     artifacts_count: z.number().int().nonnegative(),

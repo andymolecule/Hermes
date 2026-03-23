@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
-  lookupManagedRuntimeFamily,
+  createResolvedTableExecutionContract,
+  resolveExecutionTemplateImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import { buildAuthoringQuestions } from "../src/lib/authoring-questions.js";
@@ -68,35 +70,66 @@ function createArtifacts() {
 }
 
 function createCompilation() {
-  const runtimeFamily = lookupManagedRuntimeFamily("docking");
-  if (!runtimeFamily) {
-    throw new Error("missing runtime family fixture");
+  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("missing execution template fixture");
   }
 
   const submissionContract = createCsvTableSubmissionContract({
     requiredColumns: ["ligand_id", "docking_score"],
     idColumn: "ligand_id",
     valueColumn: "docking_score",
+    allowExtraColumns: true,
   });
-
+  const executionContract = createResolvedTableExecutionContract({
+    template: "official_table_metric_v1",
+    scorerImage,
+    metric: "spearman",
+    comparator: "maximize",
+    evaluationArtifactUri: "ipfs://bundle",
+    evaluationColumns: {
+      required: ["ligand_id", "reference_score"],
+      id: "ligand_id",
+      value: "reference_score",
+      allow_extra: true,
+    },
+    submissionColumns: {
+      required: ["ligand_id", "docking_score"],
+      id: "ligand_id",
+      value: "docking_score",
+      allow_extra: true,
+    },
+    visibleArtifactUris: ["ipfs://artifact-1"],
+    policies: {
+      coverage_policy: "reject",
+      duplicate_id_policy: "reject",
+      invalid_value_policy: "reject",
+    },
+  });
   const challengeSpec = {
     schema_version: 3 as const,
     id: "session-spec-1",
     title: "Docking challenge",
     description: "Rank ligands against KRAS.",
     domain: "drug_discovery",
-    type: "docking" as const,
+    type: "prediction" as const,
     evaluation: {
-      runtime_family: "docking" as const,
+      template: "official_table_metric_v1",
       metric: "spearman",
-      scorer_image: runtimeFamily.scorerImage,
-      evaluation_bundle: "ipfs://bundle",
+      comparator: "maximize" as const,
+      scorer_image: scorerImage,
+      execution_contract: executionContract,
     },
     artifacts: [
       {
-        role: "ligand_library" as const,
+        role: "supporting_context" as const,
         visibility: "public" as const,
         uri: "ipfs://artifact-1",
+      },
+      {
+        role: "hidden_evaluation" as const,
+        visibility: "private" as const,
+        uri: "ipfs://bundle",
       },
     ],
     submission_contract: submissionContract,
@@ -110,9 +143,11 @@ function createCompilation() {
   };
 
   return {
-    challenge_type: "docking",
-    runtime_family: "docking",
+    challenge_type: "prediction",
+    template: "official_table_metric_v1",
     metric: "spearman",
+    comparator: "maximize" as const,
+    execution_contract: executionContract,
     resolved_artifacts: challengeSpec.artifacts,
     submission_contract: submissionContract,
     dry_run: {
@@ -356,8 +391,9 @@ test("POST /sessions/:id/respond applies answers and returns ready", async () =>
         sourceTitle: input.intent.title,
         sourceMessages: [],
         origin: { provider: "direct", ingested_at: "2026-03-22T00:00:00.000Z" },
-        runtimeFamily: "docking",
+        template: "official_table_metric_v1",
         metric: "spearman",
+        comparator: "maximize",
         assessmentOutcome: "ready",
       }),
     }),
@@ -466,24 +502,16 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
       sourceTitle: "Docking challenge",
       sourceMessages: [],
       origin: { provider: "direct", ingested_at: "2026-03-22T00:00:00.000Z" },
-      runtimeFamily: "docking",
+      template: "official_table_metric_v1",
       questions: buildAuthoringQuestions({
-        missingFields: ["artifact_roles"],
+        missingFields: ["evaluation_artifact"],
         uploadedArtifacts: createArtifacts(),
-        runtimeFamily: "docking",
-        missingArtifactRoles: ["reference_scores"],
       }),
       assessmentOutcome: "awaiting_input",
-      missingFields: ["artifact_roles"],
+      missingFields: ["evaluation_artifact"],
     }),
   });
-  let capturedArtifactAssignments:
-    | Array<{
-        artifactIndex: number;
-        role: string;
-        visibility: "public" | "private";
-      }>
-    | undefined;
+  let capturedEvaluationArtifactId: string | undefined;
 
   const router = createAuthoringSessionRoutes({
     requireAuthoringPrincipalMiddleware: withPrincipal({
@@ -514,7 +542,8 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
       return storedSession;
     },
     compileManagedAuthoringSessionOutcome: async (input) => {
-      capturedArtifactAssignments = input.artifactAssignmentsOverride;
+      capturedEvaluationArtifactId =
+        input.evaluationArtifactIdOverride ?? undefined;
       return {
         state: "ready",
         compilation: createCompilation(),
@@ -527,8 +556,10 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
             provider: "direct",
             ingested_at: "2026-03-22T00:00:00.000Z",
           },
-          runtimeFamily: "docking",
+          template: "official_table_metric_v1",
           metric: "spearman",
+          comparator: "maximize",
+          evaluationArtifactId: input.evaluationArtifactIdOverride ?? null,
           assessmentOutcome: "ready",
         }),
       };
@@ -544,7 +575,7 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
       body: JSON.stringify({
         answers: [
           {
-            question_id: "artifact-roles::reference_scores",
+            question_id: "evaluation-artifact",
             value: {
               type: "artifact",
               artifact_id: artifactId,
@@ -558,13 +589,7 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.session.state, "ready");
-  assert.deepEqual(capturedArtifactAssignments, [
-    {
-      artifactIndex: 0,
-      role: "reference_scores",
-      visibility: "private",
-    },
-  ]);
+  assert.equal(capturedEvaluationArtifactId, artifactId);
 });
 
 test("GET /sessions/:id exposes blocked_by on rejected sessions", async () => {

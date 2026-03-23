@@ -11,12 +11,13 @@ Documentation index and reading order for the Agora repository.
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
 | 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
 | 5 | [Authoring Session API Spec](specs/authoring-session-api.md) | What is the locked session-first authoring contract? | Product, frontend, backend |
-| 6 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
-| 7 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 8 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 9 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 10 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 11 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 6 | [Authoring Validity And Execution](specs/authoring-validity-and-execution.md) | What makes a challenge valid and executable before publish? | Product, backend, compiler/scoring |
+| 7 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
+| 8 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 9 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 10 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 11 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 12 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -25,6 +26,7 @@ Documentation index and reading order for the Agora repository.
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
 - **Working on the new authoring flow?** Read [Authoring Session API Spec](specs/authoring-session-api.md).
+- **Working on what counts as a valid executable challenge?** Read [Authoring Validity And Execution](specs/authoring-validity-and-execution.md).
 - **Need to debug authoring conversations or Telegram/OpenClaw session failures?** Read [Authoring Observability Spec](specs/authoring-observability.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
@@ -48,6 +50,7 @@ Documentation index and reading order for the Agora repository.
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
 | Locked authoring session API contract | [specs/authoring-session-api.md](specs/authoring-session-api.md) |
+| Locked authoring validity and execution model | [specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md) |
 | Internal authoring debug timeline and conversation logging | [specs/authoring-observability.md](specs/authoring-observability.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
@@ -69,6 +72,7 @@ Documentation index and reading order for the Agora repository.
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 - **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
 - **[specs/authoring-session-api.md](specs/authoring-session-api.md)** — Locked session-first authoring contract
+- **[specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md)** — Locked validity bar and execution-model redesign
 - **[specs/authoring-observability.md](specs/authoring-observability.md)** — Internal authoring conversation logging and operator debug timeline spec
 - **[specs/authoring-session-api-audit.md](specs/authoring-session-api-audit.md)** — Spec-vs-code audit and cutover matrix
 - **[specs/authoring-session-cutover-checklist.md](specs/authoring-session-cutover-checklist.md)** — Execution checklist for the session cutover
@@ -88,7 +92,7 @@ High-level package map for common engineering tasks:
 | I want to change... | Start here |
 |---|---|
 | Challenge posting defaults and shared challenge-family policy | `packages/common/src/challenges/` |
-| Official scorer runtime config (image, limits, mount, format) | `packages/common/src/runtime-families.ts` |
+| Official scorer config (image, limits, mount, metrics) | `packages/common/src/scorer-images.ts` and `packages/common/src/schemas/execution-template.ts` |
 | Challenge spec validation and eval-spec resolution | `packages/common/src/schemas/challenge-spec.ts` |
 | Submission artifact rules | `packages/common/src/schemas/submission-contract.ts` |
 | Runtime scorer staging and Docker execution | `packages/scorer/src/pipeline.ts` |

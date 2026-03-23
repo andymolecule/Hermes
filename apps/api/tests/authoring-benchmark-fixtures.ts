@@ -17,7 +17,7 @@ type BenchmarkJson = {
   prompt_variants_root: string;
   solver_submissions_root: string;
   compile_invariants: {
-    runtime_family: string;
+    template?: string;
     metric: string;
     artifact_roles: Array<{
       file_name: string;
@@ -37,7 +37,7 @@ type BenchmarkJson = {
   };
   acceptable_compile_states: BenchmarkCompileState[];
   disallowed_outcomes: {
-    runtime_families: string[];
+    disallowed_templates: string[];
     recommended_actions: string[];
   };
   prompt_variants: Array<{
@@ -121,6 +121,30 @@ function payoutConditionForBenchmark(benchmark: BenchmarkJson) {
     return "Highest R2 wins.";
   }
   return `Best ${benchmark.compile_invariants.metric} result wins.`;
+}
+
+function inferTableColumns(input: {
+  hiddenArtifact: AuthoringArtifactOutput | undefined;
+  submissionContract: BenchmarkJson["compile_invariants"]["submission_contract"];
+}) {
+  const hiddenColumns = input.hiddenArtifact?.detected_columns ?? [];
+  const evaluationIdColumn =
+    hiddenColumns.find((column) => column === "id") ?? hiddenColumns[0] ?? "id";
+  const evaluationValueColumn =
+    hiddenColumns.find((column) => column !== evaluationIdColumn) ??
+    input.submissionContract.value_column ??
+    "label";
+  const submissionIdColumn =
+    input.submissionContract.id_column ?? evaluationIdColumn;
+  const submissionValueColumn =
+    input.submissionContract.value_column ?? "prediction";
+
+  return {
+    evaluationIdColumn,
+    evaluationValueColumn,
+    submissionIdColumn,
+    submissionValueColumn,
+  };
 }
 
 function solverInstructionsForBenchmark(benchmark: BenchmarkJson) {
@@ -231,34 +255,46 @@ export function buildAuthoringBenchmarkDependencies(
 ) {
   const metric = benchmarkCase.benchmark.compile_invariants.metric;
   const selectedMetricValue = metric === "exact_match" ? 1 : 0.97;
+  const hiddenArtifactIndex =
+    benchmarkCase.benchmark.compile_invariants.artifact_roles.findIndex(
+      (artifact) => artifact.visibility === "private",
+    );
+  const hiddenArtifact =
+    hiddenArtifactIndex >= 0
+      ? benchmarkCase.uploadedArtifacts[hiddenArtifactIndex]
+      : undefined;
+  const tableColumns = inferTableColumns({
+    hiddenArtifact,
+    submissionContract:
+      benchmarkCase.benchmark.compile_invariants.submission_contract,
+  });
   const compilerResponse =
     benchmarkCase.benchmark.managed_support === "supported"
       ? {
           outcome: "supported",
-          runtime_family:
-            benchmarkCase.benchmark.compile_invariants.runtime_family,
           metric,
+          evaluation_artifact_index: hiddenArtifactIndex,
+          evaluation_id_column: tableColumns.evaluationIdColumn,
+          evaluation_value_column: tableColumns.evaluationValueColumn,
+          submission_id_column: tableColumns.submissionIdColumn,
+          submission_value_column: tableColumns.submissionValueColumn,
           reason_codes: ["benchmark_managed_fit"],
           warnings: [],
           missing_fields: [],
-          artifact_assignments: benchmarkCase.benchmark.compile_invariants.artifact_roles.map(
-            (artifact, artifactIndex) => ({
-              artifact_index: artifactIndex,
-              role: artifact.role,
-              visibility: artifact.visibility,
-            }),
-          ),
         }
       : {
           outcome: "unsupported",
-          runtime_family: null,
           metric: null,
+          evaluation_artifact_index: null,
+          evaluation_id_column: null,
+          evaluation_value_column: null,
+          submission_id_column: null,
+          submission_value_column: null,
           reason_codes: ["custom_scorer_workflow_required"],
           warnings: [
             "Challenge description needs the explicit custom scorer workflow.",
           ],
           missing_fields: [],
-          artifact_assignments: [],
         };
 
   return {

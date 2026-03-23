@@ -62,7 +62,6 @@ def run_case(
 
 csv_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.csv",
@@ -97,7 +96,6 @@ assert payload["details"]["comparison_kind"] == "csv_table", payload
 
 json_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.json",
@@ -137,7 +135,6 @@ assert payload["score"] == 0.0, payload
 
 structured_record_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
     "metric": "validation_score",
     "mount": {
         "evaluation_bundle_name": "ground_truth.json",
@@ -222,7 +219,6 @@ assert "allowed_value:severity" in payload["details"]["failed_checks"], payload
 
 opaque_runtime_config = {
     "version": "v1",
-    "runtime_family": "semi_custom",
     "metric": "exact_match",
     "mount": {
         "evaluation_bundle_name": "ground_truth.bin",

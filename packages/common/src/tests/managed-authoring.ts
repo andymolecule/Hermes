@@ -154,22 +154,19 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     missing_fields: [],
   },
   evaluation: {
-    runtime_family: "docking",
+    template: "official_table_metric_v1",
     metric: "spearman",
-    artifact_assignments: [
-      {
-        artifact_id: "target",
-        artifact_index: 0,
-        role: "target_structure",
-        visibility: "public",
-      },
-      {
-        artifact_id: "ligands",
-        artifact_index: 1,
-        role: "ligand_set",
-        visibility: "public",
-      },
-    ],
+    comparator: "maximize",
+    evaluation_artifact_id: "ligands",
+    visible_artifact_ids: ["target"],
+    evaluation_columns: {
+      id: "ligand_id",
+      value: "smiles",
+    },
+    submission_columns: {
+      id: "ligand_id",
+      value: "predicted_score",
+    },
     rejection_reasons: [],
     compile_error_codes: [],
     compile_error_message: null,

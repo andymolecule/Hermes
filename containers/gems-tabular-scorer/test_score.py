@@ -21,7 +21,7 @@ def load_scorer_module():
 def runtime_config(id_column: str, value_column: str, metric: str = "r2") -> dict:
     return {
         "version": "v1",
-        "runtime_family": "tabular_regression",
+        "template": "official_table_metric_v1",
         "metric": metric,
         "mount": {
             "evaluation_bundle_name": "ground_truth.csv",

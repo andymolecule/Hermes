@@ -22,7 +22,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, artifacts, submissions, scoring compute, search indexes
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape
-- Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and managed runtime config in `packages/common/src/runtime-families.ts`
+- Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and official scorer config in `packages/common/src/scorer-images.ts` plus `packages/common/src/schemas/execution-template.ts`
 - Challenge type and domain catalogs stay centralized in `packages/common/src/types/challenge.ts`
 - One active contract generation at a time; @agora/chain owns ABI/event details
 - Docker scorer: no network, read-only, non-root; official managed runtimes run with 5–20 min timeouts, base runner fallback is 30 min
@@ -45,7 +45,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 ### Navigation By Extension Point
 
 - New challenge-family defaults: `packages/common/src/challenges/*`
-- New official scorer runtime config: `packages/common/src/runtime-families.ts`
+- New official scorer template/image config: `packages/common/src/scorer-images.ts` and `packages/common/src/schemas/execution-template.ts`
 - Challenge spec parsing and scoreability validation: `packages/common/src/schemas/challenge-spec.ts`
 - Submission artifact contracts: `packages/common/src/schemas/submission-contract.ts`
 - Runtime scorer staging and Docker execution: `packages/scorer/src/pipeline.ts`
@@ -529,10 +529,10 @@ Key properties:
 - **No network access** — container cannot exfiltrate data
 - **Read-only filesystem** — only `/output` is writable
 - **Non-root user** — runs as UID 65532
-- **Mount layout is runtime-family-driven** — official managed runtimes currently use the default `ground_truth.csv` + `submission.csv` layout, and the runtime reads that from `packages/common/src/runtime-families.ts`
-- **Resource limits are per runtime family** — official managed runtimes currently span 512MB–4GB memory, 1–2 CPUs, 64 PIDs, and 5–20 minute timeouts
+- **Mount layout is execution-template-driven** — official table scoring currently uses the default `ground_truth.csv` + `submission.csv` layout, and the runtime reads that from `packages/common/src/schemas/execution-template.ts`
+- **Resource limits are per execution template** — official scorers declare memory, CPU, PID, and timeout defaults in `packages/common/src/schemas/execution-template.ts`
 - **Deterministic** — same input → same score, every time
-- **Fallback timeout** — 30 minutes when no runtime-family override applies
+- **Fallback timeout** — 30 minutes when no execution-template override applies
 
 ---
 
@@ -562,7 +562,7 @@ erDiagram
         timestamp deadline
         int dispute_window_hours
         string spec_cid
-        string runtime_family
+        string evaluation_template
         jsonb evaluation_plan_json
         jsonb artifacts_json
         int winning_on_chain_sub_id
@@ -787,7 +787,7 @@ Projection rules:
 | **Smart Contract** | Stuck escrow | 30-day `timeoutRefund()` on unresolved disputes |
 | **Smart Contract** | Score manipulation | Proof bundle hash on-chain; anyone can verify |
 | **Scoring** | Container escape | `--network=none`, `--read-only`, `--cap-drop=ALL`, non-root |
-| **Scoring** | Resource exhaustion | Per-runtime-family limits (512MB–4GB memory, 1–2 CPUs, 64 PIDs, 5–20 minute timeouts), 30-minute fallback when no runtime-family override applies |
+| **Scoring** | Resource exhaustion | Per-execution-template limits (512MB–4GB memory, 1–2 CPUs, 64 PIDs, 5–20 minute timeouts), 30-minute fallback when no execution-template override applies |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
 | **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |

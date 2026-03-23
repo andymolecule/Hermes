@@ -473,9 +473,10 @@ test("challenge detail parsing requires the canonical artifacts block", async ()
             factory_address: "0x0000000000000000000000000000000000000002",
             factory_challenge_id: 7,
             evaluation: {
-              runtime_family: "reproducibility",
-              metric: "exact_match",
-              scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
+              template: "official_table_metric_v1",
+              metric: "accuracy",
+              comparator: "maximize",
+              scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
             },
             refs: {
               challengeId: "11111111-1111-4111-8111-111111111111",
@@ -529,9 +530,10 @@ test("API client supports protocol-ref challenge and submission lookups", async 
               factory_address: "0x0000000000000000000000000000000000000002",
               factory_challenge_id: 7,
               evaluation: {
-                runtime_family: "reproducibility",
-                metric: "exact_match",
-                scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
+                template: "official_table_metric_v1",
+                metric: "accuracy",
+                comparator: "maximize",
+                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
               },
               refs: {
                 challengeId: "11111111-1111-4111-8111-111111111111",

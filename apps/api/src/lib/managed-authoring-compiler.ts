@@ -3,186 +3,57 @@ import {
   AUTHORING_QUESTION_FIELDS,
   type AuthoringArtifactOutput,
   type ChallengeIntentOutput,
-  lookupManagedRuntimeFamily,
+  deriveComparatorFromMetric,
+  lookupExecutionTemplate,
   readManagedAuthoringRuntimeConfig,
-  validateRuntimeMetric,
+  validateExecutionTemplateMetric,
 } from "@agora/common";
 import { z } from "zod";
 
-export type SupportedRuntimeFamily =
-  | "reproducibility"
-  | "tabular_regression"
-  | "tabular_classification"
-  | "ranking"
-  | "docking";
-
-export interface CompilerArtifactAssignment {
-  artifactIndex: number;
-  role: string;
-  visibility: "public" | "private";
-}
+export type SupportedExecutionTemplate = "official_table_metric_v1";
 
 export interface CompilerProposal {
-  runtimeFamily: SupportedRuntimeFamily;
+  template: SupportedExecutionTemplate;
   metric: string;
+  comparator: "maximize" | "minimize";
+  evaluationArtifactIndex: number;
+  evaluationIdColumn: string;
+  evaluationValueColumn: string;
+  submissionIdColumn: string;
+  submissionValueColumn: string;
   reasonCodes: string[];
   warnings: string[];
-  artifactAssignments?: CompilerArtifactAssignment[];
 }
-
-const supportedRuntimeFamilyIds = [
-  "reproducibility",
-  "tabular_regression",
-  "tabular_classification",
-  "ranking",
-  "docking",
-] as const satisfies readonly SupportedRuntimeFamily[];
 
 const compilerToolResultSchema = z.object({
   outcome: z.enum(["supported", "awaiting_input", "unsupported"]),
-  runtime_family: z.enum(supportedRuntimeFamilyIds).nullable(),
   metric: z.string().trim().min(1).nullable(),
+  evaluation_artifact_index: z.number().int().min(0).nullable(),
+  evaluation_id_column: z.string().trim().min(1).nullable(),
+  evaluation_value_column: z.string().trim().min(1).nullable(),
+  submission_id_column: z.string().trim().min(1).nullable(),
+  submission_value_column: z.string().trim().min(1).nullable(),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   warnings: z.array(z.string().trim().min(1)).default([]),
   missing_fields: z.array(z.enum(AUTHORING_QUESTION_FIELDS)).default([]),
-  artifact_assignments: z
-    .array(
-      z.object({
-        artifact_index: z.number().int().min(0),
-        role: z.string().trim().min(1),
-        visibility: z.enum(["public", "private"]),
-      }),
-    )
-    .default([]),
 });
 
-const RECOVERABLE_UNSUPPORTED_REASON_CODES = new Set([
-  "custom_rubric_scoring",
-  "manual_judging_required",
-  "multi_criteria_evaluation",
-  "no_deterministic_metric",
-  "missing_metric_definition",
-]);
-
-function inferLikelyRuntimeFamily(input: {
-  intent: ChallengeIntentOutput;
-  uploadedArtifacts: AuthoringArtifactOutput[];
-}): SupportedRuntimeFamily | null {
-  const textSignals = [
-    input.intent.title,
-    input.intent.description,
-    input.intent.payout_condition,
-    ...input.intent.tags,
-    ...input.uploadedArtifacts.map((artifact) => artifact.file_name ?? ""),
-    ...input.uploadedArtifacts.flatMap(
-      (artifact) => artifact.detected_columns ?? [],
-    ),
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    /\b(dock|docking|ligand|ligands|pdb|pose|poses|target structure|protein structure|pocket)\b/.test(
-      textSignals,
-    )
-  ) {
-    return "docking";
-  }
-
-  return null;
-}
-
-function buildRecoverableUnsupportedDetails(input: {
-  parsed: z.infer<typeof compilerToolResultSchema>;
-  intent: ChallengeIntentOutput;
-  uploadedArtifacts: AuthoringArtifactOutput[];
-}) {
-  if (input.parsed.outcome !== "unsupported") {
-    return null;
-  }
-  if (
-    !input.parsed.reason_codes.some((code) =>
-      RECOVERABLE_UNSUPPORTED_REASON_CODES.has(code),
-    )
-  ) {
-    return null;
-  }
-
-  const runtimeFamily =
-    input.parsed.runtime_family ??
-    inferLikelyRuntimeFamily({
-      intent: input.intent,
-      uploadedArtifacts: input.uploadedArtifacts,
-    });
-  if (!runtimeFamily) {
-    return null;
-  }
-
-  const missingFields = new Set(input.parsed.missing_fields);
-  const family = lookupManagedRuntimeFamily(runtimeFamily);
-  if (
-    input.parsed.reason_codes.some((code) =>
-      [
-        "custom_rubric_scoring",
-        "manual_judging_required",
-        "multi_criteria_evaluation",
-        "no_deterministic_metric",
-        "missing_metric_definition",
-      ].includes(code),
-    )
-  ) {
-    missingFields.add("payout_condition");
-    missingFields.add("metric");
-  }
-
-  const missingRoles =
-    family?.supportedArtifactRoles.filter(
-      (role) =>
-        !input.parsed.artifact_assignments.some(
-          (assignment) => assignment.role === role,
-        ),
-    ) ?? [];
-  if (missingRoles.length > 0) {
-    missingFields.add("artifact_roles");
-  }
-
-  return {
-    runtimeFamily,
-    missingFields: [...missingFields],
-    missingRoles,
-  };
-}
-
-function buildCompilerCatalog() {
-  return supportedRuntimeFamilyIds.map((runtimeFamilyId) => {
-    const family = lookupManagedRuntimeFamily(runtimeFamilyId);
-    return {
-      id: runtimeFamilyId,
-      display_name: family?.displayName ?? runtimeFamilyId,
-      description: family?.description ?? "",
-      supported_metrics:
-        family?.supportedMetrics.map((metric) => ({
-          id: metric.id,
-          direction: metric.direction,
-          label: metric.label,
-        })) ?? [],
-      supported_artifact_roles: family?.supportedArtifactRoles ?? [],
-      submission_kind: family?.submissionKind ?? null,
-      requires_evaluation_bundle: family?.requiresEvaluationBundle ?? false,
-      default_visibility: family?.defaultVisibility ?? null,
-    };
-  });
-}
-
 function buildSystemPrompt() {
+  const template = lookupExecutionTemplate("official_table_metric_v1");
   return [
-    "You map poster intent and uploaded artifact metadata to one supported Agora Gems scoring family.",
-    "Choose only from the supported runtime catalog.",
-    "Do not invent runtime families, metrics, or artifact roles.",
-    `If the task is still missing required information, return outcome=awaiting_input and choose missing_fields only from: ${AUTHORING_QUESTION_FIELDS.join(", ")}.`,
-    "If the task does not fit any current Gems scorer cleanly, return outcome=unsupported with specific reason codes.",
+    "You convert poster intent and uploaded artifact metadata into one explicit Agora table-scoring contract.",
+    "Do not classify the task into legacy runtime families.",
+    "The only standard execution target is the official table scorer template official_table_metric_v1.",
+    `Supported metrics for this template: ${template?.supportedMetrics
+      .map((metric) => `${metric.id} (${metric.comparator})`)
+      .join(", ")}`,
+    `If the task is missing required information, return outcome=awaiting_input and choose missing_fields only from: ${AUTHORING_QUESTION_FIELDS.join(", ")}.`,
+    "Use evaluation_artifact_index for the one hidden ground-truth table if it is obvious.",
+    "Choose evaluation_id_column and evaluation_value_column from the selected evaluation file's detected columns when possible.",
+    "submission_id_column should usually match evaluation_id_column unless the poster clearly says otherwise.",
+    "submission_value_column is the solver-predicted value column name. If unclear, ask for it.",
+    "Return unsupported only when the challenge fundamentally cannot be reduced to deterministic table scoring under the official table scorer.",
     "Do not produce prose outside the tool result.",
-    `Supported runtime catalog: ${JSON.stringify(buildCompilerCatalog())}`,
   ].join("\n");
 }
 
@@ -204,9 +75,9 @@ function buildUserPayload(input: {
 
 function buildToolDefinition() {
   return {
-    name: "return_managed_authoring_assessment",
+    name: "return_table_execution_assessment",
     description:
-      "Return a machine-readable mapping from challenge intent to a supported Agora Gems scorer.",
+      "Return a machine-readable assessment for the official Agora table scorer path.",
     strict: true,
     input_schema: {
       type: "object",
@@ -216,13 +87,22 @@ function buildToolDefinition() {
           type: "string",
           enum: ["supported", "awaiting_input", "unsupported"],
         },
-        runtime_family: {
-          anyOf: [
-            { type: "string", enum: [...supportedRuntimeFamilyIds] },
-            { type: "null" },
-          ],
-        },
         metric: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+        evaluation_artifact_index: {
+          anyOf: [{ type: "integer" }, { type: "null" }],
+        },
+        evaluation_id_column: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+        evaluation_value_column: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+        submission_id_column: {
+          anyOf: [{ type: "string" }, { type: "null" }],
+        },
+        submission_value_column: {
           anyOf: [{ type: "string" }, { type: "null" }],
         },
         reason_codes: {
@@ -240,33 +120,18 @@ function buildToolDefinition() {
             enum: [...AUTHORING_QUESTION_FIELDS],
           },
         },
-        artifact_assignments: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              // Anthropic's custom tool schema rejects numeric bounds on integer.
-              // Keep transport schema simple and enforce non-negative indexes after parse.
-              artifact_index: { type: "integer" },
-              role: { type: "string" },
-              visibility: {
-                type: "string",
-                enum: ["public", "private"],
-              },
-            },
-            required: ["artifact_index", "role", "visibility"],
-          },
-        },
       },
       required: [
         "outcome",
-        "runtime_family",
         "metric",
+        "evaluation_artifact_index",
+        "evaluation_id_column",
+        "evaluation_value_column",
+        "submission_id_column",
+        "submission_value_column",
         "reason_codes",
         "warnings",
         "missing_fields",
-        "artifact_assignments",
       ],
     },
   };
@@ -297,6 +162,10 @@ function readToolResult(payload: {
     payload.error?.message ??
       "Managed authoring assessor returned an empty response.",
   );
+}
+
+function defaultEvaluationArtifactIndex(uploadedArtifacts: AuthoringArtifactOutput[]) {
+  return uploadedArtifacts.length === 1 ? 0 : null;
 }
 
 export class AnthropicCompilerProvider {
@@ -342,7 +211,7 @@ export class AnthropicCompilerProvider {
             tools: [buildToolDefinition()],
             tool_choice: {
               type: "tool",
-              name: "return_managed_authoring_assessment",
+              name: "return_table_execution_assessment",
             },
           }),
         },
@@ -364,15 +233,10 @@ export class AnthropicCompilerProvider {
         }>;
       };
       const parsed = compilerToolResultSchema.parse(readToolResult(payload));
-      const recoverableUnsupported = buildRecoverableUnsupportedDetails({
-        parsed,
-        intent: input.intent,
-        uploadedArtifacts: input.uploadedArtifacts,
-      });
 
       if (parsed.outcome === "awaiting_input") {
         throw new AgoraError(
-          "Agora needs one or more missing details before it can choose a Gems scorer. Next step: answer the returned questions and resubmit.",
+          "Agora needs one or more missing details before it can finish the table scoring contract. Next step: answer the returned questions and resubmit.",
           {
             code: "MANAGED_COMPILER_NEEDS_INPUT",
             status: 422,
@@ -380,32 +244,14 @@ export class AnthropicCompilerProvider {
               missingFields: parsed.missing_fields,
               reasonCodes: parsed.reason_codes,
               warnings: parsed.warnings,
-              runtimeFamily: parsed.runtime_family,
             },
           },
         );
       }
 
-      if (recoverableUnsupported) {
+      if (parsed.outcome === "unsupported") {
         throw new AgoraError(
-          "Agora recognized a likely Gems scorer family, but it still needs a deterministic metric and the scorer-driving files before it can continue. Next step: answer the returned questions and resubmit.",
-          {
-            code: "MANAGED_COMPILER_NEEDS_INPUT",
-            status: 422,
-            details: {
-              missingFields: recoverableUnsupported.missingFields,
-              missingRoles: recoverableUnsupported.missingRoles,
-              reasonCodes: parsed.reason_codes,
-              warnings: parsed.warnings,
-              runtimeFamily: recoverableUnsupported.runtimeFamily,
-            },
-          },
-        );
-      }
-
-      if (parsed.outcome === "unsupported" || !parsed.runtime_family) {
-        throw new AgoraError(
-          "Agora could not map this challenge to a supported Gems scorer. Next step: make the scoring objective more explicit or switch to a custom scorer path.",
+          "Agora could not reduce this challenge to deterministic table scoring with the official table scorer. Next step: make the scoring objective more explicit or switch to a custom scorer path.",
           {
             code: "MANAGED_COMPILER_UNSUPPORTED",
             status: 422,
@@ -416,62 +262,132 @@ export class AnthropicCompilerProvider {
         );
       }
 
-      if (!parsed.metric) {
+      const metric = parsed.metric;
+      if (!metric) {
         throw new AgoraError(
-          "Agora needs one or more missing details before it can choose the right metric. Next step: answer the returned questions and resubmit.",
+          "Agora still needs the scoring metric before it can continue. Next step: answer the metric question and resubmit.",
           {
             code: "MANAGED_COMPILER_NEEDS_INPUT",
             status: 422,
             details: {
-              missingFields:
-                parsed.missing_fields.length > 0
-                  ? parsed.missing_fields
-                  : ["metric"],
+              missingFields: ["metric"],
               reasonCodes: parsed.reason_codes,
               warnings: parsed.warnings,
-              runtimeFamily: parsed.runtime_family,
+            },
+          },
+        );
+      }
+      const metricError = validateExecutionTemplateMetric(
+        "official_table_metric_v1",
+        metric,
+      );
+      if (metricError) {
+        throw new AgoraError(`${metricError} Next step: choose a supported metric and retry.`, {
+          code: "MANAGED_COMPILER_NEEDS_INPUT",
+          status: 422,
+          details: {
+            missingFields: ["metric"],
+            reasonCodes: parsed.reason_codes,
+            warnings: parsed.warnings,
+          },
+        });
+      }
+
+      const comparator = deriveComparatorFromMetric(
+        "official_table_metric_v1",
+        metric,
+      );
+      if (!comparator) {
+        throw new AgoraError(
+          "Agora could not derive the comparator for the selected metric. Next step: choose a supported metric and retry.",
+          {
+            code: "MANAGED_COMPILER_NEEDS_INPUT",
+            status: 422,
+            details: {
+              missingFields: ["metric"],
+              reasonCodes: parsed.reason_codes,
+              warnings: parsed.warnings,
             },
           },
         );
       }
 
-      const metricError = validateRuntimeMetric(
-        parsed.runtime_family,
-        parsed.metric,
-      );
-      if (metricError) {
-        throw new Error(
-          `${metricError} Next step: choose a supported metric and retry.`,
+      const evaluationArtifactIndex =
+        parsed.evaluation_artifact_index ??
+        defaultEvaluationArtifactIndex(input.uploadedArtifacts);
+      const evaluationIdColumn =
+        parsed.evaluation_id_column ?? null;
+      const evaluationValueColumn =
+        parsed.evaluation_value_column ?? null;
+      const submissionIdColumn =
+        parsed.submission_id_column ?? evaluationIdColumn;
+      const submissionValueColumn =
+        parsed.submission_value_column ?? null;
+
+      const missingFields = new Set<string>();
+      if (evaluationArtifactIndex === null) {
+        missingFields.add("evaluation_artifact");
+      }
+      if (!evaluationIdColumn) {
+        missingFields.add("evaluation_id_column");
+      }
+      if (!evaluationValueColumn) {
+        missingFields.add("evaluation_value_column");
+      }
+      if (!submissionIdColumn) {
+        missingFields.add("submission_id_column");
+      }
+      if (!submissionValueColumn) {
+        missingFields.add("submission_value_column");
+      }
+
+      if (missingFields.size > 0) {
+        throw new AgoraError(
+          "Agora needs a few more scoring-contract fields before it can continue. Next step: answer the returned questions and resubmit.",
+          {
+            code: "MANAGED_COMPILER_NEEDS_INPUT",
+            status: 422,
+            details: {
+              missingFields: [...new Set([...parsed.missing_fields, ...missingFields])] as string[],
+              reasonCodes: parsed.reason_codes,
+              warnings: parsed.warnings,
+            },
+          },
         );
       }
 
-      const family = lookupManagedRuntimeFamily(parsed.runtime_family);
-      for (const assignment of parsed.artifact_assignments) {
-        if (
-          assignment.artifact_index < 0 ||
-          assignment.artifact_index >= input.uploadedArtifacts.length
-        ) {
-          throw new Error(
-            `Managed authoring assessor referenced missing artifact index ${assignment.artifact_index}. Next step: retry the submit request.`,
-          );
-        }
-        if (!family?.supportedArtifactRoles.includes(assignment.role)) {
-          throw new Error(
-            `Managed authoring assessor returned unsupported artifact role ${assignment.role} for ${parsed.runtime_family}. Next step: retry the submit request.`,
-          );
-        }
+      if (
+        evaluationArtifactIndex === null ||
+        !evaluationIdColumn ||
+        !evaluationValueColumn ||
+        !submissionIdColumn ||
+        !submissionValueColumn
+      ) {
+        throw new Error(
+          "Managed authoring assessor returned an incomplete scoring contract after missing-field validation. Next step: retry the submit request.",
+        );
+      }
+
+      if (
+        evaluationArtifactIndex < 0 ||
+        evaluationArtifactIndex >= input.uploadedArtifacts.length
+      ) {
+        throw new Error(
+          `Managed authoring assessor referenced missing artifact index ${evaluationArtifactIndex}. Next step: retry the submit request.`,
+        );
       }
 
       return {
-        runtimeFamily: parsed.runtime_family,
-        metric: parsed.metric,
+        template: "official_table_metric_v1",
+        metric,
+        comparator,
+        evaluationArtifactIndex,
+        evaluationIdColumn,
+        evaluationValueColumn,
+        submissionIdColumn,
+        submissionValueColumn,
         reasonCodes: parsed.reason_codes,
         warnings: parsed.warnings,
-        artifactAssignments: parsed.artifact_assignments.map((assignment) => ({
-          artifactIndex: assignment.artifact_index,
-          role: assignment.role,
-          visibility: assignment.visibility,
-        })),
       };
     } finally {
       clearTimeout(timeout);

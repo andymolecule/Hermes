@@ -3,7 +3,6 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   CHALLENGE_STATUS,
-  EXPERT_RUNTIME_FAMILY_ID,
   type ChallengeEvalRow,
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
@@ -188,7 +187,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("runtime_family, evaluation_plan_json")
+    .select("evaluation_template, evaluation_plan_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {
@@ -200,7 +199,6 @@ async function preflightOfficialScoringImagesForWorker(
   const images = Array.from(
     new Set(
       (data ?? [])
-        .filter((row) => row.runtime_family !== EXPERT_RUNTIME_FAMILY_ID)
         .map((row) => {
           try {
             return resolveChallengeEvaluation(

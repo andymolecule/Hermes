@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildAuthoringQuestions } from "../src/lib/authoring-questions.js";
-import { assignArtifactsFromProposal } from "../src/lib/managed-authoring-artifacts.js";
+import { resolveAuthoringArtifacts } from "../src/lib/managed-authoring-artifacts.js";
 import {
-  compileManagedAuthoringSessionOutcome,
   compileManagedAuthoringSession,
+  compileManagedAuthoringSessionOutcome,
 } from "../src/lib/managed-authoring.js";
 
 const baseIntent = {
@@ -28,13 +28,6 @@ const regressionArtifacts = [
     detected_columns: ["id", "feature_a", "feature_b", "label"],
   },
   {
-    id: "features",
-    uri: "ipfs://bafyeval",
-    file_name: "evaluation_features.csv",
-    mime_type: "text/csv",
-    detected_columns: ["id", "feature_a", "feature_b"],
-  },
-  {
     id: "labels",
     uri: "ipfs://bafylabels",
     file_name: "hidden_labels.csv",
@@ -43,41 +36,25 @@ const regressionArtifacts = [
   },
 ];
 
-const dockingArtifacts = [
+const benchmarkArtifacts = [
   {
-    id: "target",
-    uri: "ipfs://bafytarget",
-    file_name: "target_structure.pdb",
-    mime_type: "chemical/x-pdb",
-  },
-  {
-    id: "ligands",
-    uri: "ipfs://bafyligands",
-    file_name: "ligand_set.csv",
+    id: "candidates",
+    uri: "ipfs://bafycandidates",
+    file_name: "mdm2_candidates.csv",
     mime_type: "text/csv",
-    detected_columns: ["ligand_id", "smiles"],
+    detected_columns: ["peptide_id", "sequence", "constraint_type"],
   },
   {
     id: "reference",
     uri: "ipfs://bafyreference",
-    file_name: "reference_scores.csv",
+    file_name: "mdm2_reference_ranking.csv",
     mime_type: "text/csv",
-    detected_columns: ["ligand_id", "reference_score"],
-  },
-];
-
-const weakDockingArtifacts = [
-  {
-    id: "template",
-    uri: "ipfs://bafytemplate",
-    file_name: "mdm2_submission_template.csv",
-    mime_type: "text/csv",
-    detected_columns: ["ligand_id", "docking_score"],
+    detected_columns: ["peptide_id", "reference_rank"],
   },
   {
-    id: "schema",
-    uri: "ipfs://bafyschema",
-    file_name: "mdm2_submission_schema.md",
+    id: "brief",
+    uri: "ipfs://bafybrief",
+    file_name: "mdm2_benchmark_notes.md",
     mime_type: "text/markdown",
   },
 ];
@@ -140,6 +117,8 @@ async function withCompilerEnv(run: () => Promise<void>) {
 
 function buildRegressionDryRunDependencies() {
   return {
+    resolvePinnedExecutionTemplateImageImpl: async () =>
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
     getTextImpl: async (_uri: string) => "id,label\nrow-1,1.5\nrow-2,2.5\n",
     executeScoringPipelineImpl: async (_input: unknown) => ({
       result: {
@@ -165,10 +144,12 @@ function buildRegressionDryRunDependencies() {
   };
 }
 
-function buildDockingDryRunDependencies() {
+function buildRankingDryRunDependencies() {
   return {
+    resolvePinnedExecutionTemplateImageImpl: async () =>
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
     getTextImpl: async (_uri: string) =>
-      "ligand_id,reference_score\nlig1,-7.3\nlig2,-8.1\n",
+      "peptide_id,reference_rank\npep-1,1\npep-2,2\n",
     executeScoringPipelineImpl: async (_input: unknown) => ({
       result: {
         ok: true,
@@ -178,7 +159,7 @@ function buildDockingDryRunDependencies() {
           selected_metric: "spearman",
         },
         containerImageDigest:
-          "ghcr.io/andymolecule/gems-ranking-scorer@sha256:1234",
+          "ghcr.io/andymolecule/gems-tabular-scorer@sha256:5678",
         log: "",
         outputPath: "/tmp/output/score.json",
       },
@@ -193,7 +174,7 @@ function buildDockingDryRunDependencies() {
   };
 }
 
-test("managed authoring compiles a supported tabular regression challenge", async () => {
+test("managed authoring compiles a supported table regression challenge", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringSession(
       {
@@ -208,37 +189,29 @@ test("managed authoring compiles a supported tabular regression challenge", asyn
         fetchImpl: async () =>
           buildAnthropicToolResponse({
             outcome: "supported",
-            runtime_family: "tabular_regression",
             metric: "rmse",
-            reason_codes: ["matched_tabular_regression"],
+            evaluation_artifact_index: 1,
+            evaluation_id_column: "id",
+            evaluation_value_column: "label",
+            submission_id_column: "id",
+            submission_value_column: "predicted_value",
+            reason_codes: ["matched_table_metric"],
             warnings: [],
             missing_fields: [],
-            artifact_assignments: [
-              {
-                artifact_index: 0,
-                role: "training_data",
-                visibility: "public",
-              },
-              {
-                artifact_index: 1,
-                role: "evaluation_features",
-                visibility: "public",
-              },
-              {
-                artifact_index: 2,
-                role: "hidden_labels",
-                visibility: "private",
-              },
-            ],
           }),
       },
     );
 
-    assert.equal(result.runtime_family, "tabular_regression");
+    assert.equal(result.template, "official_table_metric_v1");
     assert.equal(result.metric, "rmse");
+    assert.equal(result.comparator, "minimize");
+    assert.equal(result.challenge_type, "prediction");
     assert.equal(result.challenge_spec.evaluation.metric, "rmse");
     assert.equal(result.dry_run.status, "validated");
-    assert.match(result.confirmation_contract.dry_run_summary, /normalized score/i);
+    assert.match(
+      result.confirmation_contract.dry_run_summary,
+      /normalized score/i,
+    );
   });
 });
 
@@ -258,28 +231,15 @@ test("managed authoring preserves explicit testnet dispute windows", async () =>
         fetchImpl: async () =>
           buildAnthropicToolResponse({
             outcome: "supported",
-            runtime_family: "tabular_regression",
             metric: "rmse",
-            reason_codes: ["matched_tabular_regression"],
+            evaluation_artifact_index: 1,
+            evaluation_id_column: "id",
+            evaluation_value_column: "label",
+            submission_id_column: "id",
+            submission_value_column: "predicted_value",
+            reason_codes: ["matched_table_metric"],
             warnings: [],
             missing_fields: [],
-            artifact_assignments: [
-              {
-                artifact_index: 0,
-                role: "training_data",
-                visibility: "public",
-              },
-              {
-                artifact_index: 1,
-                role: "evaluation_features",
-                visibility: "public",
-              },
-              {
-                artifact_index: 2,
-                role: "hidden_labels",
-                visibility: "private",
-              },
-            ],
           }),
       },
     );
@@ -288,61 +248,59 @@ test("managed authoring preserves explicit testnet dispute windows", async () =>
   });
 });
 
-test("managed authoring compiles a supported docking challenge", async () => {
+test("managed authoring compiles a supported benchmark-style ranking challenge", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringSession(
       {
         intent: {
           ...baseIntent,
-          title: "Rank ligands against a kinase pocket",
+          title: "MDM2 benchmark ranking challenge",
           description:
-            "We provide a target structure and ligand set. Solvers should predict docking scores and rank ligands by expected binding strength.",
-          payout_condition:
-            "Highest Spearman correlation to the hidden docking scores wins.",
+            "Rank candidate peptides against the hidden benchmark reference ranking.",
+          payout_condition: "Highest Spearman correlation wins.",
           domain: "drug_discovery",
         },
-        uploadedArtifacts: dockingArtifacts,
+        uploadedArtifacts: benchmarkArtifacts,
       },
       {
-        ...buildDockingDryRunDependencies(),
+        ...buildRankingDryRunDependencies(),
         fetchImpl: async () =>
           buildAnthropicToolResponse({
             outcome: "supported",
-            runtime_family: "docking",
             metric: "spearman",
-            reason_codes: ["matched_docking"],
+            evaluation_artifact_index: 1,
+            evaluation_id_column: "peptide_id",
+            evaluation_value_column: "reference_rank",
+            submission_id_column: "peptide_id",
+            submission_value_column: "predicted_score",
+            reason_codes: ["matched_table_metric"],
             warnings: [],
             missing_fields: [],
-            artifact_assignments: [
-              {
-                artifact_index: 0,
-                role: "target_structure",
-                visibility: "public",
-              },
-              {
-                artifact_index: 1,
-                role: "ligand_library",
-                visibility: "public",
-              },
-              {
-                artifact_index: 2,
-                role: "reference_scores",
-                visibility: "private",
-              },
-            ],
           }),
       },
     );
 
-    assert.equal(result.challenge_type, "docking");
-    assert.equal(result.runtime_family, "docking");
+    assert.equal(result.template, "official_table_metric_v1");
     assert.equal(result.metric, "spearman");
-    assert.equal(result.challenge_spec.type, "docking");
-    assert.equal(result.resolved_artifacts[2]?.role, "reference_scores");
+    assert.equal(result.comparator, "maximize");
+    assert.equal(
+      result.execution_contract.evaluation_columns.id,
+      "peptide_id",
+    );
+    assert.equal(
+      result.execution_contract.evaluation_columns.value,
+      "reference_rank",
+    );
+    assert.equal(
+      result.execution_contract.submission_columns.value,
+      "predicted_score",
+    );
+    assert.equal(result.resolved_artifacts[1]?.role, "hidden_evaluation");
+    assert.equal(result.resolved_artifacts[2]?.role, "supporting_context");
   });
 });
 
-test("managed authoring returns canonical questions when Anthropic needs more input", async () => {
+test("managed authoring returns canonical questions when the assessor needs more input", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringSessionOutcome(
       {
@@ -356,25 +314,27 @@ test("managed authoring returns canonical questions when Anthropic needs more in
         fetchImpl: async () =>
           buildAnthropicToolResponse({
             outcome: "awaiting_input",
-            runtime_family: null,
             metric: null,
+            evaluation_artifact_index: null,
+            evaluation_id_column: null,
+            evaluation_value_column: null,
+            submission_id_column: null,
+            submission_value_column: null,
             reason_codes: ["missing_metric_definition"],
             warnings: [],
-            missing_fields: ["payout_condition"],
-            artifact_assignments: [],
+            missing_fields: ["metric"],
           }),
       },
     );
 
     assert.equal(result.state, "awaiting_input");
     assert.equal(result.questions?.length, 1);
-    assert.equal(result.questions?.[0]?.id, "winning-definition");
-    assert.equal(result.questions?.[0]?.field, "payout_condition");
+    assert.equal(result.questions?.[0]?.id, "scoring-metric");
+    assert.equal(result.questions?.[0]?.field, "metric");
     assert.match(
       result.questions?.[0]?.prompt ?? "",
-      /deterministic scoring rule/i,
+      /official table scorer/i,
     );
-    assert.match(result.questions?.[0]?.why ?? "", /not a subjective rubric/i);
     assert.equal(
       result.authoringIr.evaluation.compile_error_codes[0],
       "MANAGED_COMPILER_NEEDS_INPUT",
@@ -382,12 +342,10 @@ test("managed authoring returns canonical questions when Anthropic needs more in
   });
 });
 
-test("authoring questions make reward, deadline, and artifact-role requirements explicit", () => {
+test("authoring questions make reward, deadline, and evaluation-file requirements explicit", () => {
   const questions = buildAuthoringQuestions({
-    missingFields: ["reward_total", "deadline", "artifact_roles"],
-    uploadedArtifacts: dockingArtifacts,
-    runtimeFamily: "docking",
-    missingArtifactRoles: ["target_structure", "reference_scores"],
+    missingFields: ["reward_total", "deadline", "evaluation_artifact"],
+    uploadedArtifacts: benchmarkArtifacts,
     reasonCodes: ["reward_unclear", "deadline_unclear", "missing_artifacts"],
   });
 
@@ -395,95 +353,39 @@ test("authoring questions make reward, deadline, and artifact-role requirements 
   assert.match(questions[0]?.prompt ?? "", /1-30 USDC/i);
   assert.equal(questions[1]?.field, "deadline");
   assert.match(questions[1]?.prompt ?? "", /exact timestamp/i);
-  assert.equal(questions[2]?.field, "artifact_roles");
-  assert.match(questions[2]?.prompt ?? "", /target structure/i);
-  assert.match(questions[2]?.prompt ?? "", /reference scores/i);
-  assert.match(questions[2]?.prompt ?? "", /upload any missing scorer files first/i);
-  assert.match(questions[2]?.why ?? "", /before it can continue/i);
+  assert.equal(questions[2]?.field, "evaluation_artifact");
+  assert.match(questions[2]?.prompt ?? "", /hidden evaluation table/i);
+  assert.match(questions[2]?.why ?? "", /ground-truth table/i);
 });
 
-test("managed authoring keeps docking-like subjective drafts in awaiting_input instead of rejecting immediately", async () => {
-  await withCompilerEnv(async () => {
-    const result = await compileManagedAuthoringSessionOutcome(
-      {
-        intent: {
-          ...baseIntent,
-          title: "MDM2 peptide docking challenge with ranked constrained designs",
-          description:
-            "MDM2 peptide docking challenge with ranked constrained designs.",
-          payout_condition:
-            "Winner is the eligible submission with the highest total score under a weighted rubric for reproducibility, mechanistic consistency, and validation plan.",
-          domain: "drug_discovery",
-        },
-        uploadedArtifacts: weakDockingArtifacts,
-      },
-      {
-        fetchImpl: async () =>
-          buildAnthropicToolResponse({
-            outcome: "unsupported",
-            runtime_family: null,
-            metric: null,
-            reason_codes: [
-              "custom_rubric_scoring",
-              "manual_judging_required",
-              "multi_criteria_evaluation",
-              "no_deterministic_metric",
-            ],
-            warnings: [],
-            missing_fields: [],
-            artifact_assignments: [],
-          }),
-      },
-    );
-
-    assert.equal(result.state, "awaiting_input");
-    assert.equal(result.authoringIr.evaluation.runtime_family, "docking");
-    assert.deepEqual(
-      result.questions?.map((question) => question.field),
-      ["payout_condition", "metric", "artifact_roles"],
-    );
-    assert.match(
-      result.questions?.[2]?.prompt ?? "",
-      /target structure|ligand library|reference scores/i,
-    );
-  });
-});
-
-test("managed artifact assignment infers obvious ranking files from filenames", () => {
-  const resolved = assignArtifactsFromProposal({
-    runtimeFamily: "ranking",
-    uploadedArtifacts: [
-      {
-        id: "candidates",
-        uri: "ipfs://candidates",
-        file_name: "mdm2_candidates.csv",
-        mime_type: "text/csv",
-        detected_columns: ["ligand_id", "sequence"],
-      },
-      {
-        id: "reference",
-        uri: "ipfs://reference",
-        file_name: "mdm2_reference_ranking.csv",
-        mime_type: "text/csv",
-        detected_columns: ["ligand_id", "rank"],
-      },
-      {
-        id: "schema",
-        uri: "ipfs://schema",
-        file_name: "mdm2_benchmark_submission_schema.md",
-        mime_type: "text/markdown",
-      },
-    ],
-    artifactAssignments: [],
+test("managed artifact resolution builds the explicit table execution contract", () => {
+  const resolved = resolveAuthoringArtifacts({
+    uploadedArtifacts: benchmarkArtifacts,
+    evaluationArtifactId: "reference",
+    evaluationIdColumn: "peptide_id",
+    evaluationValueColumn: "reference_rank",
+    submissionIdColumn: "peptide_id",
+    submissionValueColumn: "predicted_score",
+    metric: "spearman",
+    comparator: "maximize",
+    template: "official_table_metric_v1",
+    scorerImage: "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:test",
   });
 
-  assert.ok(resolved);
-  assert.equal(resolved?.resolvedArtifacts[0]?.role, "ranking_inputs");
-  assert.equal(resolved?.resolvedArtifacts[0]?.file_name, "mdm2_candidates.csv");
-  assert.equal(resolved?.resolvedArtifacts[1]?.role, "reference_ranking");
+  assert.equal(resolved.resolvedArtifacts[0]?.role, "supporting_context");
+  assert.equal(resolved.resolvedArtifacts[1]?.role, "hidden_evaluation");
+  assert.equal(resolved.resolvedArtifacts[1]?.visibility, "private");
   assert.equal(
-    resolved?.resolvedArtifacts[1]?.file_name,
-    "mdm2_reference_ranking.csv",
+    resolved.executionContract.evaluation_columns.id,
+    "peptide_id",
+  );
+  assert.equal(
+    resolved.executionContract.evaluation_columns.value,
+    "reference_rank",
+  );
+  assert.equal(
+    resolved.executionContract.submission_columns.value,
+    "predicted_score",
   );
 });
 
@@ -507,12 +409,15 @@ test("managed authoring Anthropic tool schema avoids unsupported integer bounds"
           >;
           return buildAnthropicToolResponse({
             outcome: "awaiting_input",
-            runtime_family: null,
             metric: null,
+            evaluation_artifact_index: null,
+            evaluation_id_column: null,
+            evaluation_value_column: null,
+            submission_id_column: null,
+            submission_value_column: null,
             reason_codes: ["missing_metric_definition"],
             warnings: [],
-            missing_fields: ["payout_condition"],
-            artifact_assignments: [],
+            missing_fields: ["metric"],
           });
         },
       },
@@ -523,25 +428,18 @@ test("managed authoring Anthropic tool schema avoids unsupported integer bounds"
     const tool = tools[0] as {
       input_schema?: {
         properties?: {
-          artifact_assignments?: {
-            items?: {
-              properties?: {
-                artifact_index?: Record<string, unknown>;
-              };
-            };
-          };
+          evaluation_artifact_index?: Record<string, unknown>;
         };
       };
     };
-    const artifactIndexSchema =
-      tool.input_schema?.properties?.artifact_assignments?.items?.properties
-        ?.artifact_index;
 
-    assert.deepEqual(artifactIndexSchema, { type: "integer" });
+    assert.deepEqual(tool.input_schema?.properties?.evaluation_artifact_index, {
+      anyOf: [{ type: "integer" }, { type: "null" }],
+    });
   });
 });
 
-test("managed authoring fails cleanly when no supported Gems scorer fits", async () => {
+test("managed authoring fails cleanly when no supported table scorer fits", async () => {
   await withCompilerEnv(async () => {
     const result = await compileManagedAuthoringSessionOutcome(
       {
@@ -558,12 +456,15 @@ test("managed authoring fails cleanly when no supported Gems scorer fits", async
         fetchImpl: async () =>
           buildAnthropicToolResponse({
             outcome: "unsupported",
-            runtime_family: null,
             metric: null,
-            reason_codes: ["no_supported_runtime_fit"],
+            evaluation_artifact_index: null,
+            evaluation_id_column: null,
+            evaluation_value_column: null,
+            submission_id_column: null,
+            submission_value_column: null,
+            reason_codes: ["not_table_scoreable"],
             warnings: [],
             missing_fields: [],
-            artifact_assignments: [],
           }),
       },
     );
@@ -571,7 +472,7 @@ test("managed authoring fails cleanly when no supported Gems scorer fits", async
     assert.equal(result.state, "rejected");
     assert.equal(
       result.authoringIr.evaluation.rejection_reasons[0],
-      "no_supported_runtime_fit",
+      "not_table_scoreable",
     );
   });
 });

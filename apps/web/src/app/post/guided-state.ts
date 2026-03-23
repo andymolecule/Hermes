@@ -903,7 +903,11 @@ export function questionPromptTargetFromQuestions(
         return "distribution";
       case "deadline":
         return "deadline";
-      case "artifact_roles":
+      case "evaluation_artifact":
+      case "evaluation_id_column":
+      case "evaluation_value_column":
+      case "submission_id_column":
+      case "submission_value_column":
         return "uploads";
       default:
         return "problem";

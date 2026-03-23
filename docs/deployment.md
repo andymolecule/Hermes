@@ -59,7 +59,7 @@ Notes:
 
 - `pnpm scorers:verify` requires a running Docker daemon.
 - It verifies the production invariant, not just digest resolution: official scorer images must be anonymously resolvable from GHCR and anonymously pullable with Docker.
-- The shipped official runtime-family catalog is intentionally narrow: `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, and `ranking`. Placeholder families should not be reintroduced unless a real published scorer artifact exists for them.
+- The shipped official execution-template catalog is intentionally narrow. Today the primary template is `official_table_metric_v1`; do not add placeholder templates unless a real published scorer artifact exists for them.
 - This repo now ships a single rebased Supabase baseline. Reset the schema and apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql) instead of attempting an incremental migration chain.
 
 Railway deployment checks before production cutover:

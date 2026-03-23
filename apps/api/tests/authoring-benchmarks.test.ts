@@ -8,32 +8,6 @@ import {
 
 const benchmarkCases = loadAuthoringBenchmarkCases();
 
-function findArtifactInvariant(
-  benchmarkId: string,
-  fileName: string | null | undefined,
-  artifactRoles: Array<{
-    file_name: string;
-    role: string;
-    visibility: "public" | "private";
-  }>,
-) {
-  if (!fileName) {
-    throw new Error(
-      `Benchmark ${benchmarkId} resolved an artifact without a file name.`,
-    );
-  }
-
-  const invariant = artifactRoles.find(
-    (artifact) => artifact.file_name === fileName,
-  );
-  if (!invariant) {
-    throw new Error(
-      `Benchmark ${benchmarkId} is missing compile invariants for ${fileName}.`,
-    );
-  }
-  return invariant;
-}
-
 for (const benchmarkCase of benchmarkCases) {
   const benchmarkLabel = `${benchmarkCase.benchmark.id}/${benchmarkCase.variantId}`;
 
@@ -109,19 +83,12 @@ for (const benchmarkCase of benchmarkCases) {
       }
 
       assert.equal(
-        result.compilation.runtime_family,
-        benchmarkCase.benchmark.compile_invariants.runtime_family,
+        result.compilation.template,
+        "official_table_metric_v1",
       );
       assert.equal(
         result.compilation.metric,
         benchmarkCase.benchmark.compile_invariants.metric,
-      );
-      assert.equal(
-        benchmarkCase.benchmark.disallowed_outcomes.runtime_families.includes(
-          result.compilation.runtime_family,
-        ),
-        false,
-        `${benchmarkLabel} should not route to a disallowed runtime family`,
       );
 
       const challengeType =
@@ -130,24 +97,20 @@ for (const benchmarkCase of benchmarkCases) {
         assert.equal(result.compilation.challenge_type, challengeType);
       }
 
-      const evaluatorArchetype =
-        benchmarkCase.benchmark.compile_invariants.evaluator_archetype;
-      if (evaluatorArchetype) {
-        assert.equal(
-          result.compilation.challenge_spec.evaluation.evaluator_contract
-            ?.archetype ?? null,
-          evaluatorArchetype ?? null,
-        );
-      }
-
-      for (const resolvedArtifact of result.compilation.resolved_artifacts) {
-        const invariant = findArtifactInvariant(
-          benchmarkCase.benchmark.id,
-          resolvedArtifact.file_name,
-          benchmarkCase.benchmark.compile_invariants.artifact_roles,
-        );
-        assert.equal(resolvedArtifact.role, invariant.role);
-        assert.equal(resolvedArtifact.visibility, invariant.visibility);
+      const hiddenArtifacts = result.compilation.resolved_artifacts.filter(
+        (artifact) => artifact.visibility === "private",
+      );
+      const visibleArtifacts = result.compilation.resolved_artifacts.filter(
+        (artifact) => artifact.visibility === "public",
+      );
+      assert.equal(
+        hiddenArtifacts.length,
+        1,
+        `${benchmarkLabel} should resolve exactly one hidden evaluation artifact`,
+      );
+      assert.equal(hiddenArtifacts[0]?.role, "hidden_evaluation");
+      for (const artifact of visibleArtifacts) {
+        assert.equal(artifact.role, "supporting_context");
       }
 
       const submissionContract =

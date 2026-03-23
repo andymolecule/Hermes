@@ -1,13 +1,14 @@
 import {
-  EXPERT_RUNTIME_FAMILY_ID,
-  SEMI_CUSTOM_RUNTIME_FAMILY_ID,
-  resolveManagedScorerImage,
-} from "../runtime-families.js";
-import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
+  type ExecutionComparatorOutput,
+  type ExecutionTemplateIdOutput,
+  deriveComparatorFromMetric,
+  resolveExecutionTemplateImage,
+} from "../schemas/execution-template.js";
+import { createResolvedTableExecutionContract } from "../schemas/execution-contract.js";
 import {
+  type CsvTableSubmissionContract,
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
-  createOpaqueFileSubmissionContract,
 } from "../schemas/submission-contract.js";
 import type {
   ChallengeArtifact,
@@ -23,10 +24,11 @@ export interface ChallengeTypeTemplate {
   description: string;
   defaultDomain: ChallengeDomain;
   defaultMetric: string;
-  defaultRuntimeFamily: string;
-  defaultScorerImage: string;
+  defaultTemplate: ExecutionTemplateIdOutput;
   defaultMinimumScore: number;
 }
+
+const DEFAULT_TEMPLATE: ExecutionTemplateIdOutput = "official_table_metric_v1";
 
 const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
   prediction: {
@@ -36,8 +38,7 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers predict held-out outcomes from a labeled training dataset.",
     defaultDomain: "omics",
     defaultMetric: "r2",
-    defaultRuntimeFamily: "tabular_regression",
-    defaultScorerImage: resolveManagedScorerImage("tabular_regression") ?? "",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   reproducibility: {
@@ -46,9 +47,8 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description:
       "Solvers reproduce a posted reference artifact from shared source data.",
     defaultDomain: "other",
-    defaultMetric: "exact_match",
-    defaultRuntimeFamily: "reproducibility",
-    defaultScorerImage: resolveManagedScorerImage("reproducibility") ?? "",
+    defaultMetric: "accuracy",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   docking: {
@@ -57,8 +57,7 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Solvers rank candidates against a target-specific benchmark.",
     defaultDomain: "drug_discovery",
     defaultMetric: "spearman",
-    defaultRuntimeFamily: "docking",
-    defaultScorerImage: resolveManagedScorerImage("docking") ?? "",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   optimization: {
@@ -66,9 +65,8 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     label: "Optimization",
     description: "Solvers search a space while Agora scores the result.",
     defaultDomain: "drug_discovery",
-    defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
-    defaultScorerImage: "",
+    defaultMetric: "spearman",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   red_team: {
@@ -77,19 +75,18 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description:
       "Solvers submit adversarial inputs against a target model or claim.",
     defaultDomain: "other",
-    defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
-    defaultScorerImage: "",
+    defaultMetric: "accuracy",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   custom: {
     type: "custom",
     label: "Custom",
-    description: "Bring your own scorer image, rules, and artifact contract.",
+    description:
+      "Poster-defined table scoring under the official Agora table scorer.",
     defaultDomain: "other",
-    defaultMetric: "custom",
-    defaultRuntimeFamily: EXPERT_RUNTIME_FAMILY_ID,
-    defaultScorerImage: "",
+    defaultMetric: "spearman",
+    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
 };
@@ -100,110 +97,47 @@ export function getChallengeTypeTemplate(
   return TYPE_TEMPLATE_REGISTRY[challengeType];
 }
 
-export function defaultRuntimeFamilyForChallengeType(
-  challengeType: ChallengeType,
-): string {
-  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultRuntimeFamily;
-}
-
 export function defaultMinimumScoreForChallengeType(
   challengeType: ChallengeType,
 ): number {
   return TYPE_TEMPLATE_REGISTRY[challengeType].defaultMinimumScore;
 }
 
-export function getChallengeCompatibilityType(input: {
-  runtimeFamily: string;
-  evaluatorContract?: SemiCustomEvaluatorContractOutput | null;
+export function getChallengeCompatibilityType(_input: {
+  template?: string;
+  metric?: string;
 }): ChallengeType {
-  switch (input.runtimeFamily) {
-    case "reproducibility":
-      return "reproducibility";
-    case "tabular_regression":
-    case "tabular_classification":
-      return "prediction";
-    case "docking":
-      return "docking";
-    case "ranking":
-      return "optimization";
-    case SEMI_CUSTOM_RUNTIME_FAMILY_ID:
-    case EXPERT_RUNTIME_FAMILY_ID:
-      return "custom";
-    default:
-      return "custom";
-  }
+  return "custom";
 }
 
 export function getChallengeCompatibilityTypeFromEvaluation(
-  evaluation: Pick<
-    ChallengeEvaluation,
-    "runtime_family" | "evaluator_contract"
-  >,
+  _evaluation: Pick<ChallengeEvaluation, "template" | "metric">,
 ): ChallengeType {
-  return getChallengeCompatibilityType({
-    runtimeFamily: evaluation.runtime_family,
-    evaluatorContract: evaluation.evaluator_contract ?? null,
-  });
+  return "custom";
 }
 
 export function defaultMinimumScoreForEvaluation(
-  evaluation: Pick<
-    ChallengeEvaluation,
-    "runtime_family" | "evaluator_contract"
-  >,
+  _evaluation: Pick<ChallengeEvaluation, "template" | "metric">,
 ): number {
-  return defaultMinimumScoreForChallengeType(
-    getChallengeCompatibilityTypeFromEvaluation(evaluation),
-  );
+  return 0;
 }
 
-export type ChallengeSubmissionContractDraftInput =
-  | {
-      type: "prediction";
-      idColumn: string;
-      valueColumn: string;
-    }
-  | {
-      type: "reproducibility";
-      requiredColumns: string[];
-    }
-  | {
-      type: "docking";
-    }
-  | {
-      type: "optimization" | "red_team" | "custom";
-      extension?: string;
-      mime?: string;
-    };
+export type ChallengeSubmissionContractDraftInput = {
+  type: ChallengeType;
+  idColumn: string;
+  valueColumn: string;
+  requiredColumns?: string[];
+};
 
 export function buildSubmissionContractForChallengeType(
   input: ChallengeSubmissionContractDraftInput,
 ): SubmissionContractOutput {
-  switch (input.type) {
-    case "prediction":
-      return createCsvTableSubmissionContract({
-        requiredColumns: [input.idColumn, input.valueColumn].filter(Boolean),
-        idColumn: input.idColumn || undefined,
-        valueColumn: input.valueColumn || undefined,
-      });
-    case "reproducibility":
-      return createCsvTableSubmissionContract({
-        requiredColumns: input.requiredColumns,
-      });
-    case "docking":
-      return createCsvTableSubmissionContract({
-        requiredColumns: ["ligand_id", "docking_score"],
-        idColumn: "ligand_id",
-        valueColumn: "docking_score",
-      });
-    case "optimization":
-    case "red_team":
-    case "custom":
-      return createOpaqueFileSubmissionContract({
-        extension: input.extension,
-        mime: input.mime,
-      });
-  }
+  return createCsvTableSubmissionContract({
+    requiredColumns:
+      input.requiredColumns ?? [input.idColumn, input.valueColumn].filter(Boolean),
+    idColumn: input.idColumn || undefined,
+    valueColumn: input.valueColumn || undefined,
+  });
 }
 
 export interface ChallengeSpecCandidateInput {
@@ -213,9 +147,10 @@ export interface ChallengeSpecCandidateInput {
   type: ChallengeType;
   description: string;
   artifacts: ChallengeArtifact[];
-  runtimeFamily?: string;
+  template?: ExecutionTemplateIdOutput;
   scorerImage?: string;
   metric?: string;
+  comparator?: ExecutionComparatorOutput;
   reward: {
     total: string;
     distribution: ChallengeSpec["reward"]["distribution"];
@@ -226,24 +161,32 @@ export interface ChallengeSpecCandidateInput {
   disputeWindowHours?: number;
   tags?: string[];
   labTba?: string;
-  evaluationBundle?: string;
-  evaluatorContract?: SemiCustomEvaluatorContractOutput;
+  evaluationArtifactUri?: string;
+  visibleArtifactUris?: string[];
 }
 
 export function buildChallengeSpecCandidate(
   input: ChallengeSpecCandidateInput,
 ): ChallengeSpec {
-  const template = getChallengeTypeTemplate(input.type);
-  const runtimeFamily =
-    input.runtimeFamily?.trim() || template.defaultRuntimeFamily;
+  const template = input.template ?? DEFAULT_TEMPLATE;
+  const challengeTemplate = getChallengeTypeTemplate(input.type);
+  const metric = input.metric?.trim() || challengeTemplate.defaultMetric;
+  const comparator =
+    input.comparator ?? deriveComparatorFromMetric(template, metric) ?? "maximize";
   const scorerImage =
-    input.scorerImage?.trim() ||
-    (runtimeFamily === EXPERT_RUNTIME_FAMILY_ID
-      ? ""
-      : runtimeFamily === SEMI_CUSTOM_RUNTIME_FAMILY_ID
-        ? null
-        : (resolveManagedScorerImage(runtimeFamily) ??
-          template.defaultScorerImage));
+    input.scorerImage?.trim() || resolveExecutionTemplateImage(template) || "";
+  const submissionContract = buildSubmissionContractForChallengeType(
+    input.submission,
+  ) as CsvTableSubmissionContract;
+  const evaluationArtifactUri =
+    input.evaluationArtifactUri ??
+    input.artifacts.find((artifact) => artifact.visibility === "private")?.uri ??
+    "";
+  const visibleArtifactUris =
+    input.visibleArtifactUris ??
+    input.artifacts
+      .filter((artifact) => artifact.visibility === "public")
+      .map((artifact) => artifact.uri);
 
   return {
     schema_version: 3,
@@ -253,20 +196,35 @@ export function buildChallengeSpecCandidate(
     type: input.type,
     description: input.description,
     evaluation: {
-      runtime_family: runtimeFamily,
-      metric: input.metric?.trim() || template.defaultMetric,
-      ...(scorerImage ? { scorer_image: scorerImage } : {}),
-      ...(input.evaluationBundle
-        ? { evaluation_bundle: input.evaluationBundle }
-        : {}),
-      ...(input.evaluatorContract
-        ? { evaluator_contract: input.evaluatorContract }
-        : {}),
+      template,
+      metric,
+      comparator,
+      scorer_image: scorerImage,
+      execution_contract: createResolvedTableExecutionContract({
+        template,
+        scorerImage,
+        metric,
+        comparator,
+        evaluationArtifactUri,
+        evaluationColumns: {
+          required: [input.submission.idColumn, input.submission.valueColumn].filter(
+            Boolean,
+          ),
+          id: input.submission.idColumn,
+          value: input.submission.valueColumn,
+          allow_extra: true,
+        },
+        submissionColumns: {
+          required: submissionContract.columns.required,
+          id: submissionContract.columns.id ?? input.submission.idColumn,
+          value: submissionContract.columns.value ?? input.submission.valueColumn,
+          allow_extra: submissionContract.columns.allow_extra,
+        },
+        visibleArtifactUris,
+      }),
     },
     artifacts: input.artifacts,
-    submission_contract: buildSubmissionContractForChallengeType(
-      input.submission,
-    ),
+    submission_contract: submissionContract,
     reward: {
       total: input.reward.total,
       distribution: input.reward.distribution,

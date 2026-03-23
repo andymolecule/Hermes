@@ -264,9 +264,9 @@ Public names in this table are permanent. Internal names can change freely.
 | Gate | Layer | What it checks |
 |------|-------|---------------|
 | Spec built | Layer 3 | Challenge YAML compiles from the IR without errors |
-| Runtime selected | Layer 3 | A valid runtime family + scorer image is resolved |
-| Artifact roles resolved | Layer 3 | All required artifact roles for the runtime are assigned to uploaded artifacts |
-| Dry-run validated + scoreability passed | Layer 3 | `validateChallengeScoreability()` passes against the resolved runtime |
+| Execution template resolved | Layer 3 | A valid official scorer template + scorer image is resolved |
+| Evaluation binding resolved | Layer 3 | The hidden evaluation artifact and required column mappings are fully resolved |
+| Dry-run validated + scoreability passed | Layer 3 | `validateChallengeScoreability()` passes against the resolved execution contract |
 
 ### 1.9 Layer Definitions
 
@@ -737,9 +737,9 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q56 | Where should question explanations live in the canonical response? | Prevents the contract from duplicating the same explanation in both question objects and a separate top-level field | Prefer one source of truth per question | `LOCKED: question explanations live only in each question object's reason field; there is no separate top-level reasoning field` |
 | Q57 | What exact top-level fields belong in the canonical full session object? | Defines the complete field set external callers may depend on across single-session operations | Prefer one explicit stable field set | `LOCKED: the canonical full session object contains exactly id, state, creator, summary, questions, blocked_by, checklist, compilation, artifacts, provenance, challenge_id, contract_address, spec_cid, tx_hash, created_at, updated_at, and expires_at` |
 | Q58 | Should compilation expose scoring direction explicitly? | Prevents callers and solvers from inferring score direction from metric names | Prefer an explicit objective field | `LOCKED: compilation includes explicit objective alongside metric, using objective = "maximize" | "minimize"` |
-| Q59 | Should compilation expose the exact immutable scorer image? | Determines whether callers and solvers can inspect the concrete scoring runtime rather than relying on a high-level runtime family label | Prefer explicit immutable image refs for transparency | `LOCKED: compilation includes scorer_image as an immutable image reference, e.g. ghcr.io/...@sha256:...` |
+| Q59 | Should compilation expose the exact immutable scorer image? | Determines whether callers and solvers can inspect the concrete scoring runtime rather than relying on a high-level template label | Prefer explicit immutable image refs for transparency | `LOCKED: compilation includes scorer_image as an immutable image reference, e.g. ghcr.io/...@sha256:...` |
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
-| Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly runtime_family, metric, objective, scorer_image, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data such as evaluation bundles stay out of the public contract` |
+| Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_columns, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data contents stay out of the public contract` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
 | Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, or unsupported_task. Specific details belong in message and next_action, not in a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/respond/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
@@ -747,7 +747,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q66 | What is the exact bundled agent registration contract? | Prevents agent onboarding and key rotation from drifting across partial auth decisions and removes ambiguity about optional metadata at the registration boundary | Prefer one minimal required field with optional profile metadata | `LOCKED: POST /api/agents/register accepts telegram_bot_id as the only required field and may also accept optional agent_name and description. It returns exactly agent_id, api_key, and status, where status is created or rotated. The response shape is the same whether optional metadata is provided or not` |
 | Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer one narrow conversational exception instead of broad wrapper drift | `LOCKED: single-resource success responses return the bare resource object directly, except POST /api/authoring/sessions and POST /api/authoring/sessions/:id/respond. Those two conversational endpoints return { "session": SessionSchema, "assistant_message": string }. Collection success responses wrap the collection, e.g. { "sessions": [...] }` |
 | Q68 | How narrow should the public submission_contract schema be in v1? | Prevents speculative generic abstractions from leaking into the solver-facing contract before Agora actually supports more submission kinds | Prefer a current-scope schema only | `LOCKED: submission_contract stays narrow and explicit for the current scoped design. It contains version, kind, extension, mime, max_bytes, and columns. kind refers to the concrete submission kind Agora supports now, not a speculative future abstraction` |
-| Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, runtime_family, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation` |
+| Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, template, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation` |
 | Q70 | How should wallet-funded web publish work when the signer lives in the browser? | Prevents the contract from pretending the server can complete a browser-wallet transaction and keeps sponsor vs wallet publish paths explicit | Prefer one publish URL with funding-dependent behavior plus one confirm step | `LOCKED: POST /sessions/:id/publish remains the single publish URL. funding = sponsor performs one-call publish and returns SessionSchema. funding = wallet prepares the browser transaction, keeps the session in ready, and returns a wallet publish preparation object. POST /sessions/:id/confirm-publish then validates the wallet tx_hash and transitions the session to published` |
 | Q71 | How should Layer 2's natural-language turn surface in the public contract? | Prevents chat surfaces from reverse-engineering structured questions into a fake conversation and keeps Layer 2 output explicit without exposing internal history | Prefer a narrow create/respond-only assistant turn | `LOCKED: create/respond success responses include required assistant_message generated by Layer 2. GET/list/publish endpoints remain pure structured state and do not include assistant_message. Public turn history remains out of scope` |
 
@@ -893,10 +893,17 @@ const RewardSchema = z.object({
 });
 
 const CompilationSchema = z.object({
-  runtime_family: z.string().min(1),
+  template: z.string().min(1),
   metric: z.string().min(1),
   objective: ObjectiveSchema,
   scorer_image: z.string().min(1),
+  evaluation_artifact_uri: z.string().min(1),
+  evaluation_columns: z.object({
+    required: z.array(z.string().min(1)).min(1),
+    id: z.string().min(1),
+    value: z.string().min(1),
+    allow_extra: z.boolean(),
+  }),
   submission_contract: SubmissionContractSchema,
   resource_limits: ResourceLimitsSchema,
   reward: RewardSchema,
@@ -912,7 +919,7 @@ const ChecklistSchema = z.object({
   reward: z.string().min(1),
   distribution: z.string().min(1),
   deadline: z.string().datetime(),
-  runtime_family: z.string().min(1),
+  template: z.string().min(1),
   metric: z.string().min(1),
   objective: ObjectiveSchema,
   artifacts_count: z.number().int().nonnegative(),
@@ -1202,16 +1209,23 @@ Example success response:
     "reward": "500 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
-    "runtime_family": "docking",
+    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
     "artifacts_count": 3
   },
   "compilation": {
-    "runtime_family": "docking",
+    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:abc123",
+    "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
+    "evaluation_artifact_uri": "ipfs://QmReferenceScores",
+    "evaluation_columns": {
+      "required": ["ligand_id", "reference_score"],
+      "id": "ligand_id",
+      "value": "reference_score",
+      "allow_extra": true
+    },
     "submission_contract": {
       "version": "v1",
       "kind": "csv_table",
@@ -1341,16 +1355,23 @@ Example success response:
       "reward": "500 USDC",
       "distribution": "winner_take_all",
       "deadline": "2026-04-01T23:59:59Z",
-      "runtime_family": "docking",
+      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
       "artifacts_count": 3
     },
     "compilation": {
-      "runtime_family": "docking",
+      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
-      "scorer_image": "ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:abc123",
+      "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
+      "evaluation_artifact_uri": "ipfs://QmReferenceScores",
+      "evaluation_columns": {
+        "required": ["ligand_id", "reference_score"],
+        "id": "ligand_id",
+        "value": "reference_score",
+        "allow_extra": true
+      },
       "submission_contract": {
         "version": "v1",
         "kind": "csv_table",
@@ -1525,16 +1546,23 @@ Sponsor-funded example success response:
     "reward": "500 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
-    "runtime_family": "docking",
+    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
     "artifacts_count": 3
   },
   "compilation": {
-    "runtime_family": "docking",
+    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:abc123",
+    "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
+    "evaluation_artifact_uri": "ipfs://QmReferenceScores",
+    "evaluation_columns": {
+      "required": ["ligand_id", "reference_score"],
+      "id": "ligand_id",
+      "value": "reference_score",
+      "allow_extra": true
+    },
     "submission_contract": {
       "version": "v1",
       "kind": "csv_table",

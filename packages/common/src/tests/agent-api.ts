@@ -82,8 +82,9 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
         factoryChallengeId: 7,
       },
       evaluation: {
-        runtime_family: "tabular_regression",
+        template: "official_table_metric_v1",
         metric: "r2",
+        comparator: "maximize",
         scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
       },
       distribution_type: "winner_take_all",

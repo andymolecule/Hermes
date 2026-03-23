@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  createResolvedTableExecutionContract,
+  resolveExecutionTemplateImage,
+} from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
 import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
@@ -35,8 +39,9 @@ function createSession(): AuthoringSessionRow {
         timezone: "UTC",
       },
       uploadedArtifacts: [],
-      runtimeFamily: "tabular_regression",
+      template: "official_table_metric_v1",
       metric: "r2",
+      comparator: "maximize",
       routingMode: "managed_supported",
       sourceMessages: [
         {
@@ -70,6 +75,11 @@ function createSession(): AuthoringSessionRow {
 }
 
 function createSpec() {
+  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("missing execution template image fixture");
+  }
+
   return {
     schema_version: 3 as const,
     id: "challenge-spec-1",
@@ -78,10 +88,27 @@ function createSpec() {
     domain: "other" as const,
     type: "prediction" as const,
     evaluation: {
-      runtime_family: "tabular_regression",
+      template: "official_table_metric_v1",
       metric: "r2",
-      scorer_image: "ghcr.io/agora/tabular-regression@sha256:abc",
-      evaluation_bundle: "ipfs://bundle",
+      comparator: "maximize" as const,
+      scorer_image: scorerImage,
+      execution_contract: createResolvedTableExecutionContract({
+        template: "official_table_metric_v1",
+        scorerImage,
+        metric: "r2",
+        comparator: "maximize",
+        evaluationArtifactUri: "ipfs://bundle",
+        evaluationColumns: {
+          required: ["id", "label"],
+          id: "id",
+          value: "label",
+        },
+        submissionColumns: {
+          required: ["id", "prediction"],
+          id: "id",
+          value: "prediction",
+        },
+      }),
     },
     artifacts: [
       {

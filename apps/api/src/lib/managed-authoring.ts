@@ -8,18 +8,16 @@ import {
   type CompilationResultOutput,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
-  getChallengeCompatibilityType,
-  lookupManagedRuntimeFamily,
+  resolvePinnedExecutionTemplateImage,
   readApiServerRuntimeConfig,
   readManagedAuthoringRuntimeConfig,
-  validateChallengeScoreability,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
 import { buildAuthoringQuestions } from "./authoring-questions.js";
-import { assignArtifactsFromProposal } from "./managed-authoring-artifacts.js";
+import { resolveAuthoringArtifacts } from "./managed-authoring-artifacts.js";
 import {
-  type SupportedRuntimeFamily,
+  type SupportedExecutionTemplate,
   compileManagedAuthoringProposal,
 } from "./managed-authoring-compiler.js";
 import {
@@ -27,16 +25,14 @@ import {
   parsePayoutThreshold,
 } from "./managed-authoring-confirmation.js";
 import { executeManagedAuthoringDryRun } from "./managed-authoring-dry-run.js";
-import {
-  buildManagedAuthoringIr,
-} from "./managed-authoring-ir.js";
+import { buildManagedAuthoringIr } from "./managed-authoring-ir.js";
 
 const NEEDS_INPUT_ERROR_CODES = new Set([
-  "MANAGED_ARTIFACTS_INCOMPLETE",
-  "MANAGED_ARTIFACTS_AMBIGUOUS",
-  "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
+  "MANAGED_ARTIFACTS_MISSING",
   "MANAGED_THRESHOLD_UNSUPPORTED",
   "MANAGED_COMPILER_NEEDS_INPUT",
+  "MANAGED_EVALUATION_ARTIFACT_MISSING",
+  "MANAGED_EVALUATION_COLUMNS_INVALID",
 ]);
 
 export interface ManagedAuthoringSessionOutcome {
@@ -56,23 +52,24 @@ async function compileManagedAuthoringSessionCandidate(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
-    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    templateOverride?: SupportedExecutionTemplate | null;
     metricOverride?: string | null;
-    artifactAssignmentsOverride?: Array<{
-      artifactIndex: number;
-      role: string;
-      visibility: "public" | "private";
-    }>;
+    evaluationArtifactIdOverride?: string | null;
+    evaluationIdColumnOverride?: string | null;
+    evaluationValueColumnOverride?: string | null;
+    submissionIdColumnOverride?: string | null;
+    submissionValueColumnOverride?: string | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
+    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
   } = {},
 ): Promise<SessionCompilationCandidate> {
   if (input.uploadedArtifacts.length === 0) {
     throw new AgoraError(
-      "Managed authoring requires at least one uploaded file. Next step: attach your dataset or reference outputs and retry.",
+      "Managed authoring requires at least one uploaded file. Next step: attach your evaluation data and retry.",
       {
         code: "MANAGED_ARTIFACTS_MISSING",
         status: 422,
@@ -80,42 +77,43 @@ async function compileManagedAuthoringSessionCandidate(
     );
   }
 
-  const proposal =
-    input.runtimeFamilyOverride && input.metricOverride
-      ? {
-          runtimeFamily: input.runtimeFamilyOverride,
-          metric: input.metricOverride,
-          reasonCodes: [],
-          warnings: [],
-          artifactAssignments: input.artifactAssignmentsOverride ?? [],
-        }
-      : await compileManagedAuthoringProposal({
-          intent: input.intent,
-          uploadedArtifacts: input.uploadedArtifacts,
-          fetchImpl: dependencies.fetchImpl,
-        });
-
-  const assigned = assignArtifactsFromProposal({
-    runtimeFamily: proposal.runtimeFamily,
+  const assessed = await compileManagedAuthoringProposal({
+    intent: input.intent,
     uploadedArtifacts: input.uploadedArtifacts,
-    artifactAssignments:
-      input.artifactAssignmentsOverride ?? proposal.artifactAssignments,
+    fetchImpl: dependencies.fetchImpl,
   });
-  if (!assigned) {
-    throw new AgoraError(
-      "Agora could not assign the uploaded files to the required Gems scorer roles. Next step: rename the files to make their roles obvious and resubmit.",
-      {
-        code: "MANAGED_ARTIFACTS_AMBIGUOUS",
-        status: 422,
-        details: { runtimeFamily: proposal.runtimeFamily },
-      },
-    );
-  }
 
-  const runtimeFamily = lookupManagedRuntimeFamily(proposal.runtimeFamily);
-  if (!runtimeFamily) {
+  const proposal = {
+    ...assessed,
+    template: input.templateOverride ?? assessed.template,
+    metric: input.metricOverride?.trim() || assessed.metric,
+    evaluationArtifactIndex:
+      input.evaluationArtifactIdOverride != null
+        ? input.uploadedArtifacts.findIndex(
+            (artifact, index) =>
+              (artifact.id?.trim() || `artifact-${index + 1}`) ===
+              input.evaluationArtifactIdOverride,
+          )
+        : assessed.evaluationArtifactIndex,
+    evaluationIdColumn:
+      input.evaluationIdColumnOverride?.trim() || assessed.evaluationIdColumn,
+    evaluationValueColumn:
+      input.evaluationValueColumnOverride?.trim() ||
+      assessed.evaluationValueColumn,
+    submissionIdColumn:
+      input.submissionIdColumnOverride?.trim() || assessed.submissionIdColumn,
+    submissionValueColumn:
+      input.submissionValueColumnOverride?.trim() ||
+      assessed.submissionValueColumn,
+  };
+
+  const scorerImage = await (
+    dependencies.resolvePinnedExecutionTemplateImageImpl ??
+    resolvePinnedExecutionTemplateImage
+  )(proposal.template);
+  if (!scorerImage) {
     throw new AgoraError(
-      `Unknown runtime family ${proposal.runtimeFamily}. Next step: choose a supported managed runtime and retry.`,
+      `Unknown execution template ${proposal.template}. Next step: choose a supported template and retry.`,
       {
         code: "MANAGED_RUNTIME_UNKNOWN",
         status: 500,
@@ -123,19 +121,37 @@ async function compileManagedAuthoringSessionCandidate(
     );
   }
 
+  const evaluationArtifact =
+    input.uploadedArtifacts[proposal.evaluationArtifactIndex];
+  const evaluationArtifactId =
+    evaluationArtifact?.id?.trim() ||
+    `artifact-${proposal.evaluationArtifactIndex + 1}`;
+
+  const resolved = resolveAuthoringArtifacts({
+    uploadedArtifacts: input.uploadedArtifacts,
+    evaluationArtifactId,
+    evaluationIdColumn: proposal.evaluationIdColumn,
+    evaluationValueColumn: proposal.evaluationValueColumn,
+    submissionIdColumn: proposal.submissionIdColumn,
+    submissionValueColumn: proposal.submissionValueColumn,
+    metric: proposal.metric,
+    comparator: proposal.comparator,
+    template: proposal.template,
+    scorerImage,
+  });
+
   const payoutThreshold = parsePayoutThreshold(
-    proposal.runtimeFamily,
     proposal.metric,
+    proposal.comparator,
     `${input.intent.description} ${input.intent.payout_condition}`,
   );
   if (payoutThreshold?.operator === "lte") {
     throw new AgoraError(
-      "Managed authoring can score lower-is-better metrics like RMSE and MAE, but payout thresholds for them are not modeled yet. Next step: remove the explicit threshold and let submissions rank by score, or use Expert Mode.",
+      "Agora can score lower-is-better metrics like RMSE and MAE, but explicit lower-is-better payout thresholds are not modeled yet. Next step: remove the threshold and let submissions rank by score.",
       {
         code: "MANAGED_THRESHOLD_UNSUPPORTED",
         status: 422,
         details: {
-          runtimeFamily: proposal.runtimeFamily,
           metric: proposal.metric,
         },
       },
@@ -143,9 +159,6 @@ async function compileManagedAuthoringSessionCandidate(
   }
   const minimumScore =
     payoutThreshold?.operator === "gte" ? payoutThreshold.value : undefined;
-  const challengeType = getChallengeCompatibilityType({
-    runtimeFamily: proposal.runtimeFamily,
-  });
   const apiRuntime = readApiServerRuntimeConfig();
 
   const challengeSpecCandidate = {
@@ -154,15 +167,16 @@ async function compileManagedAuthoringSessionCandidate(
     title: input.intent.title,
     description: input.intent.description,
     domain: input.intent.domain as ChallengeSpecOutput["domain"],
-    type: challengeType,
+    type: "prediction" as const,
     evaluation: {
-      runtime_family: proposal.runtimeFamily,
+      template: proposal.template,
       metric: proposal.metric,
-      scorer_image: runtimeFamily.scorerImage,
-      evaluation_bundle: assigned.evaluationBundle,
+      comparator: proposal.comparator,
+      scorer_image: scorerImage,
+      execution_contract: resolved.executionContract,
     },
-    artifacts: assigned.resolvedArtifacts,
-    submission_contract: assigned.submissionContract,
+    artifacts: resolved.resolvedArtifacts,
+    submission_contract: resolved.submissionContract,
     reward: {
       total: input.intent.reward_total,
       distribution: input.intent.distribution,
@@ -192,19 +206,22 @@ async function compileManagedAuthoringSessionCandidate(
   );
 
   const confirmationContract = buildConfirmationContract({
-    runtimeFamily: proposal.runtimeFamily,
+    template: proposal.template,
     metric: proposal.metric,
+    comparator: proposal.comparator,
     challengeSpec: canonicalSpec,
-    submissionContract: assigned.submissionContract,
+    submissionContract: resolved.submissionContract,
     dryRun,
   });
 
   return {
     proposal,
     compilation: {
-      challenge_type: challengeType,
-      runtime_family: proposal.runtimeFamily,
+      challenge_type: "prediction",
+      template: proposal.template,
       metric: proposal.metric,
+      comparator: proposal.comparator,
+      execution_contract: resolved.executionContract,
       resolved_artifacts: canonicalSpec.artifacts,
       submission_contract: canonicalSpec.submission_contract,
       dry_run: dryRun,
@@ -220,18 +237,19 @@ export async function compileManagedAuthoringSession(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
-    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    templateOverride?: SupportedExecutionTemplate | null;
     metricOverride?: string | null;
-    artifactAssignmentsOverride?: Array<{
-      artifactIndex: number;
-      role: string;
-      visibility: "public" | "private";
-    }>;
+    evaluationArtifactIdOverride?: string | null;
+    evaluationIdColumnOverride?: string | null;
+    evaluationValueColumnOverride?: string | null;
+    submissionIdColumnOverride?: string | null;
+    submissionValueColumnOverride?: string | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
+    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
   } = {},
 ): Promise<CompilationResultOutput> {
   const result = await compileManagedAuthoringSessionCandidate(
@@ -245,18 +263,19 @@ export async function compileManagedAuthoringSessionOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
-    runtimeFamilyOverride?: SupportedRuntimeFamily | null;
+    templateOverride?: SupportedExecutionTemplate | null;
     metricOverride?: string | null;
-    artifactAssignmentsOverride?: Array<{
-      artifactIndex: number;
-      role: string;
-      visibility: "public" | "private";
-    }>;
+    evaluationArtifactIdOverride?: string | null;
+    evaluationIdColumnOverride?: string | null;
+    evaluationValueColumnOverride?: string | null;
+    submissionIdColumnOverride?: string | null;
+    submissionValueColumnOverride?: string | null;
   },
   dependencies: {
     fetchImpl?: typeof fetch;
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
+    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
   } = {},
 ): Promise<ManagedAuthoringSessionOutcome> {
   try {
@@ -265,13 +284,31 @@ export async function compileManagedAuthoringSessionOutcome(
       dependencies,
     );
 
+    const evaluationArtifact =
+      input.uploadedArtifacts[result.proposal.evaluationArtifactIndex];
+    const evaluationArtifactId =
+      evaluationArtifact?.id?.trim() ||
+      `artifact-${result.proposal.evaluationArtifactIndex + 1}`;
+
     const authoringIr = buildManagedAuthoringIr({
       intent: input.intent,
       uploadedArtifacts: input.uploadedArtifacts,
       origin: { provider: "direct" },
-      runtimeFamily: result.proposal.runtimeFamily,
+      template: result.proposal.template,
       metric: result.proposal.metric,
-      artifactAssignments: result.proposal.artifactAssignments,
+      comparator: result.proposal.comparator,
+      evaluationArtifactId,
+      visibleArtifactIds: input.uploadedArtifacts
+        .map((artifact, index) =>
+          index === result.proposal.evaluationArtifactIndex
+            ? null
+            : artifact.id?.trim() || `artifact-${index + 1}`,
+        )
+        .filter((value): value is string => value !== null),
+      evaluationIdColumn: result.proposal.evaluationIdColumn,
+      evaluationValueColumn: result.proposal.evaluationValueColumn,
+      submissionIdColumn: result.proposal.submissionIdColumn,
+      submissionValueColumn: result.proposal.submissionValueColumn,
       assessmentOutcome: "ready",
       assessmentReasonCodes: result.proposal.reasonCodes,
       assessmentWarnings: result.proposal.warnings,
@@ -281,13 +318,10 @@ export async function compileManagedAuthoringSessionOutcome(
       compilation: result.compilation,
       authoringIr,
       message:
-        "Agora mapped your files, chose a supported Gems runtime, and prepared a publishable challenge contract.",
+        "Agora resolved the table scoring contract, mapped the columns, and prepared a publishable challenge.",
     };
   } catch (error) {
-    if (
-      error instanceof AgoraError &&
-      NEEDS_INPUT_ERROR_CODES.has(error.code)
-    ) {
+    if (error instanceof AgoraError && NEEDS_INPUT_ERROR_CODES.has(error.code)) {
       const reasonCodes = Array.isArray(error.details?.reasonCodes)
         ? (error.details.reasonCodes as string[])
         : [];
@@ -297,29 +331,29 @@ export async function compileManagedAuthoringSessionOutcome(
       const missingFields = Array.isArray(error.details?.missingFields)
         ? (error.details.missingFields as string[])
         : [];
-      const runtimeFamily =
-        typeof error.details?.runtimeFamily === "string"
-          ? (error.details.runtimeFamily as SupportedRuntimeFamily)
-          : undefined;
+      const selectedEvaluationArtifactId =
+        typeof input.evaluationArtifactIdOverride === "string"
+          ? input.evaluationArtifactIdOverride
+          : null;
       const questions = buildAuthoringQuestions({
         missingFields,
         uploadedArtifacts: input.uploadedArtifacts,
-        runtimeFamily,
+        selectedEvaluationArtifactId,
         reasonCodes,
         compileErrorCode: error.code,
-        missingArtifactRoles: Array.isArray(error.details?.missingRoles)
-          ? (error.details.missingRoles as string[])
-          : undefined,
       });
       const authoringIr = buildManagedAuthoringIr({
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
         origin: { provider: "direct" },
-        runtimeFamily,
+        template: input.templateOverride ?? "official_table_metric_v1",
         metric:
-          typeof error.details?.metric === "string"
-            ? error.details.metric
-            : null,
+          typeof input.metricOverride === "string" ? input.metricOverride : null,
+        evaluationArtifactId: selectedEvaluationArtifactId,
+        evaluationIdColumn: input.evaluationIdColumnOverride ?? null,
+        evaluationValueColumn: input.evaluationValueColumnOverride ?? null,
+        submissionIdColumn: input.submissionIdColumnOverride ?? null,
+        submissionValueColumn: input.submissionValueColumnOverride ?? null,
         questions,
         compileError: {
           code: error.code,
@@ -336,7 +370,7 @@ export async function compileManagedAuthoringSessionOutcome(
         questions,
         message:
           error.message ||
-          "Agora needs a little more context before it can lock the challenge contract.",
+          "Agora needs a little more context before it can lock the table scoring contract.",
       };
     }
 

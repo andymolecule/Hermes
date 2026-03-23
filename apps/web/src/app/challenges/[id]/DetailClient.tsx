@@ -360,7 +360,7 @@ export function DetailClient({ id }: { id: string }) {
   const challengeTypeLabel = formatChallengeType(challenge.challenge_type);
   const rewardDistribution = titleCase(challenge.distribution_type ?? "winner_take_all");
   const successDefinition =
-    (spec?.type ?? challenge.evaluation?.runtime_family) === "reproducibility"
+    (spec?.type ?? challenge.challenge_type) === "reproducibility"
       ? "Submissions are compared against the reference output bundle using deterministic row matching."
       : "Submissions are ranked by score after the managed evaluation pipeline runs on the hidden evaluation bundle.";
   const evaluationCriteria =

@@ -1,4 +1,8 @@
-import type { SemiCustomEvaluatorContractOutput } from "../schemas/evaluator-contract.js";
+import type { ResolvedTableExecutionContractOutput } from "../schemas/execution-contract.js";
+import type {
+  ExecutionComparatorOutput,
+  ExecutionTemplateIdOutput,
+} from "../schemas/execution-template.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
 export const CHALLENGE_DOMAINS = [
@@ -76,11 +80,11 @@ export interface ChallengeArtifact {
 }
 
 export interface ChallengeEvaluation {
-  runtime_family: string;
+  template: ExecutionTemplateIdOutput;
   metric: string;
-  scorer_image?: string;
-  evaluation_bundle?: string;
-  evaluator_contract?: SemiCustomEvaluatorContractOutput;
+  comparator: ExecutionComparatorOutput;
+  scorer_image: string;
+  execution_contract: ResolvedTableExecutionContractOutput;
 }
 
 export interface ChallengeReward {

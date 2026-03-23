@@ -21,13 +21,14 @@ import { processFactoryLog } from "@agora/chain/indexer/factory-events";
 import { reconcileChallengeProjection } from "@agora/chain/indexer/settlement";
 import type { ChallengeListRow } from "@agora/chain/indexer/shared";
 import {
-  OFFICIAL_SCORER_IMAGES,
   SCORE_JOB_STATUS,
   SUBMISSION_RESULT_FORMAT,
+  createResolvedTableExecutionContract,
   createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
+  resolveExecutionTemplateImage,
   resolveRuntimePrivateKey,
   sealSubmission,
 } from "@agora/common";
@@ -163,6 +164,11 @@ async function ensureWalletMatchesOracle(
 }
 
 function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
+  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("missing official table scorer image");
+  }
+
   return {
     schema_version: 3 as const,
     id: `e2e-${Date.now()}`,
@@ -170,7 +176,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
     description:
       "End-to-end reproducibility flow using canonical worker scoring and settlement projection.",
     domain: "other" as const,
-    type: "reproducibility" as const,
+    type: "prediction" as const,
     artifacts: [
       {
         role: "source_data",
@@ -184,10 +190,30 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       },
     ],
     evaluation: {
-      runtime_family: "reproducibility",
-      metric: "exact_match",
-      scorer_image: OFFICIAL_SCORER_IMAGES.reproducibility,
-      evaluation_bundle: input.expectedCid,
+      template: "official_table_metric_v1" as const,
+      metric: "r2",
+      comparator: "maximize" as const,
+      scorer_image: scorerImage,
+      execution_contract: createResolvedTableExecutionContract({
+        template: "official_table_metric_v1",
+        scorerImage,
+        metric: "r2",
+        comparator: "maximize",
+        evaluationArtifactUri: input.expectedCid,
+        evaluationColumns: {
+          required: ["sample_id", "normalized_signal", "condition"],
+          id: "sample_id",
+          value: "normalized_signal",
+          allow_extra: true,
+        },
+        submissionColumns: {
+          required: ["sample_id", "normalized_signal", "condition"],
+          id: "sample_id",
+          value: "normalized_signal",
+          allow_extra: true,
+        },
+        visibleArtifactUris: [input.trainCid],
+      }),
     },
     submission_contract: createCsvTableSubmissionContract({
       requiredColumns: ["sample_id", "normalized_signal", "condition"],
@@ -206,6 +232,11 @@ function buildPredictionE2ESpec(input: {
   testCid: string;
   hiddenLabelsCid: string;
 }) {
+  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("missing official table scorer image");
+  }
+
   return {
     schema_version: 3 as const,
     id: `e2e-prediction-${Date.now()}`,
@@ -232,10 +263,28 @@ function buildPredictionE2ESpec(input: {
       },
     ],
     evaluation: {
-      runtime_family: "tabular_regression",
+      template: "official_table_metric_v1" as const,
       metric: "r2",
-      scorer_image: OFFICIAL_SCORER_IMAGES.tabular,
-      evaluation_bundle: input.hiddenLabelsCid,
+      comparator: "maximize" as const,
+      scorer_image: scorerImage,
+      execution_contract: createResolvedTableExecutionContract({
+        template: "official_table_metric_v1",
+        scorerImage,
+        metric: "r2",
+        comparator: "maximize",
+        evaluationArtifactUri: input.hiddenLabelsCid,
+        evaluationColumns: {
+          required: ["id", "label"],
+          id: "id",
+          value: "label",
+        },
+        submissionColumns: {
+          required: ["id", "prediction"],
+          id: "id",
+          value: "prediction",
+        },
+        visibleArtifactUris: [input.trainCid, input.testCid],
+      }),
     },
     submission_contract: createCsvTableSubmissionContract({
       requiredColumns: ["id", "prediction"],

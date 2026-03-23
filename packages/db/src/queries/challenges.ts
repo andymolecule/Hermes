@@ -8,7 +8,6 @@ import {
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForEvaluation,
-  getChallengeCompatibilityTypeFromEvaluation,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -25,7 +24,7 @@ export interface ChallengeInsert {
   description: string;
   domain: string;
   challenge_type: string;
-  runtime_family: string;
+  evaluation_template: string;
   spec_cid: string;
   evaluation_plan_json: ChallengeEvaluationPlanCacheRow;
   artifacts_json: ChallengeArtifact[];
@@ -84,10 +83,8 @@ export async function buildChallengeInsert(
     title: canonicalSpec.title,
     description: canonicalSpec.description,
     domain: canonicalSpec.domain,
-    challenge_type: getChallengeCompatibilityTypeFromEvaluation(
-      canonicalSpec.evaluation,
-    ),
-    runtime_family: canonicalSpec.evaluation.runtime_family,
+    challenge_type: canonicalSpec.type,
+    evaluation_template: canonicalSpec.evaluation.template,
     spec_cid: input.specCid,
     evaluation_plan_json: evaluationPlan,
     artifacts_json: canonicalSpec.artifacts,

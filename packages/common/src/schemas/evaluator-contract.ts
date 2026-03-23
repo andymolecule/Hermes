@@ -7,7 +7,7 @@ import {
   DEFAULT_SCORER_MOUNT,
   OFFICIAL_SCORER_IMAGES,
   type ScoringMountConfig,
-} from "../runtime-families.js";
+} from "../scorer-images.js";
 import {
   type CsvTableEvaluationContractOutput,
   type ScorerRuntimePoliciesOutput,
@@ -77,22 +77,22 @@ function isExecutableExactMatchSubmissionKind(
 }
 
 const STRUCTURED_TABLE_RUNNER_FAMILY_BY_METRIC = {
-  r2: "tabular_regression",
-  rmse: "tabular_regression",
-  mae: "tabular_regression",
-  pearson: "tabular_regression",
-  spearman: "tabular_regression",
-  accuracy: "tabular_classification",
-  f1: "tabular_classification",
+  r2: "official_table_metric_v1",
+  rmse: "official_table_metric_v1",
+  mae: "official_table_metric_v1",
+  pearson: "official_table_metric_v1",
+  spearman: "official_table_metric_v1",
+  accuracy: "official_table_metric_v1",
+  f1: "official_table_metric_v1",
 } as const satisfies Record<
   (typeof EXECUTABLE_STRUCTURED_TABLE_METRICS)[number],
-  "tabular_regression" | "tabular_classification"
+  "official_table_metric_v1"
 >;
 
 const SEMI_CUSTOM_EXECUTION_TEMPLATE_IMAGE = {
-  official_table_metric_v1: OFFICIAL_SCORER_IMAGES.tabular,
-  official_exact_match_v1: OFFICIAL_SCORER_IMAGES.reproducibility,
-  official_structured_record_v1: OFFICIAL_SCORER_IMAGES.reproducibility,
+  official_table_metric_v1: OFFICIAL_SCORER_IMAGES.table_metric,
+  official_exact_match_v1: OFFICIAL_SCORER_IMAGES.exact_match,
+  official_structured_record_v1: OFFICIAL_SCORER_IMAGES.exact_match,
 } as const;
 
 export const semiCustomStructuredTableExecutionSchema = z.object({
@@ -466,10 +466,6 @@ export interface SemiCustomExecutionPlan {
   template: NonNullable<
     SemiCustomEvaluatorContractOutput["execution"]
   >["template"];
-  runner_runtime_family:
-    | "tabular_regression"
-    | "tabular_classification"
-    | "reproducibility";
   mount: ScoringMountConfig;
   evaluation_artifact_role: string;
   evaluation_contract?: CsvTableEvaluationContractOutput;
@@ -493,7 +489,6 @@ export function resolveSemiCustomExecutionPlan(
   if (contract.execution.template === "official_structured_record_v1") {
     return {
       template: contract.execution.template,
-      runner_runtime_family: "reproducibility",
       mount: JSON_EXACT_MATCH_MOUNT,
       evaluation_artifact_role: contract.execution.evaluation_artifact_role,
       policies: contract.execution.policies,
@@ -511,27 +506,25 @@ export function resolveSemiCustomExecutionPlan(
           : DEFAULT_SCORER_MOUNT;
     return {
       template: contract.execution.template,
-      runner_runtime_family: "reproducibility",
       mount,
       evaluation_artifact_role: contract.execution.evaluation_artifact_role,
       policies: contract.execution.policies,
     };
   }
 
-  const runnerRuntimeFamily =
+  const runnerTemplate =
     STRUCTURED_TABLE_RUNNER_FAMILY_BY_METRIC[
       contract.scoring
         .metric as keyof typeof STRUCTURED_TABLE_RUNNER_FAMILY_BY_METRIC
     ];
-  if (!runnerRuntimeFamily) {
+  if (!runnerTemplate) {
     throw new Error(
       `Unknown structured table metric ${contract.scoring.metric}. Next step: choose one of ${EXECUTABLE_STRUCTURED_TABLE_METRICS.join(", ")}.`,
     );
   }
 
   return {
-    template: contract.execution.template,
-    runner_runtime_family: runnerRuntimeFamily,
+    template: runnerTemplate,
     mount: DEFAULT_SCORER_MOUNT,
     evaluation_artifact_role: contract.execution.evaluation_artifact_role,
     evaluation_contract: contract.execution.evaluation_contract,

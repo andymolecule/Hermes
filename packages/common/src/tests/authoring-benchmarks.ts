@@ -23,7 +23,7 @@ const benchmarkSchema = z.object({
   prompt_variants_root: z.string().min(1),
   solver_submissions_root: z.string().min(1),
   compile_invariants: z.object({
-    runtime_family: z.string().min(1),
+    template: z.string().min(1).optional(),
     metric: z.string().min(1),
     artifact_roles: z
       .array(
@@ -47,7 +47,7 @@ const benchmarkSchema = z.object({
   }),
   acceptable_compile_states: z.array(compileStateSchema).min(1),
   disallowed_outcomes: z.object({
-    runtime_families: z.array(z.string().min(1)),
+    disallowed_templates: z.array(z.string().min(1)),
     recommended_actions: z.array(z.string().min(1)),
   }),
   prompt_variants: z

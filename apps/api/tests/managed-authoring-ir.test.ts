@@ -36,10 +36,10 @@ test("managed authoring intake state records missing required intent fields", ()
     "deadline",
   ]);
   assert.equal(authoringIr.questions.pending.length, 0);
-  assert.equal(authoringIr.evaluation.runtime_family, null);
+  assert.equal(authoringIr.evaluation.template, null);
 });
 
-test("managed authoring intake state preserves compiler-selected runtime and artifact assignments", () => {
+test("managed authoring intake state preserves the resolved table scoring contract fields", () => {
   const authoringIr = buildManagedAuthoringIr({
     intent: {
       title: "Regression benchmark",
@@ -51,31 +51,35 @@ test("managed authoring intake state preserves compiler-selected runtime and art
       timezone: "UTC",
     },
     uploadedArtifacts,
-    runtimeFamily: "tabular_regression",
+    template: "official_table_metric_v1",
     metric: "r2",
-    artifactAssignments: [
-      {
-        artifactIndex: 0,
-        role: "training_data",
-        visibility: "public",
-      },
-      {
-        artifactIndex: 1,
-        role: "hidden_labels",
-        visibility: "private",
-      },
-    ],
+    comparator: "maximize",
+    evaluationArtifactId: "labels",
+    visibleArtifactIds: ["train"],
+    evaluationIdColumn: "id",
+    evaluationValueColumn: "label",
+    submissionIdColumn: "id",
+    submissionValueColumn: "predicted_score",
     assessmentOutcome: "ready",
-    assessmentReasonCodes: ["matched_tabular_regression"],
+    assessmentReasonCodes: ["matched_table_metric"],
   });
 
   assert.equal(authoringIr.intent.missing_fields.length, 0);
-  assert.equal(authoringIr.evaluation.runtime_family, "tabular_regression");
+  assert.equal(authoringIr.evaluation.template, "official_table_metric_v1");
   assert.equal(authoringIr.evaluation.metric, "r2");
-  assert.equal(authoringIr.evaluation.artifact_assignments[0]?.artifact_id, "train");
+  assert.equal(authoringIr.evaluation.comparator, "maximize");
+  assert.equal(authoringIr.evaluation.evaluation_artifact_id, "labels");
+  assert.equal(authoringIr.evaluation.visible_artifact_ids[0], "train");
+  assert.equal(authoringIr.evaluation.evaluation_columns.id, "id");
+  assert.equal(authoringIr.evaluation.evaluation_columns.value, "label");
+  assert.equal(authoringIr.evaluation.submission_columns.id, "id");
+  assert.equal(
+    authoringIr.evaluation.submission_columns.value,
+    "predicted_score",
+  );
   assert.equal(
     authoringIr.assessment.reason_codes[0],
-    "matched_tabular_regression",
+    "matched_table_metric",
   );
 });
 
@@ -97,17 +101,17 @@ test("managed authoring intake state persists canonical pending questions", () =
     },
     questions: [
       createAuthoringQuestion({
-        field: "artifact_roles",
+        field: "evaluation_artifact",
         reasonCodes: ["MANAGED_ARTIFACTS_AMBIGUOUS"],
       }),
     ],
     assessmentOutcome: "awaiting_input",
-    missingFields: ["artifact_roles"],
+    missingFields: ["evaluation_artifact"],
   });
 
   assert.deepEqual(authoringIr.evaluation.compile_error_codes, [
     "MANAGED_ARTIFACTS_AMBIGUOUS",
   ]);
-  assert.equal(authoringIr.questions.pending[0]?.id, "artifact-roles");
-  assert.equal(authoringIr.assessment.missing_fields[0], "artifact_roles");
+  assert.equal(authoringIr.questions.pending[0]?.id, "evaluation-artifact");
+  assert.equal(authoringIr.assessment.missing_fields[0], "evaluation_artifact");
 });

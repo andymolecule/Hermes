@@ -5,8 +5,11 @@ import { SCORE_JOB_STATUSES } from "../types/score-job.js";
 import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
 import {
   challengeArtifactSchema,
-  challengeEvaluationSchema,
 } from "./challenge-spec.js";
+import {
+  executionComparatorSchema,
+  executionTemplateIdSchema,
+} from "./execution-template.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
@@ -146,8 +149,13 @@ export const challengeDetailSchema = challengeSummarySchema
     poster_address: addressSchema.optional(),
     description: z.string(),
     challenge_type: challengeTypeSchema,
-    evaluation: challengeEvaluationSchema
-      .omit({ evaluation_bundle: true })
+    evaluation: z
+      .object({
+        template: executionTemplateIdSchema,
+        metric: z.string(),
+        comparator: executionComparatorSchema,
+        scorer_image: z.string(),
+      })
       .strict(),
     distribution_type: rewardDistributionSchema.nullable().optional(),
     dispute_window_hours: nonNegativeIntegerSchema.nullable().optional(),

@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  createCsvTableEvaluationContract,
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
   resolveChallengeEvaluation,
-  resolveScoringEnvironmentFromSpec,
   validateChallengeSpec,
 } from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
@@ -28,7 +28,11 @@ function buildCsvDryRunRow(
 }
 
 function buildDryRunInputs(input: {
-  runtimeFamily: string;
+  evaluationColumns: {
+    required: string[];
+    id: string;
+    value: string;
+  };
   submissionContract: SubmissionContractOutput;
 }) {
   if (input.submissionContract.kind !== "csv_table") {
@@ -45,21 +49,15 @@ function buildDryRunInputs(input: {
     input.submissionContract.columns.id,
     input.submissionContract.columns.value,
   )}\n`;
-
-  if (
-    input.runtimeFamily === "tabular_regression" ||
-    input.runtimeFamily === "tabular_classification"
-  ) {
-    return {
-      submission: { content: submissionContent },
-      evaluationBundle: { content: "id,label\nrow-1,1.0\n" },
-      submissionContract: input.submissionContract,
-    };
-  }
+  const evaluationContent = `${input.evaluationColumns.required.join(",")}\n${buildCsvDryRunRow(
+    input.evaluationColumns.required,
+    input.evaluationColumns.id,
+    input.evaluationColumns.value,
+  )}\n`;
 
   return {
     submission: { content: submissionContent },
-    evaluationBundle: { content: submissionContent },
+    evaluationBundle: { content: evaluationContent },
     submissionContract: input.submissionContract,
   };
 }
@@ -112,7 +110,11 @@ export function buildValidateCommand() {
       try {
         const evalPlan = resolveChallengeEvaluation(parsed.data);
         const dryRunInputs = buildDryRunInputs({
-          runtimeFamily: evalPlan.runtimeFamily,
+          evaluationColumns: {
+            required: evalPlan.executionContract.evaluation_columns.required,
+            id: evalPlan.executionContract.evaluation_columns.id,
+            value: evalPlan.executionContract.evaluation_columns.value,
+          },
           submissionContract: parsed.data.submission_contract,
         });
         const run = await executeScoringPipeline({
@@ -121,9 +123,16 @@ export function buildValidateCommand() {
           mount: evalPlan.mount,
           submission: dryRunInputs.submission,
           submissionContract: dryRunInputs.submissionContract,
+          evaluationContract: createCsvTableEvaluationContract({
+            requiredColumns:
+              evalPlan.executionContract.evaluation_columns.required,
+            idColumn: evalPlan.executionContract.evaluation_columns.id,
+            valueColumn: evalPlan.executionContract.evaluation_columns.value,
+            allowExtraColumns:
+              evalPlan.executionContract.evaluation_columns.allow_extra,
+          }),
           metric: evalPlan.metric,
-          runtimeFamily: evalPlan.runtimeFamily,
-          env: resolveScoringEnvironmentFromSpec(parsed.data),
+          policies: evalPlan.executionContract.policies,
           timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
         });
 

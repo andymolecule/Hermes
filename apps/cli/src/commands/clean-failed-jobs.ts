@@ -1,10 +1,8 @@
 import {
   CHALLENGE_STATUS,
-  EXPERT_RUNTIME_FAMILY_ID,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
   resolveChallengeEvaluation,
-  validateExpertScorerImage,
   validateScorerImage,
 } from "@agora/common";
 import { markScoreJobSkipped } from "@agora/db";
@@ -35,7 +33,7 @@ interface FailedJobWithContext {
     id: string;
     title: string | null;
     status: string;
-    runtime_family: string;
+    evaluation_template: string;
     evaluation_plan_json?: Record<string, unknown> | null;
   } | null;
 }
@@ -70,27 +68,26 @@ function classifyFailedJob(
   }
 
   if (
-    job.challenges?.runtime_family &&
-    job.challenges.runtime_family.trim().length > 0
+    job.challenges?.evaluation_template &&
+    job.challenges.evaluation_template.trim().length > 0
   ) {
     const scorerImage = (() => {
       try {
         return resolveChallengeEvaluation({
-          runtime_family: job.challenges?.runtime_family ?? "",
+          evaluation_template: job.challenges?.evaluation_template as
+            | "official_table_metric_v1"
+            | undefined,
           evaluation_plan_json: job.challenges?.evaluation_plan_json,
         }).image;
       } catch {
         return null;
       }
     })();
-    const integrityError =
-      job.challenges.runtime_family === EXPERT_RUNTIME_FAMILY_ID
-        ? validateExpertScorerImage(scorerImage ?? "")
-        : validateScorerImage(scorerImage ?? "");
+    const integrityError = validateScorerImage(scorerImage ?? "");
     if (scorerImage && integrityError) {
       return {
         action: "skip",
-        reason: `Invalid runtime-family scoring configuration: ${integrityError}`,
+        reason: `Invalid scoring configuration: ${integrityError}`,
         note: "challenge scoring config is invalid",
       };
     }
@@ -153,7 +150,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, runtime_family, evaluation_plan_json)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, evaluation_template, evaluation_plan_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

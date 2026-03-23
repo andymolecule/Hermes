@@ -72,9 +72,9 @@ For authoring benchmarks:
 
 | Category | Current status | Notes |
 |----------|----------------|-------|
-| Prediction | Executable, aligned to new model | Uses the official `tabular_regression` runtime family and its current default mount layout |
-| Reproducibility | Executable, aligned to new model | Uses the official `reproducibility` runtime family and its current default mount layout |
-| Docking | Managed runtime on new model | Official `docking` runtime family exists with CSV docking score evaluation |
+| Prediction | Executable, aligned to new model | Uses the official `official_table_metric_v1` template and the current default mount layout |
+| Reproducibility | Historical exact-match example | Legacy scorer fixture carried as reference data, not the primary v1 table-template path |
+| Docking | Historical scorer example | Legacy family-era docking fixture carried as reference data, not the primary v1 table-template path |
 | Optimization | Posting scaffold on new model | Uses the custom-scorer path with `opaque_file` submissions |
 | Red Team | Posting scaffold on new model | Uses the custom-scorer path with poster-defined scorer behavior |
 | Custom | Posting scaffold on new model | Fully bring-your-own scoring contract and artifact shape |

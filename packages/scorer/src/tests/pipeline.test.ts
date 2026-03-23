@@ -74,17 +74,42 @@ test("resolveScoringRuntimeConfig loads submission contract from pinned YAML spe
 id: yaml-spec
 title: YAML spec
 domain: longevity
-type: reproducibility
+type: prediction
 description: yaml
 evaluation:
-  runtime_family: reproducibility
-  metric: exact_match
-  scorer_image: ghcr.io/andymolecule/gems-match-scorer:v1
-  evaluation_bundle: ipfs://bafkreieval
+  template: official_table_metric_v1
+  metric: r2
+  comparator: maximize
+  scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1
+  execution_contract:
+    version: v1
+    template: official_table_metric_v1
+    scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1
+    metric: r2
+    comparator: maximize
+    evaluation_artifact_uri: ipfs://bafkreieval
+    evaluation_columns:
+      required: [id, value]
+      id: id
+      value: value
+      allow_extra: false
+    submission_columns:
+      required: [id, value]
+      id: id
+      value: value
+      allow_extra: false
+    visible_artifact_uris: []
+    policies:
+      coverage_policy: ignore
+      duplicate_id_policy: ignore
+      invalid_value_policy: ignore
 artifacts:
   - role: source_data
     visibility: public
     uri: ipfs://bafkreiinput
+  - role: hidden_evaluation
+    visibility: private
+    uri: ipfs://bafkreieval
 submission_contract:
   version: v1
   kind: csv_table

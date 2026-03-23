@@ -10,6 +10,6 @@ Expected authoring behavior:
 
 This benchmark should not:
 
-- collapse into a managed runtime family
+- collapse into the official table template
 - relabel artifacts as `training_data` or `hidden_labels`
 - pretend the assisted Gems path can publish the challenge directly

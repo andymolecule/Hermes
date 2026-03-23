@@ -26,7 +26,7 @@ This doc is authoritative for: product concepts, actor roles, user-facing workfl
 - 3 primary interfaces: API, CLI, Web dashboard
 - MCP remains optional as a local/interop adapter, not the canonical remote surface
 - 2 challenge types are turnkey from this repo today: reproducibility and prediction
-- Official scoring methods are configured as runtime-family entries plus scorer images; a new official method should not require worker/indexer branching
+- Official scoring methods are configured as execution templates plus scorer images; a new official method should not require worker/indexer branching
 - Historical malformed specs are intentionally unsupported; Agora does not reconstruct old submission formats at read time
 
 > How Agora works, explained simply.
@@ -303,9 +303,9 @@ flowchart TB
 |-----------|-------|-------|
 | Protocol fee | 10% | Only on successful finalization |
 | Dispute window | 0–2160 hours on testnet | Production policy targets 168–2160 hours (7–90 days) |
-| Official managed runtime timeout | 5–20 minutes | Base runner fallback is 30 minutes when no runtime-family override applies |
-| Container memory | 512 MB – 4 GB | Runtime-family-dependent; base runner fallback is 256 MB |
-| Container CPUs | 1 – 2 | Runtime-family-dependent; base runner fallback is 0.5 CPU |
+| Official scorer timeout | 5–20 minutes | Base runner fallback is 30 minutes when no execution-template override applies |
+| Container memory | 512 MB – 4 GB | Execution-template-dependent; base runner fallback is 256 MB |
+| Container CPUs | 1 – 2 | Execution-template-dependent; base runner fallback is 0.5 CPU |
 | USDC reward range | 1–30 USDC | Testnet limits |
 | Oracle immutability | Per challenge | Fixed at creation, cannot be rotated mid-challenge |
 | Dispute timeout | 30 days | Full refund to poster |

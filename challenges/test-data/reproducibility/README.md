@@ -17,7 +17,7 @@ Important realism note:
 
 The reproducibility fixtures are aligned to the current managed runtime.
 
-The official `reproducibility` runtime family currently resolves to:
+The historical exact-match scorer example currently resolves to:
 - evaluation bundle -> `ground_truth.csv`
 - solver artifact -> `submission.csv`
 
@@ -31,7 +31,7 @@ In the current platform architecture, that requirement should be authored as a
 worker runtime both validate against that same machine-readable contract before
 scoring, and the worker reads that contract from the DB cache first.
 
-The built-in runtime family is:
+The built-in legacy scorer shape is:
 - `CSV Comparison`
 - official container: `ghcr.io/andymolecule/gems-match-scorer:v1`
 
@@ -152,5 +152,5 @@ That is exactly what this folder is modeling.
 | Match rule | `Allow small drift` | Reflects the current reproducibility scoring model when minor numeric noise is acceptable |
 | Allowed drift | `0.001` | Matches the built-in scorer's absolute tolerance configuration |
 | Submission artifact | `CSV output only` | Reflects the current fixed submission contract for reproducibility |
-| Official scoring rule | `Deterministic CSV comparison` | Matches the official runtime family and current scorer implementation |
+| Official scoring rule | `Deterministic CSV comparison` | Matches the historical exact-match scorer implementation |
 | Payout rule | `Winner takes all` | Best fit for a small reproducibility bounty |

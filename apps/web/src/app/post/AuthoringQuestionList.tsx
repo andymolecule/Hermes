@@ -36,8 +36,8 @@ function fieldHint(question: RenderableQuestion) {
       return question.options.length > 0
         ? "Choose one of the supported options below."
         : null;
-    case "artifact_role_map":
-      return "Map each required scorer role to one uploaded file.";
+    case "artifact_select":
+      return "Attach or reference the file Agora should use.";
     default:
       return "Answer in one concrete sentence.";
   }
@@ -111,24 +111,7 @@ export function AuthoringQuestionList({
               ) : null}
 
               {isLegacyQuestion(question) &&
-              question.kind === "artifact_role_map" &&
-              question.artifact_roles.length > 0 ? (
-                <div className="space-y-1 pt-1 text-xs">
-                  {question.artifact_roles.map((role) => (
-                    <div key={role.role} className={hintClass}>
-                      <span className="font-mono text-[11px] font-bold uppercase tracking-wider">
-                        {role.label}
-                      </span>
-                      {role.visibility
-                        ? ` · ${role.visibility} during scoring`
-                        : ""}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {isLegacyQuestion(question) &&
-              question.kind === "artifact_role_map" &&
+              question.kind === "artifact_select" &&
               question.artifact_options.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {question.artifact_options.map((artifact) => (

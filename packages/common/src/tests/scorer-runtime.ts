@@ -1,47 +1,22 @@
 import assert from "node:assert/strict";
-import { resolveRuntimeFamilyRuntimeDefaults } from "../runtime-families.js";
 import {
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   buildScorerRuntimeConfig,
+  createCsvTableEvaluationContract,
+  createRuntimePolicies,
 } from "../schemas/scorer-runtime.js";
+import { resolveExecutionTemplateMount } from "../schemas/execution-template.js";
 import { createCsvTableSubmissionContract } from "../schemas/submission-contract.js";
 
 assert.equal(SCORER_RUNTIME_CONFIG_FILE_NAME, "agora-runtime.json");
 
-const regressionDefaults =
-  resolveRuntimeFamilyRuntimeDefaults("tabular_regression");
-assert.ok(
-  regressionDefaults,
-  "tabular_regression should define runtime defaults",
-);
-assert.equal(
-  regressionDefaults?.evaluationContract?.columns.id,
-  "id",
-  "tabular_regression should expose evaluation id column defaults",
-);
-assert.equal(
-  regressionDefaults?.evaluationContract?.columns.value,
-  "label",
-  "tabular_regression should expose evaluation target column defaults",
-);
-assert.equal(
-  regressionDefaults?.policies?.coverage_policy,
-  "reject",
-  "tabular_regression should reject partial coverage",
-);
-assert.equal(
-  regressionDefaults?.policies?.duplicate_id_policy,
-  "reject",
-  "tabular_regression should reject duplicate prediction ids",
-);
-assert.equal(
-  regressionDefaults?.policies?.invalid_value_policy,
-  "reject",
-  "tabular_regression should reject invalid numeric prediction rows",
-);
+const mount = resolveExecutionTemplateMount("official_table_metric_v1");
+assert.ok(mount, "official table template should define a mount");
+assert.equal(mount?.evaluationBundleName, "ground_truth.csv");
+assert.equal(mount?.submissionFileName, "submission.csv");
 
 const runtime = buildScorerRuntimeConfig({
-  runtimeFamily: "tabular_regression",
+  template: "official_table_metric_v1",
   metric: "r2",
   mount: {
     evaluationBundleName: "ground_truth.csv",
@@ -52,10 +27,19 @@ const runtime = buildScorerRuntimeConfig({
     idColumn: "sample_id",
     valueColumn: "forecast",
   }),
-  evaluationContract: regressionDefaults?.evaluationContract,
-  policies: regressionDefaults?.policies,
+  evaluationContract: createCsvTableEvaluationContract({
+    requiredColumns: ["id", "label"],
+    idColumn: "id",
+    valueColumn: "label",
+  }),
+  policies: createRuntimePolicies({
+    coveragePolicy: "reject",
+    duplicateIdPolicy: "reject",
+    invalidValuePolicy: "reject",
+  }),
 });
 
+assert.equal(runtime.template, "official_table_metric_v1");
 assert.equal(runtime.metric, "r2");
 assert.equal(runtime.mount.evaluation_bundle_name, "ground_truth.csv");
 assert.equal(runtime.mount.submission_file_name, "submission.csv");

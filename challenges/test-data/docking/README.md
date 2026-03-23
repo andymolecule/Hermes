@@ -8,12 +8,12 @@ This folder is useful for:
 - validating submission-format expectations for solvers
 
 Important current limitation:
-- the official docking runtime family exists
+- the legacy docking scorer fixture still exists in the repo
 - and `containers/gems-ranking-scorer/score.py` now evaluates CSV docking predictions against hidden reference scores
 - so this folder can be used as a realistic managed-authoring benchmark as long as the challenge fits the built-in CSV docking contract
 
 This folder is still aligned to the new model:
-- the official `docking` runtime family is the runtime config surface
+- this example reflects the older docking-specific scorer contract
 - the current example assumes the built-in CSV docking contract with `ligand_id` and `docking_score`
 
 ## Files
@@ -53,7 +53,7 @@ Use these values in `/post`:
 - Ligand set: `ligand_set.csv`
 
 ### Section 3: Evaluation
-- Keep the official docking runtime family selected
+- Keep the legacy docking scorer selected if you are replaying this historical example
 - Metric: `Spearman`
 - Submission format: `CSV with columns: ligand_id, docking_score`
 - Scoring description:

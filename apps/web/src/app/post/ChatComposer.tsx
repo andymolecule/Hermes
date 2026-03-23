@@ -39,7 +39,7 @@ interface ChatComposerProps {
 
 /* ── Helpers ───────────────────────────────────────────── */
 
-function formatRuntime(value: string) {
+function formatTemplate(value: string) {
   return value
     .split("_")
     .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
@@ -85,11 +85,11 @@ function CompilationCard({ card }: { card: CompilationResultOutput }) {
       </div>
 
       <div className="space-y-2 text-sm">
-        {card.runtime_family ? (
+        {card.template ? (
           <div className="flex justify-between">
-            <span className="text-warm-500">Runtime</span>
+            <span className="text-warm-500">Template</span>
             <span className="font-mono text-xs text-warm-800">
-              {formatRuntime(card.runtime_family)}
+              {formatTemplate(card.template)}
             </span>
           </div>
         ) : null}

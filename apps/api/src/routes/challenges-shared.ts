@@ -159,7 +159,10 @@ function cidToGatewayUrl(cid: string | null | undefined) {
 
 function toChallengeEvaluation(
   row: ChallengeRow | ChallengeListRow,
-): Pick<ChallengeEvaluation, "runtime_family" | "metric" | "scorer_image"> {
+): Pick<
+  ChallengeEvaluation,
+  "template" | "metric" | "comparator" | "scorer_image"
+> {
   const evaluation = resolveChallengeEvaluation(
     row as ChallengeRow & {
       evaluation_plan_json?: unknown;
@@ -167,11 +170,10 @@ function toChallengeEvaluation(
   );
 
   return {
-    runtime_family: evaluation.runtimeFamily,
+    template: evaluation.template,
     metric: evaluation.metric,
-    ...(typeof evaluation.image === "string" && evaluation.image.length > 0
-      ? { scorer_image: evaluation.image }
-      : {}),
+    comparator: evaluation.comparator,
+    scorer_image: evaluation.image,
   };
 }
 

@@ -70,7 +70,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "challenge_runtime_columns",
     table: "challenges",
-    select: "runtime_family,evaluation_plan_json,artifacts_json",
+    select: "evaluation_template,evaluation_plan_json,artifacts_json",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {

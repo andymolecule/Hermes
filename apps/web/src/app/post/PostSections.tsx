@@ -27,7 +27,7 @@ const STEP_LABELS: Record<PostStep, string> = {
   3: "Publish",
 };
 
-function formatRuntimeLabel(value: string) {
+function formatTemplateLabel(value: string) {
   return value
     .split("_")
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
@@ -321,10 +321,10 @@ export function ReviewStep({
         <div className="flex rounded-[2px] border-[2.5px] border-warm-900 bg-white shadow-[5px_5px_0px_var(--color-warm-900)]">
           <div className="flex-1 border-r-[2.5px] border-warm-900 p-4">
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-warm-500">
-              Runtime
+              Template
             </div>
             <div className="mt-1 font-display text-lg font-bold tracking-tight text-warm-900">
-              {formatRuntimeLabel(compilation.runtime_family)}
+              {formatTemplateLabel(compilation.template)}
             </div>
           </div>
           <div

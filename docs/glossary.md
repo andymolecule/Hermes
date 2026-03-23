@@ -40,9 +40,9 @@ Quick reference for key terms used across Agora documentation and code.
 
 | Term | Definition |
 |------|-----------|
-| **Runtime family** (`ManagedRuntimeFamily`) | Managed scoring runtime config in `runtime-families.ts`: container image, resource limits, mount layout, supported metrics, and expected submission kind. |
-| **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, runtime family, metric, and posting defaults. Used by the posting UI. |
-| **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by runtime family. |
+| **Execution template** (`OfficialExecutionTemplate`) | Official scorer config in `scorer-images.ts` and `schemas/execution-template.ts`: container image, resource limits, mount layout, and supported metrics. |
+| **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, suggested metric, and posting defaults. Used by the posting UI. |
+| **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by the execution template. |
 | **`score-local`** | Free, unlimited preview scoring. Runs the Docker scorer locally. No chain writes, no proof bundle, no payout effect. |
 | **Official scoring** | Canonical scoring path after the deadline. Worker runs scorer, pins proof bundle, posts score on-chain. `agora oracle-score` is the manual operator fallback. |
 | **Evaluation bundle** | Hidden labels or reference data mounted into the scorer container at runtime. Stored as an IPFS CID, not inside the scorer image. |

@@ -9,7 +9,11 @@ export const AUTHORING_QUESTION_FIELDS = [
   "distribution",
   "deadline",
   "metric",
-  "artifact_roles",
+  "evaluation_artifact",
+  "evaluation_id_column",
+  "evaluation_value_column",
+  "submission_id_column",
+  "submission_value_column",
 ] as const;
 
 export const authoringQuestionFieldSchema = z.enum(AUTHORING_QUESTION_FIELDS);
@@ -18,7 +22,7 @@ export const AUTHORING_QUESTION_KINDS = [
   "short_text",
   "currency_amount",
   "single_select",
-  "artifact_role_map",
+  "artifact_select",
 ] as const;
 
 export const authoringQuestionKindSchema = z.enum(AUTHORING_QUESTION_KINDS);
@@ -27,12 +31,6 @@ export const authoringQuestionOptionSchema = z.object({
   id: z.string().trim().min(1),
   label: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
-});
-
-export const authoringArtifactRoleRequirementSchema = z.object({
-  role: z.string().trim().min(1),
-  label: z.string().trim().min(1),
-  visibility: z.enum(["public", "private"]).nullable().default(null),
 });
 
 export const authoringQuestionSchema = z.object({
@@ -46,7 +44,6 @@ export const authoringQuestionSchema = z.object({
   blocking: z.boolean().default(true),
   options: z.array(authoringQuestionOptionSchema).default([]),
   artifact_options: z.array(authoringQuestionOptionSchema).default([]),
-  artifact_roles: z.array(authoringArtifactRoleRequirementSchema).default([]),
   reason_codes: z.array(z.string().trim().min(1)).default([]),
 });
 
@@ -58,9 +55,6 @@ export type AuthoringQuestionKindOutput = z.output<
 >;
 export type AuthoringQuestionOptionOutput = z.output<
   typeof authoringQuestionOptionSchema
->;
-export type AuthoringArtifactRoleRequirementOutput = z.output<
-  typeof authoringArtifactRoleRequirementSchema
 >;
 export type AuthoringQuestionOutput = z.output<typeof authoringQuestionSchema>;
 
@@ -181,13 +175,57 @@ const AUTHORING_QUESTION_DEFINITIONS: Record<
     blocking: true,
     options: [],
   },
-  artifact_roles: {
-    id: "artifact-roles",
-    field: "artifact_roles",
-    kind: "artifact_role_map",
-    label: "Artifact roles",
-    prompt: "Which uploaded file should Agora use for each required scorer role?",
-    why: "Agora cannot mount the right evaluation files until each uploaded artifact has a deterministic role.",
+  evaluation_artifact: {
+    id: "evaluation-artifact",
+    field: "evaluation_artifact",
+    kind: "artifact_select",
+    label: "Hidden evaluation file",
+    prompt: "Which uploaded file should Agora use as the hidden evaluation table?",
+    why: "Agora needs exactly one hidden ground-truth table before it can dry-run the scorer.",
+    required: true,
+    blocking: true,
+    options: [],
+  },
+  evaluation_id_column: {
+    id: "evaluation-id-column",
+    field: "evaluation_id_column",
+    kind: "single_select",
+    label: "Evaluation ID column",
+    prompt: "Which column in the hidden evaluation table should Agora treat as the ID?",
+    why: "Agora joins submission rows to evaluation rows by the resolved ID column.",
+    required: true,
+    blocking: true,
+    options: [],
+  },
+  evaluation_value_column: {
+    id: "evaluation-value-column",
+    field: "evaluation_value_column",
+    kind: "single_select",
+    label: "Evaluation score column",
+    prompt: "Which column in the hidden evaluation table should Agora score against?",
+    why: "Agora needs the ground-truth value column before it can configure the scorer.",
+    required: true,
+    blocking: true,
+    options: [],
+  },
+  submission_id_column: {
+    id: "submission-id-column",
+    field: "submission_id_column",
+    kind: "single_select",
+    label: "Submission ID column",
+    prompt: "Which column should solvers use as the ID in their submission table?",
+    why: "Agora needs the submission ID column to join solver rows to the hidden evaluation table.",
+    required: true,
+    blocking: true,
+    options: [],
+  },
+  submission_value_column: {
+    id: "submission-value-column",
+    field: "submission_value_column",
+    kind: "short_text",
+    label: "Submission score column",
+    prompt: "What should the solver score column be called in the submission table?",
+    why: "Agora needs the submission value column before it can finalize the solver upload contract.",
     required: true,
     blocking: true,
     options: [],
@@ -202,7 +240,6 @@ export function createAuthoringQuestion(input: {
   why?: string | null;
   options?: AuthoringQuestionOptionOutput[];
   artifactOptions?: AuthoringQuestionOptionOutput[];
-  artifactRoles?: AuthoringArtifactRoleRequirementOutput[];
 }) {
   const definition = AUTHORING_QUESTION_DEFINITIONS[input.field];
   return authoringQuestionSchema.parse({
@@ -212,7 +249,6 @@ export function createAuthoringQuestion(input: {
     why: input.why ?? definition.why,
     options: input.options ?? definition.options,
     artifact_options: input.artifactOptions ?? [],
-    artifact_roles: input.artifactRoles ?? [],
     reason_codes: input.reasonCodes ?? [],
   });
 }

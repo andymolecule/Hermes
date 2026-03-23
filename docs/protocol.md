@@ -208,7 +208,7 @@ The authoritative schema for challenge specification files.
 | `domain` | enum | One of: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`. |
 | `type` | enum | One of: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`. |
 | `description` | string | Full challenge description. |
-| `evaluation` | object | Runtime-backed scoring config. Managed challenges set `runtime_family`, `metric`, and a registry-sourced `scorer_image`. |
+| `evaluation` | object | Execution-backed scoring config. Challenge specs set `template`, `metric`, `comparator`, `scorer_image`, and a resolved `execution_contract`. |
 | `artifacts` | array | Normalized artifact list. Each artifact includes a `role`, `visibility`, and `uri`. |
 | `submission_contract` | object | Canonical machine-readable submission artifact contract. This is the only source of truth for what solvers must upload. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
@@ -219,11 +219,11 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `evaluation.runtime_family` | string | Managed runtime family ID (for example `reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, or `ranking`). |
-| `evaluation.metric` | string | Metric ID validated by the chosen runtime family (for example `r2`, `rmse`, `accuracy`, `spearman`, or `ndcg`). |
-| `evaluation.scorer_image` | string | Pinned scorer image digest used for deterministic execution. Managed publish copies this from the runtime registry; Expert Mode accepts poster input directly. |
-| `evaluation.evaluation_bundle` | string | Optional private evaluation bundle URI (`ipfs://` or `https://`) used by managed runtimes for hidden labels or reference outputs. |
-| `artifacts[].role` | string | Artifact role understood by the chosen runtime family (for example `training_data`, `target_structure`, or `reference_scores`). |
+| `evaluation.template` | string | Official execution template ID (for example `official_table_metric_v1`). |
+| `evaluation.metric` | string | Metric ID executed by the chosen official scorer template. |
+| `evaluation.scorer_image` | string | Pinned scorer image digest used for deterministic execution. |
+| `evaluation.execution_contract` | object | Resolved execution contract including the hidden evaluation artifact URI, column mappings, and runtime policies. |
+| `artifacts[].role` | string | Poster-defined artifact role label. Roles are descriptive metadata; the execution contract binds the hidden evaluation artifact explicitly. |
 | `artifacts[].visibility` | enum | One of: `public`, `private`. |
 | `artifacts[].uri` | string | Artifact URI. Accepts `ipfs://` or `https://`. |
 | `artifacts[].file_name` | string | Optional canonical file name when the source URI has no basename. |
@@ -246,10 +246,32 @@ domain: drug_discovery
 type: docking
 description: "Predict docking scores for the supplied ligand set against the target structure."
 evaluation:
-  runtime_family: docking
+  template: official_table_metric_v1
   metric: spearman
-  scorer_image: ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:...
-  evaluation_bundle: ipfs://QmReferenceScores
+  comparator: maximize
+  scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:...
+  execution_contract:
+    version: v1
+    template: official_table_metric_v1
+    scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:...
+    metric: spearman
+    comparator: maximize
+    evaluation_artifact_uri: ipfs://QmReferenceScores
+    evaluation_columns:
+      required: [ligand_id, reference_score]
+      id: ligand_id
+      value: reference_score
+      allow_extra: true
+    submission_columns:
+      required: [ligand_id, predicted_score]
+      id: ligand_id
+      value: predicted_score
+      allow_extra: true
+    visible_artifact_uris: []
+    policies:
+      coverage_policy: reject
+      duplicate_id_policy: reject
+      invalid_value_policy: reject
 artifacts:
   - role: target_structure
     visibility: public

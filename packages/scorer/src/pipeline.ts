@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  createCsvTableEvaluationContract,
   type CsvTableEvaluationContractOutput,
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
@@ -11,7 +12,6 @@ import {
   challengeSpecSchema,
   parseChallengeSpecDocument,
   resolveChallengeEvaluation,
-  resolveRuntimeFamilyRuntimeDefaults,
   resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
@@ -44,7 +44,7 @@ export interface ScoringPipelinePhaseObserver {
 
 export interface ExecuteScoringPipelineInput {
   image: string;
-  runtimeFamily?: string;
+  template?: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
   mount?: ScoringMountConfig;
@@ -123,8 +123,14 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,
-      evaluationContract: evalPlan.semiCustomExecution?.evaluation_contract,
-      policies: evalPlan.semiCustomExecution?.policies,
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: evalPlan.executionContract.evaluation_columns.required,
+        idColumn: evalPlan.executionContract.evaluation_columns.id,
+        valueColumn: evalPlan.executionContract.evaluation_columns.value,
+        allowExtraColumns:
+          evalPlan.executionContract.evaluation_columns.allow_extra,
+      }),
+      policies: evalPlan.executionContract.policies,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -256,18 +262,13 @@ export async function executeScoringPipeline(
         }
 
         await stageSourceToPath(input.submission, stagingPlan.submissionPath);
-        const runtimeFamily = input.runtimeFamily;
-        const runtimeDefaults = runtimeFamily
-          ? resolveRuntimeFamilyRuntimeDefaults(runtimeFamily)
-          : null;
         const runtimeConfig = buildScorerRuntimeConfig({
-          runtimeFamily,
+          template: input.template,
           metric: input.metric,
           mount: input.mount ?? DEFAULT_SCORER_MOUNT,
           submissionContract: input.submissionContract,
-          evaluationContract:
-            input.evaluationContract ?? runtimeDefaults?.evaluationContract,
-          policies: input.policies ?? runtimeDefaults?.policies,
+          evaluationContract: input.evaluationContract,
+          policies: input.policies,
         });
         await fs.writeFile(
           stagingPlan.runtimeConfigPath,

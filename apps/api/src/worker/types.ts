@@ -7,7 +7,7 @@ export interface ChallengeRow extends ChallengeEvalRow {
   id: string;
   contract_address: string;
   spec_cid?: string | null;
-  runtime_family: string;
+  evaluation_template: string;
   artifacts_json?: ChallengeArtifact[] | null;
   max_submissions_total?: number | null;
   max_submissions_per_solver?: number | null;

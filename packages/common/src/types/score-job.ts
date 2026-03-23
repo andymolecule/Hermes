@@ -23,8 +23,8 @@ const SCORE_JOB_STATUS_SET = new Set<string>(SCORE_JOB_STATUSES);
 
 const TERMINAL_SCORE_JOB_ERROR_PATTERNS = [
   /^invalid_submission:/i,
-  /^Invalid runtime family configuration:/i,
-  /^Unknown runtime family on challenge:/i,
+  /^Invalid execution template configuration:/i,
+  /^Unknown execution template on challenge:/i,
   /submission missing required columns/i,
   /ChallengeFinalized|ChallengeCancelled|InvalidStatus/i,
 ] as const;

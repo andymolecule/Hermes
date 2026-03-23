@@ -2,7 +2,7 @@
 
 This directory is the shared policy layer for challenge creation and authoring defaults.
 
-It does **not** own scorer runtime config. Official managed runtime config lives in `packages/common/src/runtime-families.ts`.
+It does **not** own scorer runtime config. Official scorer image and template config lives in `packages/common/src/scorer-images.ts` and `packages/common/src/schemas/execution-template.ts`.
 
 ## Files
 
@@ -18,7 +18,7 @@ It does **not** own scorer runtime config. Official managed runtime config lives
 
 If the question is:
 
-- "Which runtime family/type should this challenge default to?"
+- "Which execution template/type should this challenge default to?"
 - "How should a new challenge spec candidate be assembled?"
 
 the answer belongs here.

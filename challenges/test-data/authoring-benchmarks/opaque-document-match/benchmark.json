@@ -6,7 +6,6 @@
   "prompt_variants_root": "prompt-variants",
   "solver_submissions_root": "solver-submissions",
   "compile_invariants": {
-    "runtime_family": "custom_workflow_required",
     "evaluator_archetype": "exact_artifact_match",
     "metric": "exact_match",
     "artifact_roles": [
@@ -29,12 +28,8 @@
   },
   "acceptable_compile_states": ["rejected"],
   "disallowed_outcomes": {
-    "runtime_families": [
-      "tabular_regression",
-      "tabular_classification",
-      "ranking",
-      "docking",
-      "reproducibility"
+    "disallowed_templates": [
+      "official_table_metric_v1"
     ],
     "recommended_actions": []
   },

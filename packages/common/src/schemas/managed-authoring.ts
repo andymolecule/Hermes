@@ -16,6 +16,7 @@ import {
   challengeArtifactSchema,
   challengeSpecSchema,
 } from "./challenge-spec.js";
+import { resolvedTableExecutionContractSchema } from "./execution-contract.js";
 import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
@@ -290,16 +291,26 @@ export const challengeAuthoringIrSchema = z.object({
     missing_fields: z.array(authoringQuestionFieldSchema).default([]),
   }),
   evaluation: z.object({
-    runtime_family: z.string().trim().min(1).nullable(),
+    template: z.string().trim().min(1).nullable(),
     metric: z.string().trim().min(1).nullable(),
-    artifact_assignments: z.array(
-      z.object({
-        artifact_id: z.string().trim().min(1),
-        artifact_index: z.number().int().min(0),
-        role: z.string().trim().min(1),
-        visibility: z.enum(["public", "private"]),
-      }),
-    ),
+    comparator: authoringComparatorSchema.nullable().default(null),
+    evaluation_artifact_id: z.string().trim().min(1).nullable().default(null),
+    visible_artifact_ids: z
+      .array(z.string().trim().min(1))
+      .max(AUTHORING_MAX_ARTIFACTS)
+      .default([]),
+    evaluation_columns: z
+      .object({
+        id: z.string().trim().min(1).nullable().default(null),
+        value: z.string().trim().min(1).nullable().default(null),
+      })
+      .strict(),
+    submission_columns: z
+      .object({
+        id: z.string().trim().min(1).nullable().default(null),
+        value: z.string().trim().min(1).nullable().default(null),
+      })
+      .strict(),
     rejection_reasons: z.array(z.string().trim().min(1)),
     compile_error_codes: z.array(z.string().trim().min(1)),
     compile_error_message: z.string().trim().min(1).nullable(),
@@ -338,8 +349,10 @@ export const dryRunPreviewSchema = z.object({
 
 export const compilationResultSchema = z.object({
   challenge_type: z.string().trim().min(1),
-  runtime_family: z.string().trim().min(1),
+  template: z.string().trim().min(1),
   metric: z.string().trim().min(1),
+  comparator: authoringComparatorSchema,
+  execution_contract: resolvedTableExecutionContractSchema,
   resolved_artifacts: z.array(challengeArtifactSchema).min(1),
   submission_contract: submissionContractSchema,
   dry_run: dryRunPreviewSchema,

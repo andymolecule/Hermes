@@ -2,12 +2,9 @@ import {
   AgoraError,
   type AuthoringArtifactOutput,
   createCsvTableSubmissionContract,
-  lookupManagedRuntimeFamily,
+  createResolvedTableExecutionContract,
+  type ExecutionComparatorOutput,
 } from "@agora/common";
-import type {
-  CompilerArtifactAssignment,
-  SupportedRuntimeFamily,
-} from "./managed-authoring-compiler.js";
 
 export interface ResolvedManagedArtifacts {
   resolvedArtifacts: Array<
@@ -16,249 +13,128 @@ export interface ResolvedManagedArtifacts {
       visibility: "public" | "private";
     }
   >;
-  evaluationBundle?: string;
   submissionContract: ReturnType<typeof createCsvTableSubmissionContract>;
+  executionContract: ReturnType<typeof createResolvedTableExecutionContract>;
 }
 
-function inferIdColumn(artifact?: AuthoringArtifactOutput) {
-  const columns = artifact?.detected_columns ?? [];
-  const explicitId = columns.find((column: string) => /^id$/i.test(column));
-  return explicitId ?? columns[0] ?? "id";
+function artifactId(artifact: AuthoringArtifactOutput, index: number) {
+  return artifact.id?.trim() || `artifact-${index + 1}`;
 }
 
-function defaultVisibilityForRole(role: string): "public" | "private" {
-  switch (role) {
-    case "hidden_labels":
-    case "reference_ranking":
-    case "reference_scores":
-      return "private";
-    default:
-      return "public";
-  }
-}
-
-function artifactText(artifact: AuthoringArtifactOutput) {
-  return `${artifact.file_name ?? ""} ${(artifact.detected_columns ?? []).join(" ")}`
-    .toLowerCase()
-    .replace(/[_\-.]+/g, " ");
-}
-
-function inferRankingArtifactIndex(input: {
-  role: string;
+function resolveEvaluationArtifactIndex(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
-  usedIndexes: Set<number>;
+  evaluationArtifactId?: string | null;
 }) {
-  const candidates = input.uploadedArtifacts
-    .map((artifact, index) => ({
-      artifact,
-      index,
-      text: artifactText(artifact),
-    }))
-    .filter(({ index }) => !input.usedIndexes.has(index));
-
-  if (input.role === "reference_ranking") {
-    return (
-      candidates.find(({ text }) =>
-        /\b(reference|ground[_ -]?truth|truth)\b/.test(text),
-      )?.index ?? null
-    );
+  if (!input.evaluationArtifactId) {
+    return input.uploadedArtifacts.length === 1 ? 0 : null;
   }
 
-  if (input.role === "ranking_inputs") {
-    return (
-      candidates.find(
-        ({ text }) =>
-          /\b(candidate|candidates|input|inputs|library|ligand)\b/.test(text) &&
-          !/\b(reference|ground[_ -]?truth|truth)\b/.test(text),
-      )?.index ?? null
-    );
-  }
-
-  return null;
-}
-
-function inferArtifactAssignment(input: {
-  runtimeFamily: SupportedRuntimeFamily;
-  role: string;
-  uploadedArtifacts: AuthoringArtifactOutput[];
-  usedIndexes: Set<number>;
-}): CompilerArtifactAssignment | null {
-  if (input.runtimeFamily === "ranking") {
-    const artifactIndex = inferRankingArtifactIndex(input);
-    if (artifactIndex !== null) {
-      return {
-        artifactIndex,
-        role: input.role,
-        visibility: defaultVisibilityForRole(input.role),
-      };
-    }
-  }
-
-  return null;
-}
-
-export function assignArtifactsFromProposal(input: {
-  runtimeFamily: SupportedRuntimeFamily;
-  uploadedArtifacts: AuthoringArtifactOutput[];
-  artifactAssignments?: CompilerArtifactAssignment[];
-}): ResolvedManagedArtifacts | null {
-  const family = lookupManagedRuntimeFamily(input.runtimeFamily);
-  const assignments = input.artifactAssignments ?? [];
-  if (!family) {
-    return null;
-  }
-
-  const roleToAssignment = new Map<string, CompilerArtifactAssignment>();
-  const usedIndexes = new Set<number>();
-  for (const assignment of assignments) {
-    if (usedIndexes.has(assignment.artifactIndex)) {
-      throw new AgoraError(
-        "Managed authoring compiler assigned the same uploaded file to multiple roles. Next step: retry the compile request or use Expert Mode.",
-        {
-          code: "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
-          status: 422,
-          details: { runtimeFamily: input.runtimeFamily },
-        },
-      );
-    }
-    if (roleToAssignment.has(assignment.role)) {
-      throw new AgoraError(
-        "Managed authoring compiler returned duplicate artifact roles. Next step: retry the compile request or use Expert Mode.",
-        {
-          code: "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
-          status: 422,
-          details: { runtimeFamily: input.runtimeFamily },
-        },
-      );
-    }
-    usedIndexes.add(assignment.artifactIndex);
-    roleToAssignment.set(assignment.role, assignment);
-  }
-
-  for (const role of family.supportedArtifactRoles) {
-    if (roleToAssignment.has(role)) {
-      continue;
-    }
-    const inferredAssignment = inferArtifactAssignment({
-      runtimeFamily: input.runtimeFamily,
-      role,
-      uploadedArtifacts: input.uploadedArtifacts,
-      usedIndexes,
-    });
-    if (!inferredAssignment) {
-      continue;
-    }
-    usedIndexes.add(inferredAssignment.artifactIndex);
-    roleToAssignment.set(role, inferredAssignment);
-  }
-
-  const missingRoles = family.supportedArtifactRoles.filter(
-    (role) => !roleToAssignment.has(role),
+  return (
+    input.uploadedArtifacts.findIndex(
+      (artifact, index) =>
+        artifactId(artifact, index) === input.evaluationArtifactId,
+    ) ?? -1
   );
-  if (missingRoles.length > 0) {
+}
+
+export function resolveAuthoringArtifacts(input: {
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  evaluationArtifactId: string;
+  evaluationIdColumn: string;
+  evaluationValueColumn: string;
+  submissionIdColumn: string;
+  submissionValueColumn: string;
+  metric: string;
+  comparator: ExecutionComparatorOutput;
+  template: "official_table_metric_v1";
+  scorerImage: string;
+}): ResolvedManagedArtifacts {
+  const evaluationArtifactIndex = resolveEvaluationArtifactIndex({
+    uploadedArtifacts: input.uploadedArtifacts,
+    evaluationArtifactId: input.evaluationArtifactId,
+  });
+  if (
+    evaluationArtifactIndex === null ||
+    evaluationArtifactIndex < 0 ||
+    evaluationArtifactIndex >= input.uploadedArtifacts.length
+  ) {
     throw new AgoraError(
-      `Managed authoring compiler could not assign all required artifact roles (${missingRoles.join(", ")}). Next step: rename the uploaded files to make their roles explicit or use Expert Mode.`,
+      "Agora could not identify the hidden evaluation table from the uploaded files. Next step: select the evaluation file and retry.",
       {
-        code: "MANAGED_ARTIFACTS_AMBIGUOUS",
+        code: "MANAGED_EVALUATION_ARTIFACT_MISSING",
         status: 422,
-        details: { runtimeFamily: input.runtimeFamily, missingRoles },
       },
     );
   }
 
-  const resolvedArtifacts = family.supportedArtifactRoles.map((role) => {
-    const assignment = roleToAssignment.get(role);
-    const artifact =
-      assignment && input.uploadedArtifacts[assignment.artifactIndex];
-    if (!artifact) {
-      throw new AgoraError(
-        `Managed authoring compiler referenced a missing artifact for role ${role}. Next step: retry the compile request or use Expert Mode.`,
-        {
-          code: "MANAGED_ARTIFACT_ASSIGNMENTS_INVALID",
-          status: 422,
-          details: { runtimeFamily: input.runtimeFamily, role },
-        },
-      );
-    }
-    return {
-      ...artifact,
-      role,
-      visibility: assignment?.visibility ?? defaultVisibilityForRole(role),
-    };
+  const evaluationArtifact = input.uploadedArtifacts[evaluationArtifactIndex];
+  if (!evaluationArtifact) {
+    throw new AgoraError(
+      "Agora could not load the selected evaluation file. Next step: choose a valid uploaded file and retry.",
+      {
+        code: "MANAGED_EVALUATION_ARTIFACT_MISSING",
+        status: 422,
+      },
+    );
+  }
+  const detectedColumns = evaluationArtifact.detected_columns ?? [];
+  if (
+    !detectedColumns.includes(input.evaluationIdColumn) ||
+    !detectedColumns.includes(input.evaluationValueColumn)
+  ) {
+    throw new AgoraError(
+      "The selected evaluation file does not contain the chosen ID/value columns. Next step: pick columns that exist in the uploaded file and retry.",
+      {
+        code: "MANAGED_EVALUATION_COLUMNS_INVALID",
+        status: 422,
+      },
+    );
+  }
+
+  const resolvedArtifacts = input.uploadedArtifacts.map((artifact, index) => ({
+    ...artifact,
+    role: index === evaluationArtifactIndex ? "hidden_evaluation" : "supporting_context",
+    visibility: index === evaluationArtifactIndex ? ("private" as const) : ("public" as const),
+  }));
+
+  const submissionContract = createCsvTableSubmissionContract({
+    requiredColumns: [input.submissionIdColumn, input.submissionValueColumn],
+    idColumn: input.submissionIdColumn,
+    valueColumn: input.submissionValueColumn,
+    allowExtraColumns: true,
   });
 
-  switch (input.runtimeFamily) {
-    case "reproducibility": {
-      const sourceData = resolvedArtifacts.find(
-        (artifact) => artifact.role === "source_data",
-      );
-      const referenceOutput = resolvedArtifacts.find(
-        (artifact) => artifact.role === "reference_output",
-      );
-      const requiredColumns = referenceOutput?.detected_columns?.length
-        ? referenceOutput.detected_columns
-        : sourceData?.detected_columns?.length
-          ? sourceData.detected_columns
-          : ["id", "value"];
-      return {
-        resolvedArtifacts,
-        evaluationBundle: referenceOutput?.uri,
-        submissionContract: createCsvTableSubmissionContract({
-          requiredColumns,
-          idColumn: requiredColumns[0],
-        }),
-      };
-    }
-    case "tabular_regression":
-    case "tabular_classification": {
-      const evaluationFeatures = resolvedArtifacts.find(
-        (artifact) => artifact.role === "evaluation_features",
-      );
-      const hiddenLabels = resolvedArtifacts.find(
-        (artifact) => artifact.role === "hidden_labels",
-      );
-      const idColumn = inferIdColumn(evaluationFeatures);
-      return {
-        resolvedArtifacts,
-        evaluationBundle: hiddenLabels?.uri,
-        submissionContract: createCsvTableSubmissionContract({
-          requiredColumns: [idColumn, "prediction"],
-          idColumn,
-          valueColumn: "prediction",
-        }),
-      };
-    }
-    case "ranking": {
-      const rankingInputs = resolvedArtifacts.find(
-        (artifact) => artifact.role === "ranking_inputs",
-      );
-      const referenceRanking = resolvedArtifacts.find(
-        (artifact) => artifact.role === "reference_ranking",
-      );
-      const idColumn = inferIdColumn(rankingInputs);
-      return {
-        resolvedArtifacts,
-        evaluationBundle: referenceRanking?.uri,
-        submissionContract: createCsvTableSubmissionContract({
-          requiredColumns: [idColumn, "score"],
-          idColumn,
-          valueColumn: "score",
-        }),
-      };
-    }
-    case "docking": {
-      const referenceScores = resolvedArtifacts.find(
-        (artifact) => artifact.role === "reference_scores",
-      );
-      return {
-        resolvedArtifacts,
-        evaluationBundle: referenceScores?.uri,
-        submissionContract: createCsvTableSubmissionContract({
-          requiredColumns: ["ligand_id", "docking_score"],
-          idColumn: "ligand_id",
-          valueColumn: "docking_score",
-        }),
-      };
-    }
-  }
+  const executionContract = createResolvedTableExecutionContract({
+    template: input.template,
+    scorerImage: input.scorerImage,
+    metric: input.metric,
+    comparator: input.comparator,
+    evaluationArtifactUri: evaluationArtifact.uri,
+    evaluationColumns: {
+      required: [input.evaluationIdColumn, input.evaluationValueColumn],
+      id: input.evaluationIdColumn,
+      value: input.evaluationValueColumn,
+      allow_extra: true,
+    },
+    submissionColumns: {
+      required: [input.submissionIdColumn, input.submissionValueColumn],
+      id: input.submissionIdColumn,
+      value: input.submissionValueColumn,
+      allow_extra: true,
+    },
+    visibleArtifactUris: resolvedArtifacts
+      .filter((artifact) => artifact.visibility === "public")
+      .map((artifact) => artifact.uri),
+    policies: {
+      coverage_policy: "reject",
+      duplicate_id_policy: "reject",
+      invalid_value_policy: "reject",
+    },
+  });
+
+  return {
+    resolvedArtifacts,
+    submissionContract,
+    executionContract,
+  };
 }

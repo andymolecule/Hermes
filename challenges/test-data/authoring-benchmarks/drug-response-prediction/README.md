@@ -12,7 +12,7 @@ meant to answer a different question from the category fixtures:
 The scientific task still fits the current managed runtime surface:
 
 - challenge type: `prediction`
-- runtime family: `tabular_regression`
+- execution template: `official_table_metric_v1`
 - metric: `r2`
 
 ## Benchmark Goal

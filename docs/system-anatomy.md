@@ -100,16 +100,17 @@ Deterministic execution happens inside the official scorer images. Everything
 above this layer exists to choose the right runtime, stage the right files, and
 record the result.
 
-### Layer 1: Runtime-family registry
+### Layer 1: Execution-template registry
 
-`packages/common/src/runtime-families.ts` is the managed scorer catalog:
+`packages/common/src/scorer-images.ts` and
+`packages/common/src/schemas/execution-template.ts` define the official scorer
+catalog:
 
-- runtime family id
+- execution template id
 - pinned scorer image
 - supported metrics
 - resource limits
-- submission kind
-- artifact role expectations
+- mount layout
 
 ### Layer 2: Session authoring
 

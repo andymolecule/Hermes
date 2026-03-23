@@ -605,7 +605,6 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
     );
   }
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    env: cachedRuntimeConfig.env,
     submissionContract: cachedRuntimeConfig.submissionContract,
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     policies: cachedRuntimeConfig.policies,
@@ -736,7 +735,6 @@ export async function verifySubmission(input: {
     }
 
     const scoringSpecConfig = await resolveScoringRuntimeConfig({
-      env: cachedRuntimeConfig.env,
       submissionContract: cachedRuntimeConfig.submissionContract,
       evaluationContract: cachedRuntimeConfig.evaluationContract,
       policies: cachedRuntimeConfig.policies,
@@ -754,8 +752,9 @@ export async function verifySubmission(input: {
         privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),
       }),
       submissionContract: scoringSpecConfig.submissionContract,
+      evaluationContract: scoringSpecConfig.evaluationContract,
       metric: evalPlan.metric,
-      env: scoringSpecConfig.env,
+      policies: scoringSpecConfig.policies,
     });
 
     try {

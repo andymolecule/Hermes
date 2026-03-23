@@ -48,7 +48,7 @@ interface ReviewPanelProps {
 
 /* ── Helpers ───────────────────────────────────────────── */
 
-function formatRuntime(value: string) {
+function formatTemplate(value: string) {
   return value
     .split("_")
     .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
@@ -164,11 +164,11 @@ export function ReviewPanel({
                 Scoring Engine
               </div>
               <div className="space-y-2">
-                {compilation?.runtime_family ? (
+                {compilation?.template ? (
                   <div className="flex justify-between text-sm">
-                    <span className="text-warm-500">Runtime</span>
+                    <span className="text-warm-500">Template</span>
                     <span className="font-mono text-xs font-medium text-warm-800">
-                      {formatRuntime(compilation.runtime_family)}
+                      {formatTemplate(compilation.template)}
                     </span>
                   </div>
                 ) : null}

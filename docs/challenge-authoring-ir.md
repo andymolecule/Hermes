@@ -63,7 +63,7 @@ answer:
 - what solvers are expected to submit
 - how winning is measured
 - which artifacts are public vs hidden
-- which supported runtime family fits
+- which execution template and metric fit
 - what information is still missing
 - why Agora rejected the task if it cannot be compiled into a valid challenge
 
@@ -103,7 +103,7 @@ type ChallengeAuthoringIr = {
     missing_fields: string[];
   };
   evaluation: {
-    runtime_family: string | null;
+    template: string | null;
     metric: string | null;
     artifact_assignments: Array<{
       artifact_id: string;
@@ -142,14 +142,14 @@ of the public contract.
 The LLM may:
 
 - read rough context and artifact metadata
-- propose the most likely supported runtime family
+- propose the most likely execution template
 - propose the most likely metric
 - identify missing required fields
 - suggest artifact roles
 
 The LLM may not:
 
-- invent unsupported runtime families
+- invent unsupported execution templates
 - invent unsupported metrics
 - skip deterministic compile
 - publish directly from prose
@@ -161,7 +161,7 @@ Deterministic compile decides whether Agora can produce a valid challenge spec.
 It validates:
 
 - required intent fields
-- runtime family support
+- execution template support
 - metric validity
 - artifact-role completeness
 - submission contract shape

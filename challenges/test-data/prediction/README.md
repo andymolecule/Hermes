@@ -33,7 +33,7 @@ It is not meant to simulate a full production-scale benchmark. It is meant to lo
 These fixtures are aligned to the current managed runtime.
 
 Important current constraint:
-- the official `tabular_regression` runtime family currently resolves to the default mount layout:
+- the official `official_table_metric_v1` template currently resolves to the default mount layout:
   - evaluation bundle -> `ground_truth.csv`
   - solver artifact -> `submission.csv`
 - the regression scorer reads `/input/agora-runtime.json` staged by the pipeline
@@ -112,7 +112,7 @@ Why this matters:
   `Predictions are matched to the held-out test set by id and evaluated against private labels using R².`
 
 Why this matters:
-- matches the actual runtime-family + scorer contract
+- matches the actual execution-template + scorer contract
 - gives solvers a realistic, explicit submission contract
 
 ### Step 4: Reward & Timeline

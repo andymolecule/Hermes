@@ -11,10 +11,36 @@ import {
 } from "../src/routes/challenges-shared.js";
 
 const reproducibilityEvaluation = {
-  runtime_family: "reproducibility",
-  metric: "exact_match",
-  scorer_image: "ghcr.io/andymolecule/gems-match-scorer:v1",
-  evaluation_bundle: "ipfs://bundle",
+  evaluation_template: "official_table_metric_v1",
+  metric: "r2",
+  comparator: "maximize",
+  scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+  execution_contract: {
+    version: "v1",
+    template: "official_table_metric_v1",
+    scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+    metric: "r2",
+    comparator: "maximize",
+    evaluation_artifact_uri: "ipfs://bundle",
+    evaluation_columns: {
+      required: ["id", "label"],
+      id: "id",
+      value: "label",
+      allow_extra: false,
+    },
+    submission_columns: {
+      required: ["id", "prediction"],
+      id: "id",
+      value: "prediction",
+      allow_extra: false,
+    },
+    visible_artifact_uris: [],
+    policies: {
+      coverage_policy: "ignore",
+      duplicate_id_policy: "ignore",
+      invalid_value_policy: "ignore",
+    },
+  },
 } as const;
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
@@ -32,7 +58,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
-        runtime_family: "reproducibility",
+        evaluation_template: "official_table_metric_v1",
         evaluation_plan_json: reproducibilityEvaluation,
         artifacts_json: [],
         status: CHALLENGE_STATUS.open,
@@ -72,7 +98,7 @@ test("challenge detail floors submissions_count when settlement state is ahead o
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
-        runtime_family: "reproducibility",
+        evaluation_template: "official_table_metric_v1",
         evaluation_plan_json: reproducibilityEvaluation,
         artifacts_json: [],
         status: CHALLENGE_STATUS.finalized,

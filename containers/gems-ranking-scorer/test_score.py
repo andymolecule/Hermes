@@ -20,7 +20,7 @@ def load_scorer_module():
 def runtime_config(metric: str = "spearman") -> dict:
     return {
         "version": "v1",
-        "runtime_family": "ranking",
+        "template": "official_table_metric_v1",
         "metric": metric,
         "mount": {
             "evaluation_bundle_name": "ground_truth.csv",
@@ -56,7 +56,7 @@ def runtime_config(metric: str = "spearman") -> dict:
 def docking_runtime_config(metric: str = "spearman") -> dict:
     return {
         "version": "v1",
-        "runtime_family": "docking",
+        "template": "official_table_metric_v1",
         "metric": metric,
         "mount": {
             "evaluation_bundle_name": "ground_truth.csv",

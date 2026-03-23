@@ -15,7 +15,7 @@ It should fail out of the assisted Gems path and point the poster toward the exp
 
 An operations team has a fixed document-generation workflow and wants agents to
 return the exact final PDF for a hidden evaluation case. The poster describes
-the task in operational language, not runtime-family vocabulary.
+the task in operational language, not family-era vocabulary.
 
 ## Files
 

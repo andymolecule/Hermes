@@ -74,13 +74,15 @@ export function buildManagedAuthoringIr(input: {
     ingested_at?: string;
     raw_context?: Record<string, unknown> | null;
   };
-  runtimeFamily?: string | null;
+  template?: string | null;
   metric?: string | null;
-  artifactAssignments?: Array<{
-    artifactIndex: number;
-    role: string;
-    visibility: "public" | "private";
-  }>;
+  comparator?: "maximize" | "minimize" | "closest_match" | "pass_fail" | "custom" | null;
+  evaluationArtifactId?: string | null;
+  visibleArtifactIds?: string[];
+  evaluationIdColumn?: string | null;
+  evaluationValueColumn?: string | null;
+  submissionIdColumn?: string | null;
+  submissionValueColumn?: string | null;
   questions?: AuthoringQuestionOutput[];
   compileError?: {
     code?: string | null;
@@ -131,22 +133,19 @@ export function buildManagedAuthoringIr(input: {
       missing_fields: missingFields,
     },
     evaluation: {
-      runtime_family: input.runtimeFamily ?? null,
+      template: input.template ?? null,
       metric: input.metric ?? null,
-      artifact_assignments: (input.artifactAssignments ?? []).map(
-        (assignment) => {
-          const assignedArtifact =
-            input.uploadedArtifacts[assignment.artifactIndex];
-          return {
-            artifact_id: assignedArtifact
-              ? artifactId(assignedArtifact, assignment.artifactIndex)
-              : `artifact-${assignment.artifactIndex + 1}`,
-            artifact_index: assignment.artifactIndex,
-            role: assignment.role,
-            visibility: assignment.visibility,
-          };
-        },
-      ),
+      comparator: input.comparator ?? null,
+      evaluation_artifact_id: input.evaluationArtifactId ?? null,
+      visible_artifact_ids: input.visibleArtifactIds ?? [],
+      evaluation_columns: {
+        id: input.evaluationIdColumn ?? null,
+        value: input.evaluationValueColumn ?? null,
+      },
+      submission_columns: {
+        id: input.submissionIdColumn ?? null,
+        value: input.submissionValueColumn ?? null,
+      },
       rejection_reasons: input.rejectionReasons ?? [],
       compile_error_codes:
         input.compileError?.code != null ? [input.compileError.code] : [],

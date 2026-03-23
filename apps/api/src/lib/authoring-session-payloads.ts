@@ -3,8 +3,8 @@ import {
   PROTOCOL_FEE_PERCENT,
   authoringSessionListItemSchema,
   authoringSessionSchema,
-  getManagedRuntimeMetric,
-  lookupManagedRuntimeFamily,
+  getExecutionTemplateMetric,
+  resolveExecutionTemplateLimits,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
@@ -28,7 +28,6 @@ export interface SessionQuestionDescriptor {
   text: string;
   reason: string;
   options?: string[];
-  role?: string;
 }
 
 function toPublicState(input: {
@@ -108,17 +107,14 @@ export function buildSessionQuestionDescriptors(
   const descriptors: SessionQuestionDescriptor[] = [];
 
   for (const question of pending) {
-    if (question.kind === "artifact_role_map") {
-      for (const role of question.artifact_roles) {
-        descriptors.push({
-          id: `${question.id}::${role.role}`,
-          field: question.field,
-          kind: "file",
-          text: buildArtifactRoleQuestionText(role.label),
-          reason: toQuestionReason(question),
-          role: role.role,
-        });
-      }
+    if (question.kind === "artifact_select") {
+      descriptors.push({
+        id: question.id,
+        field: question.field,
+        kind: "file",
+        text: question.prompt,
+        reason: toQuestionReason(question),
+      });
       continue;
     }
 
@@ -199,11 +195,11 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
     return null;
   }
 
-  const runtimeFamily = lookupManagedRuntimeFamily(compilation.runtime_family);
-  const metric = getManagedRuntimeMetric(
-    compilation.runtime_family,
+  const metric = getExecutionTemplateMetric(
+    compilation.template,
     compilation.metric,
   );
+  const templateLimits = resolveExecutionTemplateLimits(compilation.template);
   const challengeSpec = compilation.challenge_spec;
   const submissionContract = compilation.submission_contract;
 
@@ -214,13 +210,13 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
   }
 
   return {
-    runtime_family: compilation.runtime_family,
+    template: compilation.template,
     metric: compilation.metric,
-    objective: metric?.direction === "lower" ? "minimize" : "maximize",
-    scorer_image:
-      challengeSpec.evaluation.scorer_image ??
-      runtimeFamily?.scorerImage ??
-      "",
+    objective: compilation.comparator,
+    scorer_image: compilation.execution_contract.scorer_image,
+    evaluation_artifact_uri:
+      compilation.execution_contract.evaluation_artifact_uri,
+    evaluation_columns: compilation.execution_contract.evaluation_columns,
     submission_contract: {
       version: submissionContract.version,
       kind: submissionContract.kind,
@@ -242,13 +238,12 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
       },
     },
     resource_limits: {
-      memory_mb: parseMemoryMb(runtimeFamily?.defaultLimits.memory ?? "0"),
-      cpus: Number.parseInt(runtimeFamily?.defaultLimits.cpus ?? "0", 10) || 1,
-      timeout_minutes: Math.max(
-        1,
-        Math.round((runtimeFamily?.defaultLimits.timeoutMs ?? 60_000) / 60_000),
-      ),
-      pids_limit: runtimeFamily?.defaultLimits.pids ?? 64,
+      memory_mb: templateLimits ? parseMemoryMb(templateLimits.memory) : 2048,
+      cpus: templateLimits ? Number.parseInt(templateLimits.cpus, 10) : 2,
+      timeout_minutes: templateLimits
+        ? Math.max(1, Math.round(templateLimits.timeoutMs / 60_000))
+        : 10,
+      pids_limit: templateLimits?.pids ?? 64,
     },
     reward: {
       total: challengeSpec.reward.total,
@@ -270,8 +265,8 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
   }
 
   const challengeSpec = compilation.challenge_spec;
-  const metric = getManagedRuntimeMetric(
-    compilation.runtime_family,
+  const metric = getExecutionTemplateMetric(
+    compilation.template,
     compilation.metric,
   );
 
@@ -282,9 +277,9 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
     reward: `${challengeSpec.reward.total} USDC`,
     distribution: challengeSpec.reward.distribution,
     deadline: challengeSpec.deadline,
-    runtime_family: compilation.runtime_family,
+    template: compilation.template,
     metric: compilation.metric,
-    objective: metric?.direction === "lower" ? "minimize" : "maximize",
+    objective: compilation.comparator,
     artifacts_count: compilation.resolved_artifacts.length,
   };
 }
@@ -294,16 +289,6 @@ function buildArtifactRoleMap(session: AuthoringSessionRow) {
 
   for (const artifact of session.compilation_json?.resolved_artifacts ?? []) {
     roleByUri.set(artifact.uri, artifact.role);
-  }
-
-  const uploadedArtifacts = (session.uploaded_artifacts_json ??
-    []) as StoredAuthoringSessionArtifact[];
-  for (const assignment of session.authoring_ir_json?.evaluation
-    .artifact_assignments ?? []) {
-    const artifact = uploadedArtifacts[assignment.artifact_index];
-    if (artifact?.uri) {
-      roleByUri.set(artifact.uri, assignment.role);
-    }
   }
 
   return roleByUri;

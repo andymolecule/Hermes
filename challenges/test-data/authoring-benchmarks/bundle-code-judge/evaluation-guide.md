@@ -2,7 +2,7 @@
 
 Expected compile outcome:
 - state: `rejected`
-- no managed runtime family is chosen
+- no official table template is chosen
 - the submission contract stays conceptually opaque `.zip` bundle oriented
 - the failure points the poster toward the explicit custom scorer workflow
 
@@ -18,7 +18,7 @@ What the guided flow should clarify:
 - reward, distribution, and submission deadline details if omitted
 
 What counts as a pass:
-- no managed runtime family is chosen
+- no official table template is chosen
 - no ML-specific artifact roles leak into the draft
 - the bundle submission contract expectations remain `.zip` / `application/zip`
 - the draft fails cleanly instead of pretending it is executable

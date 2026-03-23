@@ -66,7 +66,7 @@ assert.equal(
 );
 assert.equal(
   isTerminalScoreJobError(
-    "Invalid runtime family configuration: scorer image is not valid for tabular_regression",
+    "Invalid execution template configuration: scorer image is not valid for official_table_metric_v1",
   ),
   true,
   "invalid challenge scoring configuration should count as terminal",

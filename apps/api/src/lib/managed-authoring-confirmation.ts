@@ -5,16 +5,15 @@ import {
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   PROTOCOL_FEE_PERCENT,
-  getManagedRuntimeMetric,
-  lookupManagedRuntimeFamily,
+  getExecutionTemplateMetric,
+  lookupExecutionTemplate,
 } from "@agora/common";
-import type { SupportedRuntimeFamily } from "./managed-authoring-compiler.js";
+import type { SupportedExecutionTemplate } from "./managed-authoring-compiler.js";
 
 export interface ParsedThreshold {
   operator: "gte" | "lte";
   value: number;
 }
-
 function formatUsdc(value: number) {
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
@@ -73,17 +72,12 @@ function metricPattern(metric: string) {
 }
 
 export function parsePayoutThreshold(
-  runtimeFamily: SupportedRuntimeFamily,
   metric: string,
+  comparator: "maximize" | "minimize",
   sourceText: string,
 ): ParsedThreshold | undefined {
-  const metricDefinition = getManagedRuntimeMetric(runtimeFamily, metric);
-  if (!metricDefinition) {
-    return undefined;
-  }
-
   const operatorPattern =
-    metricDefinition.direction === "lower"
+    comparator === "minimize"
       ? "(<=|<|at most|less than|under|below|no more than)"
       : "(>=|>|at least|more than|above|over|no less than)";
 
@@ -102,26 +96,27 @@ export function parsePayoutThreshold(
   }
 
   return {
-    operator: metricDefinition.direction === "lower" ? "lte" : "gte",
+    operator: comparator === "minimize" ? "lte" : "gte",
     value: parsed,
   };
 }
 
 export function buildConfirmationContract(input: {
-  runtimeFamily: SupportedRuntimeFamily;
+  template: SupportedExecutionTemplate;
   metric: string;
+  comparator: "maximize" | "minimize";
   challengeSpec: ChallengeSpecOutput;
   submissionContract: CompilationResultOutput["submission_contract"];
   dryRun: DryRunPreviewOutput;
 }): ConfirmationContractOutput {
-  const runtimeFamily = lookupManagedRuntimeFamily(input.runtimeFamily);
-  const metric = getManagedRuntimeMetric(input.runtimeFamily, input.metric);
+  const template = lookupExecutionTemplate(input.template);
+  const metric = getExecutionTemplateMetric(input.template, input.metric);
   const submissionColumns =
     input.submissionContract.kind === "csv_table"
       ? input.submissionContract.columns.required.join(", ")
       : "the required file contract";
   const normalizationNote =
-    metric?.direction === "lower"
+    input.comparator === "minimize"
       ? " Agora normalizes lower-is-better raw metrics into a higher-is-better payout score for ranking and settlement."
       : "";
 
@@ -130,7 +125,7 @@ export function buildConfirmationContract(input: {
       input.submissionContract.kind === "csv_table"
         ? `Solvers upload a CSV with columns: ${submissionColumns}.`
         : "Solvers upload the required result artifact.",
-    scoring_summary: `Agora will score submissions with ${metric?.label ?? input.metric} (${metric?.direction === "lower" ? "lower is better" : "higher is better"}) using the ${runtimeFamily?.displayName ?? input.runtimeFamily} runtime family.${normalizationNote}${input.challengeSpec.minimum_score !== undefined ? ` Submissions below ${input.challengeSpec.minimum_score} are ineligible for payout.` : ""}`,
+    scoring_summary: `Agora will score submissions with ${metric?.label ?? input.metric} (${input.comparator === "minimize" ? "lower is better" : "higher is better"}) using the ${template?.label ?? input.template}.${normalizationNote}${input.challengeSpec.minimum_score !== undefined ? ` Submissions below ${input.challengeSpec.minimum_score} are ineligible for payout.` : ""}`,
     public_private_summary: input.challengeSpec.artifacts.map((artifact) => {
       const accessLabel =
         artifact.visibility === "private"

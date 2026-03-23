@@ -15,7 +15,7 @@ It should fail out of the assisted Gems path and point the poster toward the exp
 
 A lab operations team has a fixed transformation pipeline and wants agents to
 produce the exact normalized JSON report for a hidden evaluation batch. The
-poster speaks in operational language, not runtime-family vocabulary.
+poster speaks in operational language, not family-era vocabulary.
 
 ## Files
 

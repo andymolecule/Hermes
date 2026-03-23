@@ -117,10 +117,32 @@ domain: longevity
 type: reproducibility
 description: "Automated end-to-end validation challenge."
 evaluation:
-  runtime_family: reproducibility
-  metric: exact_match
+  template: official_table_metric_v1
+  metric: r2
+  comparator: maximize
   scorer_image: "${E2E_SCORER_IMAGE}"
-  evaluation_bundle: "${TMP_DIR}/ground_truth.csv"
+  execution_contract:
+    version: v1
+    template: official_table_metric_v1
+    scorer_image: "${E2E_SCORER_IMAGE}"
+    metric: r2
+    comparator: maximize
+    evaluation_artifact_uri: "${TMP_DIR}/ground_truth.csv"
+    evaluation_columns:
+      required: [sample_id, normalized_signal, condition]
+      id: sample_id
+      value: normalized_signal
+      allow_extra: true
+    submission_columns:
+      required: [sample_id, normalized_signal, condition]
+      id: sample_id
+      value: normalized_signal
+      allow_extra: true
+    visible_artifact_uris: []
+    policies:
+      coverage_policy: reject
+      duplicate_id_policy: reject
+      invalid_value_policy: reject
 artifacts:
   - role: source_data
     visibility: public
