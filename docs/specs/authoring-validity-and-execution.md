@@ -331,7 +331,7 @@ predefined families.
 
 Current direction:
 
-- `gems-generated-scorer:v1`
+- `gems-tabular-scorer:v1`
 
 ### 4.10 Visible Artifacts Are Solver Context, Not Scorer Inputs
 
@@ -467,63 +467,207 @@ The new path should converge on:
 There is no data-preservation or backward-compatibility requirement forcing the
 new path to preserve those labels as public concepts.
 
-## 5. Execution Contract Shape
+## 5. Canonical V1 Model
 
-The resolved execution contract must be capable of expressing:
+The clean target is one canonical execution model from authoring through worker
+runtime.
 
-- scorer image
-- metric
-- comparator
-- submission kind
-- exactly one hidden evaluation artifact binding in V1
-- zero or more visible supporting artifacts
-- explicit submission column mapping
-- explicit evaluation column mapping
-- any required deterministic evaluation policy
+That means:
 
-This contract is the thing Agora actually executes.
+- one official scorer catalog as the only source of truth for official runtime
+  capability
+- one challenge-level execution object as the only source of truth for what the
+  scorer runs
+- one submission contract as the only source of truth for what solvers upload
+- one DB execution plan cache derived from the challenge-level execution object
+- zero mirrored copies of template, metric, comparator, or scorer image across
+  nested objects
 
-### 5.2 V1 Hidden Evaluation Table Rule
+### 5.1 Standard V1 Scope
 
-V1 should require one hidden evaluation table artifact.
+Standard authoring in V1 means:
 
-That contract must declare:
+- one broad official table scorer template
+- one hidden evaluation table artifact
+- one solver submission table contract
+- one metric
+- one derived comparator
+- explicit column mappings
 
-- required columns
-- one explicit `evaluation_id_column`
-- one explicit primary `evaluation_value_column`
+Current standard-authoring runtime:
 
-Extra columns are allowed by default and ignored by the scorer unless the
-execution contract explicitly says otherwise.
+- template id: `official_table_metric_v1`
+- scorer image family: `ghcr.io/andymolecule/gems-tabular-scorer`
 
-Design rule:
+Other scorer containers may still exist in the repository as experiments or
+future work, but they are not part of the active official authoring/runtime
+model unless they have an entry in the official scorer catalog.
 
-- require only what deterministic scoring actually needs
-- do not reject evaluation tables merely because they include extra columns
-- do not force posters to rename domain-native columns into generic placeholder
-  names
+### 5.2 One Official Scorer Catalog
 
-### 5.3 V1 Scorer Execution Contract
+The split between:
 
-The V1 table scorer should execute one normalized contract with:
+- image whitelist
+- execution-template registry
+- semi-custom template-to-image maps
 
-- `scorer_image`
-- `metric`
-- `comparator`
-- `evaluation_artifact_uri`
-- `submission_contract`
-- `evaluation_id_column`
-- `evaluation_value_column`
-- `submission_id_column`
-- `submission_value_column`
+should be removed.
 
-Optional future fields may exist later, but these are the V1 minimum.
+Agora should keep one catalog of official scorer templates. If a runtime is not
+in that catalog, it is not part of the official scoring contract.
 
-### 5.3.1 V1 Comparison Semantics
+Target ownership:
 
-The V1 scorer contract is not an open-ended poster-defined comparison model.
+- one file owns template id, image, supported metrics, mount, limits, and
+  policy capability
+- release verification, authoring validation, worker preflight, and digest
+  resolution all read from that same file
+- no separate "bouncer list" is allowed
 
-It is fixed and deterministic:
+### 5.3 Canonical Challenge Spec Shape
+
+The challenge spec should stop storing execution identity twice.
+
+The target active schema is:
+
+```ts
+type ChallengeSpecV4 = {
+  schema_version: 4;
+  id: string;
+  title: string;
+  domain: ChallengeDomain;
+  type: ChallengeType;
+  description: string;
+  execution: {
+    version: "v1";
+    template: "official_table_metric_v1";
+    scorer_image: string; // pinned digest
+    metric: string;
+    comparator: "maximize" | "minimize";
+    evaluation_artifact_uri: string;
+    evaluation_contract: {
+      kind: "csv_table";
+      columns: {
+        required: string[];
+        id: string;
+        value: string;
+        allow_extra: boolean;
+      };
+    };
+    policies: {
+      coverage_policy: "ignore" | "reject" | "penalize";
+      duplicate_id_policy: "ignore" | "reject";
+      invalid_value_policy: "ignore" | "reject";
+    };
+  };
+  artifacts: ChallengeArtifact[];
+  submission_contract: SubmissionContractV1;
+  reward: ChallengeReward;
+  deadline: string;
+  minimum_score?: number;
+  dispute_window_hours?: number;
+  max_submissions_total?: number;
+  max_submissions_per_solver?: number;
+  tags?: string[];
+  lab_tba?: string;
+  source?: ChallengeSource;
+};
+```
+
+Rules:
+
+- `execution` is the only execution source of truth in the spec
+- `submission_contract` is the only solver-submission source of truth
+- `artifacts` is the only artifact-visibility source of truth
+- visible artifact URIs are derived from `artifacts`, not copied into
+  `execution`
+- `execution` must not contain a second nested contract that repeats the same
+  fields
+
+### 5.4 Canonical Execution Plan Cache Shape
+
+The worker cache should stop mirroring the old spec shape.
+
+The target DB field is:
+
+- `execution_plan_json`
+
+Target shape:
+
+```ts
+type ExecutionPlanCacheV1 = {
+  version: "v1";
+  template: "official_table_metric_v1";
+  scorer_image: string; // pinned digest
+  metric: string;
+  comparator: "maximize" | "minimize";
+  mount: {
+    evaluation_bundle_name: string;
+    submission_file_name: string;
+  };
+  limits: {
+    memory: string;
+    cpus: string;
+    pids: number;
+    timeout_ms: number;
+  };
+  evaluation_artifact_uri: string;
+  evaluation_contract: {
+    kind: "csv_table";
+    columns: {
+      required: string[];
+      id: string;
+      value: string;
+      allow_extra: boolean;
+    };
+  };
+  submission_contract: SubmissionContractV1;
+  policies: {
+    coverage_policy: "ignore" | "reject" | "penalize";
+    duplicate_id_policy: "ignore" | "reject";
+    invalid_value_policy: "ignore" | "reject";
+  };
+};
+```
+
+Rules:
+
+- this is the single worker-facing cached runtime plan
+- there is no separate `evaluation_template` or `execution_template` DB column
+- this cache is derived from the challenge spec plus official scorer catalog
+- the worker should not need to re-read IPFS challenge specs on the hot path
+
+### 5.5 What Must Not Be Stored Twice
+
+These values are canonical once and only once:
+
+- `template` -> stored in `execution` and copied into `execution_plan_json`
+- `scorer_image` -> stored in `execution` and copied into `execution_plan_json`
+- `metric` -> stored in `execution` and copied into `execution_plan_json`
+- `comparator` -> stored in `execution` and copied into `execution_plan_json`
+- submission table columns -> stored in `submission_contract`, not inside
+  `execution`
+- visible artifact membership -> stored in `artifacts`, not inside `execution`
+
+If a field is derivable from the official scorer catalog or from another
+canonical object, do not store it twice inside the same layer.
+
+### 5.6 Exact-Digest Rule
+
+Standard authoring must resolve to an exact pinned official scorer digest before
+publish.
+
+Rules:
+
+- same-repository matching is not sufficient for the canonical official path
+- tagged image references are a temporary authoring convenience only
+- canonical challenge specs and execution plans must persist the exact digest
+- worker execution must refuse host-local builds that do not resolve to a
+  registry-backed digest
+
+### 5.7 V1 Comparison Semantics
+
+The V1 scorer contract is fixed and deterministic:
 
 - join solver submission rows to hidden evaluation rows using the resolved id
   columns
@@ -532,81 +676,15 @@ It is fixed and deterministic:
 - compute one metric
 - interpret the result using one comparator
 
-So V1 scoring semantics are:
+The poster chooses only:
 
-- one id join
-- one value-to-value comparison
-- one metric
-- one comparator
-
-The poster does not define comparison semantics beyond:
-
-- which file is the hidden evaluation table
-- which file is the solver submission table
+- which artifact is the hidden evaluation table
+- what the submission contract is
 - which columns are the id/value columns
 - which metric to use
 
-Everything else is defined by the official scorer image and the resolved
-execution contract.
-
-### 5.4 Execution Contract Transparency
-
-The resolved execution contract should expose all first-class scoring fields to
-the poster and agent caller.
-
-That includes:
-
-- `metric`
-- `comparator`
-- `scorer_image`
-- `evaluation_id_column`
-- `evaluation_value_column`
-- `submission_id_column`
-- `submission_value_column`
-- `required_submission_columns`
-
-The scorer image must remain visible.
-
-Rationale:
-
-- public official scorer images are part of Agora's trust model
-- solvers should be able to inspect the exact scoring implementation before
-  deciding to compete
-- the poster should be able to verify the exact execution contract before
-  publish
-
-Design rule:
-
-- do not hide the scoring contract from legitimate participants in the flow
-- transparency beats implicit scorer behavior
-
-### 5.1 V1 Submission Table Rule
-
-V1 should require one solver submission table artifact.
-
-That contract must declare:
-
-- required columns
-- one explicit `id_column`
-- one explicit primary scored `value_column`
-
-Agora must not impose a fake "two-column only" rule.
-
-The poster may include additional columns when useful, such as:
-
-- rank
-- confidence
-- annotations
-- notes
-- domain-specific metadata
-
-Extra columns are allowed by default and ignored by the scorer unless the
-execution contract explicitly says otherwise.
-
-Design rule:
-
-- require only what deterministic scoring actually needs
-- do not reject solver submissions merely because they include extra columns
+Everything else comes from the official scorer catalog and the resolved
+execution object.
 
 ## 6. Reject vs Awaiting Input
 
@@ -643,477 +721,269 @@ Examples:
 - "most creative" or "best written" evaluation
 - workflows that require executing arbitrary solver code in V1
 
-## 7. Relationship To Existing Systems
+## 7. Concrete Refactor Plan
 
-This spec locks the target direction for the new path:
+This redesign should be implemented as a real replacement, not as a
+compatibility wrapper that preserves the split-registry model underneath.
 
-- one public execution contract
-- explicit mappings
-- official scorer images
-- `ready` only after real dry-run execution
+### 7.1 File-Level Plan
 
-The old public family-style authoring model should not survive as the primary
-public abstraction.
+#### `packages/common/src/scorer-images.ts`
 
-Implementation may still need migration steps internally, but the design target
-is consolidation into the single broad table-scorer path described here.
+Delete this file.
 
-## 8. Target System Design
+Replacement:
 
-The cleanest target system is one explicit table-scoring contract from
-authoring through execution.
+- move OCI image parsing, repository matching, and digest-resolution helpers
+  into a small utility such as `packages/common/src/oci-image.ts`
+- do not keep `OFFICIAL_SCORER_IMAGES`
 
-Agora should stop treating authoring as "map this idea to one of several rigid
-runtime families" and instead treat authoring as "fill one deterministic table
-scoring contract until it is executable".
+Reason:
 
-### 8.1 One Public Execution Contract
+- the official runtime set should come from the official scorer catalog, not a
+  second whitelist
 
-The public authoring target is one contract:
+#### `packages/common/src/schemas/execution-template.ts`
 
-- one official scorer image
-- one hidden evaluation table
-- one solver submission table
-- one metric
-- one derived comparator
-- one explicit set of column mappings
-- optional visible supporting artifacts
+Replace this file with a single official scorer catalog module, ideally named:
 
-That contract should be the public source of truth for what Agora will execute.
-
-Internally, Agora may still keep a very small official scorer-template registry
-so it knows which image digest and capability set correspond to the selected
-execution template version.
-
-That is not the same thing as reintroducing many public runtime families.
-
-### 8.2 Canonical V1 Contract Shape
-
-The resolved V1 execution contract should expose at least:
-
-- `version`
-- `template`
-- `scorer_image`
-- `metric`
-- `comparator`
-- `evaluation_artifact_uri`
-- `evaluation_columns.required`
-- `evaluation_columns.id`
-- `evaluation_columns.value`
-- `evaluation_columns.allow_extra`
-- `submission_columns.required`
-- `submission_columns.id`
-- `submission_columns.value`
-- `submission_columns.allow_extra`
-- `visible_artifact_uris`
-- `policies.coverage_policy`
-- `policies.duplicate_id_policy`
-- `policies.invalid_value_policy`
-
-Conceptually:
-
-```json
-{
-  "version": "v1",
-  "template": "official_table_metric_v1",
-  "scorer_image": "ghcr.io/.../gems-tabular-scorer:v1",
-  "metric": "spearman",
-  "comparator": "maximize",
-  "evaluation_artifact_uri": "ipfs://...",
-  "evaluation_columns": {
-    "required": ["peptide_id", "reference_rank"],
-    "id": "peptide_id",
-    "value": "reference_rank",
-    "allow_extra": true
-  },
-  "submission_columns": {
-    "required": ["peptide_id", "predicted_score"],
-    "id": "peptide_id",
-    "value": "predicted_score",
-    "allow_extra": true
-  },
-  "visible_artifact_uris": ["ipfs://..."],
-  "policies": {
-    "coverage_policy": "ignore",
-    "duplicate_id_policy": "ignore",
-    "invalid_value_policy": "ignore"
-  }
-}
-```
-
-This is the contract Layer 3 validates and the scorer image executes.
-
-### 8.3 Authoring Pipeline
-
-The clean target pipeline is:
-
-1. caller sends structured partial authoring state
-2. Agora deterministically normalizes any obvious defaults and derived fields
-3. Layer 3 resolves a concrete execution contract from the submitted state
-4. Layer 3 validates artifacts, mappings, and metric compatibility
-5. Layer 3 dry-runs the official scorer image against that contract
-6. if dry-run passes, session becomes `ready`
-7. if the poster can fix any missing or malformed field, stay in
-   `awaiting_input` with exact structured validation blockers
-8. reject only when the challenge fundamentally cannot be expressed as
-   deterministic table scoring under the current official framework
-
-The default path does not invoke Layer 2 at all.
-
-If Agora later exposes an assist path for loose natural-language inference,
-that path is separate and out of scope for this default authoring model.
-
-### 8.4 Layer Responsibilities
-
-Layer 3 should do only:
-
-- normalize the resolved execution contract
-- validate artifact bindings
-- validate column mappings and required columns
-- derive comparator from metric when deterministic
-- build the compiled challenge spec
-- run dry-run execution
-- produce a concrete success or blocker result
-
-If a future assist path exists, it should do only:
-
-- translate loose prose into candidate structured fields
-- write those fields into the same partial authoring state the default path
-  accepts
-- never decide validity
-- never override explicit caller-provided structured fields
-- never be required for the default `/sessions` contract
-
-### 8.5 Smallest Clean Cutover
-
-The lowest-entropy implementation is not to invent a new execution system.
-
-The repository already has a partial structured-table execution path and the
-`official_table_metric_v1` execution template.
-
-So the smallest clean cutover is:
-
-1. stop using old managed preset selection as the primary authoring
-   target
-2. make structured-table execution through the broad official scorer template
-   the default authoring target
-3. have the session API accept structured partial intent + execution state as
-   the primary contract
-4. have Layer 3 compile that contract into the existing executable structured
-   table path
-5. keep any assist/inference behavior completely outside the default session
-   contract
-6. keep any legacy preset-handling only as temporary internal migration
-   glue, not as the public or primary design
-
-This reuses existing scorer-runtime and structured-table execution machinery
-instead of creating another abstraction layer.
-
-For V1, the primary execution template should map to the existing tabular
-scorer path, not the generated-scorer runner.
-
-### 8.6 What Should Be Removed
-
-The new path should remove these concepts from public authoring:
-
-- user-facing family-era labels
-- rigid family-specific artifact role taxonomies as the primary abstraction
-- public dependence on fixed generic column names such as `id` and `label`
-- rejection just because a challenge missed one legacy family preset
-
-The new path should replace them with:
-
-- one explicit execution contract
-- explicit column mappings
-- one hidden evaluation artifact binding
-- one submission contract
-- one official table scorer dry-run
-
-## 9. Replacement Architecture
-
-This redesign should be implemented as a real replacement of the old public
-authoring model, not as a compatibility wrapper that keeps the old mental model
-alive underneath.
-
-Design rule:
-
-- if a concept exists only to preserve the old family-based model, remove it
-- if a concept directly serves the single table-execution contract, keep it
-
-### 9.1 Target Modules
-
-The clean target system should converge on five focused modules.
-
-#### `execution-template.ts`
-
-Defines the official scorer template used by standard authoring.
+- `packages/common/src/official-scorer-catalog.ts`
 
 Responsibilities:
 
-- template id
-- pinned official scorer image
-- supported metric capability set
-- supported runtime policy set
+- template id schema derived from catalog keys
+- official scorer image reference
+- supported metrics and comparator semantics
+- allowed runtime policy values
 - mount names
-- default resource limits
+- default runtime limits
+- digest-resolution helper entry points
 
-V1 target:
+V1 catalog target:
 
-- one template: `official_table_metric_v1`
+- exactly one standard-authoring entry: `official_table_metric_v1`
 
-This replaces the old multi-family runtime registry as the primary source of
-truth.
+#### `packages/common/src/schemas/evaluator-contract.ts`
 
-#### `execution-contract.ts`
+Remove active-path template-to-image routing from this file.
 
-Defines the canonical resolved contract Agora executes.
+Rules:
 
-Responsibilities:
+- no separate semi-custom execution-template image map
+- no second metric-to-template routing table for the active path
+- if non-table runtimes return later, they must register through the same
+  official scorer catalog instead of creating another registry
 
-- table scorer contract schema
-- evaluation column mapping
-- submission column mapping
-- required columns
-- policies
-- scorer image reference
-- comparator
+If the entire semi-custom execution path is not part of the active V1 authoring
+surface, retire it from the active path rather than preserving it as hidden
+infrastructure.
 
-This replaces public dependence on the old family-id field.
+#### `packages/common/src/schemas/execution-contract.ts`
 
-#### Future explicit assist path (out of scope for the default session API)
+Keep this file, but simplify it to the canonical execution object only.
 
-Optional assist-only adapter, not part of the default authoring session flow.
+Target responsibilities:
 
-Responsibilities if it exists later:
+- `execution` schema
+- evaluation contract schema
+- policy schema reuse
+- no nested copy of template/image/metric/comparator
+- no submission-contract mirror
 
-- translate loose prose into candidate structured fields
-- write only unresolved fields into the same partial authoring state the
-  machine-first session API already accepts
-- never classify into legacy runtime families
-- never expose family-style labels in public authoring responses
-- never become the source of truth for validity
+#### `packages/common/src/schemas/challenge-spec.ts`
 
-#### `authoring-compiler.ts`
+Rewrite this file around `schema_version: 4`.
 
-Layer 3 normalization and validation.
+Changes:
 
-Responsibilities:
+- rename top-level `evaluation` to `execution`
+- remove nested `execution_contract`
+- remove all "field X must match nested field X" validation
+- validate `execution` against the official scorer catalog
+- validate `submission_contract` independently
+- validate that `execution.evaluation_artifact_uri` points at one private
+  artifact
+- derive any worker/runtime cache from `execution` + `submission_contract`
 
-- normalize resolved execution contract
-- validate hidden/public artifact binding
-- validate mapped columns
+#### `packages/common/src/challenges/templates.ts`
+
+Reduce this file to authoring defaults only, or rename it to make that role
+explicit.
+
+Allowed responsibilities:
+
+- default domain
+- default metric
+- label/description text used by authoring UX
+
+Disallowed responsibilities:
+
+- execution-template routing
+- compatibility-type inference
+- execution behavior branching
+
+`challenge_type` remains a product/UX taxonomy, not a scorer-routing key.
+
+#### `apps/api/src/lib/authoring-compiler.ts`
+
+Refactor the compiler to resolve one canonical execution object.
+
+Rules:
+
+- resolve the standard template internally
 - derive comparator from metric
-- build compiled challenge spec
-- run dry-run
-- return `ready`, `awaiting_input`, or `rejected`
+- bind the hidden evaluation artifact
+- build `submission_contract`
+- build `execution`
+- dry-run using that exact object
+- stop compiling to duplicated `evaluation` + nested `execution_contract`
 
-#### `challenge-spec.ts`
+#### `apps/api/src/lib/authoring-checklist.ts`
 
-Stores the resolved execution contract directly.
+Read from the canonical execution object and official scorer catalog only.
 
-Responsibilities:
+Do not infer execution semantics from challenge type or legacy family labels.
 
-- validate the explicit execution contract
-- validate scorer template/image
-- validate reward/deadline/distribution
-- expose the exact scorer configuration that will execute
+#### `apps/api/src/lib/authoring-session-payloads.ts`
 
-### 9.2 Target Public Shape
+Expose:
 
-The public compiled spec should stop centering the old family-id field.
-
-The design target is:
-
-- `evaluation.metric`
-- `evaluation.comparator`
-- `evaluation.scorer_image`
-- `evaluation.template`
-- `evaluation.execution_contract`
-
-Where `evaluation.execution_contract` contains:
-
-- hidden evaluation artifact binding
+- execution metric
+- objective/comparator
+- exact pinned scorer image
+- evaluation artifact URI
 - evaluation columns
-- submission columns
+- submission contract
+- resource limits derived from the official scorer catalog
+
+Do not expose or depend on duplicate nested execution fields.
+
+#### `packages/db/src/queries/challenges.ts`
+
+Persist:
+
+- `execution_plan_json`
+
+Do not persist:
+
+- `evaluation_template`
+- `execution_template`
+- any second execution identity field outside the plan
+
+#### `apps/api/src/worker/scoring.ts`
+
+Read only:
+
+- `execution_plan_json`
+
+Do not re-resolve execution behavior from challenge type, compatibility type,
+or legacy preset labels.
+
+#### `packages/scorer/src/pipeline.ts`
+
+Take:
+
+- pinned scorer image
+- mount
+- evaluation contract
+- submission contract
 - policies
 
-Public authoring should speak in terms of:
+The pipeline remains generic. It should not know challenge families.
 
-- metric
-- hidden evaluation file
-- submission table
-- column mappings
-- scorer image
+#### Tests
 
-Not:
+Replace tests that assert duplicated execution fields with tests that assert:
 
-- family-era label
-- evaluator archetype
-- multiple hidden execution modes
+- catalog is the only official runtime source of truth
+- challenge specs contain one canonical execution object
+- execution plans derive deterministically from challenge specs
+- exact digest resolution is required for canonical official specs
+- challenge type defaults do not control worker execution
 
-### 9.3 What Should Be Deleted
+### 7.2 Cutover Sequence
 
-The clean end state should delete or fully retire these as primary public
-authoring concepts:
+Use this order:
 
-- public family-era labels
-- family-specific artifact-role taxonomies as the primary authoring abstraction
-- family-based metric validation
-- family-based dry-run branches
-- family-based compile prompts
-- family-based default submission contracts
+1. land the spec and file-boundary changes first
+2. introduce the official scorer catalog
+3. rewrite challenge spec + execution plan schemas
+4. rewire authoring compiler and worker/runtime readers
+5. delete split registries and dead compatibility helpers
+6. update tests and release-verification scripts
 
-Examples in the current codebase that should not survive as the primary model:
+## 8. No-Drift Rules
 
-- the family-switch model in
-  `/Users/changyuesin/Agora/apps/api/src/lib/authoring-artifact-resolution.ts`
-- any future assist path must stay outside the default deterministic
-  `/sessions` flow
-- public family validation as the primary path in legacy scorer registries
+These rules should block future drift.
 
-### 9.4 What Can Stay
+### 8.1 One Official Runtime Source Of Truth
 
-These pieces can stay if repointed to the new model:
+Official scorer capability must live in exactly one module.
 
-- the current official tabular scorer image
-- scorer-runtime config schema
-- dry-run execution machinery
-- challenge canonicalization and digest resolution
-- session transport contract
-- reward/distribution/deadline/session lifecycle rules
+Do not add:
 
-The existing structured-table execution machinery is useful only as an
-implementation bridge into the new model. It should not remain a second public
-concept once the new path is complete.
+- a second official image whitelist
+- a second template registry
+- a metric-to-template table outside the official scorer catalog
 
-## 10. Refactor Blueprint
+### 8.2 One Execution Source Of Truth Per Layer
 
-The implementation should proceed in a way that lands the intended system
-directly, not by layering new abstractions on top of the old ones.
+Per layer:
 
-### 10.1 Step 1: Introduce The New Core Types
+- challenge spec -> `execution`
+- DB cache -> `execution_plan_json`
+- runtime workspace -> `agora-runtime.json`
 
-Create:
+Do not create a nested mirror object inside the same layer.
 
-- `packages/common/src/schemas/execution-template.ts`
-- `packages/common/src/schemas/execution-contract.ts`
+### 8.3 Challenge Type Does Not Route Execution
 
-Move into these files:
+`challenge_type` is for product UX, defaults, analytics, and browsing.
 
-- official table template definition
-- official image reference
-- supported metric capability set
-- supported policy capability set
-- explicit resolved execution-contract schema
+It must not:
 
-Do not carry over:
+- decide scorer image
+- decide worker mount
+- decide runtime limits
+- decide comparator
 
-- `ranking`
-- `docking`
-- `tabular_regression`
-- `tabular_classification`
-- `reproducibility`
+### 8.4 Transparency Beats Derivation At The Edge
 
-as first-class design inputs.
+Public compilation and published challenge specs should expose:
 
-### 10.2 Step 2: Replace Conversation-First Intake With Structured State
-
-Replace the current question/answer and prose-first intake with direct
-structured state patches.
-
-The default session contract should accept and return:
-
-- partial `intent`
-- partial `execution`
-- normalized `artifacts`
-- structured `validation`
-
-It should not depend on:
-
-- `legacy_family_id`
-- question IDs
-- answer payloads
-- hidden Layer 2 inference
-
-### 10.3 Step 3: Replace Family-Based Artifact Assignment
-
-Replace family-role inference with direct execution-contract binding.
-
-The compiler should resolve:
-
-- which uploaded file is the one hidden evaluation table
-- which files remain visible context
-- which columns are mapped into scoring
-
-If obvious, infer.
-If ambiguous, ask.
-
-No family-specific switch is needed.
-
-### 10.4 Step 4: Replace Family-Based Dry-Run Construction
-
-Dry-run should become one path:
-
-1. read hidden evaluation table
-2. read execution-contract mappings
-3. build a sample submission table from the mapped columns
-4. write one runtime config
-5. run the official table scorer
-
-This should replace per-family dry-run branching.
-
-### 10.5 Step 5: Replace Challenge Spec Evaluation Shape
-
-`challenge-spec.ts` should stop validating the primary public path through
-legacy family-id fields.
-
-The primary public path should validate:
-
-- execution template id
-- scorer image
+- template
 - metric
 - comparator
-- execution contract
+- exact pinned scorer image
+- evaluation contract
+- submission contract
 
-Legacy family-oriented fields should be removed from the new primary path, not
-hidden behind adapters.
+The system may derive these internally, but once resolved they should be
+visible to posters, solvers, and verifiers.
 
-### 10.6 Step 6: Delete Old Public Family Concepts
+### 8.5 Repository Artifacts Are Not Official Runtime Config
 
-After the new path is wired end-to-end:
+A scorer container existing under `containers/` does not make it an official
+runtime.
 
-- delete old family prompts
-- delete old family artifact switches
-- delete old family dry-run branches
-- delete old public family references from docs and API examples
+Only the official scorer catalog defines official runtime support.
 
-The only remaining family-era logic should be code that still serves another
-non-authoring purpose. If it does not serve a live purpose, remove it.
+## 9. Supporting Docs That Must Stay Aligned
 
-## 11. Anti-Goals
+These docs should describe the same model:
 
-The redesign should explicitly avoid:
+- `docs/specs/authoring-validity-and-execution.md`
+- `docs/specs/authoring-session-api.md`
+- `docs/protocol.md`
+- `docs/data-and-indexing.md`
+- `docs/architecture.md`
+- `docs/contributing/scoring-engines.md`
 
-- preserving family-based public abstractions for comfort
-- adding a second new abstraction layer on top of the single execution-contract
-  model
-- keeping multiple public execution modes that mean the same thing
-- treating transition convenience as a reason to keep conceptual debt
-- broadening validity without executable dry-run proof
+If one of these documents still describes:
 
-## 12. Final Design Principle
+- split image/template registries
+- duplicated execution identity fields
+- challenge-type-based scorer routing
+- `evaluation_plan_json` as the canonical worker cache
 
-The target system is:
-
-- one public execution model
-- one official table scorer template in V1
-- one explicit execution contract
-- one Layer 3 validation and dry-run path
-- one deterministic machine-first session contract
-
-This is cleaner than legacy multi-lane routing and cleaner than multiple
-public modes with hidden overlap.
-
-The right replacement is not a better wrapper around the old model.
-
-It is a smaller model.
+that document is stale and must be updated before code changes land.

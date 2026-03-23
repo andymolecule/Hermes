@@ -56,15 +56,15 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
-    id: "challenge_evaluation_plan_column",
+    id: "challenge_execution_plan_column",
     table: "challenges",
-    select: "evaluation_plan_json",
+    select: "execution_plan_json",
     nextStep: "apply migration",
   },
   {
     id: "challenge_runtime_columns",
     table: "challenges",
-    select: "evaluation_template,evaluation_plan_json,artifacts_json",
+    select: "execution_plan_json,artifacts_json",
     nextStep: "apply migration",
   },
   {

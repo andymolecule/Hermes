@@ -37,7 +37,6 @@ test("buildExecutionPatch only emits populated scoring fields", () => {
   const patch = buildExecutionPatch(state);
 
   assert.deepEqual(patch, {
-    template: "official_table_metric_v1",
     metric: "spearman",
     evaluation_artifact_id: "artifact-1",
     evaluation_id_column: "peptide_id",
@@ -100,11 +99,14 @@ test("applySessionToForm hydrates the form from resolved and compiled session da
       objective: "maximize",
       scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
       evaluation_artifact_uri: "ipfs://artifact-1",
-      evaluation_columns: {
-        required: ["peptide_id", "reference_rank"],
-        id: "peptide_id",
-        value: "reference_rank",
-        allow_extra: true,
+      evaluation_contract: {
+        kind: "csv_table",
+        columns: {
+          required: ["peptide_id", "reference_rank"],
+          id: "peptide_id",
+          value: "reference_rank",
+          allow_extra: true,
+        },
       },
       submission_contract: {
         version: "v1",

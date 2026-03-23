@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
@@ -10,38 +11,7 @@ import {
   listChallengesQuerySchema,
 } from "../src/routes/challenges-shared.js";
 
-const reproducibilityEvaluation = {
-  evaluation_template: "official_table_metric_v1",
-  metric: "r2",
-  comparator: "maximize",
-  scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-  execution_contract: {
-    version: "v1",
-    template: "official_table_metric_v1",
-    scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-    metric: "r2",
-    comparator: "maximize",
-    evaluation_artifact_uri: "ipfs://bundle",
-    evaluation_columns: {
-      required: ["id", "label"],
-      id: "id",
-      value: "label",
-      allow_extra: false,
-    },
-    submission_columns: {
-      required: ["id", "prediction"],
-      id: "id",
-      value: "prediction",
-      allow_extra: false,
-    },
-    visible_artifact_uris: [],
-    policies: {
-      coverage_policy: "ignore",
-      duplicate_id_policy: "ignore",
-      invalid_value_policy: "ignore",
-    },
-  },
-} as const;
+const reproducibilityExecutionPlan = createExecutionPlanFixture();
 
 test("open challenge detail redacts submissions and leaderboard", async () => {
   let submissionReads = 0;
@@ -58,8 +28,7 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
-        evaluation_template: "official_table_metric_v1",
-        evaluation_plan_json: reproducibilityEvaluation,
+        execution_plan_json: reproducibilityExecutionPlan,
         artifacts_json: [],
         status: CHALLENGE_STATUS.open,
       }) as never,
@@ -98,8 +67,7 @@ test("challenge detail floors submissions_count when settlement state is ahead o
       ({
         id: "challenge-1",
         contract_address: "0x0000000000000000000000000000000000000001",
-        evaluation_template: "official_table_metric_v1",
-        evaluation_plan_json: reproducibilityEvaluation,
+        execution_plan_json: reproducibilityExecutionPlan,
         artifacts_json: [],
         status: CHALLENGE_STATUS.finalized,
         winning_on_chain_sub_id: 0,

@@ -122,7 +122,7 @@ assert.equal(
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
-  version: 3,
+  version: 4,
   origin: {
     provider: "direct",
     external_id: null,
@@ -153,7 +153,7 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     warnings: [],
     missing_fields: [],
   },
-  evaluation: {
+  execution: {
     template: "official_table_metric_v1",
     metric: "spearman",
     comparator: "maximize",

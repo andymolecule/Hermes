@@ -1238,7 +1238,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             objective: { type: "string", enum: ["maximize", "minimize"] },
             scorer_image: { type: "string" },
             evaluation_artifact_uri: { type: "string" },
-            evaluation_columns: { type: "object" },
+            evaluation_contract: { type: "object" },
             submission_contract: { type: "object" },
             resource_limits: { type: "object" },
             reward: { type: "object" },
@@ -1252,7 +1252,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "objective",
             "scorer_image",
             "evaluation_artifact_uri",
-            "evaluation_columns",
+            "evaluation_contract",
             "submission_contract",
             "resource_limits",
             "reward",
@@ -1541,7 +1541,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "refs",
           ],
         },
-        ChallengeEvaluation: {
+        ChallengeExecution: {
           type: "object",
           properties: {
             template: { type: "string" },
@@ -1598,8 +1598,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 poster_address: addressSchema(),
-                evaluation: {
-                  $ref: "#/components/schemas/ChallengeEvaluation",
+                execution: {
+                  $ref: "#/components/schemas/ChallengeExecution",
                 },
                 distribution_type: {
                   type: "string",

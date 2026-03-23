@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  createCsvTableEvaluationContract,
   type CsvTableEvaluationContractOutput,
   DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
@@ -11,7 +10,7 @@ import {
   buildScorerRuntimeConfig,
   challengeSpecSchema,
   parseChallengeSpecDocument,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
@@ -119,18 +118,12 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     const spec = challengeSpecSchema.parse(
       parseChallengeSpecDocument(await getText(specCid)),
     );
-    const evalPlan = resolveChallengeEvaluation(spec);
+    const evalPlan = resolveChallengeExecution(spec);
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,
-      evaluationContract: createCsvTableEvaluationContract({
-        requiredColumns: evalPlan.executionContract.evaluation_columns.required,
-        idColumn: evalPlan.executionContract.evaluation_columns.id,
-        valueColumn: evalPlan.executionContract.evaluation_columns.value,
-        allowExtraColumns:
-          evalPlan.executionContract.evaluation_columns.allow_extra,
-      }),
-      policies: evalPlan.executionContract.policies,
+      evaluationContract: spec.execution.evaluation_contract,
+      policies: evalPlan.execution.policies,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

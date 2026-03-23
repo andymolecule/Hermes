@@ -17,7 +17,8 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
-  defaultMinimumScoreForEvaluation,
+  defaultMinimumScoreForExecution,
+  loadConfig,
   validateChallengeSpec,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
@@ -133,7 +134,7 @@ function decimalToWad(value: number): bigint {
 }
 
 function defaultMinimumScoreForSpec(spec: ChallengeSpecOutput) {
-  return defaultMinimumScoreForEvaluation(spec.evaluation);
+  return defaultMinimumScoreForExecution(spec.execution);
 }
 
 export function buildPostCommand() {
@@ -225,18 +226,18 @@ export function buildPostCommand() {
           }
         }
 
-        if (parsed.evaluation && typeof parsed.evaluation === "object") {
-          const evaluation = parsed.evaluation as {
-            evaluation_bundle?: unknown;
+        if (parsed.execution && typeof parsed.execution === "object") {
+          const execution = parsed.execution as {
+            evaluation_artifact_uri?: unknown;
           };
-          if (typeof evaluation.evaluation_bundle === "string") {
+          if (typeof execution.evaluation_artifact_uri === "string") {
             const pinnedBundle = await maybePinLocalRef(
-              evaluation.evaluation_bundle,
+              execution.evaluation_artifact_uri,
               "evaluation bundle",
               specBaseDir,
               pinnedRefs,
             );
-            evaluation.evaluation_bundle = pinnedBundle.source;
+            execution.evaluation_artifact_uri = pinnedBundle.source;
           }
         }
 
@@ -247,7 +248,11 @@ export function buildPostCommand() {
             `Invalid challenge spec:\n${formatZodError(validation.error)}`,
           );
         }
-        const spec = await canonicalizeChallengeSpec(validation.data);
+        const runtimeConfig = loadConfig();
+        const spec = await canonicalizeChallengeSpec(validation.data, {
+          resolveOfficialPresetDigests:
+            runtimeConfig.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
+        });
 
         if (!(spec.reward.distribution in distributionMap)) {
           throw new Error(

@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import {
+  resolveOfficialScorerMount,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   buildScorerRuntimeConfig,
   createCsvTableEvaluationContract,
   createRuntimePolicies,
-} from "../schemas/scorer-runtime.js";
-import { resolveExecutionTemplateMount } from "../schemas/execution-template.js";
+} from "../index.js";
 import { createCsvTableSubmissionContract } from "../schemas/submission-contract.js";
 
 assert.equal(SCORER_RUNTIME_CONFIG_FILE_NAME, "agora-runtime.json");
 
-const mount = resolveExecutionTemplateMount("official_table_metric_v1");
+const mount = resolveOfficialScorerMount("official_table_metric_v1");
 assert.ok(mount, "official table template should define a mount");
 assert.equal(mount?.evaluationBundleName, "ground_truth.csv");
 assert.equal(mount?.submissionFileName, "submission.csv");

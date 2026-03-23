@@ -100,10 +100,9 @@ Deterministic execution happens inside the official scorer images. Everything
 above this layer exists to choose the right runtime, stage the right files, and
 record the result.
 
-### Layer 1: Execution-template registry
+### Layer 1: Official scorer catalog
 
-`packages/common/src/scorer-images.ts` and
-`packages/common/src/schemas/execution-template.ts` define the official scorer
+`packages/common/src/official-scorer-catalog.ts` defines the official scorer
 catalog:
 
 - execution template id

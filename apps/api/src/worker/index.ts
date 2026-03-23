@@ -3,7 +3,7 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   CHALLENGE_STATUS,
-  type ChallengeEvalRow,
+  type ChallengeExecutionRow,
   getAgoraRuntimeIdentity,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
@@ -11,7 +11,7 @@ import {
   isOfficialScorerImage,
   loadConfig,
   readWorkerTimingConfig,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
@@ -187,7 +187,7 @@ async function preflightOfficialScoringImagesForWorker(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("evaluation_template, evaluation_plan_json")
+    .select("execution_plan_json")
     .eq("status", CHALLENGE_STATUS.scoring);
 
   if (error) {
@@ -201,8 +201,8 @@ async function preflightOfficialScoringImagesForWorker(
       (data ?? [])
         .map((row) => {
           try {
-            return resolveChallengeEvaluation(
-              row as ChallengeEvalRow,
+            return resolveChallengeExecution(
+              row as ChallengeExecutionRow,
             ).image;
           } catch {
             return null;

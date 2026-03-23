@@ -169,10 +169,6 @@ export function buildExecutionPatch(
     execution.submission_value_column = submissionValueColumn;
   }
 
-  if (Object.keys(execution).length > 0) {
-    execution.template = "official_table_metric_v1";
-  }
-
   return Object.keys(execution).length > 0 ? execution : undefined;
 }
 
@@ -209,11 +205,11 @@ export function applySessionToForm(
       resolvedExecution.evaluation_artifact_id ?? current.evaluation_artifact_id,
     evaluation_id_column:
       resolvedExecution.evaluation_id_column ??
-      compilation?.evaluation_columns.id ??
+      compilation?.evaluation_contract.columns.id ??
       current.evaluation_id_column,
     evaluation_value_column:
       resolvedExecution.evaluation_value_column ??
-      compilation?.evaluation_columns.value ??
+      compilation?.evaluation_contract.columns.value ??
       current.evaluation_value_column,
     submission_id_column:
       resolvedExecution.submission_id_column ??

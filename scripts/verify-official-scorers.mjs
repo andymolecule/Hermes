@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  OFFICIAL_SCORER_IMAGES,
-  resolveOfficialImageToDigest,
+  listOfficialScorerImages,
+  resolveOciImageToDigest,
 } from "../packages/common/dist/index.js";
 
-const images = Array.from(new Set(Object.values(OFFICIAL_SCORER_IMAGES)));
+const images = Array.from(new Set(listOfficialScorerImages()));
 
 if (images.length === 0) {
   throw new Error(
-    "No official scorer images configured. Next step: define OFFICIAL_SCORER_IMAGES before running release verification.",
+    "No official scorer images configured. Next step: define an official scorer catalog entry before running release verification.",
   );
 }
 
@@ -56,7 +56,7 @@ const resolved = [];
 
 for (const image of images) {
   try {
-    const digest = await resolveOfficialImageToDigest(image, { env: {} });
+    const digest = await resolveOciImageToDigest(image, { env: {} });
     pullOfficialImageAnonymously(image);
     resolved.push({ image, digest });
   } catch (error) {

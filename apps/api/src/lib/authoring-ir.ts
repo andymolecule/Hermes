@@ -101,7 +101,7 @@ export function buildAuthoringIr(input: {
     input.missingFields ?? extractMissingIntentFields(effectiveIntent);
 
   return challengeAuthoringIrSchema.parse({
-    version: 3,
+    version: 4,
     origin: {
       provider: input.origin?.provider ?? "direct",
       external_id: input.origin?.external_id ?? null,
@@ -130,7 +130,7 @@ export function buildAuthoringIr(input: {
       warnings: input.assessmentWarnings ?? [],
       missing_fields: missingFields,
     },
-    evaluation: {
+    execution: {
       template: input.template ?? null,
       metric: input.metric ?? null,
       comparator: input.comparator ?? null,

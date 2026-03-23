@@ -81,7 +81,7 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
         factoryAddress: "0x0000000000000000000000000000000000000002",
         factoryChallengeId: 7,
       },
-      evaluation: {
+      execution: {
         template: "official_table_metric_v1",
         metric: "r2",
         comparator: "maximize",

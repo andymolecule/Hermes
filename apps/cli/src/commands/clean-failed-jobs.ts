@@ -2,7 +2,7 @@ import {
   CHALLENGE_STATUS,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   validateScorerImage,
 } from "@agora/common";
 import { markScoreJobSkipped } from "@agora/db";
@@ -33,8 +33,7 @@ interface FailedJobWithContext {
     id: string;
     title: string | null;
     status: string;
-    evaluation_template: string;
-    evaluation_plan_json?: Record<string, unknown> | null;
+    execution_plan_json?: Record<string, unknown> | null;
   } | null;
 }
 
@@ -67,17 +66,11 @@ function classifyFailedJob(
     };
   }
 
-  if (
-    job.challenges?.evaluation_template &&
-    job.challenges.evaluation_template.trim().length > 0
-  ) {
+  if (job.challenges?.execution_plan_json) {
     const scorerImage = (() => {
       try {
-        return resolveChallengeEvaluation({
-          evaluation_template: job.challenges?.evaluation_template as
-            | "official_table_metric_v1"
-            | undefined,
-          evaluation_plan_json: job.challenges?.evaluation_plan_json,
+        return resolveChallengeExecution({
+          execution_plan_json: job.challenges?.execution_plan_json,
         }).image;
       } catch {
         return null;
@@ -150,7 +143,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, evaluation_template, evaluation_plan_json)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, execution_plan_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

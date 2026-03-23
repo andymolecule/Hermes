@@ -68,7 +68,7 @@ function getMetricPresentation(
     return {
       label: "Row match score",
       helper:
-        spec?.evaluation?.metric === "tolerant_match"
+        spec?.execution?.metric === "tolerant_match"
           ? "Score = matched rows / total rows after applying deterministic tolerant matching."
           : "Score = matched rows / total rows from deterministic comparison against the posted reference output.",
     };
@@ -372,9 +372,9 @@ export function DetailClient({ id }: { id: string }) {
     hasPublicVerificationArtifacts && verification
       ? `agora verify-public ${challenge.id} --sub ${verification.submissionId}`
       : null;
-  const scorerInfo = getScorerTransparencyInfo(challenge.evaluation?.scorer_image);
-  const scorerPackageUrl = getScorerPackageUrl(challenge.evaluation?.scorer_image);
-  const metricPresentation = getMetricPresentation(challenge.challenge_type, challenge.evaluation?.metric, spec);
+  const scorerInfo = getScorerTransparencyInfo(challenge.execution?.scorer_image);
+  const scorerPackageUrl = getScorerPackageUrl(challenge.execution?.scorer_image);
+  const metricPresentation = getMetricPresentation(challenge.challenge_type, challenge.execution?.metric, spec);
   const eligibilityThreshold = getEligibilityThresholdPresentation(challenge.minimum_score);
   const distributionRows = getDistributionBreakdown(challenge.distribution_type, Number(challenge.reward_amount));
   const countdown = deadlineCountdown(challenge.deadline);
@@ -480,7 +480,7 @@ export function DetailClient({ id }: { id: string }) {
                 How You're Judged
               </h3>
               <p className="text-sm text-[#45474a] leading-relaxed">{successDefinition}</p>
-              {spec?.evaluation?.metric === "tolerant_match" && (
+              {spec?.execution?.metric === "tolerant_match" && (
                 <p className="text-sm font-medium text-[#45474a]">
                   Matching mode: <span className="font-mono font-bold text-[#111519]">tolerant_match</span>
                 </p>

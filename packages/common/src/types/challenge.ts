@@ -1,8 +1,6 @@
-import type { ResolvedTableExecutionContractOutput } from "../schemas/execution-contract.js";
 import type {
-  ExecutionComparatorOutput,
-  ExecutionTemplateIdOutput,
-} from "../schemas/execution-template.js";
+  ChallengeExecutionOutput,
+} from "../schemas/execution-contract.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
 export const CHALLENGE_DOMAINS = [
@@ -79,14 +77,6 @@ export interface ChallengeArtifact {
   description?: string;
 }
 
-export interface ChallengeEvaluation {
-  template: ExecutionTemplateIdOutput;
-  metric: string;
-  comparator: ExecutionComparatorOutput;
-  scorer_image: string;
-  execution_contract: ResolvedTableExecutionContractOutput;
-}
-
 export interface ChallengeReward {
   total: string;
   distribution: RewardDistribution;
@@ -100,13 +90,13 @@ export interface ChallengeSource {
 }
 
 export interface ChallengeSpec {
-  schema_version: 3;
+  schema_version: 4;
   id: string;
   title: string;
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
-  evaluation: ChallengeEvaluation;
+  execution: ChallengeExecutionOutput;
   artifacts: ChallengeArtifact[];
   submission_contract: SubmissionContractOutput;
   reward: ChallengeReward;

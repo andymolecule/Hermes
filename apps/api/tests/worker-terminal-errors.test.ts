@@ -5,6 +5,7 @@ import {
   SUBMISSION_RESULT_CID_MISSING_ERROR,
 } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
@@ -15,39 +16,7 @@ import type {
 const challenge: ChallengeRow = {
   id: "challenge-1",
   contract_address: "0x0000000000000000000000000000000000000001",
-  evaluation_template: "official_table_metric_v1",
-  evaluation_plan_json: {
-    evaluation_template: "official_table_metric_v1",
-    metric: "r2",
-    comparator: "maximize",
-    scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-    execution_contract: {
-      version: "v1",
-      template: "official_table_metric_v1",
-      scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-      metric: "r2",
-      comparator: "maximize",
-      evaluation_artifact_uri: "ipfs://bundle",
-      evaluation_columns: {
-        required: ["id", "label"],
-        id: "id",
-        value: "label",
-        allow_extra: false,
-      },
-      submission_columns: {
-        required: ["id", "prediction"],
-        id: "id",
-        value: "prediction",
-        allow_extra: false,
-      },
-      visible_artifact_uris: [],
-      policies: {
-        coverage_policy: "ignore",
-        duplicate_id_policy: "ignore",
-        invalid_value_policy: "ignore",
-      },
-    },
-  },
+  execution_plan_json: createExecutionPlanFixture(),
 };
 
 const baseSubmission: SubmissionRow = {
@@ -151,7 +120,7 @@ test("invalid submission outcomes are skipped instead of failed", async () => {
   );
 });
 
-test("terminal execution-template configuration errors are skipped in the catch path", async () => {
+test("terminal official scorer configuration errors are skipped in the catch path", async () => {
   let skippedReason: string | undefined;
 
   await processJob({} as never, job, log, {
@@ -167,7 +136,7 @@ test("terminal execution-template configuration errors are skipped in the catch 
     handlePreviouslyPostedScoreTx: async () => false,
     scoreSubmissionAndBuildProof: async () => {
       throw new Error(
-        "Invalid execution template configuration: scorer image must be a pinned digest for expert runtimes.",
+        "Invalid official scorer configuration: scorer image must be a pinned digest for expert runtimes.",
       );
     },
     markScoreJobSkipped: async (_db, _payload, reason) => {
@@ -176,10 +145,10 @@ test("terminal execution-template configuration errors are skipped in the catch 
     },
     failJob: async () => {
       throw new Error(
-        "failJob should not be called for terminal execution-template errors",
+        "failJob should not be called for terminal official scorer errors",
       );
     },
   });
 
-  assert.match(skippedReason ?? "", /^Invalid execution template configuration:/);
+  assert.match(skippedReason ?? "", /^Invalid official scorer configuration:/);
 });

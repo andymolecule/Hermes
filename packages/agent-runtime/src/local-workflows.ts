@@ -26,7 +26,7 @@ import {
   loadConfig,
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRuntimeConfig,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
@@ -558,7 +558,7 @@ export async function scoreLocal(input: {
 }) {
   return withScorerLock(async () => {
     const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
-    const { evalPlan, scoringSpecConfig } = apiUrl
+    const { executionPlan, scoringSpecConfig } = apiUrl
       ? await resolveLocalScoringConfigFromApi({
           challengeId: input.challengeId,
           apiUrl,
@@ -566,12 +566,12 @@ export async function scoreLocal(input: {
       : await resolveLocalScoringConfigFromDb(input.challengeId);
 
     const run = await executeScoringPipeline({
-      image: evalPlan.image,
-      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-      mount: evalPlan.mount,
+      image: executionPlan.image,
+      evaluationBundle: { cid: executionPlan.evaluationBundleCid },
+      mount: executionPlan.mount,
       submission: { localPath: input.filePath },
       submissionContract: scoringSpecConfig.submissionContract,
-      metric: evalPlan.metric,
+      metric: executionPlan.metric,
       env: scoringSpecConfig.env,
     });
 
@@ -597,9 +597,9 @@ export async function scoreLocal(input: {
 async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
-  const evalPlan = resolveChallengeEvaluation(challenge);
+  const executionPlan = resolveChallengeExecution(challenge);
   const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
-  if (!evalPlan.evaluationBundleCid) {
+  if (!executionPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
     );
@@ -610,7 +610,7 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
     policies: cachedRuntimeConfig.policies,
     specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
   });
-  return { evalPlan, scoringSpecConfig };
+  return { executionPlan, scoringSpecConfig };
 }
 
 async function resolveLocalScoringConfigFromApi(input: {
@@ -630,8 +630,8 @@ async function resolveLocalScoringConfigFromApi(input: {
   const spec = challengeSpecSchema.parse(
     parseChallengeSpecDocument(await getText(specCid)),
   );
-  const evalPlan = resolveChallengeEvaluation(spec);
-  if (!evalPlan.evaluationBundleCid) {
+  const executionPlan = resolveChallengeExecution(spec);
+  if (!executionPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
     );
@@ -642,7 +642,7 @@ async function resolveLocalScoringConfigFromApi(input: {
     specCid,
   });
 
-  return { evalPlan, scoringSpecConfig };
+  return { executionPlan, scoringSpecConfig };
 }
 
 export async function verifySubmission(input: {
@@ -716,9 +716,9 @@ export async function verifySubmission(input: {
       );
     }
 
-    const evalPlan = resolveChallengeEvaluation(challenge);
+    const executionPlan = resolveChallengeExecution(challenge);
     const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
-    if (!evalPlan.evaluationBundleCid) {
+    if (!executionPlan.evaluationBundleCid) {
       throw cliWorkflowError(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
       );
@@ -742,8 +742,8 @@ export async function verifySubmission(input: {
     });
     const run = await executeScoringPipeline({
       image: proofPayload.containerImageDigest ?? proof.container_image_hash,
-      evaluationBundle: { cid: evalPlan.evaluationBundleCid },
-      mount: evalPlan.mount,
+      evaluationBundle: { cid: executionPlan.evaluationBundleCid },
+      mount: executionPlan.mount,
       submission: await resolveSubmissionSource({
         resultCid: submission.result_cid,
         resultFormat: submission.result_format,
@@ -753,7 +753,7 @@ export async function verifySubmission(input: {
       }),
       submissionContract: scoringSpecConfig.submissionContract,
       evaluationContract: scoringSpecConfig.evaluationContract,
-      metric: evalPlan.metric,
+      metric: executionPlan.metric,
       policies: scoringSpecConfig.policies,
     });
 

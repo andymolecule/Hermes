@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  OFFICIAL_SCORER_IMAGES,
-  resolveOfficialImageToDigest,
+  listOfficialScorerImages,
+  resolveOciImageToDigest,
 } from "@agora/common";
 import { verifyRuntimeDatabaseSchema } from "@agora/db";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -594,11 +594,11 @@ export function buildDoctorCommand() {
 
       try {
         const officialImages = Array.from(
-          new Set(Object.values(OFFICIAL_SCORER_IMAGES)),
+          new Set(listOfficialScorerImages()),
         );
         const resolved = await Promise.all(
           officialImages.map((image) =>
-            resolveOfficialImageToDigest(image, { env: {} }).then((digest) => ({
+            resolveOciImageToDigest(image, { env: {} }).then((digest) => ({
               image,
               digest,
             })),
@@ -629,7 +629,7 @@ export function buildDoctorCommand() {
       } else {
         try {
           const officialImages = Array.from(
-            new Set(Object.values(OFFICIAL_SCORER_IMAGES)),
+            new Set(listOfficialScorerImages()),
           );
           for (const image of officialImages) {
             pullOfficialImageAnonymously(image);

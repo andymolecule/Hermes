@@ -107,7 +107,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               contract_address: challengeAddress,
               factory_address: factoryAddress,
               factory_challenge_id: 7,
-              evaluation: {
+              execution: {
                 template: "official_table_metric_v1",
                 metric: "r2",
                 comparator: "maximize",
@@ -285,7 +285,7 @@ test("status and get commands expose solver-specific submission limits and claim
               contract_address: challengeAddress,
               factory_address: factoryAddress,
               factory_challenge_id: 7,
-              evaluation: {
+              execution: {
                 template: "official_table_metric_v1",
                 metric: "r2",
                 comparator: "maximize",

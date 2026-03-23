@@ -2,8 +2,7 @@ import {
   AgoraError,
   type ChallengeSpecOutput,
   type DryRunPreviewOutput,
-  createCsvTableEvaluationContract,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRunnerLimits,
 } from "@agora/common";
 import { getText } from "@agora/ipfs";
@@ -72,8 +71,8 @@ async function buildSubmissionSource(input: {
   challengeSpec: ChallengeSpecOutput;
   getTextImpl: GetTextFn;
 }) {
-  const evalPlan = resolveChallengeEvaluation(input.challengeSpec);
-  const evaluationUri = evalPlan.executionContract.evaluation_artifact_uri;
+  const execution = resolveChallengeExecution(input.challengeSpec);
+  const evaluationUri = execution.execution.evaluation_artifact_uri;
   if (!evaluationUri) {
     throw new AgoraError(
       "This challenge needs a hidden evaluation table before dry-run execution. Next step: attach the missing evaluation artifact and retry.",
@@ -106,8 +105,31 @@ async function buildSubmissionSource(input: {
     );
   }
 
-  const submissionColumns = evalPlan.executionContract.submission_columns;
-  const evaluationColumns = evalPlan.executionContract.evaluation_columns;
+  const submissionContract = input.challengeSpec.submission_contract;
+  if (submissionContract.kind !== "csv_table") {
+    throw new AgoraError(
+      "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
+      {
+        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
+        status: 500,
+      },
+    );
+  }
+
+  const submissionColumns = submissionContract.columns;
+  const submissionIdColumn = submissionColumns.id;
+  const submissionValueColumn = submissionColumns.value;
+  const evaluationColumns = execution.execution.evaluation_contract.columns;
+  if (!submissionIdColumn || !submissionValueColumn) {
+    throw new AgoraError(
+      "The submission contract is missing required ID/value columns. Next step: define the solver submission columns and retry.",
+      {
+        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
+        status: 500,
+      },
+    );
+  }
+
   const submissionRows = rows.map((row) => {
     const evaluationId = row[evaluationColumns.id];
     const evaluationValue = row[evaluationColumns.value];
@@ -126,8 +148,8 @@ async function buildSubmissionSource(input: {
       );
     }
     return {
-      [submissionColumns.id]: evaluationId,
-      [submissionColumns.value]: evaluationValue,
+      [submissionIdColumn]: evaluationId,
+      [submissionValueColumn]: evaluationValue,
     };
   });
 
@@ -149,30 +171,24 @@ export async function executeAuthoringDryRun(
   const executeScoringPipelineImpl =
     dependencies.executeScoringPipelineImpl ?? executeScoringPipeline;
   const getTextImpl = dependencies.getTextImpl ?? getText;
-  const evalPlan = resolveChallengeEvaluation(input.challengeSpec);
-  const runnerLimits = resolveChallengeRunnerLimits(evalPlan.template);
+  const execution = resolveChallengeExecution(input.challengeSpec);
+  const runnerLimits = resolveChallengeRunnerLimits(execution.template);
   const submission = await buildSubmissionSource({
     challengeSpec: input.challengeSpec,
     getTextImpl,
   });
-  const evaluationContract = createCsvTableEvaluationContract({
-    requiredColumns: evalPlan.executionContract.evaluation_columns.required,
-    idColumn: evalPlan.executionContract.evaluation_columns.id,
-    valueColumn: evalPlan.executionContract.evaluation_columns.value,
-    allowExtraColumns: evalPlan.executionContract.evaluation_columns.allow_extra,
-  });
 
   const run = await executeScoringPipelineImpl({
-    image: evalPlan.image,
-    evaluationBundle: evalPlan.evaluationBundleCid
-      ? { cid: evalPlan.evaluationBundleCid }
+    image: execution.image,
+    evaluationBundle: execution.evaluationBundleCid
+      ? { cid: execution.evaluationBundleCid }
       : undefined,
-    mount: evalPlan.mount,
+    mount: execution.mount,
     submission,
     submissionContract: input.challengeSpec.submission_contract,
-    evaluationContract,
-    metric: evalPlan.metric,
-    policies: evalPlan.executionContract.policies,
+    evaluationContract: input.challengeSpec.execution.evaluation_contract,
+    metric: execution.metric,
+    policies: input.challengeSpec.execution.policies,
     timeoutMs: Math.min(
       input.timeoutMs,
       runnerLimits?.timeoutMs ?? input.timeoutMs,
@@ -199,7 +215,7 @@ export async function executeAuthoringDryRun(
     }
 
     const sampleScore = summarizeDryRunScore({
-      metric: evalPlan.metric,
+      metric: execution.metric,
       score: run.result.score,
       details: run.result.details,
     });

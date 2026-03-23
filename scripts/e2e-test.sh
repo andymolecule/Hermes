@@ -119,39 +119,30 @@ PY
 )"
 
 cat >"$TMP_DIR/challenge.yaml" <<YAML
-schema_version: 3
+schema_version: 4
 id: e2e-$(date +%s)
 title: "${E2E_TITLE}"
 domain: longevity
 type: reproducibility
 description: "Automated end-to-end validation challenge."
-evaluation:
+execution:
+  version: v1
   template: official_table_metric_v1
   metric: r2
   comparator: maximize
   scorer_image: "${E2E_SCORER_IMAGE}"
-  execution_contract:
-    version: v1
-    template: official_table_metric_v1
-    scorer_image: "${E2E_SCORER_IMAGE}"
-    metric: r2
-    comparator: maximize
-    evaluation_artifact_uri: "${TMP_DIR}/ground_truth.csv"
-    evaluation_columns:
-      required: [sample_id, normalized_signal, condition]
-      id: sample_id
-      value: normalized_signal
-      allow_extra: true
-    submission_columns:
-      required: [sample_id, normalized_signal, condition]
-      id: sample_id
-      value: normalized_signal
-      allow_extra: true
-    visible_artifact_uris: []
-    policies:
-      coverage_policy: reject
-      duplicate_id_policy: reject
-      invalid_value_policy: reject
+  evaluation_artifact_uri: "${TMP_DIR}/ground_truth.csv"
+  evaluation_contract:
+    kind: csv_table
+    columns:
+      required: [id, value]
+      id: id
+      value: value
+      allow_extra: false
+  policies:
+    coverage_policy: reject
+    duplicate_id_policy: reject
+    invalid_value_policy: reject
 artifacts:
   - role: source_data
     visibility: public
@@ -174,7 +165,7 @@ submission_contract:
     value: value
     allow_extra: false
 reward:
-  total: 5
+  total: "5"
   distribution: winner_take_all
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]

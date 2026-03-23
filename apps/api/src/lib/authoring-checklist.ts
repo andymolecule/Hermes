@@ -4,10 +4,10 @@ import {
   type CompilationResultOutput,
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
-  type ExecutionTemplateIdOutput,
+  type OfficialScorerTemplateIdOutput,
   PROTOCOL_FEE_PERCENT,
-  getExecutionTemplateMetric,
-  lookupExecutionTemplate,
+  getOfficialScorerMetric,
+  lookupOfficialScorer,
 } from "@agora/common";
 
 export interface ParsedThreshold {
@@ -102,15 +102,15 @@ export function parsePayoutThreshold(
 }
 
 export function buildAuthoringChecklist(input: {
-  template: ExecutionTemplateIdOutput;
+  template: OfficialScorerTemplateIdOutput;
   metric: string;
   comparator: "maximize" | "minimize";
   challengeSpec: ChallengeSpecOutput;
   submissionContract: CompilationResultOutput["submission_contract"];
   dryRun: DryRunPreviewOutput;
 }): ConfirmationContractOutput {
-  const template = lookupExecutionTemplate(input.template);
-  const metric = getExecutionTemplateMetric(input.template, input.metric);
+  const template = lookupOfficialScorer(input.template);
+  const metric = getOfficialScorerMetric(input.template, input.metric);
   const submissionColumns =
     input.submissionContract.kind === "csv_table"
       ? input.submissionContract.columns.required.join(", ")

@@ -12,7 +12,7 @@ import {
   CHALLENGE_LIMITS,
   type ChallengeSpecOutput,
   SUBMISSION_LIMITS,
-  defaultMinimumScoreForEvaluation,
+  defaultMinimumScoreForExecution,
   erc20Abi,
   loadConfig,
 } from "@agora/common";
@@ -142,7 +142,7 @@ function assertCreationMatchesSpec(input: {
     parseUnits(
       String(
         input.spec.minimum_score ??
-          defaultMinimumScoreForEvaluation(input.spec.evaluation) ??
+          defaultMinimumScoreForExecution(input.spec.execution) ??
           0,
       ),
       18,
@@ -279,7 +279,7 @@ export async function sponsorAndPublishAuthoringSession(input: {
     const minimumScore = parseUnits(
       String(
         input.spec.minimum_score ??
-          defaultMinimumScoreForEvaluation(input.spec.evaluation) ??
+          defaultMinimumScoreForExecution(input.spec.execution) ??
           0,
       ),
       18,

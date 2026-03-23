@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx src/tests/analytics.ts && node --import tsx src/tests/auth-agents.ts && node --import tsx src/tests/authoring-sessions.ts && node --import tsx src/tests/challenge-insert-evaluation-template.ts && node --import tsx src/tests/challenge-indexing.ts && node --import tsx src/tests/submission-write-ownership.ts && node --import tsx src/tests/submission-intents.ts && node --import tsx src/tests/score-job-heartbeat.ts && node --import tsx src/tests/score-job-observability.ts && node --import tsx src/tests/worker-runtime.ts && node --import tsx src/tests/schema-compatibility.ts && node --import tsx src/tests/db-queries.ts && node --import tsx src/tests/public-leaderboard.ts"
+    "test": "node --import tsx src/tests/analytics.ts && node --import tsx src/tests/auth-agents.ts && node --import tsx src/tests/authoring-sessions.ts && node --import tsx src/tests/challenge-insert-execution-plan.ts && node --import tsx src/tests/challenge-indexing.ts && node --import tsx src/tests/submission-write-ownership.ts && node --import tsx src/tests/submission-intents.ts && node --import tsx src/tests/score-job-heartbeat.ts && node --import tsx src/tests/score-job-observability.ts && node --import tsx src/tests/worker-runtime.ts && node --import tsx src/tests/schema-compatibility.ts && node --import tsx src/tests/db-queries.ts && node --import tsx src/tests/public-leaderboard.ts"
   },
   "dependencies": {
     "@agora/common": "workspace:*",

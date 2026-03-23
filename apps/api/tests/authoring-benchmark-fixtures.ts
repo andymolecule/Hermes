@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   AuthoringArtifactOutput,
   ChallengeIntentOutput,
-  ExecutionTemplateIdOutput,
 } from "@agora/common";
 
 const BENCHMARK_ROOT = path.resolve(
-  process.cwd(),
-  "challenges/test-data/authoring-benchmarks",
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../challenges/test-data/authoring-benchmarks",
 );
 
 type BenchmarkCompileState = "ready" | "awaiting_input";
@@ -63,7 +63,6 @@ export interface AuthoringBenchmarkCase {
 }
 
 export interface AuthoringBenchmarkExecutionOverrides {
-  templateOverride: ExecutionTemplateIdOutput;
   metricOverride: string;
   evaluationArtifactIdOverride: string;
   evaluationIdColumnOverride: string;
@@ -186,7 +185,6 @@ export function buildAuthoringBenchmarkExecutionOverrides(
   });
 
   return {
-    templateOverride: "official_table_metric_v1",
     metricOverride: benchmarkCase.benchmark.compile_invariants.metric,
     evaluationArtifactIdOverride: hiddenArtifact.id,
     evaluationIdColumnOverride: tableColumns.evaluationIdColumn,

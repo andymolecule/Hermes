@@ -3,13 +3,14 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   challengeSpecSchema,
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
-  createResolvedTableExecutionContract,
-  resolveExecutionTemplateImage,
+  resolveOfficialScorerImage,
 } from "@agora/common";
 import { buildChallengeInsert } from "../queries/challenges";
 
-const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
 if (!scorerImage) {
   throw new Error("expected official_table_metric_v1 scorer image");
 }
@@ -33,36 +34,29 @@ const baseInput = {
 };
 
 const tableSpec = challengeSpecSchema.parse({
-  schema_version: 3,
+  schema_version: 4,
   id: "ch-1",
   title: "Regression challenge",
   domain: "omics",
   type: "prediction",
   description: "desc",
-  evaluation: {
+  execution: createChallengeExecution({
     template: "official_table_metric_v1",
+    scorerImage,
     metric: "r2",
     comparator: "maximize",
-    scorer_image: scorerImage,
-    execution_contract: createResolvedTableExecutionContract({
-      template: "official_table_metric_v1",
-      scorerImage,
-      metric: "r2",
-      comparator: "maximize",
-      evaluationArtifactUri: "ipfs://QmHiddenLabelsOnly",
-      evaluationColumns: {
-        required: ["sample_id", "label"],
-        id: "sample_id",
-        value: "label",
-      },
-      submissionColumns: {
-        required: ["sample_id", "prediction"],
-        id: "sample_id",
-        value: "prediction",
-      },
-      visibleArtifactUris: ["ipfs://QmTrain"],
+    evaluationArtifactUri: "ipfs://QmHiddenLabelsOnly",
+    evaluationContract: createCsvTableEvaluationContract({
+      requiredColumns: ["sample_id", "label"],
+      idColumn: "sample_id",
+      valueColumn: "label",
     }),
-  },
+    policies: {
+      coverage_policy: "reject",
+      duplicate_id_policy: "reject",
+      invalid_value_policy: "reject",
+    },
+  }),
   artifacts: [
     {
       role: "training_data",
@@ -90,15 +84,14 @@ const insert = await buildChallengeInsert({
   ...baseInput,
   spec: tableSpec,
 });
-assert.equal(insert.evaluation_template, "official_table_metric_v1");
 assert.equal(insert.challenge_type, "prediction");
 assert.equal(insert.artifacts_json.length, 2);
-assert.equal(insert.evaluation_plan_json.scorer_image, scorerImage);
+assert.equal(insert.execution_plan_json.scorer_image, scorerImage);
 assert.equal(
-  insert.evaluation_plan_json.execution_contract.evaluation_artifact_uri,
+  insert.execution_plan_json.evaluation_artifact_uri,
   "ipfs://QmHiddenLabelsOnly",
 );
-assert.equal(insert.evaluation_plan_json.submission_contract?.kind, "csv_table");
+assert.equal(insert.execution_plan_json.submission_contract.kind, "csv_table");
 assert.equal(
   insert.max_submissions_total,
   SUBMISSION_LIMITS.maxPerChallenge,
@@ -141,4 +134,4 @@ assert.equal(
   "specs should reject execution contracts that point at missing evaluation artifacts",
 );
 
-console.log("challenge insert execution-template coverage passed");
+console.log("challenge insert execution plan coverage passed");

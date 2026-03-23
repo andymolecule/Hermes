@@ -23,13 +23,14 @@ import type { ChallengeListRow } from "@agora/chain/indexer/shared";
 import {
   SCORE_JOB_STATUS,
   SUBMISSION_RESULT_FORMAT,
-  createResolvedTableExecutionContract,
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
   readLifecycleE2ERuntimeConfig,
-  resolveExecutionTemplateImage,
+  resolveOfficialScorerImage,
   resolveRuntimePrivateKey,
   sealSubmission,
 } from "@agora/common";
@@ -165,13 +166,13 @@ async function ensureWalletMatchesOracle(
 }
 
 function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
-  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
     throw new Error("missing official table scorer image");
   }
 
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `e2e-${Date.now()}`,
     title: `E2E Reproducibility ${Date.now()}`,
     description:
@@ -190,34 +191,28 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
         uri: input.expectedCid,
       },
     ],
-    evaluation: {
+    execution: createChallengeExecution({
       template: "official_table_metric_v1" as const,
+      scorerImage,
       metric: "r2",
       comparator: "maximize" as const,
-      scorer_image: scorerImage,
-      execution_contract: createResolvedTableExecutionContract({
-        template: "official_table_metric_v1",
-        scorerImage,
-        metric: "r2",
-        comparator: "maximize",
-        evaluationArtifactUri: input.expectedCid,
-        evaluationColumns: {
-          required: ["sample_id", "normalized_signal", "condition"],
-          id: "sample_id",
-          value: "normalized_signal",
-          allow_extra: true,
-        },
-        submissionColumns: {
-          required: ["sample_id", "normalized_signal", "condition"],
-          id: "sample_id",
-          value: "normalized_signal",
-          allow_extra: true,
-        },
-        visibleArtifactUris: [input.trainCid],
+      evaluationArtifactUri: input.expectedCid,
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: ["sample_id", "normalized_signal", "condition"],
+        idColumn: "sample_id",
+        valueColumn: "normalized_signal",
+        allowExtraColumns: true,
       }),
-    },
+      policies: {
+        coverage_policy: "reject",
+        duplicate_id_policy: "reject",
+        invalid_value_policy: "reject",
+      },
+    }),
     submission_contract: createCsvTableSubmissionContract({
       requiredColumns: ["sample_id", "normalized_signal", "condition"],
+      idColumn: "sample_id",
+      valueColumn: "normalized_signal",
     }),
     reward: {
       total: String(E2E_REWARD_USDC),
@@ -233,13 +228,13 @@ function buildPredictionE2ESpec(input: {
   testCid: string;
   hiddenLabelsCid: string;
 }) {
-  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
     throw new Error("missing official table scorer image");
   }
 
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `e2e-prediction-${Date.now()}`,
     title: `E2E Prediction ${Date.now()}`,
     description:
@@ -263,30 +258,23 @@ function buildPredictionE2ESpec(input: {
         uri: input.hiddenLabelsCid,
       },
     ],
-    evaluation: {
+    execution: createChallengeExecution({
       template: "official_table_metric_v1" as const,
+      scorerImage,
       metric: "r2",
       comparator: "maximize" as const,
-      scorer_image: scorerImage,
-      execution_contract: createResolvedTableExecutionContract({
-        template: "official_table_metric_v1",
-        scorerImage,
-        metric: "r2",
-        comparator: "maximize",
-        evaluationArtifactUri: input.hiddenLabelsCid,
-        evaluationColumns: {
-          required: ["id", "label"],
-          id: "id",
-          value: "label",
-        },
-        submissionColumns: {
-          required: ["id", "prediction"],
-          id: "id",
-          value: "prediction",
-        },
-        visibleArtifactUris: [input.trainCid, input.testCid],
+      evaluationArtifactUri: input.hiddenLabelsCid,
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: ["id", "label"],
+        idColumn: "id",
+        valueColumn: "label",
       }),
-    },
+      policies: {
+        coverage_policy: "reject",
+        duplicate_id_policy: "reject",
+        invalid_value_policy: "reject",
+      },
+    }),
     submission_contract: createCsvTableSubmissionContract({
       requiredColumns: ["id", "prediction"],
       idColumn: "id",

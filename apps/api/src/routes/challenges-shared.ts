@@ -2,14 +2,14 @@ import { getChallengeLifecycleState } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
-  type ChallengeEvaluation,
+  type ChallengeExecutionOutput,
   type ChallengeStatus,
   DEFAULT_IPFS_GATEWAY,
   SUBMISSION_RESULT_FORMAT,
   agentChallengesQuerySchema,
   getEffectiveChallengeStatus,
   isChallengeStatus,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRuntimeConfig,
 } from "@agora/common";
 import {
@@ -157,23 +157,23 @@ function cidToGatewayUrl(cid: string | null | undefined) {
   return `${DEFAULT_IPFS_GATEWAY}${cid.replace("ipfs://", "")}`;
 }
 
-function toChallengeEvaluation(
+function toChallengeExecution(
   row: ChallengeRow | ChallengeListRow,
 ): Pick<
-  ChallengeEvaluation,
+  ChallengeExecutionOutput,
   "template" | "metric" | "comparator" | "scorer_image"
 > {
-  const evaluation = resolveChallengeEvaluation(
+  const execution = resolveChallengeExecution(
     row as ChallengeRow & {
-      evaluation_plan_json?: unknown;
+      execution_plan_json?: unknown;
     },
   );
 
   return {
-    template: evaluation.template,
-    metric: evaluation.metric,
-    comparator: evaluation.comparator,
-    scorer_image: evaluation.image,
+    template: execution.template,
+    metric: execution.metric,
+    comparator: execution.comparator,
+    scorer_image: execution.image,
   };
 }
 
@@ -245,7 +245,7 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
       "poster_address" in row && typeof row.poster_address === "string"
         ? row.poster_address
         : undefined,
-    evaluation: toChallengeEvaluation(row),
+    execution: toChallengeExecution(row),
     distribution_type:
       "distribution_type" in row && typeof row.distribution_type === "string"
         ? row.distribution_type
@@ -265,7 +265,7 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
         ? toOptionalInteger(row.max_submissions_per_solver)
         : null,
     submission_contract:
-      "evaluation_plan_json" in row
+      "execution_plan_json" in row
         ? (resolveChallengeRuntimeConfig(
             row as ChallengeRow & ChallengeListRow,
           ).submissionContract ?? null)

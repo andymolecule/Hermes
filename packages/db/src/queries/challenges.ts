@@ -1,13 +1,13 @@
 import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
-  type ChallengeEvaluationPlanCacheRow,
+  type ChallengeExecutionPlanCacheRow,
   type ChallengeSpecOutput,
   type ChallengeStatus,
-  buildChallengeEvaluationPlanCache,
+  buildChallengeExecutionPlanCache,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
-  defaultMinimumScoreForEvaluation,
+  defaultMinimumScoreForExecution,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -24,9 +24,8 @@ export interface ChallengeInsert {
   description: string;
   domain: string;
   challenge_type: string;
-  evaluation_template: string;
   spec_cid: string;
-  evaluation_plan_json: ChallengeEvaluationPlanCacheRow;
+  execution_plan_json: ChallengeExecutionPlanCacheRow;
   artifacts_json: ChallengeArtifact[];
   minimum_score?: number | null;
   max_submissions_total?: number | null;
@@ -70,7 +69,7 @@ export async function buildChallengeInsert(
   if (!scoreability.ok) {
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
-  const evaluationPlan = buildChallengeEvaluationPlanCache(canonicalSpec);
+  const executionPlan = buildChallengeExecutionPlanCache(canonicalSpec);
 
   return {
     chain_id: input.chainId,
@@ -84,13 +83,12 @@ export async function buildChallengeInsert(
     description: canonicalSpec.description,
     domain: canonicalSpec.domain,
     challenge_type: canonicalSpec.type,
-    evaluation_template: canonicalSpec.evaluation.template,
     spec_cid: input.specCid,
-    evaluation_plan_json: evaluationPlan,
+    execution_plan_json: executionPlan,
     artifacts_json: canonicalSpec.artifacts,
     minimum_score:
       canonicalSpec.minimum_score ??
-      defaultMinimumScoreForEvaluation(canonicalSpec.evaluation) ??
+      defaultMinimumScoreForExecution(canonicalSpec.execution) ??
       null,
     max_submissions_total:
       canonicalSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
@@ -122,9 +120,9 @@ export async function upsertChallenge(
     .select("*")
     .single();
   if (error) {
-    if (error.message.includes("evaluation_plan_json")) {
+    if (error.message.includes("execution_plan_json")) {
       throw new Error(
-        "Failed to upsert challenge: challenges.evaluation_plan_json is missing from the runtime schema. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
+        "Failed to upsert challenge: challenges.execution_plan_json is missing from the runtime schema. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
       );
     }
     throw new Error(`Failed to upsert challenge: ${error.message}`);

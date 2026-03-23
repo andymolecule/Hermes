@@ -7,9 +7,9 @@ import {
   challengeArtifactSchema,
 } from "./challenge-spec.js";
 import {
-  executionComparatorSchema,
-  executionTemplateIdSchema,
-} from "./execution-template.js";
+  officialScorerComparatorSchema,
+  officialScorerTemplateIdSchema,
+} from "../official-scorer-catalog.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
@@ -149,11 +149,11 @@ export const challengeDetailSchema = challengeSummarySchema
     poster_address: addressSchema.optional(),
     description: z.string(),
     challenge_type: challengeTypeSchema,
-    evaluation: z
+    execution: z
       .object({
-        template: executionTemplateIdSchema,
+        template: officialScorerTemplateIdSchema,
         metric: z.string(),
-        comparator: executionComparatorSchema,
+        comparator: officialScorerComparatorSchema,
         scorer_image: z.string(),
       })
       .strict(),

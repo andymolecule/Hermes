@@ -1,9 +1,10 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
-  createResolvedTableExecutionContract,
-  type ExecutionComparatorOutput,
+  type OfficialScorerComparatorOutput,
 } from "@agora/common";
 
 export interface ResolvedAuthoringArtifacts {
@@ -14,7 +15,7 @@ export interface ResolvedAuthoringArtifacts {
     }
   >;
   submissionContract: ReturnType<typeof createCsvTableSubmissionContract>;
-  executionContract: ReturnType<typeof createResolvedTableExecutionContract>;
+  execution: ReturnType<typeof createChallengeExecution>;
 }
 
 function artifactId(artifact: AuthoringArtifactOutput, index: number) {
@@ -45,7 +46,7 @@ export function resolveAuthoringArtifacts(input: {
   submissionIdColumn: string;
   submissionValueColumn: string;
   metric: string;
-  comparator: ExecutionComparatorOutput;
+  comparator: OfficialScorerComparatorOutput;
   template: "official_table_metric_v1";
   scorerImage: string;
 }): ResolvedAuthoringArtifacts {
@@ -104,27 +105,18 @@ export function resolveAuthoringArtifacts(input: {
     allowExtraColumns: true,
   });
 
-  const executionContract = createResolvedTableExecutionContract({
+  const execution = createChallengeExecution({
     template: input.template,
     scorerImage: input.scorerImage,
     metric: input.metric,
     comparator: input.comparator,
     evaluationArtifactUri: evaluationArtifact.uri,
-    evaluationColumns: {
-      required: [input.evaluationIdColumn, input.evaluationValueColumn],
-      id: input.evaluationIdColumn,
-      value: input.evaluationValueColumn,
-      allow_extra: true,
-    },
-    submissionColumns: {
-      required: [input.submissionIdColumn, input.submissionValueColumn],
-      id: input.submissionIdColumn,
-      value: input.submissionValueColumn,
-      allow_extra: true,
-    },
-    visibleArtifactUris: resolvedArtifacts
-      .filter((artifact) => artifact.visibility === "public")
-      .map((artifact) => artifact.uri),
+    evaluationContract: createCsvTableEvaluationContract({
+      requiredColumns: [input.evaluationIdColumn, input.evaluationValueColumn],
+      idColumn: input.evaluationIdColumn,
+      valueColumn: input.evaluationValueColumn,
+      allowExtraColumns: true,
+    }),
     policies: {
       coverage_policy: "reject",
       duplicate_id_policy: "reject",
@@ -135,6 +127,6 @@ export function resolveAuthoringArtifacts(input: {
   return {
     resolvedArtifacts,
     submissionContract,
-    executionContract,
+    execution,
   };
 }

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createResolvedTableExecutionContract,
-  resolveExecutionTemplateImage,
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
+  createCsvTableSubmissionContract,
+  resolveOfficialScorerImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
@@ -42,7 +44,6 @@ function createSession(): AuthoringSessionRow {
       template: "official_table_metric_v1",
       metric: "r2",
       comparator: "maximize",
-      routingMode: "table_supported",
       sourceMessages: [
         {
           id: "msg-1",
@@ -75,41 +76,30 @@ function createSession(): AuthoringSessionRow {
 }
 
 function createSpec() {
-  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
-    throw new Error("missing execution template image fixture");
+    throw new Error("missing official scorer image fixture");
   }
 
   return {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: "challenge-spec-1",
     title: "Drug response challenge",
     description: "Predict held-out drug response values.",
     domain: "other" as const,
     type: "prediction" as const,
-    evaluation: {
+    execution: createChallengeExecution({
       template: "official_table_metric_v1",
+      scorerImage,
       metric: "r2",
-      comparator: "maximize" as const,
-      scorer_image: scorerImage,
-      execution_contract: createResolvedTableExecutionContract({
-        template: "official_table_metric_v1",
-        scorerImage,
-        metric: "r2",
-        comparator: "maximize",
-        evaluationArtifactUri: "ipfs://bundle",
-        evaluationColumns: {
-          required: ["id", "label"],
-          id: "id",
-          value: "label",
-        },
-        submissionColumns: {
-          required: ["id", "prediction"],
-          id: "id",
-          value: "prediction",
-        },
+      comparator: "maximize",
+      evaluationArtifactUri: "ipfs://bundle",
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: ["id", "label"],
+        idColumn: "id",
+        valueColumn: "label",
       }),
-    },
+    }),
     artifacts: [
       {
         role: "training_data",
@@ -117,12 +107,11 @@ function createSpec() {
         uri: "ipfs://artifact",
       },
     ],
-    submission_contract: {
-      kind: "csv_table" as const,
-      required_columns: ["id", "prediction"],
-      id_column: "id",
-      value_column: "prediction",
-    },
+    submission_contract: createCsvTableSubmissionContract({
+      requiredColumns: ["id", "prediction"],
+      idColumn: "id",
+      valueColumn: "prediction",
+    }),
     reward: {
       total: "10",
       distribution: "winner_take_all" as const,

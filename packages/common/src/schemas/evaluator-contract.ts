@@ -4,10 +4,11 @@ import {
   type EvaluatorArchetypeId,
 } from "../evaluator-archetypes.js";
 import {
+  STANDARD_AUTHORING_TEMPLATE,
   DEFAULT_SCORER_MOUNT,
-  OFFICIAL_SCORER_IMAGES,
+  resolveOfficialScorerImage,
   type ScoringMountConfig,
-} from "../scorer-images.js";
+} from "../official-scorer-catalog.js";
 import {
   type CsvTableEvaluationContractOutput,
   type ScorerRuntimePoliciesOutput,
@@ -89,10 +90,14 @@ const STRUCTURED_TABLE_RUNNER_FAMILY_BY_METRIC = {
   "official_table_metric_v1"
 >;
 
+const EXACT_MATCH_SCORER_IMAGE = "ghcr.io/andymolecule/gems-match-scorer:v1";
+
 const SEMI_CUSTOM_EXECUTION_TEMPLATE_IMAGE = {
-  official_table_metric_v1: OFFICIAL_SCORER_IMAGES.table_metric,
-  official_exact_match_v1: OFFICIAL_SCORER_IMAGES.exact_match,
-  official_structured_record_v1: OFFICIAL_SCORER_IMAGES.exact_match,
+  official_table_metric_v1:
+    resolveOfficialScorerImage(STANDARD_AUTHORING_TEMPLATE) ??
+    "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+  official_exact_match_v1: EXACT_MATCH_SCORER_IMAGE,
+  official_structured_record_v1: EXACT_MATCH_SCORER_IMAGE,
 } as const;
 
 export const semiCustomStructuredTableExecutionSchema = z.object({
@@ -160,7 +165,7 @@ export const semiCustomEvaluatorContractSchema = z
   })
   .superRefine((value, ctx) => {
     // Keep cross-field execution validation next to the template definitions.
-    // If another execution template lands, split per-template checks into small
+    // If another official scorer template lands, split per-template checks into small
     // validators instead of growing this block further.
     const allowedKinds = allowedSubmissionKindsByArchetype[value.archetype];
     if (!allowedKinds.includes(value.submission.kind)) {

@@ -26,7 +26,7 @@ This doc is authoritative for: product concepts, actor roles, user-facing workfl
 - 3 primary interfaces: API, CLI, Web dashboard
 - MCP remains optional as a local/interop adapter, not the canonical remote surface
 - 2 challenge types are turnkey from this repo today: reproducibility and prediction
-- Official scoring methods are configured as execution templates plus scorer images; a new official method should not require worker/indexer branching
+- Official scoring methods are configured through one official scorer catalog plus the resolved execution contract; a new official method should not require worker/indexer branching
 - Historical malformed specs are intentionally unsupported; Agora does not reconstruct old submission formats at read time
 
 > How Agora works, explained simply.
@@ -91,7 +91,7 @@ flowchart TB
 **What the poster provides:**
 - Title and description of the problem
 - Public and private challenge artifacts (CSV, SDF, PDB files)
-- Either the official table scorer template with an explicit execution contract, or a custom scoring container (Docker image) through Expert Mode
+- Either the official table scorer with an explicit execution contract, or a custom scoring container (Docker image) through Expert Mode
 - Reward amount (USDC)
 - Deadline
 - Distribution type (winner-take-all, top 3, or proportional)

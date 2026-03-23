@@ -11,9 +11,34 @@ export const coveragePolicyEnum = z.enum(["reject", "ignore", "penalize"]);
 export const duplicateIdPolicyEnum = z.enum(["reject", "ignore"]);
 export const invalidValuePolicyEnum = z.enum(["reject", "ignore"]);
 
+export const csvTableEvaluationColumnsSchema = z
+  .object({
+    required: z.array(z.string().min(1)).min(1),
+    id: z.string().min(1),
+    value: z.string().min(1),
+    allow_extra: z.boolean().default(true),
+  })
+  .superRefine((value, ctx) => {
+    const required = new Set(value.required);
+    if (!required.has(value.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["id"],
+        message: "columns.id must also appear in columns.required.",
+      });
+    }
+    if (!required.has(value.value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["value"],
+        message: "columns.value must also appear in columns.required.",
+      });
+    }
+  });
+
 export const csvTableEvaluationContractSchema = z.object({
   kind: z.literal("csv_table"),
-  columns: csvTableColumnsSchema,
+  columns: csvTableEvaluationColumnsSchema,
 });
 
 export const scorerRuntimePoliciesSchema = z.object({

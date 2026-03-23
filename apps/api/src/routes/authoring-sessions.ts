@@ -5,7 +5,7 @@ import {
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   partialChallengeIntentSchema,
-  defaultMinimumScoreForEvaluation,
+  defaultMinimumScoreForExecution,
   loadConfig,
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
@@ -141,7 +141,7 @@ function buildWalletPublishPreparation(input: {
     minimum_score_wad: parseUnits(
       String(
         challengeSpec.minimum_score ??
-          defaultMinimumScoreForEvaluation(challengeSpec.evaluation) ??
+          defaultMinimumScoreForExecution(challengeSpec.execution) ??
           0,
       ),
       18,
@@ -637,7 +637,6 @@ async function persistAssessmentResult(input: {
   createAuthoringSessionImpl: typeof createAuthoringSession;
   updateAuthoringSessionImpl: typeof updateAuthoringSession;
   appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
-  templateOverride?: "official_table_metric_v1" | null;
   metricOverride?: string | null;
   evaluationArtifactIdOverride?: string | null;
   evaluationIdColumnOverride?: string | null;
@@ -676,7 +675,6 @@ async function persistAssessmentResult(input: {
       stateBefore: input.session ? getSessionPublicState(input.session) : null,
       intent: input.intentPatch,
       execution: {
-        ...(input.templateOverride ? { template: input.templateOverride } : {}),
         ...(input.metricOverride ? { metric: input.metricOverride } : {}),
         ...(input.evaluationArtifactIdOverride
           ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
@@ -771,7 +769,6 @@ async function persistAssessmentResult(input: {
     {
       intent: parsedIntent,
       uploadedArtifacts: input.uploadedArtifacts,
-      templateOverride: input.templateOverride ?? undefined,
       metricOverride: input.metricOverride ?? undefined,
       evaluationArtifactIdOverride:
         input.evaluationArtifactIdOverride ?? undefined,
@@ -805,7 +802,6 @@ async function persistAssessmentResult(input: {
     stateBefore: input.session ? getSessionPublicState(input.session) : null,
     intent: input.intentPatch,
     execution: {
-      ...(input.templateOverride ? { template: input.templateOverride } : {}),
       ...(input.metricOverride ? { metric: input.metricOverride } : {}),
       ...(input.evaluationArtifactIdOverride
         ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
@@ -1022,7 +1018,6 @@ export function createAuthoringSessionRoutes(
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          templateOverride: parsed.data.execution?.template ?? null,
           metricOverride: parsed.data.execution?.metric ?? null,
           evaluationArtifactIdOverride:
             parsed.data.execution?.evaluation_artifact_id ?? null,
@@ -1182,39 +1177,30 @@ export function createAuthoringSessionRoutes(
         buildSessionIntentCandidate(visible.session),
         parsed.data.intent,
       );
-      const templateOverride =
-        parsed.data.execution?.template ??
-        ((visible.session.compilation_json?.template as
-          | "official_table_metric_v1"
-          | undefined) ??
-          (visible.session.authoring_ir_json?.evaluation.template as
-            | "official_table_metric_v1"
-            | undefined) ??
-          "official_table_metric_v1");
       const metricOverride =
         parsed.data.execution?.metric ??
-        visible.session.compilation_json?.metric ??
-        visible.session.authoring_ir_json?.evaluation.metric ??
+        visible.session.compilation_json?.execution.metric ??
+        visible.session.authoring_ir_json?.execution.metric ??
         null;
       const evaluationArtifactIdOverride =
         parsed.data.execution?.evaluation_artifact_id ??
-        visible.session.authoring_ir_json?.evaluation.evaluation_artifact_id ??
+        visible.session.authoring_ir_json?.execution.evaluation_artifact_id ??
         null;
       const evaluationIdColumnOverride =
         parsed.data.execution?.evaluation_id_column ??
-        visible.session.authoring_ir_json?.evaluation.evaluation_columns.id ??
+        visible.session.authoring_ir_json?.execution.evaluation_columns.id ??
         null;
       const evaluationValueColumnOverride =
         parsed.data.execution?.evaluation_value_column ??
-        visible.session.authoring_ir_json?.evaluation.evaluation_columns.value ??
+        visible.session.authoring_ir_json?.execution.evaluation_columns.value ??
         null;
       const submissionIdColumnOverride =
         parsed.data.execution?.submission_id_column ??
-        visible.session.authoring_ir_json?.evaluation.submission_columns.id ??
+        visible.session.authoring_ir_json?.execution.submission_columns.id ??
         null;
       const submissionValueColumnOverride =
         parsed.data.execution?.submission_value_column ??
-        visible.session.authoring_ir_json?.evaluation.submission_columns.value ??
+        visible.session.authoring_ir_json?.execution.submission_columns.value ??
         null;
       try {
         const result = await persistAssessmentResult({
@@ -1232,7 +1218,6 @@ export function createAuthoringSessionRoutes(
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          templateOverride,
           metricOverride,
           evaluationArtifactIdOverride,
           evaluationIdColumnOverride,

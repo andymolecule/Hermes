@@ -472,7 +472,7 @@ test("challenge detail parsing requires the canonical artifacts block", async ()
             contract_address: "0x0000000000000000000000000000000000000001",
             factory_address: "0x0000000000000000000000000000000000000002",
             factory_challenge_id: 7,
-            evaluation: {
+            execution: {
               template: "official_table_metric_v1",
               metric: "accuracy",
               comparator: "maximize",
@@ -529,7 +529,7 @@ test("API client supports protocol-ref challenge and submission lookups", async 
               contract_address: "0x0000000000000000000000000000000000000001",
               factory_address: "0x0000000000000000000000000000000000000002",
               factory_challenge_id: 7,
-              evaluation: {
+              execution: {
                 template: "official_table_metric_v1",
                 metric: "accuracy",
                 comparator: "maximize",

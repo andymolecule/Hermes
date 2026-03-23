@@ -1,6 +1,6 @@
 import type { ChallengeStatus } from "@agora/common";
 
-export type ChallengeEvaluation = {
+export type ChallengeExecution = {
   template: string;
   metric: string;
   comparator: "maximize" | "minimize";
@@ -39,7 +39,7 @@ export type Challenge = {
   factory_address?: string | null;
   factory_challenge_id?: number | null;
   submissions_count?: number;
-  evaluation?: ChallengeEvaluation | null;
+  execution?: ChallengeExecution | null;
   distribution_type?: string | null;
   dispute_window_hours?: number | null;
   minimum_score?: number | string | null;

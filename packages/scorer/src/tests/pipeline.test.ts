@@ -70,39 +70,30 @@ test("resolveScoringRuntimeConfig loads submission contract from pinned YAML spe
       "https://gateway.pinata.cloud/ipfs/bafkreiabcdef",
     );
     return new Response(
-      `schema_version: 3
+      `schema_version: 4
 id: yaml-spec
 title: YAML spec
 domain: longevity
 type: prediction
 description: yaml
-evaluation:
+execution:
+  version: v1
   template: official_table_metric_v1
   metric: r2
   comparator: maximize
   scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1
-  execution_contract:
-    version: v1
-    template: official_table_metric_v1
-    scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1
-    metric: r2
-    comparator: maximize
-    evaluation_artifact_uri: ipfs://bafkreieval
-    evaluation_columns:
+  evaluation_artifact_uri: ipfs://bafkreieval
+  evaluation_contract:
+    kind: csv_table
+    columns:
       required: [id, value]
       id: id
       value: value
       allow_extra: false
-    submission_columns:
-      required: [id, value]
-      id: id
-      value: value
-      allow_extra: false
-    visible_artifact_uris: []
-    policies:
-      coverage_policy: ignore
-      duplicate_id_policy: ignore
-      invalid_value_policy: ignore
+  policies:
+    coverage_policy: ignore
+    duplicate_id_policy: ignore
+    invalid_value_policy: ignore
 artifacts:
   - role: source_data
     visibility: public

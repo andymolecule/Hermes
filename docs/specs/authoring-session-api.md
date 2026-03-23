@@ -269,13 +269,14 @@ Public names in this table are permanent. Internal names can change freely.
 20. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run deterministic validation first and must not automatically invoke Layer 2 inference.
 21. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
 22. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
+23. **Standard V1 authoring resolves the official template internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves `official_table_metric_v1` and the exact pinned scorer image during compilation and returns them in `resolved` and `compilation`.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
 | Gate | Layer | What it checks |
 |------|-------|---------------|
 | Spec built | Layer 3 | Challenge YAML compiles from the IR without errors |
-| Execution template resolved | Layer 3 | A valid official scorer template + scorer image is resolved |
+| Official scorer path resolved | Layer 3 | The standard official table scorer template and exact scorer image are resolved |
 | Evaluation binding resolved | Layer 3 | The hidden evaluation artifact and required column mappings are fully resolved |
 | Dry-run validated + scoreability passed | Layer 3 | `validateChallengeScoreability()` passes against the resolved execution contract |
 
@@ -407,7 +408,6 @@ Locked create request envelope:
     "deadline": "2026-04-01T23:59:59Z"
   },
   "execution": {
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "evaluation_artifact_id": "art-123",
     "evaluation_id_column": "peptide_id",
@@ -761,7 +761,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q58 | Should compilation expose scoring direction explicitly? | Prevents callers and solvers from inferring score direction from metric names | Prefer an explicit objective field | `LOCKED: compilation includes explicit objective alongside metric, using objective = "maximize" | "minimize"` |
 | Q59 | Should compilation expose the exact immutable scorer image? | Determines whether callers and solvers can inspect the concrete scoring runtime rather than relying on a high-level template label | Prefer explicit immutable image refs for transparency | `LOCKED: compilation includes scorer_image as an immutable image reference, e.g. ghcr.io/...@sha256:...` |
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
-| Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_columns, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data contents stay out of the public contract` |
+| Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_contract, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data contents stay out of the public contract` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
 | Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, or unsupported_task. Specific details belong in message and next_action, not in a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/patch/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
@@ -808,9 +808,21 @@ const ErrorCodeSchema = z.enum([
 // Imported from the shared authoring core schema module.
 const PartialChallengeIntentSchema = challengeIntentSchema.partial();
 
+// Standard V1 authoring has one official template. Callers do not choose it.
 const ExecutionInputSchema = z.object({
+  metric: z.string().min(1).optional(),
+  evaluation_artifact_id: z.string().min(1).optional(),
+  evaluation_id_column: z.string().min(1).optional(),
+  evaluation_value_column: z.string().min(1).optional(),
+  submission_id_column: z.string().min(1).optional(),
+  submission_value_column: z.string().min(1).optional(),
+});
+
+// Agora adds derived runtime fields back in resolved state and compilation.
+const ResolvedExecutionSchema = z.object({
   template: z.literal("official_table_metric_v1").optional(),
   metric: z.string().min(1).optional(),
+  objective: ObjectiveSchema.optional(),
   evaluation_artifact_id: z.string().min(1).optional(),
   evaluation_id_column: z.string().min(1).optional(),
   evaluation_value_column: z.string().min(1).optional(),
@@ -875,7 +887,7 @@ const ArtifactSchema = z.object({
 
 const ResolvedStateSchema = z.object({
   intent: PartialChallengeIntentSchema,
-  execution: ExecutionInputSchema,
+  execution: ResolvedExecutionSchema,
 });
 
 const ValidationSchema = z.object({
@@ -899,6 +911,16 @@ const SubmissionContractSchema = z.object({
   }),
 });
 
+const EvaluationContractSchema = z.object({
+  kind: z.literal("csv_table"),
+  columns: z.object({
+    required: z.array(z.string().min(1)).min(1),
+    id: z.string().min(1),
+    value: z.string().min(1),
+    allow_extra: z.boolean(),
+  }),
+});
+
 const ResourceLimitsSchema = z.object({
   memory_mb: z.number().int().positive(),
   cpus: z.number().int().positive(),
@@ -914,17 +936,12 @@ const RewardSchema = z.object({
 });
 
 const CompilationSchema = z.object({
-  template: z.string().min(1),
+  template: z.literal("official_table_metric_v1"),
   metric: z.string().min(1),
   objective: ObjectiveSchema,
   scorer_image: z.string().min(1),
   evaluation_artifact_uri: z.string().min(1),
-  evaluation_columns: z.object({
-    required: z.array(z.string().min(1)).min(1),
-    id: z.string().min(1),
-    value: z.string().min(1),
-    allow_extra: z.boolean(),
-  }),
+  evaluation_contract: EvaluationContractSchema,
   submission_contract: SubmissionContractSchema,
   resource_limits: ResourceLimitsSchema,
   reward: RewardSchema,
@@ -1118,7 +1135,6 @@ Example request:
     "deadline": "2026-04-01T23:59:59Z"
   },
   "execution": {
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "evaluation_artifact_id": "art-123",
     "evaluation_id_column": "peptide_id"
@@ -1160,6 +1176,7 @@ Example success response:
     "execution": {
       "template": "official_table_metric_v1",
       "metric": "spearman",
+      "objective": "maximize",
       "evaluation_artifact_id": "art-123",
       "evaluation_id_column": "peptide_id"
     }
@@ -1250,6 +1267,7 @@ Example success response:
     "execution": {
       "template": "official_table_metric_v1",
       "metric": "spearman",
+      "objective": "maximize",
       "evaluation_artifact_id": "art-456",
       "evaluation_id_column": "ligand_id",
       "evaluation_value_column": "reference_score",
@@ -1281,11 +1299,14 @@ Example success response:
     "objective": "maximize",
     "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
     "evaluation_artifact_uri": "ipfs://QmReferenceScores",
-    "evaluation_columns": {
-      "required": ["ligand_id", "reference_score"],
-      "id": "ligand_id",
-      "value": "reference_score",
-      "allow_extra": true
+    "evaluation_contract": {
+      "kind": "csv_table",
+      "columns": {
+        "required": ["ligand_id", "reference_score"],
+        "id": "ligand_id",
+        "value": "reference_score",
+        "allow_extra": true
+      }
     },
     "submission_contract": {
       "version": "v1",
@@ -1416,6 +1437,7 @@ Example success response:
     "execution": {
       "template": "official_table_metric_v1",
       "metric": "spearman",
+      "objective": "maximize",
       "evaluation_artifact_id": "art-123",
       "evaluation_id_column": "peptide_id",
       "evaluation_value_column": "reference_rank",
@@ -1432,7 +1454,7 @@ Example success response:
   "checklist": {
     "title": "MDM2 benchmark ranking challenge",
     "domain": "drug_discovery",
-    "type": "benchmark",
+    "type": "docking",
     "reward": "30 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
@@ -1447,11 +1469,14 @@ Example success response:
     "objective": "maximize",
     "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
     "evaluation_artifact_uri": "ipfs://QmReferenceScores",
-    "evaluation_columns": {
-      "required": ["peptide_id", "reference_rank"],
-      "id": "peptide_id",
-      "value": "reference_rank",
-      "allow_extra": true
+    "evaluation_contract": {
+      "kind": "csv_table",
+      "columns": {
+        "required": ["peptide_id", "reference_rank"],
+        "id": "peptide_id",
+        "value": "reference_rank",
+        "allow_extra": true
+      }
     },
     "submission_contract": {
       "version": "v1",
@@ -1631,6 +1656,7 @@ Sponsor-funded example success response:
     "execution": {
       "template": "official_table_metric_v1",
       "metric": "spearman",
+      "objective": "maximize",
       "evaluation_artifact_id": "art-456",
       "evaluation_id_column": "ligand_id",
       "evaluation_value_column": "reference_score",
@@ -1662,11 +1688,14 @@ Sponsor-funded example success response:
     "objective": "maximize",
     "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
     "evaluation_artifact_uri": "ipfs://QmReferenceScores",
-    "evaluation_columns": {
-      "required": ["ligand_id", "reference_score"],
-      "id": "ligand_id",
-      "value": "reference_score",
-      "allow_extra": true
+    "evaluation_contract": {
+      "kind": "csv_table",
+      "columns": {
+        "required": ["ligand_id", "reference_score"],
+        "id": "ligand_id",
+        "value": "reference_score",
+        "allow_extra": true
+      }
     },
     "submission_contract": {
       "version": "v1",

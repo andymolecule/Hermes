@@ -75,9 +75,12 @@ for (const benchmarkCase of benchmarkCases) {
       );
     }
 
-    assert.equal(result.compilation.template, "official_table_metric_v1");
     assert.equal(
-      result.compilation.metric,
+      result.compilation.execution.template,
+      "official_table_metric_v1",
+    );
+    assert.equal(
+      result.compilation.execution.metric,
       benchmarkCase.benchmark.compile_invariants.metric,
     );
 

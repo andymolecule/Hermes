@@ -102,15 +102,20 @@ type ChallengeAuthoringIr = {
     warnings: string[];
     missing_fields: string[];
   };
-  evaluation: {
+  execution: {
     template: string | null;
     metric: string | null;
-    artifact_assignments: Array<{
-      artifact_id: string;
-      artifact_index: number;
-      role: string;
-      visibility: "public" | "private";
-    }>;
+    comparator: "maximize" | "minimize" | "closest_match" | "pass_fail" | "custom" | null;
+    evaluation_artifact_id: string | null;
+    visible_artifact_ids: string[];
+    evaluation_columns: {
+      id: string | null;
+      value: string | null;
+    };
+    submission_columns: {
+      id: string | null;
+      value: string | null;
+    };
     rejection_reasons: string[];
     compile_error_codes: string[];
     compile_error_message: string | null;

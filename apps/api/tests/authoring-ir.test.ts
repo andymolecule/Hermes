@@ -25,7 +25,7 @@ test("authoring intake state records missing required intent fields", () => {
     uploadedArtifacts: [],
   });
 
-  assert.equal(authoringIr.version, 3);
+  assert.equal(authoringIr.version, 4);
   assert.equal(authoringIr.origin.provider, "direct");
   assert.deepEqual(authoringIr.intent.missing_fields, [
     "title",
@@ -41,7 +41,7 @@ test("authoring intake state records missing required intent fields", () => {
     "reward_total",
     "deadline",
   ]);
-  assert.equal(authoringIr.evaluation.template, null);
+  assert.equal(authoringIr.execution.template, null);
 });
 
 test("authoring intake state preserves the resolved table scoring contract fields", () => {
@@ -70,16 +70,16 @@ test("authoring intake state preserves the resolved table scoring contract field
   });
 
   assert.equal(authoringIr.intent.missing_fields.length, 0);
-  assert.equal(authoringIr.evaluation.template, "official_table_metric_v1");
-  assert.equal(authoringIr.evaluation.metric, "r2");
-  assert.equal(authoringIr.evaluation.comparator, "maximize");
-  assert.equal(authoringIr.evaluation.evaluation_artifact_id, "labels");
-  assert.equal(authoringIr.evaluation.visible_artifact_ids[0], "train");
-  assert.equal(authoringIr.evaluation.evaluation_columns.id, "id");
-  assert.equal(authoringIr.evaluation.evaluation_columns.value, "label");
-  assert.equal(authoringIr.evaluation.submission_columns.id, "id");
+  assert.equal(authoringIr.execution.template, "official_table_metric_v1");
+  assert.equal(authoringIr.execution.metric, "r2");
+  assert.equal(authoringIr.execution.comparator, "maximize");
+  assert.equal(authoringIr.execution.evaluation_artifact_id, "labels");
+  assert.equal(authoringIr.execution.visible_artifact_ids[0], "train");
+  assert.equal(authoringIr.execution.evaluation_columns.id, "id");
+  assert.equal(authoringIr.execution.evaluation_columns.value, "label");
+  assert.equal(authoringIr.execution.submission_columns.id, "id");
   assert.equal(
-    authoringIr.evaluation.submission_columns.value,
+    authoringIr.execution.submission_columns.value,
     "predicted_score",
   );
   assert.equal(
@@ -108,7 +108,7 @@ test("authoring intake state persists canonical compile blockers", () => {
     missingFields: ["evaluation_artifact"],
   });
 
-  assert.deepEqual(authoringIr.evaluation.compile_error_codes, [
+  assert.deepEqual(authoringIr.execution.compile_error_codes, [
     "AUTHORING_ARTIFACTS_AMBIGUOUS",
   ]);
   assert.equal(authoringIr.assessment.missing_fields[0], "evaluation_artifact");

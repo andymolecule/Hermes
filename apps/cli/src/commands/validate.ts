@@ -4,7 +4,7 @@ import {
   createCsvTableEvaluationContract,
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   validateChallengeSpec,
 } from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
@@ -95,10 +95,10 @@ export function buildValidateCommand() {
       }
 
       // 2. Docker dry-run
-      const container = parsed.data.evaluation.scorer_image;
+      const container = parsed.data.execution.scorer_image;
       if (!container) {
         printWarning(
-          "No evaluation.scorer_image in spec — cannot run Docker dry-run.",
+          "No execution.scorer_image in spec — cannot run Docker dry-run.",
         );
         printSuccess("Schema validation passed.");
         return;
@@ -108,31 +108,31 @@ export function buildValidateCommand() {
         `Pulling and testing scorer container: ${container}`,
       );
       try {
-        const evalPlan = resolveChallengeEvaluation(parsed.data);
+        const execution = resolveChallengeExecution(parsed.data);
         const dryRunInputs = buildDryRunInputs({
           evaluationColumns: {
-            required: evalPlan.executionContract.evaluation_columns.required,
-            id: evalPlan.executionContract.evaluation_columns.id,
-            value: evalPlan.executionContract.evaluation_columns.value,
+            required: execution.execution.evaluation_contract.columns.required,
+            id: execution.execution.evaluation_contract.columns.id,
+            value: execution.execution.evaluation_contract.columns.value,
           },
           submissionContract: parsed.data.submission_contract,
         });
         const run = await executeScoringPipeline({
-          image: evalPlan.image,
+          image: execution.image,
           evaluationBundle: dryRunInputs.evaluationBundle,
-          mount: evalPlan.mount,
+          mount: execution.mount,
           submission: dryRunInputs.submission,
           submissionContract: dryRunInputs.submissionContract,
           evaluationContract: createCsvTableEvaluationContract({
             requiredColumns:
-              evalPlan.executionContract.evaluation_columns.required,
-            idColumn: evalPlan.executionContract.evaluation_columns.id,
-            valueColumn: evalPlan.executionContract.evaluation_columns.value,
+              execution.execution.evaluation_contract.columns.required,
+            idColumn: execution.execution.evaluation_contract.columns.id,
+            valueColumn: execution.execution.evaluation_contract.columns.value,
             allowExtraColumns:
-              evalPlan.executionContract.evaluation_columns.allow_extra,
+              execution.execution.evaluation_contract.columns.allow_extra,
           }),
-          metric: evalPlan.metric,
-          policies: evalPlan.executionContract.policies,
+          metric: execution.metric,
+          policies: execution.execution.policies,
           timeoutMs: 5 * 60 * 1000, // 5 min for dry-run
         });
 

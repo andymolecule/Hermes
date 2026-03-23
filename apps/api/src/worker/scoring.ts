@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  executionTemplateIdSchema,
+  officialScorerTemplateIdSchema,
   type RunnerLimits,
   SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRunnerLimits,
   resolveChallengeRuntimeConfig,
   resolveSubmissionLimits,
@@ -61,14 +61,20 @@ export function resolveRunnerPolicyForChallenge(challenge: {
   image: string;
   template: string;
 }): ResolvedRunnerPolicy {
-  const templateResult = executionTemplateIdSchema.safeParse(challenge.template);
+  const templateResult = officialScorerTemplateIdSchema.safeParse(
+    challenge.template,
+  );
   if (!templateResult.success) {
-    throw new Error(`Unknown execution template on challenge: ${challenge.template}`);
+    throw new Error(
+      `Unknown official scorer template on challenge: ${challenge.template}`,
+    );
   }
 
   const runnerLimits = resolveChallengeRunnerLimits(templateResult.data);
   if (!runnerLimits) {
-    throw new Error(`Unknown execution template on challenge: ${challenge.template}`);
+    throw new Error(
+      `Unknown official scorer template on challenge: ${challenge.template}`,
+    );
   }
   return policyFromLimits(runnerLimits, "template");
 }
@@ -146,16 +152,16 @@ export async function scoreSubmissionAndBuildProof(
     };
   }
 
-  const evalPlan = resolveChallengeEvaluation(challenge);
+  const execution = resolveChallengeExecution(challenge);
   const runnerPolicy = resolveRunnerPolicyForChallenge({
-    image: evalPlan.image,
-    template: evalPlan.template,
+    image: execution.image,
+    template: execution.template,
   });
   const phaseMeta = {
     jobId,
     submissionId: submission.id,
     challengeId: challenge.id,
-    image: evalPlan.image,
+    image: execution.image,
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
@@ -180,15 +186,15 @@ export async function scoreSubmissionAndBuildProof(
     throw error;
   }
   const run = await executeScoringPipeline({
-    image: evalPlan.image,
-    evaluationBundle: evalPlan.evaluationBundleCid
-      ? { cid: evalPlan.evaluationBundleCid }
+    image: execution.image,
+    evaluationBundle: execution.evaluationBundleCid
+      ? { cid: execution.evaluationBundleCid }
       : undefined,
-    mount: evalPlan.mount,
+    mount: execution.mount,
     submission: submissionSource,
     submissionContract: cachedRuntimeConfig.submissionContract,
     evaluationContract: cachedRuntimeConfig.evaluationContract,
-    metric: evalPlan.metric,
+    metric: execution.metric,
     policies: cachedRuntimeConfig.policies,
     timeoutMs: runnerPolicy.timeoutMs,
     limits: runnerPolicy.limits,
@@ -244,7 +250,7 @@ export async function scoreSubmissionAndBuildProof(
           ...baseProof,
           challengeSpecCid:
             (challenge as { spec_cid?: string | null }).spec_cid ?? null,
-          evaluationBundleCid: evalPlan.evaluationBundleCid ?? null,
+          evaluationBundleCid: execution.evaluationBundleCid ?? null,
           replaySubmissionCid,
         };
 

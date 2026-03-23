@@ -1,10 +1,11 @@
 import {
-  type ExecutionComparatorOutput,
-  type ExecutionTemplateIdOutput,
-  deriveComparatorFromMetric,
-  resolveExecutionTemplateImage,
-} from "../schemas/execution-template.js";
-import { createResolvedTableExecutionContract } from "../schemas/execution-contract.js";
+  STANDARD_AUTHORING_TEMPLATE,
+  deriveOfficialScorerComparator,
+  resolveOfficialScorerImage,
+  type OfficialScorerComparatorOutput,
+} from "../official-scorer-catalog.js";
+import { createChallengeExecution } from "../schemas/execution-contract.js";
+import { createCsvTableEvaluationContract } from "../schemas/scorer-runtime.js";
 import {
   type CsvTableSubmissionContract,
   type SubmissionContractOutput,
@@ -13,24 +14,20 @@ import {
 import type {
   ChallengeArtifact,
   ChallengeDomain,
-  ChallengeEvaluation,
   ChallengeSpec,
   ChallengeType,
 } from "../types/challenge.js";
 
-export interface ChallengeTypeTemplate {
+export interface ChallengeTypeDefaults {
   type: ChallengeType;
   label: string;
   description: string;
   defaultDomain: ChallengeDomain;
   defaultMetric: string;
-  defaultTemplate: ExecutionTemplateIdOutput;
   defaultMinimumScore: number;
 }
 
-const DEFAULT_TEMPLATE: ExecutionTemplateIdOutput = "official_table_metric_v1";
-
-const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
+const CHALLENGE_TYPE_DEFAULTS: Record<ChallengeType, ChallengeTypeDefaults> = {
   prediction: {
     type: "prediction",
     label: "Prediction",
@@ -38,7 +35,6 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers predict held-out outcomes from a labeled training dataset.",
     defaultDomain: "omics",
     defaultMetric: "r2",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   reproducibility: {
@@ -48,7 +44,6 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers reproduce a posted reference artifact from shared source data.",
     defaultDomain: "other",
     defaultMetric: "accuracy",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   docking: {
@@ -57,7 +52,6 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Solvers rank candidates against a target-specific benchmark.",
     defaultDomain: "drug_discovery",
     defaultMetric: "spearman",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   optimization: {
@@ -66,7 +60,6 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
     description: "Solvers search a space while Agora scores the result.",
     defaultDomain: "drug_discovery",
     defaultMetric: "spearman",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   red_team: {
@@ -76,7 +69,6 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Solvers submit adversarial inputs against a target model or claim.",
     defaultDomain: "other",
     defaultMetric: "accuracy",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
   custom: {
@@ -86,39 +78,26 @@ const TYPE_TEMPLATE_REGISTRY: Record<ChallengeType, ChallengeTypeTemplate> = {
       "Poster-defined table scoring under the official Agora table scorer.",
     defaultDomain: "other",
     defaultMetric: "spearman",
-    defaultTemplate: DEFAULT_TEMPLATE,
     defaultMinimumScore: 0,
   },
 };
 
-export function getChallengeTypeTemplate(
+export function getChallengeTypeDefaults(
   challengeType: ChallengeType,
-): ChallengeTypeTemplate {
-  return TYPE_TEMPLATE_REGISTRY[challengeType];
+): ChallengeTypeDefaults {
+  return CHALLENGE_TYPE_DEFAULTS[challengeType];
 }
 
 export function defaultMinimumScoreForChallengeType(
   challengeType: ChallengeType,
 ): number {
-  return TYPE_TEMPLATE_REGISTRY[challengeType].defaultMinimumScore;
+  return CHALLENGE_TYPE_DEFAULTS[challengeType].defaultMinimumScore;
 }
 
-export function getChallengeCompatibilityType(_input: {
-  template?: string;
+export function defaultMinimumScoreForExecution(_input: {
   metric?: string;
-}): ChallengeType {
-  return "custom";
-}
-
-export function getChallengeCompatibilityTypeFromEvaluation(
-  _evaluation: Pick<ChallengeEvaluation, "template" | "metric">,
-): ChallengeType {
-  return "custom";
-}
-
-export function defaultMinimumScoreForEvaluation(
-  _evaluation: Pick<ChallengeEvaluation, "template" | "metric">,
-): number {
+  comparator?: OfficialScorerComparatorOutput;
+}): number {
   return 0;
 }
 
@@ -147,10 +126,9 @@ export interface ChallengeSpecCandidateInput {
   type: ChallengeType;
   description: string;
   artifacts: ChallengeArtifact[];
-  template?: ExecutionTemplateIdOutput;
   scorerImage?: string;
   metric?: string;
-  comparator?: ExecutionComparatorOutput;
+  comparator?: OfficialScorerComparatorOutput;
   reward: {
     total: string;
     distribution: ChallengeSpec["reward"]["distribution"];
@@ -162,19 +140,21 @@ export interface ChallengeSpecCandidateInput {
   tags?: string[];
   labTba?: string;
   evaluationArtifactUri?: string;
-  visibleArtifactUris?: string[];
 }
 
 export function buildChallengeSpecCandidate(
   input: ChallengeSpecCandidateInput,
 ): ChallengeSpec {
-  const template = input.template ?? DEFAULT_TEMPLATE;
-  const challengeTemplate = getChallengeTypeTemplate(input.type);
-  const metric = input.metric?.trim() || challengeTemplate.defaultMetric;
+  const defaults = getChallengeTypeDefaults(input.type);
+  const metric = input.metric?.trim() || defaults.defaultMetric;
   const comparator =
-    input.comparator ?? deriveComparatorFromMetric(template, metric) ?? "maximize";
+    input.comparator ??
+    deriveOfficialScorerComparator(STANDARD_AUTHORING_TEMPLATE, metric) ??
+    "maximize";
   const scorerImage =
-    input.scorerImage?.trim() || resolveExecutionTemplateImage(template) || "";
+    input.scorerImage?.trim() ||
+    resolveOfficialScorerImage(STANDARD_AUTHORING_TEMPLATE) ||
+    "";
   const submissionContract = buildSubmissionContractForChallengeType(
     input.submission,
   ) as CsvTableSubmissionContract;
@@ -182,47 +162,35 @@ export function buildChallengeSpecCandidate(
     input.evaluationArtifactUri ??
     input.artifacts.find((artifact) => artifact.visibility === "private")?.uri ??
     "";
-  const visibleArtifactUris =
-    input.visibleArtifactUris ??
-    input.artifacts
-      .filter((artifact) => artifact.visibility === "public")
-      .map((artifact) => artifact.uri);
 
   return {
-    schema_version: 3,
+    schema_version: 4,
     id: input.id,
     title: input.title,
     domain: input.domain,
     type: input.type,
     description: input.description,
-    evaluation: {
-      template,
+    execution: createChallengeExecution({
+      template: STANDARD_AUTHORING_TEMPLATE,
+      scorerImage,
       metric,
       comparator,
-      scorer_image: scorerImage,
-      execution_contract: createResolvedTableExecutionContract({
-        template,
-        scorerImage,
-        metric,
-        comparator,
-        evaluationArtifactUri,
-        evaluationColumns: {
-          required: [input.submission.idColumn, input.submission.valueColumn].filter(
-            Boolean,
-          ),
-          id: input.submission.idColumn,
-          value: input.submission.valueColumn,
-          allow_extra: true,
-        },
-        submissionColumns: {
-          required: submissionContract.columns.required,
-          id: submissionContract.columns.id ?? input.submission.idColumn,
-          value: submissionContract.columns.value ?? input.submission.valueColumn,
-          allow_extra: submissionContract.columns.allow_extra,
-        },
-        visibleArtifactUris,
+      evaluationArtifactUri,
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: [
+          input.submission.idColumn,
+          input.submission.valueColumn,
+        ].filter(Boolean),
+        idColumn: input.submission.idColumn,
+        valueColumn: input.submission.valueColumn,
+        allowExtraColumns: true,
       }),
-    },
+      policies: {
+        coverage_policy: "ignore",
+        duplicate_id_policy: "ignore",
+        invalid_value_policy: "ignore",
+      },
+    }),
     artifacts: input.artifacts,
     submission_contract: submissionContract,
     reward: {

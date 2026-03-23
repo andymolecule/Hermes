@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveRunnerPolicyForChallenge } from "../src/worker.js";
 
-test("uses execution template to resolve runner limits", () => {
+test("uses the official scorer template to resolve runner limits", () => {
   const policy = resolveRunnerPolicyForChallenge({
     image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
     template: "official_table_metric_v1",
@@ -12,13 +12,13 @@ test("uses execution template to resolve runner limits", () => {
   assert.deepEqual(policy.limits, { memory: "2g", cpus: "2", pids: 64 });
 });
 
-test("throws when execution template is unknown", () => {
+test("throws when the official scorer template is unknown", () => {
   assert.throws(
     () =>
       resolveRunnerPolicyForChallenge({
         image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
         template: "does_not_exist",
       }),
-    /Unknown execution template on challenge/,
+    /Unknown official scorer template on challenge/,
   );
 });

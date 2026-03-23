@@ -67,7 +67,7 @@ assert.equal(
 );
 assert.equal(
   isTerminalScoreJobError(
-    "Invalid execution template configuration: scorer image is not valid for official_table_metric_v1",
+    "Invalid official scorer configuration: scorer image is not valid for official_table_metric_v1",
   ),
   true,
   "invalid challenge scoring configuration should count as terminal",

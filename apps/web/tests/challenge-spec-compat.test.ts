@@ -1,40 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { hydrateChallengeSpec } from "../src/lib/api";
-import { createResolvedTableExecutionContract } from "@agora/common";
+import {
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
+} from "@agora/common";
 
 test("hydrateChallengeSpec accepts current specs", () => {
   const spec = hydrateChallengeSpec({
-    schema_version: 3,
+    schema_version: 4,
     id: "current-1",
     title: "Current spec",
     domain: "other",
     type: "reproducibility",
     description: "Pinned with the current schema",
-    evaluation: {
+    execution: createChallengeExecution({
       template: "official_table_metric_v1",
+      scorerImage: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
       metric: "accuracy",
       comparator: "maximize",
-      scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-      execution_contract: createResolvedTableExecutionContract({
-        template: "official_table_metric_v1",
-        scorerImage: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-        metric: "accuracy",
-        comparator: "maximize",
-        evaluationArtifactUri: "ipfs://test",
-        evaluationColumns: {
-          required: ["sample_id", "label"],
-          id: "sample_id",
-          value: "label",
-        },
-        submissionColumns: {
-          required: ["sample_id", "normalized_signal", "condition"],
-          id: "sample_id",
-          value: "normalized_signal",
-        },
-        visibleArtifactUris: ["ipfs://train"],
+      evaluationArtifactUri: "ipfs://test",
+      evaluationContract: createCsvTableEvaluationContract({
+        requiredColumns: ["sample_id", "label"],
+        idColumn: "sample_id",
+        valueColumn: "label",
       }),
-    },
+    }),
     artifacts: [
       {
         role: "source_data",

@@ -7,10 +7,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getPublicClient, postScore } from "@agora/chain";
 import {
-  type ChallengeEvalRow,
+  type ChallengeExecutionRow,
   SUBMISSION_RESULT_FORMAT,
   loadConfig,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRuntimeConfig,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
@@ -67,12 +67,12 @@ export async function oracleScore(
   const challenge = (await getChallengeById(
     db,
     submission.challenge_id,
-  )) as ChallengeEvalRow & {
+  )) as ChallengeExecutionRow & {
     id: string;
     contract_address: string;
     spec_cid?: string | null;
   };
-  const evalPlan = resolveChallengeEvaluation(challenge);
+  const evalPlan = resolveChallengeExecution(challenge);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(
       `Challenge ${submission.challenge_id} missing evaluation bundle CID.`,

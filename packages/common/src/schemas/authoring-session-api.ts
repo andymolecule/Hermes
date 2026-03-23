@@ -33,8 +33,20 @@ export const authoringSessionArtifactRefSchema = z
 
 export const authoringSessionExecutionInputSchema = z
   .object({
+    metric: z.string().trim().min(1).optional(),
+    evaluation_artifact_id: z.string().trim().min(1).optional(),
+    evaluation_id_column: z.string().trim().min(1).optional(),
+    evaluation_value_column: z.string().trim().min(1).optional(),
+    submission_id_column: z.string().trim().min(1).optional(),
+    submission_value_column: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+export const authoringSessionResolvedExecutionSchema = z
+  .object({
     template: z.literal("official_table_metric_v1").optional(),
     metric: z.string().trim().min(1).optional(),
+    objective: authoringSessionObjectiveSchema.optional(),
     evaluation_artifact_id: z.string().trim().min(1).optional(),
     evaluation_id_column: z.string().trim().min(1).optional(),
     evaluation_value_column: z.string().trim().min(1).optional(),
@@ -104,6 +116,20 @@ export const authoringSessionSubmissionContractSchema = z
   })
   .strict();
 
+export const authoringSessionEvaluationContractSchema = z
+  .object({
+    kind: z.literal("csv_table"),
+    columns: z
+      .object({
+        required: z.array(z.string().trim().min(1)).min(1),
+        id: z.string().trim().min(1),
+        value: z.string().trim().min(1),
+        allow_extra: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const authoringSessionResourceLimitsSchema = z
   .object({
     memory_mb: z.number().int().positive(),
@@ -124,19 +150,12 @@ export const authoringSessionRewardSchema = z
 
 export const authoringSessionCompilationSchema = z
   .object({
-    template: z.string().trim().min(1),
+    template: z.literal("official_table_metric_v1"),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
     scorer_image: z.string().trim().min(1),
     evaluation_artifact_uri: z.string().trim().min(1),
-    evaluation_columns: z
-      .object({
-        required: z.array(z.string().trim().min(1)).min(1),
-        id: z.string().trim().min(1),
-        value: z.string().trim().min(1),
-        allow_extra: z.boolean(),
-      })
-      .strict(),
+    evaluation_contract: authoringSessionEvaluationContractSchema,
     submission_contract: authoringSessionSubmissionContractSchema,
     resource_limits: authoringSessionResourceLimitsSchema,
     reward: authoringSessionRewardSchema,
@@ -164,7 +183,7 @@ export const authoringSessionChecklistSchema = z
 export const authoringSessionResolvedSchema = z
   .object({
     intent: partialChallengeIntentSchema.default({}),
-    execution: authoringSessionExecutionInputSchema.default({}),
+    execution: authoringSessionResolvedExecutionSchema.default({}),
   })
   .strict();
 
@@ -349,6 +368,12 @@ export type AuthoringSessionFileInputOutput = z.output<
 >;
 export type AuthoringSessionCompilationOutput = z.output<
   typeof authoringSessionCompilationSchema
+>;
+export type AuthoringSessionExecutionInputOutput = z.output<
+  typeof authoringSessionExecutionInputSchema
+>;
+export type AuthoringSessionResolvedExecutionOutput = z.output<
+  typeof authoringSessionResolvedExecutionSchema
 >;
 export type AuthoringSessionChecklistOutput = z.output<
   typeof authoringSessionChecklistSchema

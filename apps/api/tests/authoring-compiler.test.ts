@@ -133,11 +133,11 @@ test("authoring compiler deterministically compiles a supported table regression
     buildRegressionDryRunDependencies(),
   );
 
-  assert.equal(result.template, "official_table_metric_v1");
-  assert.equal(result.metric, "rmse");
-  assert.equal(result.comparator, "minimize");
+  assert.equal(result.execution.template, "official_table_metric_v1");
+  assert.equal(result.execution.metric, "rmse");
+  assert.equal(result.execution.comparator, "minimize");
   assert.equal(result.challenge_type, "prediction");
-  assert.equal(result.challenge_spec.evaluation.metric, "rmse");
+  assert.equal(result.challenge_spec.execution.metric, "rmse");
   assert.equal(result.dry_run.status, "validated");
 });
 
@@ -163,15 +163,18 @@ test("authoring compiler deterministically compiles a benchmark-style ranking ch
     buildRankingDryRunDependencies(),
   );
 
-  assert.equal(result.metric, "spearman");
-  assert.equal(result.comparator, "maximize");
-  assert.equal(result.execution_contract.evaluation_columns.id, "peptide_id");
+  assert.equal(result.execution.metric, "spearman");
+  assert.equal(result.execution.comparator, "maximize");
   assert.equal(
-    result.execution_contract.evaluation_columns.value,
+    result.execution.evaluation_contract.columns.id,
+    "peptide_id",
+  );
+  assert.equal(
+    result.execution.evaluation_contract.columns.value,
     "reference_rank",
   );
   assert.equal(
-    result.execution_contract.submission_columns.value,
+    result.submission_contract.columns.value,
     "predicted_score",
   );
 });
@@ -205,7 +208,7 @@ test("authoring compiler returns structured missing-field validation when execut
     ],
   );
   assert.equal(
-    result.authoringIr.evaluation.compile_error_codes[0],
+    result.authoringIr.execution.compile_error_codes[0],
     "AUTHORING_INPUT_REQUIRED",
   );
 });
@@ -280,13 +283,13 @@ test("authoring artifact resolution builds the explicit table execution contract
   assert.equal(resolved.resolvedArtifacts[0]?.role, "supporting_context");
   assert.equal(resolved.resolvedArtifacts[1]?.role, "hidden_evaluation");
   assert.equal(resolved.resolvedArtifacts[1]?.visibility, "private");
-  assert.equal(resolved.executionContract.evaluation_columns.id, "peptide_id");
+  assert.equal(resolved.execution.evaluation_contract.columns.id, "peptide_id");
   assert.equal(
-    resolved.executionContract.evaluation_columns.value,
+    resolved.execution.evaluation_contract.columns.value,
     "reference_rank",
   );
   assert.equal(
-    resolved.executionContract.submission_columns.value,
+    resolved.submissionContract.columns.value,
     "predicted_score",
   );
 });

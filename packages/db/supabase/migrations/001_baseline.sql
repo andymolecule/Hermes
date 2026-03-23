@@ -16,9 +16,8 @@ create table challenges (
   description text not null,
   domain text not null,
   challenge_type text not null,
-  evaluation_template text not null,
   spec_cid text not null,
-  evaluation_plan_json jsonb not null,
+  execution_plan_json jsonb not null,
   artifacts_json jsonb not null default '[]'::jsonb,
   minimum_score numeric,
   max_submissions_total integer,
@@ -65,8 +64,6 @@ create table challenges (
     check (
       winner_solver_address is null or winner_solver_address = lower(winner_solver_address)
     ),
-  constraint challenges_evaluation_template_check
-    check (length(btrim(evaluation_template)) > 0),
   constraint challenges_reward_amount_check
     check (reward_amount > 0),
   constraint challenges_max_submissions_total_check
@@ -97,9 +94,6 @@ create index idx_challenges_deadline
 
 create index idx_challenges_poster
   on challenges(poster_address);
-
-create index idx_challenges_evaluation_template
-  on challenges(evaluation_template);
 
 create index idx_challenges_source_provider_created_at
   on challenges(source_provider, created_at desc);

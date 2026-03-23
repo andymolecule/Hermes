@@ -2,7 +2,7 @@
 
 This directory is the shared policy layer for challenge creation and authoring defaults.
 
-It does **not** own scorer runtime config. Official scorer image and template config lives in `packages/common/src/scorer-images.ts` and `packages/common/src/schemas/execution-template.ts`.
+It does **not** own scorer runtime config. Official scorer catalog and runtime policy live in `packages/common/src/official-scorer-catalog.ts` and `packages/common/src/schemas/execution-contract.ts`.
 
 ## Files
 
@@ -18,7 +18,7 @@ It does **not** own scorer runtime config. Official scorer image and template co
 
 If the question is:
 
-- "Which execution template/type should this challenge default to?"
+- "Which official scorer template/metric should this challenge default to?"
 - "How should a new challenge spec candidate be assembled?"
 
 the answer belongs here.

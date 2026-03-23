@@ -1,54 +1,48 @@
 import assert from "node:assert/strict";
 import {
-  buildChallengeEvaluationPlanCache,
+  buildChallengeExecutionPlanCache,
   canonicalizeChallengeSpec,
   challengeSpecSchema,
   parseChallengeSpecDocument,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
   resolveChallengeRuntimeConfig,
   validateChallengeScoreability,
   validateChallengeSpec,
 } from "../schemas/challenge-spec.js";
-import { createResolvedTableExecutionContract } from "../schemas/execution-contract.js";
-import { resolveExecutionTemplateImage } from "../schemas/execution-template.js";
+import { createChallengeExecution } from "../schemas/execution-contract.js";
+import { createCsvTableEvaluationContract } from "../schemas/scorer-runtime.js";
+import { resolveOfficialScorerImage } from "../official-scorer-catalog.js";
 import { createCsvTableSubmissionContract } from "../schemas/submission-contract.js";
 
-const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
 if (!scorerImage) {
   throw new Error("expected official_table_metric_v1 scorer image");
 }
 
 const sample = {
-  schema_version: 3,
+  schema_version: 4,
   id: "ch-001",
   title: "Predict assay response",
   domain: "omics",
   type: "prediction",
   description: "Predict the held-out labels.",
-  evaluation: {
+  execution: createChallengeExecution({
     template: "official_table_metric_v1",
+    scorerImage,
     metric: "r2",
     comparator: "maximize",
-    scorer_image: scorerImage,
-    execution_contract: createResolvedTableExecutionContract({
-      template: "official_table_metric_v1",
-      scorerImage,
-      metric: "r2",
-      comparator: "maximize",
-      evaluationArtifactUri: "ipfs://QmHiddenLabels",
-      evaluationColumns: {
-        required: ["sample_id", "label"],
-        id: "sample_id",
-        value: "label",
-      },
-      submissionColumns: {
-        required: ["sample_id", "prediction"],
-        id: "sample_id",
-        value: "prediction",
-      },
-      visibleArtifactUris: ["ipfs://QmTrain"],
+    evaluationArtifactUri: "ipfs://QmHiddenLabels",
+    evaluationContract: createCsvTableEvaluationContract({
+      requiredColumns: ["sample_id", "label"],
+      idColumn: "sample_id",
+      valueColumn: "label",
     }),
-  },
+    policies: {
+      coverage_policy: "reject",
+      duplicate_id_policy: "reject",
+      invalid_value_policy: "reject",
+    },
+  }),
   artifacts: [
     {
       role: "training_data",
@@ -86,20 +80,20 @@ if (!result.success) {
   throw new Error("Expected sample spec to parse");
 }
 
-const resolved = resolveChallengeEvaluation(result.data);
+const resolved = resolveChallengeExecution(result.data);
 assert.equal(resolved.template, "official_table_metric_v1");
 assert.equal(resolved.metric, "r2");
 assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
 
-const evaluationPlanCache = buildChallengeEvaluationPlanCache(result.data);
-const resolvedFromPlan = resolveChallengeEvaluation({
-  evaluation_plan_json: evaluationPlanCache,
+const executionPlanCache = buildChallengeExecutionPlanCache(result.data);
+const resolvedFromPlan = resolveChallengeExecution({
+  execution_plan_json: executionPlanCache,
 });
 assert.equal(resolvedFromPlan.template, "official_table_metric_v1");
 assert.equal(resolvedFromPlan.image, scorerImage);
 
 const runtimeConfigFromPlan = resolveChallengeRuntimeConfig({
-  evaluation_plan_json: evaluationPlanCache,
+  execution_plan_json: executionPlanCache,
 });
 assert.equal(runtimeConfigFromPlan.submissionContract?.kind, "csv_table");
 assert.equal(runtimeConfigFromPlan.evaluationContract?.columns.id, "sample_id");
@@ -111,20 +105,16 @@ const canonicalized = await canonicalizeChallengeSpec(result.data, {
   resolveOfficialPresetDigests: false,
 });
 assert.equal(
-  canonicalized.evaluation.scorer_image,
+  canonicalized.execution.scorer_image,
   scorerImage,
   "challenge specs should keep the template scorer image",
 );
 
 const invalidMetric = challengeSpecSchema.safeParse({
   ...sample,
-  evaluation: {
-    ...sample.evaluation,
+  execution: {
+    ...sample.execution,
     metric: "custom_metric",
-    execution_contract: {
-      ...sample.evaluation.execution_contract,
-      metric: "custom_metric",
-    },
   },
 });
 assert.equal(invalidMetric.success, false, "unsupported metric should fail");
@@ -144,7 +134,7 @@ assert.equal(
 );
 
 const parsedYaml = parseChallengeSpecDocument(`
-schema_version: 3
+schema_version: 4
 id: yaml-001
 title: YAML example
 domain: omics

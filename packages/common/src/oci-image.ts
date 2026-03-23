@@ -1,26 +1,3 @@
-export const OFFICIAL_SCORER_IMAGES = {
-  exact_match: "ghcr.io/andymolecule/gems-match-scorer:v1",
-  table_metric: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-  generated: "ghcr.io/andymolecule/gems-generated-scorer:v1",
-} as const;
-
-export interface RunnerLimits {
-  memory: string;
-  cpus: string;
-  pids: number;
-  timeoutMs: number;
-}
-
-export interface ScoringMountConfig {
-  evaluationBundleName?: string;
-  submissionFileName: string;
-}
-
-export const DEFAULT_SCORER_MOUNT: ScoringMountConfig = {
-  evaluationBundleName: "ground_truth.csv",
-  submissionFileName: "submission.csv",
-};
-
 type ParsedGhcrImageRef = {
   imagePath: string;
   owner: string;
@@ -29,7 +6,22 @@ type ParsedGhcrImageRef = {
   digest?: string;
 };
 
-function parseGhcrImageReference(image: string): ParsedGhcrImageRef | null {
+export interface ResolveOciImageToDigestOptions {
+  env?: Record<string, string | undefined>;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+}
+
+const GHCR_RESOLUTION_TIMEOUT_MS = 5_000;
+const GHCR_CACHE_TTL_MS = 5 * 60 * 1000;
+const ghcrDigestCache = new Map<
+  string,
+  { digest: string; expiresAt: number }
+>();
+
+export function parseGhcrImageReference(
+  image: string,
+): ParsedGhcrImageRef | null {
   const match =
     /^ghcr\.io\/([^/]+\/[^:@]+)(?::([^@]+))?(?:@(sha256:[a-fA-F0-9]{64}))?$/.exec(
       image.trim(),
@@ -47,7 +39,7 @@ function parseGhcrImageReference(image: string): ParsedGhcrImageRef | null {
   };
 }
 
-function sharesGhcrRepository(left: string, right: string): boolean {
+export function sharesGhcrRepository(left: string, right: string): boolean {
   const leftRef = parseGhcrImageReference(left);
   const rightRef = parseGhcrImageReference(right);
   return (
@@ -57,20 +49,8 @@ function sharesGhcrRepository(left: string, right: string): boolean {
   );
 }
 
-const officialScorerImageSet = new Set<string>(
-  Object.values(OFFICIAL_SCORER_IMAGES),
-);
-
-export function isOfficialScorerImage(image: string): boolean {
-  const trimmed = image.trim();
-  return (
-    officialScorerImageSet.has(trimmed) ||
-    Object.values(OFFICIAL_SCORER_IMAGES).some(
-      (officialImage) =>
-        trimmed.includes("@sha256:") &&
-        sharesGhcrRepository(officialImage, trimmed),
-    )
-  );
+export function hasPinnedDigest(image: string): boolean {
+  return image.trim().includes("@sha256:");
 }
 
 export function validateScorerImage(image: string): string | null {
@@ -94,18 +74,11 @@ export function validateScorerImage(image: string): string | null {
 export function validateExpertScorerImage(image: string): string | null {
   const base = validateScorerImage(image);
   if (base) return base;
-  if (!image.trim().includes("@sha256:")) {
+  if (!hasPinnedDigest(image)) {
     return "Expert-mode scorer images must use a pinned digest (@sha256:...) for reproducibility.";
   }
   return null;
 }
-
-const GHCR_RESOLUTION_TIMEOUT_MS = 5_000;
-const GHCR_CACHE_TTL_MS = 5 * 60 * 1000;
-const ghcrDigestCache = new Map<
-  string,
-  { digest: string; expiresAt: number }
->();
 
 async function getGhcrHeaders(
   env: Record<string, string | undefined>,
@@ -162,13 +135,9 @@ export class GhcrResolutionError extends Error {
   }
 }
 
-export async function resolveOfficialImageToDigest(
+export async function resolveOciImageToDigest(
   image: string,
-  options: {
-    env?: Record<string, string | undefined>;
-    fetchImpl?: typeof fetch;
-    signal?: AbortSignal;
-  } = {},
+  options: ResolveOciImageToDigestOptions = {},
 ): Promise<string> {
   const parsed = parseGhcrImageReference(image);
   if (!parsed?.imagePath || !parsed.tag) {

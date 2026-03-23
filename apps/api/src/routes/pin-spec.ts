@@ -3,6 +3,7 @@ import {
   canonicalizeChallengeSpec,
   computeSpecHash,
   getPinSpecAuthorizationTypedData,
+  loadConfig,
   readApiServerRuntimeConfig,
   validateChallengeSpec,
 } from "@agora/common";
@@ -198,7 +199,10 @@ router.post("/", async (c) => {
       });
     }
 
-    const canonicalSpec = await canonicalizeChallengeSpec(parsed.data);
+    const config = loadConfig();
+    const canonicalSpec = await canonicalizeChallengeSpec(parsed.data, {
+      resolveOfficialPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
+    });
     const specCid = await pinJSON(`challenge-${Date.now()}`, canonicalSpec);
     return c.json({ specCid });
   } catch (error) {

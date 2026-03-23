@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   getChallengeRegistrationRetryMessage,
   toChallengeRegistrationChainReadErrorResponse,
-} from "../src/routes/challenges.js";
+} from "../src/lib/challenge-registration.js";
 
 test("challenge registration transient pinned reads return a retryable 409", () => {
   const response = toChallengeRegistrationChainReadErrorResponse(

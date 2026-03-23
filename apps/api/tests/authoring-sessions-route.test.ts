@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createCsvTableSubmissionContract,
-  createResolvedTableExecutionContract,
-  resolveExecutionTemplateImage,
+  createChallengeExecution,
+  createCsvTableEvaluationContract,
+  resolveOfficialScorerImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import { encodeAuthoringSessionArtifactId } from "../src/lib/authoring-session-artifacts.js";
@@ -79,9 +80,9 @@ function createArtifacts() {
 }
 
 function createCompilation() {
-  const scorerImage = resolveExecutionTemplateImage("official_table_metric_v1");
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
-    throw new Error("missing execution template fixture");
+    throw new Error("missing official scorer fixture");
   }
 
   const submissionContract = createCsvTableSubmissionContract({
@@ -90,25 +91,18 @@ function createCompilation() {
     valueColumn: "docking_score",
     allowExtraColumns: true,
   });
-  const executionContract = createResolvedTableExecutionContract({
+  const execution = createChallengeExecution({
     template: "official_table_metric_v1",
     scorerImage,
     metric: "spearman",
     comparator: "maximize",
     evaluationArtifactUri: "ipfs://bundle",
-    evaluationColumns: {
-      required: ["ligand_id", "reference_score"],
-      id: "ligand_id",
-      value: "reference_score",
-      allow_extra: true,
-    },
-    submissionColumns: {
-      required: ["ligand_id", "docking_score"],
-      id: "ligand_id",
-      value: "docking_score",
-      allow_extra: true,
-    },
-    visibleArtifactUris: ["ipfs://artifact-1"],
+    evaluationContract: createCsvTableEvaluationContract({
+      requiredColumns: ["ligand_id", "reference_score"],
+      idColumn: "ligand_id",
+      valueColumn: "reference_score",
+      allowExtraColumns: true,
+    }),
     policies: {
       coverage_policy: "reject",
       duplicate_id_policy: "reject",
@@ -116,19 +110,13 @@ function createCompilation() {
     },
   });
   const challengeSpec = {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: "session-spec-1",
     title: "Docking challenge",
     description: "Rank ligands against KRAS.",
     domain: "drug_discovery",
     type: "prediction" as const,
-    evaluation: {
-      template: "official_table_metric_v1",
-      metric: "spearman",
-      comparator: "maximize" as const,
-      scorer_image: scorerImage,
-      execution_contract: executionContract,
-    },
+    execution,
     artifacts: [
       {
         role: "supporting_context" as const,
@@ -153,10 +141,7 @@ function createCompilation() {
 
   return {
     challenge_type: "prediction",
-    template: "official_table_metric_v1",
-    metric: "spearman",
-    comparator: "maximize" as const,
-    execution_contract: executionContract,
+    execution,
     resolved_artifacts: challengeSpec.artifacts,
     submission_contract: submissionContract,
     dry_run: {
@@ -313,7 +298,7 @@ test("POST /sessions accepts structured intent and execution", async () => {
           intent: input.intent,
           uploadedArtifacts: input.uploadedArtifacts,
           origin: { provider: "direct" },
-          template: input.templateOverride ?? "official_table_metric_v1",
+          template: "official_table_metric_v1",
           metric: input.metricOverride ?? null,
           comparator: "maximize",
           evaluationArtifactId: input.evaluationArtifactIdOverride ?? null,
@@ -388,7 +373,6 @@ test("POST /sessions accepts structured intent and execution", async () => {
         payout_condition: "Highest Spearman wins.",
       }),
       execution: {
-        template: "official_table_metric_v1",
         metric: "spearman",
         evaluation_artifact_id: "reference",
         evaluation_id_column: "peptide_id",

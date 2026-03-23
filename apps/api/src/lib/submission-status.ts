@@ -3,7 +3,7 @@ import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
   SUBMISSION_RESULT_FORMAT,
-  resolveChallengeEvaluation,
+  resolveChallengeExecution,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -371,7 +371,7 @@ export async function buildPublicSubmissionVerification(
 
   const db = createSupabaseClient(true);
   const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
-  const evalPlan = resolveChallengeEvaluation(challenge);
+  const execution = resolveChallengeExecution(challenge);
 
   let proofPayload: PublicProofBundle | null = null;
   if (proofBundle?.cid) {
@@ -398,7 +398,7 @@ export async function buildPublicSubmissionVerification(
     proofBundleCid: proofBundle?.cid ?? submission.proof_bundle_cid ?? null,
     proofBundleHash: submission.proof_bundle_hash ?? null,
     evaluationBundleCid:
-      proofPayload?.evaluationBundleCid ?? evalPlan.evaluationBundleCid ?? null,
+      proofPayload?.evaluationBundleCid ?? execution.evaluationBundleCid ?? null,
     replaySubmissionCid,
     containerImageDigest:
       proofPayload?.containerImageDigest ??

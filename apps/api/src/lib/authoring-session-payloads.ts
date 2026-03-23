@@ -4,8 +4,8 @@ import {
   authoringSessionListItemSchema,
   authoringSessionSchema,
   authoringSessionValidationSchema,
-  getExecutionTemplateMetric,
-  resolveExecutionTemplateLimits,
+  getOfficialScorerMetric,
+  resolveOfficialScorerLimits,
   type AuthoringSessionValidationOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
@@ -86,11 +86,12 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
     return null;
   }
 
-  const metric = getExecutionTemplateMetric(
-    compilation.template,
-    compilation.metric,
+  const execution = compilation.execution;
+  const metric = getOfficialScorerMetric(
+    execution.template,
+    execution.metric,
   );
-  const templateLimits = resolveExecutionTemplateLimits(compilation.template);
+  const templateLimits = resolveOfficialScorerLimits(execution.template);
   const challengeSpec = compilation.challenge_spec;
   const submissionContract = compilation.submission_contract;
 
@@ -101,13 +102,12 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
   }
 
   return {
-    template: compilation.template,
-    metric: metric?.id ?? compilation.metric,
-    objective: compilation.comparator,
-    scorer_image: compilation.execution_contract.scorer_image,
-    evaluation_artifact_uri:
-      compilation.execution_contract.evaluation_artifact_uri,
-    evaluation_columns: compilation.execution_contract.evaluation_columns,
+    template: execution.template,
+    metric: metric?.id ?? execution.metric,
+    objective: execution.comparator,
+    scorer_image: execution.scorer_image,
+    evaluation_artifact_uri: execution.evaluation_artifact_uri,
+    evaluation_contract: execution.evaluation_contract,
     submission_contract: {
       version: submissionContract.version,
       kind: submissionContract.kind,
@@ -164,9 +164,9 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
     reward: `${challengeSpec.reward.total} USDC`,
     distribution: challengeSpec.reward.distribution,
     deadline: challengeSpec.deadline,
-    template: compilation.template,
-    metric: compilation.metric,
-    objective: compilation.comparator,
+    template: compilation.execution.template,
+    metric: compilation.execution.metric,
+    objective: compilation.execution.comparator,
     artifacts_count: compilation.resolved_artifacts.length,
   };
 }
@@ -285,11 +285,11 @@ function buildValidation(
   publicState: ReturnType<typeof toPublicState>,
 ): AuthoringSessionValidationOutput {
   const compileErrorCode =
-    session.authoring_ir_json?.evaluation.compile_error_codes[0] ?? null;
+    session.authoring_ir_json?.execution.compile_error_codes[0] ?? null;
   const compileErrorMessage =
-    session.authoring_ir_json?.evaluation.compile_error_message ?? null;
+    session.authoring_ir_json?.execution.compile_error_message ?? null;
   const rejectionReason =
-    session.authoring_ir_json?.evaluation.rejection_reasons[0] ?? null;
+    session.authoring_ir_json?.execution.rejection_reasons[0] ?? null;
   const missingFields = [
     ...(session.authoring_ir_json?.assessment.missing_fields ?? []),
   ];
@@ -326,7 +326,7 @@ function buildValidation(
       missing_fields: [],
       invalid_fields: [],
       dry_run_failure: buildValidationIssue({
-        field: "execution_contract",
+        field: "execution",
         code: compileErrorCode,
         message:
           compileErrorMessage ??
@@ -359,7 +359,7 @@ function buildValidation(
       missing_fields: [],
       invalid_fields: [
         buildValidationIssue({
-          field: "execution_contract",
+          field: "execution",
           code: compileErrorCode,
           message:
             compileErrorMessage ??
@@ -390,44 +390,49 @@ export function buildSessionIntentCandidate(session: AuthoringSessionRow) {
 function buildResolved(session: AuthoringSessionRow) {
   const intent = buildSessionIntentCandidate(session);
   const execution = {
-    ...(session.compilation_json?.template
-      ? { template: session.compilation_json.template }
-      : session.authoring_ir_json?.evaluation.template
-        ? { template: session.authoring_ir_json.evaluation.template }
+    ...(session.compilation_json?.execution.template
+      ? { template: session.compilation_json.execution.template }
+      : session.authoring_ir_json?.execution.template
+        ? { template: session.authoring_ir_json.execution.template }
         : {}),
-    ...(session.compilation_json?.metric
-      ? { metric: session.compilation_json.metric }
-      : session.authoring_ir_json?.evaluation.metric
-        ? { metric: session.authoring_ir_json.evaluation.metric }
+    ...(session.compilation_json?.execution.metric
+      ? { metric: session.compilation_json.execution.metric }
+      : session.authoring_ir_json?.execution.metric
+        ? { metric: session.authoring_ir_json.execution.metric }
         : {}),
-    ...(session.authoring_ir_json?.evaluation.evaluation_artifact_id
+    ...(session.compilation_json?.execution.comparator
+      ? { objective: session.compilation_json.execution.comparator }
+      : session.authoring_ir_json?.execution.comparator
+        ? { objective: session.authoring_ir_json.execution.comparator }
+      : {}),
+    ...(session.authoring_ir_json?.execution.evaluation_artifact_id
       ? {
           evaluation_artifact_id:
-            session.authoring_ir_json.evaluation.evaluation_artifact_id,
+            session.authoring_ir_json.execution.evaluation_artifact_id,
         }
       : {}),
-    ...(session.authoring_ir_json?.evaluation.evaluation_columns.id
+    ...(session.authoring_ir_json?.execution.evaluation_columns.id
       ? {
           evaluation_id_column:
-            session.authoring_ir_json.evaluation.evaluation_columns.id,
+            session.authoring_ir_json.execution.evaluation_columns.id,
         }
       : {}),
-    ...(session.authoring_ir_json?.evaluation.evaluation_columns.value
+    ...(session.authoring_ir_json?.execution.evaluation_columns.value
       ? {
           evaluation_value_column:
-            session.authoring_ir_json.evaluation.evaluation_columns.value,
+            session.authoring_ir_json.execution.evaluation_columns.value,
         }
       : {}),
-    ...(session.authoring_ir_json?.evaluation.submission_columns.id
+    ...(session.authoring_ir_json?.execution.submission_columns.id
       ? {
           submission_id_column:
-            session.authoring_ir_json.evaluation.submission_columns.id,
+            session.authoring_ir_json.execution.submission_columns.id,
         }
       : {}),
-    ...(session.authoring_ir_json?.evaluation.submission_columns.value
+    ...(session.authoring_ir_json?.execution.submission_columns.value
       ? {
           submission_value_column:
-            session.authoring_ir_json.evaluation.submission_columns.value,
+            session.authoring_ir_json.execution.submission_columns.value,
         }
       : {}),
   };

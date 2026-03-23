@@ -12,7 +12,7 @@ import {
   challengeArtifactSchema,
   challengeSpecSchema,
 } from "./challenge-spec.js";
-import { resolvedTableExecutionContractSchema } from "./execution-contract.js";
+import { challengeExecutionSchema } from "./execution-contract.js";
 import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
@@ -274,7 +274,7 @@ const authoringArtifactSchemaV1 = z.object({
 });
 
 export const challengeAuthoringIrSchema = z.object({
-  version: z.literal(3),
+  version: z.literal(4),
   origin: z.object({
     provider: externalSourceProviderSchema,
     external_id: z.string().trim().min(1).nullable().optional(),
@@ -307,7 +307,7 @@ export const challengeAuthoringIrSchema = z.object({
     warnings: z.array(z.string().trim().min(1)).default([]),
     missing_fields: z.array(authoringValidationFieldSchema).default([]),
   }),
-  evaluation: z.object({
+  execution: z.object({
     template: z.string().trim().min(1).nullable(),
     metric: z.string().trim().min(1).nullable(),
     comparator: authoringComparatorSchema.nullable().default(null),
@@ -363,10 +363,7 @@ export const dryRunPreviewSchema = z.object({
 
 export const compilationResultSchema = z.object({
   challenge_type: z.string().trim().min(1),
-  template: z.string().trim().min(1),
-  metric: z.string().trim().min(1),
-  comparator: authoringComparatorSchema,
-  execution_contract: resolvedTableExecutionContractSchema,
+  execution: challengeExecutionSchema,
   resolved_artifacts: z.array(challengeArtifactSchema).min(1),
   submission_contract: submissionContractSchema,
   dry_run: dryRunPreviewSchema,

@@ -202,13 +202,13 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `3` for the active authoring-session execution-contract model. |
+| `schema_version` | integer | Must be `4` for the active simplified execution-contract model. |
 | `id` | string | Unique challenge identifier (e.g., `ch-001`). |
 | `title` | string | Human-readable challenge title. |
 | `domain` | enum | One of: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`. |
 | `type` | enum | One of: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`. |
 | `description` | string | Full challenge description. |
-| `evaluation` | object | Execution-backed scoring config. Challenge specs set `template`, `metric`, `comparator`, `scorer_image`, and a resolved `execution_contract`. |
+| `execution` | object | Canonical scoring contract. Challenge specs set `template`, `metric`, `comparator`, `scorer_image`, the hidden evaluation artifact binding, the evaluation contract, and runtime policies exactly once. |
 | `artifacts` | array | Normalized artifact list. Each artifact includes a `role`, `visibility`, and `uri`. |
 | `submission_contract` | object | Canonical machine-readable submission artifact contract. This is the only source of truth for what solvers must upload. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
@@ -219,10 +219,12 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `evaluation.template` | string | Official execution template ID (for example `official_table_metric_v1`). |
-| `evaluation.metric` | string | Metric ID executed by the chosen official scorer template. |
-| `evaluation.scorer_image` | string | Pinned scorer image digest used for deterministic execution. |
-| `evaluation.execution_contract` | object | Resolved execution contract including the hidden evaluation artifact URI, column mappings, and runtime policies. |
+| `execution.template` | string | Official execution template ID (for example `official_table_metric_v1`). |
+| `execution.metric` | string | Metric ID executed by the chosen official scorer template. |
+| `execution.scorer_image` | string | Pinned scorer image digest used for deterministic execution. |
+| `execution.evaluation_artifact_uri` | string | Hidden evaluation artifact URI. Must point at one private artifact. |
+| `execution.evaluation_contract` | object | Evaluation-table contract including required columns and id/value mappings. |
+| `execution.policies` | object | Runtime scoring policies such as coverage and duplicate-id handling. |
 | `artifacts[].role` | string | Poster-defined artifact role label. Roles are descriptive metadata; the execution contract binds the hidden evaluation artifact explicitly. |
 | `artifacts[].visibility` | enum | One of: `public`, `private`. |
 | `artifacts[].uri` | string | Artifact URI. Accepts `ipfs://` or `https://`. |
@@ -239,39 +241,30 @@ The authoritative schema for challenge specification files.
 ### Example
 
 ```yaml
-schema_version: 3
+schema_version: 4
 id: ch-001
 title: "Rank ligands for KRAS binding affinity"
 domain: drug_discovery
 type: docking
 description: "Predict docking scores for the supplied ligand set against the target structure."
-evaluation:
+execution:
+  version: v1
   template: official_table_metric_v1
   metric: spearman
   comparator: maximize
   scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:...
-  execution_contract:
-    version: v1
-    template: official_table_metric_v1
-    scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:...
-    metric: spearman
-    comparator: maximize
-    evaluation_artifact_uri: ipfs://QmReferenceScores
-    evaluation_columns:
+  evaluation_artifact_uri: ipfs://QmReferenceScores
+  evaluation_contract:
+    kind: csv_table
+    columns:
       required: [ligand_id, reference_score]
       id: ligand_id
       value: reference_score
       allow_extra: true
-    submission_columns:
-      required: [ligand_id, predicted_score]
-      id: ligand_id
-      value: predicted_score
-      allow_extra: true
-    visible_artifact_uris: []
-    policies:
-      coverage_policy: reject
-      duplicate_id_policy: reject
-      invalid_value_policy: reject
+  policies:
+    coverage_policy: reject
+    duplicate_id_policy: reject
+    invalid_value_policy: reject
 artifacts:
   - role: target_structure
     visibility: public
@@ -300,7 +293,7 @@ submission_contract:
     value: docking_score
     allow_extra: true
 reward:
-  total: 500 USDC
+  total: "500"
   distribution: winner_take_all
 deadline: "2026-03-04T23:59:59Z"
 ```

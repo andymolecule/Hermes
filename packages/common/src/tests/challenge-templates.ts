@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import {
   buildChallengeSpecCandidate,
-  defaultMinimumScoreForEvaluation,
-  getChallengeCompatibilityTypeFromEvaluation,
-  getChallengeTypeTemplate,
+  defaultMinimumScoreForExecution,
+  getChallengeTypeDefaults,
 } from "../challenges/templates.js";
 
-const predictionTemplate = getChallengeTypeTemplate("prediction");
-assert.equal(predictionTemplate.defaultTemplate, "official_table_metric_v1");
-assert.equal(predictionTemplate.defaultMetric, "r2");
+const predictionDefaults = getChallengeTypeDefaults("prediction");
+assert.equal(predictionDefaults.defaultMetric, "r2");
 
 const candidate = buildChallengeSpecCandidate({
   id: "ch-001",
@@ -40,10 +38,10 @@ const candidate = buildChallengeSpecCandidate({
   },
 });
 
-assert.equal(candidate.evaluation.template, "official_table_metric_v1");
-assert.equal(candidate.evaluation.execution_contract.metric, "r2");
+assert.equal(candidate.execution.template, "official_table_metric_v1");
+assert.equal(candidate.execution.metric, "r2");
 assert.equal(
-  candidate.evaluation.execution_contract.evaluation_artifact_uri,
+  candidate.execution.evaluation_artifact_uri,
   "ipfs://QmHiddenLabels",
 );
 assert.equal(candidate.submission_contract.kind, "csv_table");
@@ -54,8 +52,4 @@ assert.deepEqual(candidate.submission_contract.columns.required, [
   "sample_id",
   "prediction",
 ]);
-assert.equal(
-  getChallengeCompatibilityTypeFromEvaluation(candidate.evaluation),
-  "custom",
-);
-assert.equal(defaultMinimumScoreForEvaluation(candidate.evaluation), 0);
+assert.equal(defaultMinimumScoreForExecution(candidate.execution), 0);

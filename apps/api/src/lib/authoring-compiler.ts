@@ -1,5 +1,6 @@
 import {
   AgoraError,
+  STANDARD_AUTHORING_TEMPLATE,
   type AuthoringArtifactOutput,
   type AuthoringSessionValidationOutput,
   type AuthoringValidationFieldOutput,
@@ -7,14 +8,14 @@ import {
   type ChallengeIntentOutput,
   type ChallengeSpecOutput,
   type CompilationResultOutput,
-  type ExecutionTemplateIdOutput,
+  type OfficialScorerTemplateIdOutput,
   canonicalizeChallengeSpec,
   challengeSpecSchemaForChain,
-  deriveComparatorFromMetric,
-  resolvePinnedExecutionTemplateImage,
+  deriveOfficialScorerComparator,
+  resolvePinnedOfficialScorerImage,
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
-  validateExecutionTemplateMetric,
+  validateOfficialScorerMetric,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
@@ -48,7 +49,7 @@ export interface AuthoringSessionOutcome {
 }
 
 interface SessionCompilationProposal {
-  template: ExecutionTemplateIdOutput;
+  template: OfficialScorerTemplateIdOutput;
   metric: string;
   comparator: "maximize" | "minimize";
   evaluationArtifactIndex: number;
@@ -85,7 +86,6 @@ function defaultEvaluationArtifactIndex(uploadedArtifacts: AuthoringArtifactOutp
 
 function buildDeterministicProposal(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
-  templateOverride?: ExecutionTemplateIdOutput | null;
   metricOverride?: string | null;
   evaluationArtifactIdOverride?: string | null;
   evaluationIdColumnOverride?: string | null;
@@ -93,7 +93,7 @@ function buildDeterministicProposal(input: {
   submissionIdColumnOverride?: string | null;
   submissionValueColumnOverride?: string | null;
 }): SessionCompilationProposal {
-  const template = input.templateOverride ?? "official_table_metric_v1";
+  const template = STANDARD_AUTHORING_TEMPLATE;
   const metric = input.metricOverride?.trim() || null;
 
   if (!metric) {
@@ -111,7 +111,7 @@ function buildDeterministicProposal(input: {
     );
   }
 
-  const metricError = validateExecutionTemplateMetric(template, metric);
+  const metricError = validateOfficialScorerMetric(template, metric);
   if (metricError) {
     throw new AgoraError(
       `${metricError} Next step: choose a supported metric and retry.`,
@@ -127,7 +127,7 @@ function buildDeterministicProposal(input: {
     );
   }
 
-  const comparator = deriveComparatorFromMetric(template, metric);
+  const comparator = deriveOfficialScorerComparator(template, metric);
   if (!comparator) {
     throw new AgoraError(
       "Agora could not derive the comparator for the selected metric. Next step: choose a supported metric and retry.",
@@ -261,7 +261,7 @@ function buildValidationFromAgoraError(input: {
       missing_fields: [],
       invalid_fields: [],
       dry_run_failure: buildValidationIssue({
-        field: "execution_contract",
+        field: "execution",
         code: input.error.code,
         message: input.error.message,
         nextAction,
@@ -290,7 +290,7 @@ function buildValidationFromAgoraError(input: {
     missing_fields: [],
     invalid_fields: [
       buildValidationIssue({
-        field: "execution_contract",
+        field: "execution",
         code: input.error.code,
         message: input.error.message,
         nextAction,
@@ -303,9 +303,8 @@ function buildValidationFromAgoraError(input: {
 
 async function compileAuthoringSessionCandidate(
   input: {
-  intent: ChallengeIntentOutput;
-  uploadedArtifacts: AuthoringArtifactOutput[];
-  templateOverride?: ExecutionTemplateIdOutput | null;
+    intent: ChallengeIntentOutput;
+    uploadedArtifacts: AuthoringArtifactOutput[];
     metricOverride?: string | null;
     evaluationArtifactIdOverride?: string | null;
     evaluationIdColumnOverride?: string | null;
@@ -316,7 +315,7 @@ async function compileAuthoringSessionCandidate(
   dependencies: {
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
-    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
+    resolvePinnedOfficialScorerImageImpl?: typeof resolvePinnedOfficialScorerImage;
   } = {},
 ): Promise<SessionCompilationCandidate> {
   if (input.uploadedArtifacts.length === 0) {
@@ -331,7 +330,6 @@ async function compileAuthoringSessionCandidate(
 
   const assessed = buildDeterministicProposal({
     uploadedArtifacts: input.uploadedArtifacts,
-    templateOverride: input.templateOverride,
     metricOverride: input.metricOverride,
     evaluationArtifactIdOverride: input.evaluationArtifactIdOverride,
     evaluationIdColumnOverride: input.evaluationIdColumnOverride,
@@ -342,7 +340,6 @@ async function compileAuthoringSessionCandidate(
 
   const proposal = {
     ...assessed,
-    template: input.templateOverride ?? assessed.template,
     metric: input.metricOverride?.trim() || assessed.metric,
     evaluationArtifactIndex:
       input.evaluationArtifactIdOverride != null
@@ -379,12 +376,12 @@ async function compileAuthoringSessionCandidate(
   }
 
   const scorerImage = await (
-    dependencies.resolvePinnedExecutionTemplateImageImpl ??
-    resolvePinnedExecutionTemplateImage
+    dependencies.resolvePinnedOfficialScorerImageImpl ??
+    resolvePinnedOfficialScorerImage
   )(proposal.template);
   if (!scorerImage) {
     throw new AgoraError(
-      `Unknown execution template ${proposal.template}. Next step: choose a supported template and retry.`,
+      `Unknown official scorer template ${proposal.template}. Next step: choose a supported template and retry.`,
       {
         code: "AUTHORING_TEMPLATE_UNKNOWN",
         status: 500,
@@ -433,19 +430,13 @@ async function compileAuthoringSessionCandidate(
   const apiRuntime = readApiServerRuntimeConfig();
 
   const challengeSpecCandidate = {
-    schema_version: 3 as const,
+    schema_version: 4 as const,
     id: `challenge-${Date.now()}`,
     title: input.intent.title,
     description: input.intent.description,
     domain: input.intent.domain as ChallengeSpecOutput["domain"],
     type: "prediction" as const,
-    evaluation: {
-      template: proposal.template,
-      metric: proposal.metric,
-      comparator: proposal.comparator,
-      scorer_image: scorerImage,
-      execution_contract: resolved.executionContract,
-    },
+    execution: resolved.execution,
     artifacts: resolved.resolvedArtifacts,
     submission_contract: resolved.submissionContract,
     reward: {
@@ -492,10 +483,7 @@ async function compileAuthoringSessionCandidate(
     },
     compilation: {
       challenge_type: "prediction",
-      template: proposal.template,
-      metric: proposal.metric,
-      comparator: proposal.comparator,
-      execution_contract: resolved.executionContract,
+      execution: canonicalSpec.execution,
       resolved_artifacts: canonicalSpec.artifacts,
       submission_contract: canonicalSpec.submission_contract,
       dry_run: dryRun,
@@ -511,7 +499,6 @@ export async function compileAuthoringSession(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
-    templateOverride?: ExecutionTemplateIdOutput | null;
     metricOverride?: string | null;
     evaluationArtifactIdOverride?: string | null;
     evaluationIdColumnOverride?: string | null;
@@ -522,7 +509,7 @@ export async function compileAuthoringSession(
   dependencies: {
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
-    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
+    resolvePinnedOfficialScorerImageImpl?: typeof resolvePinnedOfficialScorerImage;
   } = {},
 ): Promise<CompilationResultOutput> {
   const result = await compileAuthoringSessionCandidate(
@@ -536,7 +523,6 @@ export async function compileAuthoringSessionOutcome(
   input: {
     intent: ChallengeIntentOutput;
     uploadedArtifacts: AuthoringArtifactOutput[];
-    templateOverride?: ExecutionTemplateIdOutput | null;
     metricOverride?: string | null;
     evaluationArtifactIdOverride?: string | null;
     evaluationIdColumnOverride?: string | null;
@@ -547,7 +533,7 @@ export async function compileAuthoringSessionOutcome(
   dependencies: {
     executeScoringPipelineImpl?: typeof executeScoringPipeline;
     getTextImpl?: typeof getText;
-    resolvePinnedExecutionTemplateImageImpl?: typeof resolvePinnedExecutionTemplateImage;
+    resolvePinnedOfficialScorerImageImpl?: typeof resolvePinnedOfficialScorerImage;
   } = {},
 ): Promise<AuthoringSessionOutcome> {
   try {
@@ -615,7 +601,7 @@ export async function compileAuthoringSessionOutcome(
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
         origin: { provider: "direct" },
-        template: input.templateOverride ?? "official_table_metric_v1",
+        template: STANDARD_AUTHORING_TEMPLATE,
         metric:
           typeof input.metricOverride === "string" ? input.metricOverride : null,
         evaluationArtifactId: selectedEvaluationArtifactId,
