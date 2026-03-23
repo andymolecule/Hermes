@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   authoringSessionErrorEnvelopeSchema,
   authoringSessionSchema,
+  conversationalAuthoringSessionResponseSchema,
   createAuthoringSessionRequestSchema,
   registerAgentRequestSchema,
   registerAgentResponseSchema,
@@ -23,6 +24,7 @@ const registerResponse = registerAgentResponseSchema.parse({
 assert.equal(registerResponse.status, "created");
 
 const createRequest = createAuthoringSessionRequestSchema.parse({
+  message: "Create a KRAS docking challenge.",
   messages: [{ text: "Need a KRAS docking challenge" }],
   provenance: {
     source: "beach",
@@ -32,6 +34,7 @@ const createRequest = createAuthoringSessionRequestSchema.parse({
 assert.equal(createRequest.messages?.length, 1);
 
 const respondRequest = respondAuthoringSessionRequestSchema.parse({
+  message: "Use Spearman and the uploaded artifact.",
   answers: [
     { question_id: "q1", value: "spearman" },
     {
@@ -89,10 +92,16 @@ const session = authoringSessionSchema.parse({
 });
 assert.equal(session.creator.type, "agent");
 
+const conversationalResponse = conversationalAuthoringSessionResponseSchema.parse({
+  session,
+  assistant_message: "I still need the scoring metric before I can continue.",
+});
+assert.equal(conversationalResponse.session.id, "session-123");
+
 const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   error: {
     code: "invalid_request",
-    message: "Provide at least one of summary, messages, or files.",
+    message: "Provide at least one of message, summary, messages, or files.",
     next_action: "Fix the request body and retry.",
   },
 });

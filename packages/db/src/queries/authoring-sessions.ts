@@ -1,4 +1,5 @@
 import type {
+  AuthoringConversationLogEntryOutput,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
   ChallengeSpecOutput,
@@ -24,6 +25,7 @@ export interface AuthoringSessionInsert {
   authoring_ir_json?: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json?: AuthoringArtifactOutput[];
   compilation_json?: CompilationResultOutput | null;
+  conversation_log_json?: AuthoringConversationLogEntryOutput[];
   published_challenge_id?: string | null;
   published_spec_json?: ChallengeSpecOutput | null;
   published_spec_cid?: string | null;
@@ -42,6 +44,7 @@ export interface AuthoringSessionRow {
   authoring_ir_json: ChallengeAuthoringIrOutput | null;
   uploaded_artifacts_json: AuthoringArtifactOutput[];
   compilation_json: CompilationResultOutput | null;
+  conversation_log_json: AuthoringConversationLogEntryOutput[];
   published_challenge_id: string | null;
   published_spec_json: ChallengeSpecOutput | null;
   published_spec_cid: string | null;
@@ -81,6 +84,7 @@ export async function createAuthoringSession(
       authoring_ir_json: payload.authoring_ir_json ?? null,
       uploaded_artifacts_json: payload.uploaded_artifacts_json ?? [],
       compilation_json: payload.compilation_json ?? null,
+      conversation_log_json: payload.conversation_log_json ?? [],
       published_challenge_id: payload.published_challenge_id ?? null,
       published_spec_json: payload.published_spec_json ?? null,
       published_spec_cid: payload.published_spec_cid ?? null,
@@ -129,6 +133,7 @@ export async function updateAuthoringSession(
     authoring_ir_json?: ChallengeAuthoringIrOutput | null;
     uploaded_artifacts_json?: AuthoringArtifactOutput[];
     compilation_json?: CompilationResultOutput | null;
+    conversation_log_json?: AuthoringConversationLogEntryOutput[];
     published_challenge_id?: string | null;
     published_spec_json?: ChallengeSpecOutput | null;
     published_spec_cid?: string | null;
@@ -164,6 +169,9 @@ export async function updateAuthoringSession(
   }
   if (input.compilation_json !== undefined) {
     patch.compilation_json = input.compilation_json;
+  }
+  if (input.conversation_log_json !== undefined) {
+    patch.conversation_log_json = input.conversation_log_json;
   }
   if (input.published_challenge_id !== undefined) {
     patch.published_challenge_id = input.published_challenge_id;
@@ -205,6 +213,49 @@ export async function updateAuthoringSession(
   }
 
   return data as AuthoringSessionRow;
+}
+
+export async function appendAuthoringSessionConversationLog(
+  db: AgoraDbClient,
+  input: {
+    id: string;
+    entries: AuthoringConversationLogEntryOutput[];
+    expected_updated_at?: string;
+  },
+): Promise<AuthoringSessionRow> {
+  const { data, error } = await db.rpc(
+    "append_authoring_session_conversation_log",
+    {
+      p_session_id: input.id,
+      p_entries: input.entries,
+      p_expected_updated_at: input.expected_updated_at ?? null,
+    },
+  );
+
+  if (error) {
+    if (error.message.includes("append_authoring_session_conversation_log")) {
+      throw new Error(
+        "Failed to append authoring session conversation log: runtime schema is missing the atomic conversation log append function. Next step: reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, and retry.",
+      );
+    }
+    throw new Error(
+      `Failed to append authoring session conversation log: ${error.message}`,
+    );
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    if (input.expected_updated_at !== undefined) {
+      throw new AuthoringSessionWriteConflictError(
+        `Authoring session ${input.id} changed before the conversation log could be appended. Next step: reload the latest session state and retry.`,
+      );
+    }
+    throw new Error(
+      `Failed to append authoring session conversation log: session ${input.id} was not found.`,
+    );
+  }
+
+  return row as AuthoringSessionRow;
 }
 
 export async function listAuthoringSessionsByCreator(

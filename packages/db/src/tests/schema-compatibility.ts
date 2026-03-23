@@ -85,7 +85,7 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_sessions_table",
     table: "authoring_sessions",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,creator_type,creator_agent_id",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,creator_type,creator_agent_id",
     nextStep: "apply migration",
   },
   {

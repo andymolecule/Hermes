@@ -362,6 +362,7 @@ create table authoring_sessions (
   authoring_ir_json jsonb,
   uploaded_artifacts_json jsonb not null default '[]'::jsonb,
   compilation_json jsonb,
+  conversation_log_json jsonb not null default '[]'::jsonb,
   published_challenge_id uuid references challenges(id) on delete set null,
   published_spec_json jsonb,
   published_spec_cid text,
@@ -407,6 +408,31 @@ create index idx_authoring_sessions_creator_type
 
 create index idx_authoring_sessions_creator_agent_id
   on authoring_sessions(creator_agent_id);
+
+create or replace function append_authoring_session_conversation_log(
+  p_session_id uuid,
+  p_entries jsonb,
+  p_expected_updated_at timestamptz default null
+)
+returns setof authoring_sessions
+language plpgsql
+as $$
+begin
+  return query
+  update authoring_sessions
+  set
+    conversation_log_json =
+      coalesce(conversation_log_json, '[]'::jsonb) ||
+      coalesce(p_entries, '[]'::jsonb),
+    updated_at = now()
+  where id = p_session_id
+    and (
+      p_expected_updated_at is null
+      or updated_at = p_expected_updated_at
+    )
+  returning *;
+end;
+$$;
 
 create table authoring_sponsor_budget_reservations (
   id uuid primary key default gen_random_uuid(),

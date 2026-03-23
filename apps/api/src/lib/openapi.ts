@@ -850,10 +850,12 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           responses: {
             "200": {
-              description: "Canonical authoring session state.",
+              description: "Conversational authoring session response.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionConversationalResponse",
+                  },
                 },
               },
             },
@@ -884,10 +886,12 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           ],
           responses: {
             "200": {
-              description: "Canonical authoring session state.",
+              description: "Conversational authoring session response.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionConversationalResponse",
+                  },
                 },
               },
             },
@@ -1348,9 +1352,20 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["sessions"],
         },
+        AuthoringSessionConversationalResponse: {
+          type: "object",
+          properties: {
+            session: {
+              $ref: "#/components/schemas/AuthoringSession",
+            },
+            assistant_message: { type: "string" },
+          },
+          required: ["session", "assistant_message"],
+        },
         AuthoringSessionCreateRequest: {
           type: "object",
           properties: {
+            message: { type: "string" },
             summary: { type: "string" },
             messages: {
               type: "array",
@@ -1390,7 +1405,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 required: ["question_id", "value"],
               },
             },
-            context: { type: "string" },
+            message: { type: "string" },
             files: {
               type: "array",
               items: { $ref: "#/components/schemas/AuthoringFileInput" },

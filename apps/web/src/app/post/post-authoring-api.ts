@@ -3,6 +3,7 @@
 import type {
   AuthoringSessionArtifactOutput,
   AuthoringSessionOutput,
+  ConversationalAuthoringSessionResponseOutput,
   CreateAuthoringSessionRequestInput,
   RespondAuthoringSessionRequestInput,
 } from "@agora/common";
@@ -86,7 +87,7 @@ export async function createAuthoringSession(
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return (await response.json()) as ConversationalAuthoringSessionResponseOutput;
 }
 
 export async function getAuthoringSession(sessionId: string) {
@@ -115,5 +116,5 @@ export async function respondToAuthoringSession(input: {
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return (await response.json()) as ConversationalAuthoringSessionResponseOutput;
 }

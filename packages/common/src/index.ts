@@ -7,6 +7,7 @@ export * from "./authoring/intake-questions.js";
 export * from "./challenges/index.js";
 export * from "./schemas/challenge-spec.js";
 export * from "./schemas/authoring-session-api.js";
+export * from "./schemas/authoring-observability.js";
 export * from "./schemas/authoring-source.js";
 export * from "./schemas/evaluator-contract.js";
 export * from "./schemas/managed-authoring.js";

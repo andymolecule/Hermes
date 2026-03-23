@@ -17,6 +17,7 @@ const cliRuntimeConfigSchema = configSchema
     AGORA_SUPABASE_URL: true,
     AGORA_SUPABASE_ANON_KEY: true,
     AGORA_SUPABASE_SERVICE_KEY: true,
+    AGORA_AUTHORING_OPERATOR_TOKEN: true,
   })
   .partial();
 
@@ -37,6 +38,7 @@ export function readCliRuntimeConfig(
       "AGORA_SUPABASE_URL",
       "AGORA_SUPABASE_ANON_KEY",
       "AGORA_SUPABASE_SERVICE_KEY",
+      "AGORA_AUTHORING_OPERATOR_TOKEN",
     ]),
   );
 }

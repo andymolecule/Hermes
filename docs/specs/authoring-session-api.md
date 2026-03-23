@@ -148,12 +148,12 @@ Agora does NOT:
 ### 1.3 Verbs (The Conversation Flow)
 
 ```
-1. Caller sends rough context, messages, files, and optional provenance
+1. Caller sends rough context through message, summary, messages, files, and optional provenance
 2. Agora runs Layer 2 (schema-guided LLM intake/validation)
-3. Agora returns one short batch of canonical questions
-4. Caller answers only those questions
+3. Agora returns one short batch of canonical questions plus one assistant_message for the caller to display verbatim or adapt
+4. Caller answers only those questions, but may also send one natural-language reply message in the same turn
 5. Agora reruns Layer 2, then Layer 3 (deterministic compile/validation)
-6. If compiler passes → Agora returns "ready" with confirmation checklist
+6. If compiler passes -> Agora returns "ready" with confirmation checklist and assistant_message
 7. Caller confirms publish
 8. Agora deploys on-chain and returns refs
 ```
@@ -305,9 +305,10 @@ For file inputs, Agora accepts fetchable URLs or Agora artifact refs only. Agent
 
 Locked success response envelope rule:
 
-- single-resource success responses return the bare resource object directly
+- single-resource success responses return the bare resource object directly, except `POST /sessions` and `POST /sessions/:id/respond`
+- `POST /sessions` and `POST /sessions/:id/respond` return `{ "session": SessionSchema, "assistant_message": string }`
 - collection success responses wrap the collection, e.g. `{ "sessions": [...] }`
-- single-resource endpoints must not add wrappers such as `{ "session": ... }`, `{ "artifact": ... }`, or `{ "agent": ... }`
+- all other single-resource endpoints must not add wrappers such as `{ "session": ... }`, `{ "artifact": ... }`, or `{ "agent": ... }`
 
 Locked file item shape:
 
@@ -402,7 +403,8 @@ Locked create request envelope:
 
 Rules:
 - all top-level fields are optional
-- at least one of `summary`, one `messages` entry, or one `files` entry must be present
+- at least one of `message`, `summary`, one `messages` entry, or one `files` entry must be present
+- `message` is the caller's first natural-language turn
 - `messages` is an array of text-only message objects in the current scoped design
 - `files` contains typed file items representing fetchable URLs or Agora artifact refs
 - `provenance` is optional metadata only
@@ -419,7 +421,7 @@ Locked respond request envelope:
       "value": { "type": "artifact", "artifact_id": "art-123" }
     }
   ],
-  "context": "Also, the dataset has about 1000 ligands",
+  "message": "Also, the dataset has about 1000 ligands",
   "files": [
     { "type": "url", "url": "https://example.com/extra_data.csv" }
   ]
@@ -428,11 +430,11 @@ Locked respond request envelope:
 
 Rules:
 - all top-level fields are optional
-- at least one of `answers`, `context`, or `files` must be present
+- at least one of `answers`, `message`, or `files` must be present
 - `answers` is a typed collection keyed by `question_id`
 - `answers` handles text, select, and file questions
 - file-question answers use artifact references inside `answers`
-- `context` is one freeform string for additional reply context
+- `message` is one freeform natural-language reply turn for additional Layer 2 context
 - `files` contains typed file items representing extra unbound attachments
 - `respond` is intentionally different from create: it is a direct reply to pending questions, not a raw conversation dump
 
@@ -563,7 +565,7 @@ Locked rule:
 
 | Scenario | Behavior |
 |----------|----------|
-| Empty input (no summary, no files, no messages) | Reject at validation. At least a summary, one poster-authored message, or one uploaded artifact is required. |
+| Empty input (no message, no summary, no files, no messages) | Reject at validation. At least a message, a summary, one poster-authored message, or one uploaded artifact is required. |
 | Duplicate publish attempt | Idempotent — if already published, return the existing on-chain refs. |
 | Answer references a question ID that doesn't exist | Reject the answer, return error with valid question IDs. |
 | Session expired, caller tries to respond | Return error with `expired` state. Caller must create a new session. |
@@ -583,7 +585,7 @@ Every session response includes:
 - `updated_at` — when the session last changed
 - `expires_at` — absolute time when the current session state times out
 - `questions` — pending questions (if `awaiting_input`)
-- `blocked_by` — which layer is blocking and why (if not `ready`)
+- `blocked_by` — which layer is blocking and why. Required for `awaiting_input` and `rejected`; null for `ready`, `published`, and `expired`
 - `checklist` — confirmation items (if `ready`)
 - `compilation` — dry-run outcome (if `ready`), exposing the full public scoring/submission contract while excluding hidden evaluation/reference data
 - `artifacts` — current uploaded artifacts
@@ -681,7 +683,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q2 | Is `session` the only public noun? | Prevents `draft` and `session` from coexisting in public routes/docs | Prefer `session` only | `LOCKED: session is the only public noun; draft is internal-only` |
 | Q3 | Does every `POST /sessions` always create a new session? | Decides whether external IDs can ever be used for refresh/reuse | Prefer `yes` | `LOCKED: every POST /sessions creates a new session; external IDs are provenance only` |
 | Q4 | Is the non-web caller a direct OpenClaw agent or a Beach partner backend? | Prevents the session contract from being built around the wrong platform boundary | Prefer direct OpenClaw agent | `LOCKED: the non-web caller is a direct OpenClaw agent; Beach is optional provenance, not the calling backend` |
-| Q5 | What exact minimum input is valid for create? | Prevents adapters and validators from reintroducing incompatible assumptions | Prefer: at least one of `summary`, one poster-authored message, or one uploaded artifact | `LOCKED: valid if at least one of summary, one poster-authored message, or one uploaded artifact is present` |
+| Q5 | What exact minimum input is valid for create? | Prevents adapters and validators from reintroducing incompatible assumptions | Prefer: at least one of `message`, `summary`, one poster-authored message, or one uploaded artifact | `LOCKED: valid if at least one of message, summary, one poster-authored message, or one uploaded artifact is present` |
 | Q6 | Must files be represented as Agora artifact refs in the session API, or may callers send external URLs for Agora to ingest? | Locks the upload boundary and artifact lifecycle | Prefer Agora-managed artifact refs in the session contract, with ingestion as an adapter concern | `LOCKED: the session API accepts Agora artifact refs and raw external file URLs; Agora ingests, pins, and creates artifact refs internally. Platform-specific file handles such as Telegram file IDs are out of the public contract` |
 | Q7 | When Layer 3 fails, what makes the session return to `awaiting_input` versus move to terminal `rejected`? | Prevents state drift and inconsistent recovery behavior | Prefer: recoverable caller fix = `awaiting_input`; unsupported task = `rejected` | `LOCKED: if the caller can fix it, state = awaiting_input; if the task is fundamentally unsupported, state = rejected` |
 | Q8 | Is any backward compatibility period required for existing `/drafts/*` clients? | Determines whether we ship aliases or cut over directly | Prefer `no` unless a hard dependency is identified | `LOCKED: no compatibility period; cut directly to /sessions/* with zero public aliases` |
@@ -702,7 +704,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q23 | What should `POST /sessions/:id/publish` return? | Prevents publish from introducing endpoint-specific drift while still respecting the browser-wallet signing boundary | Prefer canonical session shape except where browser-wallet publish requires a preparation object | `LOCKED: sponsor-funded publish returns SessionSchema. Wallet-funded publish returns a wallet publish preparation object and keeps the session in ready until confirm-publish succeeds` |
 | Q24 | What artifact shape should session responses expose? | Determines whether outputs are canonicalized or mirror messy caller inputs | Prefer normalized Agora artifact objects with provenance metadata | `LOCKED: session responses return normalized Agora artifacts with stable IDs/refs; original source URLs are provenance metadata only` |
 | Q25 | Are question IDs stable across the life of the session once issued? | Determines whether callers can safely answer specific pending questions without ambiguity | Prefer stable IDs for the life of the session | `LOCKED: question IDs are stable for the life of the session once issued` |
-| Q26 | What shape should `blocked_by` have? | Determines whether callers can distinguish machine-readable blockers from display text | Prefer a structured object | `LOCKED: blocked_by is a structured object with layer, code, and message; null when unblocked` |
+| Q26 | What shape should `blocked_by` have? | Determines whether callers can distinguish machine-readable blockers from display text and whether terminal rejection reasons are exposed consistently | Prefer one structured object reused across recoverable and terminal blocked states | `LOCKED: blocked_by is a structured object with layer, code, and message. It is required for awaiting_input and rejected, where it explains why progress cannot continue. It is null for ready, published, and expired` |
 | Q27 | What shape should `checklist` have when a session is ready? | Determines whether publish confirmation is typed/stable or a loose list | Prefer a structured object with named confirmation fields | `LOCKED: checklist is a structured object with named confirmation fields, not a generic array` |
 | Q28 | Should `compilation` always exist in the canonical session shape? | Determines whether the session object is structurally stable across states | Prefer always-present nullable fields | `LOCKED: compilation is always present in the canonical session shape and is null until there is a compile outcome to expose` |
 | Q29 | Should all canonical session fields always exist, even when not yet applicable? | Determines whether clients can rely on one flat stable type instead of conditional field presence | Prefer all fields always present | `LOCKED: all canonical session fields always exist; arrays default to []; objects/scalars default to null` |
@@ -727,8 +729,8 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q48 | Should the contract include a list-sessions endpoint? | Determines whether callers can recover and inspect their own in-progress sessions without already holding a session ID | Prefer a self-scoped list endpoint | `LOCKED: add GET /api/authoring/sessions; it returns only the authenticated caller's own sessions` |
 | Q49 | What should GET /api/authoring/sessions return? | Determines whether the list endpoint preserves the full session shape or uses a browsing-oriented summary shape | Prefer a lighter list item for browsing | `LOCKED: GET /api/authoring/sessions returns a lighter list-item shape, not the full canonical session object; it includes enough data to identify and resume a session` |
 | Q50 | What exact fields belong in each list item? | Prevents the list endpoint from drifting back into a partial full-session payload | Prefer a minimal browse-only shape | `LOCKED: each list item contains exactly id, state, summary, created_at, updated_at, and expires_at` |
-| Q51 | What is the exact create request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions | Prefer one shared minimal envelope with summary, messages, files, and provenance | `LOCKED: create accepts summary?, messages?, files?, and provenance?; at least one of summary, one message, or one file is required; no extra structured-hint fields are part of the request in the current scoped design` |
-| Q52 | What is the exact respond request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions/:id/respond | Prefer one direct-reply envelope with answers, context, and files | `LOCKED: respond accepts answers?, context?, and files?; at least one of those must be present; respond is intentionally distinct from create and does not use a messages array` |
+| Q51 | What is the exact create request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions | Prefer one shared minimal envelope with one first-class natural-language message plus existing optional fields | `LOCKED: create accepts message?, summary?, messages?, files?, and provenance?; at least one of message, summary, one messages entry, or one file is required. message is the caller's first natural-language turn. summary/messages remain optional alongside it; no extra structured-hint fields are part of the request in the current scoped design` |
+| Q52 | What is the exact respond request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions/:id/respond | Prefer one direct-reply envelope with structured answers, one natural-language turn, and files | `LOCKED: respond accepts answers?, message?, and files?; at least one of those must be present. message is the caller's latest natural-language turn. If both structured answers/files and message are present, answers/files are authoritative and message is additional Layer 2 context. respond is intentionally distinct from create and does not use a messages array` |
 | Q53 | What is the exact publish request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions/:id/publish | Prefer a minimal explicit confirm + funding payload | `LOCKED: publish accepts exactly confirm_publish and funding; confirm_publish must be true and funding must be explicit` |
 | Q54 | What is the exact file item shape in create/respond payloads? | Defines how callers represent file URLs vs existing Agora artifacts without ambiguity | Prefer typed file items | `LOCKED: files is an array of typed objects; use { type: "url", url } for fetchable URLs and { type: "artifact", artifact_id } for existing Agora artifacts` |
 | Q55 | Should the canonical full session object be mostly flat or grouped into nested sections? | Determines the structural shape every caller will code against for single-session operations | Prefer flat if direct access and simplicity matter more than grouping | `LOCKED: the canonical full session object is flat at the top level rather than grouped into nested sections` |
@@ -743,10 +745,11 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/respond/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
 | Q65 | What is the shared normalized artifact schema? | Prevents upload responses and session artifacts from drifting into different shapes and keeps artifact classification semantics explicit | Prefer one stable artifact object with nullable role until classified | `LOCKED: the normalized artifact object contains exactly artifact_id, uri, file_name, role, and source_url. role is null until Agora classifies the artifact during session processing, and the same object shape is used in upload responses and session responses` |
 | Q66 | What is the exact bundled agent registration contract? | Prevents agent onboarding and key rotation from drifting across partial auth decisions and removes ambiguity about optional metadata at the registration boundary | Prefer one minimal required field with optional profile metadata | `LOCKED: POST /api/agents/register accepts telegram_bot_id as the only required field and may also accept optional agent_name and description. It returns exactly agent_id, api_key, and status, where status is created or rotated. The response shape is the same whether optional metadata is provided or not` |
-| Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer bare single-resource responses and wrapped collections only | `LOCKED: single-resource success responses return the bare resource object directly. Collection success responses wrap the collection, e.g. { "sessions": [...] }. Single-resource endpoints must not introduce wrappers such as session, artifact, or agent` |
+| Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer one narrow conversational exception instead of broad wrapper drift | `LOCKED: single-resource success responses return the bare resource object directly, except POST /api/authoring/sessions and POST /api/authoring/sessions/:id/respond. Those two conversational endpoints return { "session": SessionSchema, "assistant_message": string }. Collection success responses wrap the collection, e.g. { "sessions": [...] }` |
 | Q68 | How narrow should the public submission_contract schema be in v1? | Prevents speculative generic abstractions from leaking into the solver-facing contract before Agora actually supports more submission kinds | Prefer a current-scope schema only | `LOCKED: submission_contract stays narrow and explicit for the current scoped design. It contains version, kind, extension, mime, max_bytes, and columns. kind refers to the concrete submission kind Agora supports now, not a speculative future abstraction` |
 | Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, runtime_family, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation` |
 | Q70 | How should wallet-funded web publish work when the signer lives in the browser? | Prevents the contract from pretending the server can complete a browser-wallet transaction and keeps sponsor vs wallet publish paths explicit | Prefer one publish URL with funding-dependent behavior plus one confirm step | `LOCKED: POST /sessions/:id/publish remains the single publish URL. funding = sponsor performs one-call publish and returns SessionSchema. funding = wallet prepares the browser transaction, keeps the session in ready, and returns a wallet publish preparation object. POST /sessions/:id/confirm-publish then validates the wallet tx_hash and transitions the session to published` |
+| Q71 | How should Layer 2's natural-language turn surface in the public contract? | Prevents chat surfaces from reverse-engineering structured questions into a fake conversation and keeps Layer 2 output explicit without exposing internal history | Prefer a narrow create/respond-only assistant turn | `LOCKED: create/respond success responses include required assistant_message generated by Layer 2. GET/list/publish endpoints remain pure structured state and do not include assistant_message. Public turn history remains out of scope` |
 
 ### 4.3 Remaining High-Risk Contract Decisions
 
@@ -1057,19 +1060,21 @@ Request schema:
 
 ```ts
 const CreateSessionRequestSchema = z.object({
+  message: z.string().min(1).optional(),
   summary: z.string().min(1).optional(),
   messages: z.array(MessageInputSchema).min(1).optional(),
   files: z.array(FileInputSchema).min(1).optional(),
   provenance: ProvenanceSchema.optional(),
 }).superRefine((value, ctx) => {
+  const hasMessage = typeof value.message === "string" && value.message.length > 0;
   const hasSummary = typeof value.summary === "string" && value.summary.length > 0;
   const hasMessages = Array.isArray(value.messages) && value.messages.length > 0;
   const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-  if (!hasSummary && !hasMessages && !hasFiles) {
+  if (!hasMessage && !hasSummary && !hasMessages && !hasFiles) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Provide at least one of summary, messages, or files.",
+      message: "Provide at least one of message, summary, messages, or files.",
     });
   }
 });
@@ -1079,6 +1084,7 @@ Example request:
 
 ```json
 {
+  "message": "Create a docking challenge for KRAS using the attached ligand dataset.",
   "summary": "Want to create a docking challenge for KRAS",
   "messages": [
     { "text": "I found this interesting KRAS target paper" },
@@ -1094,53 +1100,65 @@ Example request:
 }
 ```
 
+Success response schema:
+
+```ts
+const ConversationalSessionResponseSchema = z.object({
+  session: SessionSchema,
+  assistant_message: z.string().min(1),
+});
+```
+
 Example success response:
 
 ```json
 {
-  "id": "session-123",
-  "state": "awaiting_input",
-  "creator": {
-    "type": "agent",
-    "agent_id": "agent-abc"
+  "session": {
+    "id": "session-123",
+    "state": "awaiting_input",
+    "creator": {
+      "type": "agent",
+      "agent_id": "agent-abc"
+    },
+    "summary": "Docking challenge against KRAS protein target.",
+    "questions": [
+      {
+        "id": "q1",
+        "text": "What metric should solvers optimize?",
+        "reason": "Needed to select the right scoring runtime",
+        "kind": "select",
+        "options": ["r2", "rmse", "spearman", "accuracy"]
+      }
+    ],
+    "blocked_by": {
+      "layer": 2,
+      "code": "missing_evaluation_metric",
+      "message": "Agora needs to know which metric solvers should optimize"
+    },
+    "checklist": null,
+    "compilation": null,
+    "artifacts": [
+      {
+        "artifact_id": "art-123",
+        "uri": "ipfs://QmXyz...",
+        "file_name": "ligands.csv",
+        "role": null,
+        "source_url": "https://example.com/ligands.csv"
+      }
+    ],
+    "provenance": {
+      "source": "beach",
+      "external_id": "thread-abc"
+    },
+    "challenge_id": null,
+    "contract_address": null,
+    "spec_cid": null,
+    "tx_hash": null,
+    "created_at": "2026-03-21T18:00:00Z",
+    "updated_at": "2026-03-21T18:00:00Z",
+    "expires_at": "2026-03-22T18:00:00Z"
   },
-  "summary": "Docking challenge against KRAS protein target.",
-  "questions": [
-    {
-      "id": "q1",
-      "text": "What metric should solvers optimize?",
-      "reason": "Needed to select the right scoring runtime",
-      "kind": "select",
-      "options": ["r2", "rmse", "spearman", "accuracy"]
-    }
-  ],
-  "blocked_by": {
-    "layer": 2,
-    "code": "missing_evaluation_metric",
-    "message": "Agora needs to know which metric solvers should optimize"
-  },
-  "checklist": null,
-  "compilation": null,
-  "artifacts": [
-    {
-      "artifact_id": "art-123",
-      "uri": "ipfs://QmXyz...",
-      "file_name": "ligands.csv",
-      "role": null,
-      "source_url": "https://example.com/ligands.csv"
-    }
-  ],
-  "provenance": {
-    "source": "beach",
-    "external_id": "thread-abc"
-  },
-  "challenge_id": null,
-  "contract_address": null,
-  "spec_cid": null,
-  "tx_hash": null,
-  "created_at": "2026-03-21T18:00:00Z",
-  "updated_at": "2026-03-21T18:00:00Z",
-  "expires_at": "2026-03-22T18:00:00Z"
+  "assistant_message": "I can set up this docking challenge, but I still need the scoring metric before I can continue."
 }
 ```
 
@@ -1148,6 +1166,9 @@ State transition effects:
 - internal `created` -> `awaiting_input`
 - internal `created` -> `ready`
 - internal `created` -> `rejected`
+
+Rejected response rule:
+- if create ends in `rejected`, `session.blocked_by` must be populated with the terminal reason
 
 Error cases:
 - `401 unauthorized`
@@ -1261,17 +1282,17 @@ Request schema:
 ```ts
 const RespondSessionRequestSchema = z.object({
   answers: z.array(AnswerInputSchema).min(1).optional(),
-  context: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
   files: z.array(FileInputSchema).min(1).optional(),
 }).superRefine((value, ctx) => {
   const hasAnswers = Array.isArray(value.answers) && value.answers.length > 0;
-  const hasContext = typeof value.context === "string" && value.context.length > 0;
+  const hasMessage = typeof value.message === "string" && value.message.length > 0;
   const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-  if (!hasAnswers && !hasContext && !hasFiles) {
+  if (!hasAnswers && !hasMessage && !hasFiles) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Provide at least one of answers, context, or files.",
+      message: "Provide at least one of answers, message, or files.",
     });
   }
 });
@@ -1288,92 +1309,99 @@ Example request:
       "value": { "type": "artifact", "artifact_id": "art-123" }
     }
   ],
-  "context": "Also, the dataset has about 1000 ligands",
+  "message": "Use Spearman. The dataset has about 1000 ligands, and I uploaded an extra supporting file.",
   "files": [
     { "type": "url", "url": "https://example.com/extra_data.csv" }
   ]
 }
 ```
 
+Precedence rule:
+- if `answers` or `files` are present, they are authoritative
+- `message` is additional conversational context for Layer 2, not a competing source of truth
+
 Example success response:
 
 ```json
 {
-  "id": "session-123",
-  "state": "ready",
-  "creator": {
-    "type": "agent",
-    "agent_id": "agent-abc"
-  },
-  "summary": "Docking challenge against KRAS protein target. Solvers rank ligands by predicted binding affinity.",
-  "questions": [],
-  "blocked_by": null,
-  "checklist": {
-    "title": "Rank ligands for KRAS binding affinity",
-    "domain": "drug_discovery",
-    "type": "docking",
-    "reward": "500 USDC",
-    "distribution": "winner_take_all",
-    "deadline": "2026-04-01T23:59:59Z",
-    "runtime_family": "docking",
-    "metric": "spearman",
-    "objective": "maximize",
-    "artifacts_count": 3
-  },
-  "compilation": {
-    "runtime_family": "docking",
-    "metric": "spearman",
-    "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:abc123",
-    "submission_contract": {
-      "version": "v1",
-      "kind": "csv_table",
-      "extension": ".csv",
-      "mime": "text/csv",
-      "max_bytes": 26214400,
-      "columns": {
-        "required": ["ligand_id", "docking_score"],
-        "id": "ligand_id",
-        "value": "docking_score",
-        "allow_extra": true
+  "session": {
+    "id": "session-123",
+    "state": "ready",
+    "creator": {
+      "type": "agent",
+      "agent_id": "agent-abc"
+    },
+    "summary": "Docking challenge against KRAS protein target. Solvers rank ligands by predicted binding affinity.",
+    "questions": [],
+    "blocked_by": null,
+    "checklist": {
+      "title": "Rank ligands for KRAS binding affinity",
+      "domain": "drug_discovery",
+      "type": "docking",
+      "reward": "500 USDC",
+      "distribution": "winner_take_all",
+      "deadline": "2026-04-01T23:59:59Z",
+      "runtime_family": "docking",
+      "metric": "spearman",
+      "objective": "maximize",
+      "artifacts_count": 3
+    },
+    "compilation": {
+      "runtime_family": "docking",
+      "metric": "spearman",
+      "objective": "maximize",
+      "scorer_image": "ghcr.io/andymolecule/gems-ranking-scorer:v1@sha256:abc123",
+      "submission_contract": {
+        "version": "v1",
+        "kind": "csv_table",
+        "extension": ".csv",
+        "mime": "text/csv",
+        "max_bytes": 26214400,
+        "columns": {
+          "required": ["ligand_id", "docking_score"],
+          "id": "ligand_id",
+          "value": "docking_score",
+          "allow_extra": true
+        }
+      },
+      "resource_limits": {
+        "memory_mb": 4096,
+        "cpus": 2,
+        "timeout_minutes": 20,
+        "pids_limit": 64
+      },
+      "reward": {
+        "total": "500",
+        "currency": "USDC",
+        "distribution": "winner_take_all",
+        "protocol_fee_bps": 1000
+      },
+      "deadline": "2026-04-01T23:59:59Z",
+      "dispute_window_hours": 168,
+      "minimum_score": null
+    },
+    "artifacts": [
+      {
+        "artifact_id": "art-123",
+        "uri": "ipfs://QmXyz...",
+        "file_name": "ligands.csv",
+        "role": "ligand_library",
+        "source_url": "https://example.com/ligands.csv"
       }
     },
-    "resource_limits": {
-      "memory_mb": 4096,
-      "cpus": 2,
-      "timeout_minutes": 20,
-      "pids_limit": 64
+    "provenance": {
+      "source": "beach",
+      "external_id": "thread-abc"
     },
-    "reward": {
-      "total": "500",
-      "currency": "USDC",
-      "distribution": "winner_take_all",
-      "protocol_fee_bps": 1000
-    },
-    "deadline": "2026-04-01T23:59:59Z",
-    "dispute_window_hours": 168,
-    "minimum_score": null
+    "challenge_id": null,
+    "contract_address": null,
+    "spec_cid": null,
+    "tx_hash": null,
+    "created_at": "2026-03-21T18:00:00Z",
+    "updated_at": "2026-03-21T18:10:00Z",
+    "expires_at": "2026-03-21T20:10:00Z"
   },
-  "artifacts": [
-    {
-      "artifact_id": "art-123",
-      "uri": "ipfs://QmXyz...",
-      "file_name": "ligands.csv",
-      "role": "ligand_library",
-      "source_url": "https://example.com/ligands.csv"
-    }
-  ],
-  "provenance": {
-    "source": "beach",
-    "external_id": "thread-abc"
-  },
-  "challenge_id": null,
-  "contract_address": null,
-  "spec_cid": null,
-  "tx_hash": null,
-  "created_at": "2026-03-21T18:00:00Z",
-  "updated_at": "2026-03-21T18:10:00Z",
-  "expires_at": "2026-03-21T20:10:00Z"
+  "assistant_message": "Your challenge is ready. I mapped the uploaded files, selected Spearman for docking, and prepared the publish checklist."
 }
 ```
 
@@ -1381,6 +1409,48 @@ State transition effects:
 - `awaiting_input` -> `awaiting_input`
 - `awaiting_input` -> `ready`
 - `awaiting_input` -> `rejected`
+
+Rejected response example:
+
+```json
+{
+  "session": {
+    "id": "session-123",
+    "state": "rejected",
+    "creator": {
+      "type": "agent",
+      "agent_id": "agent-abc"
+    },
+    "summary": "Free-form peptide binder rationale challenge.",
+    "questions": [],
+    "blocked_by": {
+      "layer": 3,
+      "code": "unsupported_task",
+      "message": "Agora requires deterministic scoring for managed challenges. Subjective winner criteria are not supported."
+    },
+    "checklist": null,
+    "compilation": null,
+    "artifacts": [
+      {
+        "artifact_id": "art-123",
+        "uri": "ipfs://QmXyz...",
+        "file_name": "challenge-brief.md",
+        "role": null,
+        "source_url": null
+      }
+    ],
+    "provenance": null,
+    "challenge_id": null,
+    "contract_address": null,
+    "spec_cid": null,
+    "tx_hash": null,
+    "created_at": "2026-03-21T18:00:00Z",
+    "updated_at": "2026-03-21T18:12:00Z",
+    "expires_at": "2026-03-28T18:12:00Z"
+  },
+  "assistant_message": "I can’t turn this into a managed Agora challenge as written because the winner rule is subjective. To continue, create a new session with a deterministic scoring metric and scorer-relevant artifacts."
+}
+```
 
 Validation rules:
 - file-question answers must use artifact refs inside `answers`
@@ -1673,12 +1743,12 @@ Notes:
 
 | Endpoint / Trigger | From | To | Contract effect |
 |--------------------|------|----|-----------------|
-| `POST /sessions` | internal `created` | `awaiting_input` | Returns `SessionSchema` with pending questions and `blocked_by` |
-| `POST /sessions` | internal `created` | `ready` | Returns `SessionSchema` with `checklist` and `compilation` |
-| `POST /sessions` | internal `created` | `rejected` | Returns `SessionSchema` with terminal `rejected` state |
-| `POST /sessions/:id/respond` | `awaiting_input` | `awaiting_input` | Returns updated `SessionSchema` with remaining blockers |
-| `POST /sessions/:id/respond` | `awaiting_input` | `ready` | Returns `SessionSchema` with `checklist` and `compilation` |
-| `POST /sessions/:id/respond` | `awaiting_input` | `rejected` | Returns `SessionSchema` with terminal `rejected` state |
+| `POST /sessions` | internal `created` | `awaiting_input` | Returns conversational session response with pending questions and `blocked_by` |
+| `POST /sessions` | internal `created` | `ready` | Returns conversational session response with `checklist` and `compilation` |
+| `POST /sessions` | internal `created` | `rejected` | Returns conversational session response with terminal `rejected` state and non-null `blocked_by` |
+| `POST /sessions/:id/respond` | `awaiting_input` | `awaiting_input` | Returns updated conversational session response with remaining blockers |
+| `POST /sessions/:id/respond` | `awaiting_input` | `ready` | Returns conversational session response with `checklist` and `compilation` |
+| `POST /sessions/:id/respond` | `awaiting_input` | `rejected` | Returns conversational session response with terminal `rejected` state and non-null `blocked_by` |
 | TTL elapsed | `awaiting_input` | `expired` | Future mutation attempts return `session_expired` |
 | `POST /sessions/:id/publish` with `funding = "sponsor"` | `ready` | `published` | Returns `SessionSchema` with challenge refs populated |
 | `POST /sessions/:id/publish` with `funding = "wallet"` | `ready` | `ready` | Returns `WalletPublishPreparationSchema`; browser signs and submits the on-chain transaction |

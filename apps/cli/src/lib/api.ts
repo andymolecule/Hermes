@@ -10,6 +10,7 @@ import {
   AGORA_ERROR_CODES,
   AgoraError,
   apiErrorResponseSchema,
+  authoringSessionTimelineSchema,
   readApiClientRuntimeConfig,
 } from "@agora/common";
 
@@ -126,6 +127,26 @@ export async function fetchApiJson<T>(pathname: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function fetchOperatorApiJson<T>(
+  pathname: string,
+  input: {
+    token: string;
+  },
+): Promise<T> {
+  const apiUrl = requireApiUrl();
+  const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const response = await fetch(`${apiUrl.replace(/\/$/, "")}${normalizedPath}`, {
+    headers: {
+      authorization: `Bearer ${input.token}`,
+    },
+  });
+  if (!response.ok) {
+    throw await toApiRequestError(response);
+  }
+
+  return (await response.json()) as T;
+}
+
 export async function listChallengesApi(query: AgentChallengesQuery) {
   return listChallengesFromApi(query, requireApiUrl());
 }
@@ -158,6 +179,19 @@ export async function waitForSubmissionStatusApi(
     { timeoutSeconds },
     requireApiUrl(),
   );
+}
+
+export async function getAuthoringSessionTimelineApi(
+  sessionId: string,
+  input: {
+    token: string;
+  },
+) {
+  const payload = await fetchOperatorApiJson(
+    `/api/internal/authoring/sessions/${sessionId}/timeline`,
+    input,
+  );
+  return authoringSessionTimelineSchema.parse(payload);
 }
 
 export async function* streamSubmissionStatusEventsApi(

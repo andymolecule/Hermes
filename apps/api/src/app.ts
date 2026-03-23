@@ -22,6 +22,7 @@ import authRoutes from "./routes/auth.js";
 import authoringSessionRoutes from "./routes/authoring-sessions.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
+import internalAuthoringRoutes from "./routes/internal-authoring.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import pinSpecRoutes from "./routes/pin-spec.js";
 import portfolioRoutes from "./routes/portfolio.js";
@@ -100,6 +101,7 @@ export function createApp() {
   app.route("/api/challenges", challengeRoutes);
   app.route("/api/indexer-health", indexerHealthRoutes);
   app.route("/api/leaderboard", leaderboardRoutes);
+  app.route("/api/internal/authoring", internalAuthoringRoutes);
   app.route("/api/pin-spec", pinSpecRoutes);
   app.route("/api/authoring", authoringSessionRoutes);
   app.route("/api/worker-health", workerHealthRoutes);

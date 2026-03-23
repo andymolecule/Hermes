@@ -15,6 +15,7 @@ import { buildRepairChallengeCommand } from "./commands/repair-challenge";
 import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
 import { buildOracleScoreCommand } from "./commands/score";
 import { buildScoreLocalCommand } from "./commands/score-local";
+import { buildSessionTimelineCommand } from "./commands/session-timeline";
 import { buildStatusCommand } from "./commands/status";
 import { buildSubmissionStatusCommand } from "./commands/submission-status";
 import { buildSubmitCommand } from "./commands/submit";
@@ -39,6 +40,7 @@ async function main() {
   program.addCommand(buildListCommand());
   program.addCommand(buildGetCommand());
   program.addCommand(buildStatusCommand());
+  program.addCommand(buildSessionTimelineCommand());
   program.addCommand(buildSubmissionStatusCommand());
   program.addCommand(buildFinalizeCommand());
   program.addCommand(buildClaimCommand());

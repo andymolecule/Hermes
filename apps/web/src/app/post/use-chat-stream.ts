@@ -171,20 +171,22 @@ export function useChatStream(options: UseChatStreamOptions) {
 
     try {
       const unsyncedFiles = getUnsyncedUploadRefs();
-      const nextSession = sessionId
+      const nextResponse = sessionId
         ? await respondToAuthoringSession({
             sessionId,
             body: {
               ...(input.latestMessage.trim()
-                ? { context: input.latestMessage.trim() }
+                ? { message: input.latestMessage.trim() }
                 : {}),
               ...(unsyncedFiles.length > 0 ? { files: unsyncedFiles } : {}),
             },
           })
         : await createAuthoringSession({
+            message: input.latestMessage.trim(),
             summary: input.problemText,
             ...(unsyncedFiles.length > 0 ? { files: unsyncedFiles } : {}),
           });
+      const nextSession = nextResponse.session;
 
       setSession(nextSession);
       setSessionId(nextSession.id);
@@ -194,30 +196,24 @@ export function useChatStream(options: UseChatStreamOptions) {
         options.onCompileReady?.(nextSession);
         appendMessage({
           role: "assistant",
-          content:
-            "Your challenge is ready to publish. Review the details in the panel on the right and hit Publish when you're happy.",
+          content: nextResponse.assistant_message,
         });
       } else if (nextSession.state === "awaiting_input") {
         const questions = nextSession.questions ?? [];
         appendMessage({
           role: "assistant",
-          content:
-            questions.length > 0
-              ? "I need a few more blocking inputs before I can lock the contract."
-              : "I need a bit more context before I can lock the contract.",
+          content: nextResponse.assistant_message,
           questions,
         });
       } else if (nextSession.state === "rejected") {
         appendMessage({
           role: "assistant",
-          content:
-            "This challenge can’t become a supported managed session. Try rephrasing the task or switch to Expert Mode.",
+          content: nextResponse.assistant_message,
         });
       } else {
         appendMessage({
           role: "assistant",
-          content:
-            "I've saved your session. Add more details or files and I'll try compiling again.",
+          content: nextResponse.assistant_message,
         });
       }
     } catch (error) {

@@ -156,23 +156,41 @@ function buildBlockedBy(
     expiresAt: session.expires_at,
     nowIso,
   });
-  if (state !== "awaiting_input") {
+  if (
+    state !== "awaiting_input" &&
+    state !== "rejected"
+  ) {
     return null;
   }
 
-  const code =
-    session.authoring_ir_json?.evaluation.compile_error_codes[0] ??
-    session.authoring_ir_json?.assessment.reason_codes[0] ??
-    "missing_input";
-  const message =
-    questions[0]?.reason ??
-    session.failure_message ??
-    "Agora needs more information before it can prepare a publishable challenge.";
+  const compileErrorCode =
+    session.authoring_ir_json?.evaluation.compile_error_codes[0] ?? null;
+  const rejectionReason =
+    session.authoring_ir_json?.evaluation.rejection_reasons[0] ?? null;
+  const assessmentReason =
+    session.authoring_ir_json?.assessment.reason_codes[0] ?? null;
+  const compileErrorMessage =
+    session.authoring_ir_json?.evaluation.compile_error_message ?? null;
+
+  if (state === "rejected") {
+    return {
+      layer: 3 as const,
+      code: rejectionReason ?? compileErrorCode ?? "unsupported_task",
+      message:
+        session.failure_message ??
+        compileErrorMessage ??
+        "Agora could not prepare a publishable challenge from this session.",
+    };
+  }
 
   return {
-    layer: 2 as const,
-    code,
-    message,
+    layer: compileErrorCode ? (3 as const) : (2 as const),
+    code: compileErrorCode ?? assessmentReason ?? "missing_input",
+    message:
+      compileErrorMessage ??
+      questions[0]?.reason ??
+      session.failure_message ??
+      "Agora needs more information before it can prepare a publishable challenge.",
   };
 }
 

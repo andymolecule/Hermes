@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   CHALLENGE_LIMITS,
   challengeIntentSchema,
+  conversationalAuthoringSessionResponseSchema,
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   defaultMinimumScoreForEvaluation,
@@ -15,6 +16,7 @@ import {
   type AuthoringSessionCreatorOutput,
 } from "@agora/common";
 import {
+  appendAuthoringSessionConversationLog,
   type AuthoringSessionRow,
   AuthoringSessionWriteConflictError,
   createAuthoringSession,
@@ -33,6 +35,13 @@ import {
   type ChallengeRegistrationError,
   registerChallengeFromTxHash,
 } from "../lib/challenge-registration.js";
+import {
+  appendConversationLog,
+  buildLoggedArtifacts,
+  buildLoggedFileInputs,
+  createConversationLogEntry,
+  logConversationEntries,
+} from "../lib/authoring-session-observability.js";
 import { compileManagedAuthoringSessionOutcome } from "../lib/managed-authoring.js";
 import {
   buildManagedAuthoringIr,
@@ -60,6 +69,7 @@ import {
 import {
   sponsorAndPublishAuthoringSession,
 } from "../lib/authoring-sponsored-publish.js";
+import { getRequestId, getRequestLogger } from "../lib/observability.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import {
   requireAuthoringPrincipal,
@@ -79,6 +89,7 @@ const DISTRIBUTION_TO_ENUM = {
 type AuthoringSessionRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringSession?: typeof createAuthoringSession;
+  appendAuthoringSessionConversationLog?: typeof appendAuthoringSessionConversationLog;
   getAuthoringSessionById?: typeof getAuthoringSessionById;
   listAuthoringSessionsByCreator?: typeof listAuthoringSessionsByCreator;
   updateAuthoringSession?: typeof updateAuthoringSession;
@@ -199,10 +210,16 @@ function appendFreeformContext(
 }
 
 function buildCreateSourceMessages(input: {
+  message?: string;
   summary?: string;
   messages?: Array<{ text: string }>;
 }) {
   const sourceMessages = [];
+  const message = cleanText(input.message);
+  if (message) {
+    sourceMessages.push(buildPosterMessage(message));
+  }
+
   const summary = cleanText(input.summary);
   if (summary) {
     sourceMessages.push(buildPosterMessage(summary));
@@ -217,16 +234,181 @@ function buildCreateSourceMessages(input: {
 
 function buildRespondSourceMessages(input: {
   current: AuthoringSessionRow;
-  context?: string;
+  message?: string;
 }) {
   const sourceMessages = [
     ...(input.current.authoring_ir_json?.source.poster_messages ?? []),
   ];
-  const context = cleanText(input.context);
-  if (context) {
-    sourceMessages.push(buildPosterMessage(context));
+  const message = cleanText(input.message);
+  if (message) {
+    sourceMessages.push(buildPosterMessage(message));
   }
   return sourceMessages;
+}
+
+function buildCreateFreeformSeed(input: {
+  message?: string;
+  summary?: string;
+  messages?: Array<{ text: string }>;
+}) {
+  const parts = [
+    cleanText(input.message),
+    cleanText(input.summary),
+    ...(input.messages ?? []).map((entry) => cleanText(entry.text)),
+  ].filter((value): value is string => Boolean(value));
+
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function buildQuestionPromptAssistantMessage(
+  questions: SessionQuestionDescriptor[],
+) {
+  if (questions.length === 0) {
+    return "I need a little more information before I can continue.";
+  }
+
+  if (questions.length === 1) {
+    return `I need one more thing before I can continue: ${questions[0]?.text ?? ""}`;
+  }
+
+  return `I need a few more things before I can continue: ${questions
+    .map((question) => question.text)
+    .join(" ")}`;
+}
+
+function fallbackAssistantMessage(session: AuthoringSessionRow) {
+  const sessionPayload = buildAuthoringSessionPayload(session);
+  if (sessionPayload.state === "awaiting_input") {
+    return buildQuestionPromptAssistantMessage(
+      buildSessionQuestionDescriptors(session.authoring_ir_json),
+    );
+  }
+
+  if (sessionPayload.state === "rejected") {
+    return (
+      sessionPayload.blocked_by?.message ??
+      session.failure_message ??
+      "I can't continue with this session as written. Create a new one with a deterministic scoring setup."
+    );
+  }
+
+  if (sessionPayload.state === "ready") {
+    return "Your challenge is ready to review and publish.";
+  }
+
+  return "Session updated.";
+}
+
+function buildConversationalAuthoringSessionResponse(input: {
+  session: AuthoringSessionRow;
+  assistantMessage?: string | null;
+}) {
+  return conversationalAuthoringSessionResponseSchema.parse({
+    session: buildAuthoringSessionPayload(input.session),
+    assistant_message:
+      cleanText(input.assistantMessage) ?? fallbackAssistantMessage(input.session),
+  });
+}
+
+function getSessionPublicState(session: AuthoringSessionRow) {
+  return buildAuthoringSessionPayload(session).state;
+}
+
+function buildTurnInputSummary(route: "create" | "respond") {
+  return route === "create"
+    ? "Caller started an authoring session."
+    : "Caller replied to Agora.";
+}
+
+function buildTurnOutputSummary(state: ReturnType<typeof getSessionPublicState>) {
+  switch (state) {
+    case "awaiting_input":
+      return "Agora requested more information.";
+    case "ready":
+      return "Agora prepared the challenge for publish.";
+    case "rejected":
+      return "Agora rejected the session.";
+    case "published":
+      return "Agora published the challenge.";
+    case "expired":
+      return "Agora marked the session expired.";
+    default:
+      return "Agora updated the session.";
+  }
+}
+
+function buildTurnInputLogEntry(input: {
+  route: "create" | "respond";
+  requestId: string | null;
+  stateBefore: string | null;
+  callerMessage: string | null;
+  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
+  files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
+}) {
+  return createConversationLogEntry({
+    request_id: input.requestId,
+    route: input.route,
+    event: "turn.input.recorded",
+    actor: "caller",
+    summary: buildTurnInputSummary(input.route),
+    state_before: input.stateBefore,
+    state_after: input.stateBefore,
+    caller_message: input.callerMessage,
+    answers:
+      input.answers && input.answers.length > 0 ? input.answers : undefined,
+    files: buildLoggedFileInputs(input.files),
+  });
+}
+
+function buildTurnOutputLogEntry(input: {
+  route: "create" | "respond";
+  requestId: string | null;
+  stateBefore: string | null;
+  session: AuthoringSessionRow;
+  assistantMessage?: string | null;
+  artifacts?: StoredAuthoringSessionArtifact[];
+}) {
+  const response = buildConversationalAuthoringSessionResponse({
+    session: input.session,
+    assistantMessage: input.assistantMessage,
+  });
+
+  return createConversationLogEntry({
+    request_id: input.requestId,
+    route: input.route,
+    event: "turn.output.recorded",
+    actor: "agora",
+    summary: buildTurnOutputSummary(response.session.state),
+    state_before: input.stateBefore,
+    state_after: response.session.state,
+    assistant_message: response.assistant_message,
+    questions: response.session.questions,
+    blocked_by: response.session.blocked_by,
+    artifacts: buildLoggedArtifacts(input.artifacts),
+  });
+}
+
+async function appendConversationEntries(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  session: AuthoringSessionRow;
+  entries: ReturnType<typeof createConversationLogEntry>[];
+  updateAuthoringSessionImpl: typeof updateAuthoringSession;
+  appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
+  expectedUpdatedAt?: string;
+}) {
+  if (typeof input.db.rpc === "function") {
+    return input.appendAuthoringSessionConversationLogImpl(input.db, {
+      id: input.session.id,
+      entries: input.entries,
+      expected_updated_at: input.expectedUpdatedAt,
+    });
+  }
+
+  return input.updateAuthoringSessionImpl(input.db, {
+    id: input.session.id,
+    expected_updated_at: input.expectedUpdatedAt,
+    conversation_log_json: appendConversationLog(input.session, input.entries),
+  });
 }
 
 function principalOwnsSession(
@@ -525,6 +707,10 @@ async function ensureSessionVisibility(
   db: ReturnType<typeof createSupabaseClient>,
   session: AuthoringSessionRow | null,
   updateAuthoringSessionImpl: typeof updateAuthoringSession,
+  appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog,
+  input?: {
+    route?: string;
+  },
 ) {
   const principal = c.get("authoringPrincipal");
   if (!session || !principalOwnsSession(session, principal)) {
@@ -540,17 +726,49 @@ async function ensureSessionVisibility(
   }
 
   if (isAuthoringSessionExpired(session)) {
-    const expired =
-      session.state === "expired"
-        ? session
-        : await updateAuthoringSessionImpl(db, {
-            id: session.id,
-            state: "expired",
-            expires_at: buildNowIso(),
-          });
+    if (session.state === "expired") {
+      return {
+        ok: true as const,
+        session,
+      };
+    }
+
+    const requestId = getRequestId(c) ?? null;
+    const logger = getRequestLogger(c);
+    const stateBefore = getSessionPublicState(session);
+    const expiredEntry = createConversationLogEntry({
+      request_id: requestId,
+      route: input?.route ?? "session_lookup",
+      event: "session.expired",
+      actor: "system",
+      summary: "Agora marked the session expired.",
+      state_before: stateBefore,
+      state_after: "expired",
+      error: {
+        message: "This session has expired.",
+        next_action: "Create a new session to continue.",
+      },
+    });
+    const expired = await updateAuthoringSessionImpl(db, {
+      id: session.id,
+      state: "expired",
+      expires_at: buildNowIso(),
+    });
+    const expiredWithLog = await appendConversationEntries({
+      db,
+      session: expired,
+      entries: [expiredEntry],
+      updateAuthoringSessionImpl,
+      appendAuthoringSessionConversationLogImpl,
+      expectedUpdatedAt: expired.updated_at,
+    });
+    logConversationEntries(logger, {
+      sessionId: expiredWithLog.id,
+      entries: [expiredEntry],
+    });
     return {
       ok: true as const,
-      session: expired,
+      session: expiredWithLog,
     };
   }
 
@@ -579,6 +797,60 @@ async function maybeReadChallenge(
   } catch {
     return null;
   }
+}
+
+async function appendValidationFailureLog(input: {
+  c: import("hono").Context<ApiEnv>;
+  db: ReturnType<typeof createSupabaseClient>;
+  session: AuthoringSessionRow;
+  updateAuthoringSessionImpl: typeof updateAuthoringSession;
+  appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
+  route: string;
+  status: number;
+  code: string;
+  message: string;
+  nextAction: string;
+  callerMessage?: string | null;
+  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
+  files?: z.input<typeof respondAuthoringSessionRequestSchema>["files"];
+}) {
+  const entry = createConversationLogEntry({
+    request_id: getRequestId(input.c) ?? null,
+    route: input.route,
+    event: "turn.validation_failed",
+    actor: "system",
+    summary: "Agora rejected the turn before state changed.",
+    state_before: getSessionPublicState(input.session),
+    state_after: getSessionPublicState(input.session),
+    caller_message: input.callerMessage ?? null,
+    answers:
+      input.answers && input.answers.length > 0 ? input.answers : undefined,
+    files: buildLoggedFileInputs(input.files),
+    error: {
+      status: input.status,
+      code: input.code,
+      message: input.message,
+      next_action: input.nextAction,
+    },
+  });
+
+  try {
+    await appendConversationEntries({
+      db: input.db,
+      session: input.session,
+      entries: [entry],
+      updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
+      appendAuthoringSessionConversationLogImpl:
+        input.appendAuthoringSessionConversationLogImpl,
+    });
+  } catch {
+    // Best-effort only. The API response should still succeed.
+  }
+
+  logConversationEntries(getRequestLogger(input.c), {
+    sessionId: input.session.id,
+    entries: [entry],
+  });
 }
 
 function nextEditableStateError(
@@ -610,7 +882,12 @@ function nextEditableStateError(
 async function persistAssessmentResult(input: {
   db: ReturnType<typeof createSupabaseClient>;
   session: AuthoringSessionRow | null;
+  route: "create" | "respond";
+  requestId: string | null;
   principal: AuthoringSessionCreatorOutput;
+  callerMessage: string | null;
+  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
+  files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
   intentCandidate: Record<string, unknown>;
   sourceMessages: Array<{
     id: string;
@@ -627,6 +904,7 @@ async function persistAssessmentResult(input: {
   compileManagedAuthoringSessionOutcomeImpl: typeof compileManagedAuthoringSessionOutcome;
   createAuthoringSessionImpl: typeof createAuthoringSession;
   updateAuthoringSessionImpl: typeof updateAuthoringSession;
+  appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
   runtimeFamilyOverride?: string | null;
   metricOverride?: string | null;
   artifactAssignmentsOverride?: Array<{
@@ -651,7 +929,7 @@ async function persistAssessmentResult(input: {
   const missingFields = extractMissingIntentFields(effectiveIntentCandidate);
 
   if (missingFields.length > 0) {
-    const questions = buildAuthoringQuestions({
+    const pendingQuestions = buildAuthoringQuestions({
       missingFields,
       uploadedArtifacts: input.uploadedArtifacts,
     });
@@ -663,13 +941,24 @@ async function persistAssessmentResult(input: {
       origin:
         input.origin ??
         input.session?.authoring_ir_json?.origin ?? { provider: "direct" },
-      questions,
+      questions: pendingQuestions,
       assessmentOutcome: "awaiting_input",
       missingFields,
     });
+    const questionDescriptors = buildSessionQuestionDescriptors(authoringIr);
+    const assistantMessage =
+      buildQuestionPromptAssistantMessage(questionDescriptors);
+    const inputEntry = buildTurnInputLogEntry({
+      route: input.route,
+      requestId: input.requestId,
+      stateBefore: input.session ? getSessionPublicState(input.session) : null,
+      callerMessage: input.callerMessage,
+      answers: input.answers,
+      files: input.files,
+    });
 
     if (input.session) {
-      return input.updateAuthoringSessionImpl(input.db, {
+      const session = await input.updateAuthoringSessionImpl(input.db, {
         id: input.session.id,
         expected_updated_at: input.session.updated_at,
         state: "awaiting_input",
@@ -680,15 +969,59 @@ async function persistAssessmentResult(input: {
         failure_message: null,
         expires_at: buildExpiry(AWAITING_INPUT_TTL_MS),
       });
+      const outputEntry = buildTurnOutputLogEntry({
+        route: input.route,
+        requestId: input.requestId,
+        stateBefore: getSessionPublicState(input.session),
+        session,
+        assistantMessage,
+        artifacts: input.uploadedArtifacts,
+      });
+      const sessionWithLog = await appendConversationEntries({
+        db: input.db,
+        session,
+        entries: [inputEntry, outputEntry],
+        updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl:
+          input.appendAuthoringSessionConversationLogImpl,
+        expectedUpdatedAt: session.updated_at,
+      });
+      return {
+        session: sessionWithLog,
+        assistantMessage,
+        logEntries: [inputEntry, outputEntry],
+      };
     }
 
-    return input.createAuthoringSessionImpl(input.db, {
+    const session = await input.createAuthoringSessionImpl(input.db, {
       ...creatorInsertFields(input.principal),
       state: "awaiting_input",
       authoring_ir_json: authoringIr,
       uploaded_artifacts_json: input.uploadedArtifacts,
       expires_at: buildExpiry(AWAITING_INPUT_TTL_MS),
     });
+    const outputEntry = buildTurnOutputLogEntry({
+      route: input.route,
+      requestId: input.requestId,
+      stateBefore: null,
+      session,
+      assistantMessage,
+      artifacts: input.uploadedArtifacts,
+    });
+    const sessionWithLog = await appendConversationEntries({
+      db: input.db,
+      session,
+      entries: [inputEntry, outputEntry],
+      updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
+      appendAuthoringSessionConversationLogImpl:
+        input.appendAuthoringSessionConversationLogImpl,
+      expectedUpdatedAt: session.updated_at,
+    });
+    return {
+      session: sessionWithLog,
+      assistantMessage,
+      logEntries: [inputEntry, outputEntry],
+    };
   }
 
   const parsedIntent = challengeIntentSchema.parse(effectiveIntentCandidate);
@@ -723,9 +1056,17 @@ async function persistAssessmentResult(input: {
       : state === "awaiting_input"
         ? buildExpiry(AWAITING_INPUT_TTL_MS)
         : buildExpiry(TERMINAL_TTL_MS);
+  const inputEntry = buildTurnInputLogEntry({
+    route: input.route,
+    requestId: input.requestId,
+    stateBefore: input.session ? getSessionPublicState(input.session) : null,
+    callerMessage: input.callerMessage,
+    answers: input.answers,
+    files: input.files,
+  });
 
   if (input.session) {
-    return input.updateAuthoringSessionImpl(input.db, {
+    const session = await input.updateAuthoringSessionImpl(input.db, {
       id: input.session.id,
       expected_updated_at: input.session.updated_at,
       state,
@@ -736,9 +1077,31 @@ async function persistAssessmentResult(input: {
       failure_message: state === "rejected" ? outcome.message ?? null : null,
       expires_at: expiresAt,
     });
+    const outputEntry = buildTurnOutputLogEntry({
+      route: input.route,
+      requestId: input.requestId,
+      stateBefore: getSessionPublicState(input.session),
+      session,
+      assistantMessage: outcome.message ?? null,
+      artifacts: input.uploadedArtifacts,
+    });
+    const sessionWithLog = await appendConversationEntries({
+      db: input.db,
+      session,
+      entries: [inputEntry, outputEntry],
+      updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
+      appendAuthoringSessionConversationLogImpl:
+        input.appendAuthoringSessionConversationLogImpl,
+      expectedUpdatedAt: session.updated_at,
+    });
+    return {
+      session: sessionWithLog,
+      assistantMessage: outcome.message ?? null,
+      logEntries: [inputEntry, outputEntry],
+    };
   }
 
-  return input.createAuthoringSessionImpl(input.db, {
+  const session = await input.createAuthoringSessionImpl(input.db, {
     ...creatorInsertFields(input.principal),
     state,
     intent_json: parsedIntent,
@@ -748,6 +1111,28 @@ async function persistAssessmentResult(input: {
     failure_message: state === "rejected" ? outcome.message ?? null : null,
     expires_at: expiresAt,
   });
+  const outputEntry = buildTurnOutputLogEntry({
+    route: input.route,
+    requestId: input.requestId,
+    stateBefore: null,
+    session,
+    assistantMessage: outcome.message ?? null,
+    artifacts: input.uploadedArtifacts,
+  });
+  const sessionWithLog = await appendConversationEntries({
+    db: input.db,
+    session,
+    entries: [inputEntry, outputEntry],
+    updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
+    appendAuthoringSessionConversationLogImpl:
+      input.appendAuthoringSessionConversationLogImpl,
+    expectedUpdatedAt: session.updated_at,
+  });
+  return {
+    session: sessionWithLog,
+    assistantMessage: outcome.message ?? null,
+    logEntries: [inputEntry, outputEntry],
+  };
 }
 
 export function createAuthoringSessionRoutes(
@@ -757,6 +1142,9 @@ export function createAuthoringSessionRoutes(
   const {
     createSupabaseClient: createSupabaseClientImpl = createSupabaseClient,
     createAuthoringSession: createAuthoringSessionImpl = createAuthoringSession,
+    appendAuthoringSessionConversationLog:
+      appendAuthoringSessionConversationLogImpl =
+        appendAuthoringSessionConversationLog,
     getAuthoringSessionById: getAuthoringSessionByIdImpl =
       getAuthoringSessionById,
     listAuthoringSessionsByCreator: listAuthoringSessionsByCreatorImpl =
@@ -807,6 +1195,8 @@ export function createAuthoringSessionRoutes(
         db,
         session,
         updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+        { route: "session_lookup" },
       );
       if (!visible.ok) {
         return visible.response;
@@ -838,19 +1228,25 @@ export function createAuthoringSessionRoutes(
           })
         : [];
       const sourceMessages = buildCreateSourceMessages({
+        message: parsed.data.message,
         summary: parsed.data.summary,
         messages: parsed.data.messages,
       });
-      const freeformSeed =
-        cleanText(parsed.data.summary) ??
-        parsed.data.messages?.map((message) => message.text).join("\n\n") ??
-        null;
+      const freeformSeed = buildCreateFreeformSeed({
+        message: parsed.data.message,
+        summary: parsed.data.summary,
+        messages: parsed.data.messages,
+      });
       const intentCandidate = appendFreeformContext({}, freeformSeed);
 
-      const session = await persistAssessmentResult({
+      const result = await persistAssessmentResult({
         db,
         session: null,
+        route: "create",
+        requestId: getRequestId(c) ?? null,
         principal: c.get("authoringPrincipal"),
+        callerMessage: freeformSeed,
+        files: parsed.data.files,
         intentCandidate,
         sourceMessages,
         origin: parsed.data.provenance
@@ -864,9 +1260,19 @@ export function createAuthoringSessionRoutes(
         compileManagedAuthoringSessionOutcomeImpl,
         createAuthoringSessionImpl,
         updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+      });
+      logConversationEntries(getRequestLogger(c), {
+        sessionId: result.session.id,
+        entries: result.logEntries,
       });
 
-      return c.json(buildAuthoringSessionPayload(session));
+      return c.json(
+        buildConversationalAuthoringSessionResponse({
+          session: result.session,
+          assistantMessage: result.assistantMessage,
+        }),
+      );
     },
   );
 
@@ -887,12 +1293,29 @@ export function createAuthoringSessionRoutes(
         db,
         current,
         updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+        { route: "respond" },
       );
       if (!visible.ok) {
         return visible.response;
       }
 
       if (visible.session.state === "expired") {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "respond",
+          status: 409,
+          code: "session_expired",
+          message: "This session has expired.",
+          nextAction: "Create a new session to continue.",
+          callerMessage: cleanText(parsed.data.message),
+          answers: parsed.data.answers,
+          files: parsed.data.files,
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 409,
           code: "session_expired",
@@ -907,6 +1330,26 @@ export function createAuthoringSessionRoutes(
         visible.session.state === "published" ||
         visible.session.state === "rejected"
       ) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "respond",
+          status: 400,
+          code: "invalid_request",
+          message:
+            visible.session.state === "ready"
+              ? "This session is ready for publish and cannot accept more input."
+              : visible.session.state === "published"
+                ? "This session has already been published and cannot accept more input."
+                : "This session was rejected and cannot accept more input.",
+          nextAction: "Create a new session to make changes.",
+          callerMessage: cleanText(parsed.data.message),
+          answers: parsed.data.answers,
+          files: parsed.data.files,
+        });
         return nextEditableStateError(c, visible.session);
       }
 
@@ -917,6 +1360,22 @@ export function createAuthoringSessionRoutes(
           answers: parsed.data.answers,
         });
       } catch (error) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "respond",
+          status: 400,
+          code: "invalid_request",
+          message:
+            error instanceof Error ? error.message : "Invalid respond payload.",
+          nextAction: "Fix the request body and retry.",
+          callerMessage: cleanText(parsed.data.message),
+          answers: parsed.data.answers,
+          files: parsed.data.files,
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -942,11 +1401,11 @@ export function createAuthoringSessionRoutes(
       ]);
       const intentCandidate = appendFreeformContext(
         questionPatch.intentCandidate,
-        cleanText(parsed.data.context),
+        cleanText(parsed.data.message),
       );
       const sourceMessages = buildRespondSourceMessages({
         current: visible.session,
-        context: parsed.data.context,
+        message: parsed.data.message,
       });
       const artifactAssignmentsOverride = buildArtifactAssignmentsOverride({
         session: visible.session,
@@ -959,10 +1418,15 @@ export function createAuthoringSessionRoutes(
         null;
 
       try {
-        const session = await persistAssessmentResult({
+        const result = await persistAssessmentResult({
           db,
           session: visible.session,
+          route: "respond",
+          requestId: getRequestId(c) ?? null,
           principal: c.get("authoringPrincipal"),
+          callerMessage: cleanText(parsed.data.message),
+          answers: parsed.data.answers,
+          files: parsed.data.files,
           intentCandidate,
           sourceMessages,
           origin: visible.session.authoring_ir_json?.origin,
@@ -970,12 +1434,22 @@ export function createAuthoringSessionRoutes(
           compileManagedAuthoringSessionOutcomeImpl,
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
           runtimeFamilyOverride,
           metricOverride: questionPatch.metricOverride,
           artifactAssignmentsOverride,
         });
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: result.session.id,
+          entries: result.logEntries,
+        });
 
-        return c.json(buildAuthoringSessionPayload(session));
+        return c.json(
+          buildConversationalAuthoringSessionResponse({
+            session: result.session,
+            assistantMessage: result.assistantMessage,
+          }),
+        );
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1007,12 +1481,26 @@ export function createAuthoringSessionRoutes(
         db,
         current,
         updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+        { route: "publish" },
       );
       if (!visible.ok) {
         return visible.response;
       }
 
       if (visible.session.state === "expired") {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "publish",
+          status: 409,
+          code: "session_expired",
+          message: "This session has expired.",
+          nextAction: "Create a new session to continue.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 409,
           code: "session_expired",
@@ -1023,6 +1511,18 @@ export function createAuthoringSessionRoutes(
       }
 
       if (visible.session.state !== "ready" || !visible.session.compilation_json) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "publish",
+          status: 400,
+          code: "invalid_request",
+          message: "This session is not ready to publish.",
+          nextAction: "Continue the session until it reaches ready, then retry publish.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1033,6 +1533,18 @@ export function createAuthoringSessionRoutes(
 
       const principal = c.get("authoringPrincipal");
       if (principal.type === "agent" && parsed.data.funding !== "sponsor") {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "publish",
+          status: 400,
+          code: "invalid_request",
+          message: "Agent sessions currently publish with sponsor funding only.",
+          nextAction: "Retry publish with funding set to sponsor.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1042,6 +1554,18 @@ export function createAuthoringSessionRoutes(
       }
 
       if (principal.type === "web" && parsed.data.funding !== "wallet") {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "publish",
+          status: 400,
+          code: "invalid_request",
+          message: "Web sessions currently publish with wallet funding only.",
+          nextAction: "Retry publish with funding set to wallet.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1057,11 +1581,49 @@ export function createAuthoringSessionRoutes(
             `challenge-${visible.session.id}`,
             visible.session.compilation_json.challenge_spec,
           ));
+        const requestEntry = createConversationLogEntry({
+          request_id: getRequestId(c) ?? null,
+          route: "publish",
+          event: "publish.requested",
+          actor: "publish",
+          summary: "Caller requested wallet publish preparation.",
+          state_before: getSessionPublicState(visible.session),
+          state_after: getSessionPublicState(visible.session),
+          publish: {
+            funding: "wallet",
+            spec_cid: specCid,
+          },
+        });
+        const preparation = buildWalletPublishPreparation({
+          session: visible.session,
+          specCid,
+        });
+        const preparedEntry = createConversationLogEntry({
+          request_id: getRequestId(c) ?? null,
+          route: "publish",
+          event: "publish.prepared",
+          actor: "publish",
+          summary: "Agora prepared wallet publish parameters.",
+          state_before: getSessionPublicState(visible.session),
+          state_after: getSessionPublicState(visible.session),
+          publish: {
+            funding: "wallet",
+            spec_cid: preparation.spec_cid,
+          },
+        });
+        const preparedSession = await appendConversationEntries({
+          db,
+          session: visible.session,
+          entries: [requestEntry, preparedEntry],
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+        });
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: preparedSession.id,
+          entries: [requestEntry, preparedEntry],
+        });
         return c.json(
-          buildWalletPublishPreparation({
-            session: visible.session,
-            specCid,
-          }),
+          preparation,
         );
       }
 
@@ -1073,6 +1635,18 @@ export function createAuthoringSessionRoutes(
         ));
       const sponsorRuntime = readAuthoringSponsorRuntimeConfig();
       if (!sponsorRuntime.privateKey) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "publish",
+          status: 503,
+          code: "invalid_request",
+          message: "Agora sponsor publishing is not configured on this API runtime.",
+          nextAction: "Configure the Agora sponsor private key, then retry publish.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 503,
           code: "invalid_request",
@@ -1080,21 +1654,106 @@ export function createAuthoringSessionRoutes(
           nextAction: "Configure the Agora sponsor private key, then retry publish.",
         });
       }
-      const result = await sponsorAndPublishAuthoringSessionImpl({
+      const publishRequestedEntry = createConversationLogEntry({
+        request_id: getRequestId(c) ?? null,
+        route: "publish",
+        event: "publish.requested",
+        actor: "publish",
+        summary: "Caller requested sponsor publish.",
+        state_before: getSessionPublicState(visible.session),
+        state_after: getSessionPublicState(visible.session),
+        publish: {
+          funding: "sponsor",
+          spec_cid: specCid,
+        },
+      });
+      const publishPreparedSession = await appendConversationEntries({
         db,
         session: visible.session,
-        spec: visible.session.compilation_json.challenge_spec,
-        specCid,
-        sponsorPrivateKey: sponsorRuntime.privateKey,
-        expiresInMs: TERMINAL_TTL_MS,
+        entries: [publishRequestedEntry],
+        updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+      });
+      logConversationEntries(getRequestLogger(c), {
+        sessionId: publishPreparedSession.id,
+        entries: [publishRequestedEntry],
+      });
+      let result;
+      try {
+        result = await sponsorAndPublishAuthoringSessionImpl({
+          db,
+          session: publishPreparedSession,
+          spec: publishPreparedSession.compilation_json!.challenge_spec,
+          specCid,
+          sponsorPrivateKey: sponsorRuntime.privateKey,
+          expiresInMs: TERMINAL_TTL_MS,
+        });
+      } catch (error) {
+        const failedEntry = createConversationLogEntry({
+          request_id: getRequestId(c) ?? null,
+          route: "publish",
+          event: "publish.failed",
+          actor: "publish",
+          summary: "Agora sponsor publish failed.",
+          state_before: getSessionPublicState(publishPreparedSession),
+          state_after: getSessionPublicState(publishPreparedSession),
+          error: {
+            message:
+              error instanceof Error ? error.message : "Publish failed.",
+            next_action: "Inspect the publish error and retry.",
+          },
+          publish: {
+            funding: "sponsor",
+            spec_cid: specCid,
+          },
+        });
+        await appendConversationEntries({
+          db,
+          session: publishPreparedSession,
+          entries: [failedEntry],
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+        }).catch(() => null);
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: publishPreparedSession.id,
+          entries: [failedEntry],
+        });
+        throw error;
+      }
+      const publishCompletedEntry = createConversationLogEntry({
+        request_id: getRequestId(c) ?? null,
+        route: "publish",
+        event: "publish.completed",
+        actor: "publish",
+        summary: "Agora sponsor publish completed.",
+        state_before: "ready",
+        state_after: getSessionPublicState(result.session),
+        publish: {
+          funding: "sponsor",
+          challenge_id: result.challenge.challengeId,
+          contract_address: result.challenge.challengeAddress,
+          tx_hash: result.txHash,
+          spec_cid: specCid,
+        },
+      });
+      const resultSessionWithLog = await appendConversationEntries({
+        db,
+        session: result.session,
+        entries: [publishCompletedEntry],
+        updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+      });
+      logConversationEntries(getRequestLogger(c), {
+        sessionId: resultSessionWithLog.id,
+        entries: [publishCompletedEntry],
       });
 
       const challenge = await maybeReadChallenge(
         getChallengeByIdImpl,
         db,
-        result.session,
+        resultSessionWithLog,
       );
-      return c.json(buildAuthoringSessionPayload(result.session, { challenge }));
+      return c.json(buildAuthoringSessionPayload(resultSessionWithLog, { challenge }));
     },
   );
 
@@ -1118,12 +1777,26 @@ export function createAuthoringSessionRoutes(
         db,
         current,
         updateAuthoringSessionImpl,
+        appendAuthoringSessionConversationLogImpl,
+        { route: "confirm_publish" },
       );
       if (!visible.ok) {
         return visible.response;
       }
 
       if (visible.session.state === "expired") {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "confirm_publish",
+          status: 409,
+          code: "session_expired",
+          message: "This session has expired.",
+          nextAction: "Create a new session to continue.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 409,
           code: "session_expired",
@@ -1134,6 +1807,19 @@ export function createAuthoringSessionRoutes(
       }
 
       if (visible.session.state !== "ready" || !visible.session.compilation_json) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "confirm_publish",
+          status: 400,
+          code: "invalid_request",
+          message: "This session is not ready to confirm publish.",
+          nextAction:
+            "Prepare wallet publish from a ready session, then retry confirm-publish.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1145,6 +1831,20 @@ export function createAuthoringSessionRoutes(
 
       const principal = c.get("authoringPrincipal");
       if (principal.type !== "web" || !visible.session.poster_address) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "confirm_publish",
+          status: 400,
+          code: "invalid_request",
+          message:
+            "Confirm-publish is only available for wallet-funded web sessions.",
+          nextAction:
+            "Use sponsor publish for agent-owned sessions, or confirm from the session creator wallet.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1166,6 +1866,19 @@ export function createAuthoringSessionRoutes(
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to confirm publish.";
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          route: "confirm_publish",
+          status: 400,
+          code: "invalid_request",
+          message,
+          nextAction:
+            "Verify the wallet transaction hash belongs to this session publish, then retry confirm-publish.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1176,6 +1889,22 @@ export function createAuthoringSessionRoutes(
       }
 
       try {
+        const publishCompletedEntry = createConversationLogEntry({
+          request_id: getRequestId(c) ?? null,
+          route: "confirm_publish",
+          event: "publish.completed",
+          actor: "publish",
+          summary: "Agora confirmed wallet publish.",
+          state_before: getSessionPublicState(visible.session),
+          state_after: "published",
+          publish: {
+            funding: "wallet",
+            challenge_id: registration.challengeRow.id,
+            contract_address: registration.challengeAddress,
+            tx_hash: parsed.data.tx_hash,
+            spec_cid: registration.specCid,
+          },
+        });
         const published = await updateAuthoringSessionImpl(db, {
           id: visible.session.id,
           expected_updated_at: visible.session.updated_at,
@@ -1187,9 +1916,21 @@ export function createAuthoringSessionRoutes(
           expires_at: buildExpiry(TERMINAL_TTL_MS),
           failure_message: null,
         });
+        const publishedWithLog = await appendConversationEntries({
+          db,
+          session: published,
+          entries: [publishCompletedEntry],
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          expectedUpdatedAt: published.updated_at,
+        });
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: publishedWithLog.id,
+          entries: [publishCompletedEntry],
+        });
 
         return c.json(
-          buildAuthoringSessionPayload(published, {
+          buildAuthoringSessionPayload(publishedWithLog, {
             challenge: {
               id: registration.challengeRow.id,
               contract_address: registration.challengeAddress,

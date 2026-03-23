@@ -11,11 +11,12 @@ Documentation index and reading order for the Agora repository.
 | 3 | [Architecture](architecture.md) | How does the system fit together? | Engineers, reviewers |
 | 4 | [Challenge Authoring IR](challenge-authoring-ir.md) | What typed contract should posting converge toward before compile/publish? | Product, frontend, backend |
 | 5 | [Authoring Session API Spec](specs/authoring-session-api.md) | What is the locked session-first authoring contract? | Product, frontend, backend |
-| 6 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 7 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 8 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 9 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 10 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 6 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
+| 7 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 8 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 9 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 10 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 11 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -24,6 +25,7 @@ Documentation index and reading order for the Agora repository.
 - **Building features?** Read [Architecture](architecture.md), then the relevant layer doc.
 - **Working on posting or challenge onboarding?** Read [Challenge Authoring IR](challenge-authoring-ir.md).
 - **Working on the new authoring flow?** Read [Authoring Session API Spec](specs/authoring-session-api.md).
+- **Need to debug authoring conversations or Telegram/OpenClaw session failures?** Read [Authoring Observability Spec](specs/authoring-observability.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
@@ -46,6 +48,7 @@ Documentation index and reading order for the Agora repository.
 | System topology, component boundaries | [architecture.md](architecture.md) |
 | Open-ended challenge authoring contract | [challenge-authoring-ir.md](challenge-authoring-ir.md) |
 | Locked authoring session API contract | [specs/authoring-session-api.md](specs/authoring-session-api.md) |
+| Internal authoring debug timeline and conversation logging | [specs/authoring-observability.md](specs/authoring-observability.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
@@ -66,6 +69,7 @@ Documentation index and reading order for the Agora repository.
 - **[glossary.md](glossary.md)** — Key terms used across Agora documentation and code
 - **[challenge-authoring-ir.md](challenge-authoring-ir.md)** — Target typed contract between poster language and final challenge spec
 - **[specs/authoring-session-api.md](specs/authoring-session-api.md)** — Locked session-first authoring contract
+- **[specs/authoring-observability.md](specs/authoring-observability.md)** — Internal authoring conversation logging and operator debug timeline spec
 - **[specs/authoring-session-api-audit.md](specs/authoring-session-api-audit.md)** — Spec-vs-code audit and cutover matrix
 - **[specs/authoring-session-cutover-checklist.md](specs/authoring-session-cutover-checklist.md)** — Execution checklist for the session cutover
 

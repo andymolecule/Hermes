@@ -164,12 +164,13 @@ function createSession(
       }),
     uploaded_artifacts_json: uploadedArtifacts as never,
     compilation_json: overrides.compilation_json ?? null,
+    conversation_log_json: overrides.conversation_log_json ?? [],
     published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
     published_at: overrides.published_at ?? null,
     failure_message: overrides.failure_message ?? null,
-    expires_at: overrides.expires_at ?? "2026-03-23T00:00:00.000Z",
+    expires_at: overrides.expires_at ?? "2026-04-23T00:00:00.000Z",
     created_at: overrides.created_at ?? "2026-03-22T00:00:00.000Z",
     updated_at: overrides.updated_at ?? "2026-03-22T00:00:00.000Z",
   };
@@ -197,8 +198,34 @@ test("POST /sessions creates a new awaiting-input session", async () => {
         uploaded_artifacts_json: (payload.uploaded_artifacts_json ?? []) as never,
         intent_json: payload.intent_json ?? null,
         compilation_json: payload.compilation_json ?? null,
+        conversation_log_json: payload.conversation_log_json ?? [],
         failure_message: payload.failure_message ?? null,
         expires_at: payload.expires_at,
+      });
+      return storedSession;
+    },
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...(storedSession ?? createSession({ id: "session-new" })),
+        state: payload.state ?? storedSession?.state ?? "awaiting_input",
+        authoring_ir_json:
+          payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
+        uploaded_artifacts_json:
+          (payload.uploaded_artifacts_json as never) ??
+          storedSession?.uploaded_artifacts_json ??
+          [],
+        intent_json: payload.intent_json ?? storedSession?.intent_json ?? null,
+        compilation_json:
+          payload.compilation_json ?? storedSession?.compilation_json ?? null,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession?.conversation_log_json ??
+          [],
+        failure_message:
+          payload.failure_message ?? storedSession?.failure_message ?? null,
+        expires_at:
+          payload.expires_at ?? storedSession?.expires_at ?? "2026-03-23T00:00:00.000Z",
+        updated_at: "2026-03-22T00:05:00.000Z",
       });
       return storedSession;
     },
@@ -214,11 +241,13 @@ test("POST /sessions creates a new awaiting-input session", async () => {
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.id, "session-new");
-  assert.equal(payload.state, "awaiting_input");
-  assert.equal(payload.creator.type, "agent");
-  assert.ok(Array.isArray(payload.questions));
+  assert.equal(payload.session.id, "session-new");
+  assert.equal(payload.session.state, "awaiting_input");
+  assert.equal(payload.session.creator.type, "agent");
+  assert.ok(Array.isArray(payload.session.questions));
+  assert.equal(typeof payload.assistant_message, "string");
   assert.ok(storedSession);
+  assert.equal(storedSession?.conversation_log_json.length, 2);
 });
 
 test("GET /sessions/:id hides sessions owned by another principal", async () => {
@@ -280,6 +309,8 @@ test("POST /sessions/:id/respond applies answers and returns ready", async () =>
           payload.authoring_ir_json ?? storedSession.authoring_ir_json,
         compilation_json:
           payload.compilation_json ?? storedSession.compilation_json,
+        conversation_log_json:
+          payload.conversation_log_json ?? storedSession.conversation_log_json,
         failure_message:
           payload.failure_message ?? storedSession.failure_message,
         expires_at: payload.expires_at ?? storedSession.expires_at,
@@ -321,8 +352,10 @@ test("POST /sessions/:id/respond applies answers and returns ready", async () =>
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.state, "ready");
-  assert.equal(payload.compilation.metric, "spearman");
+  assert.equal(payload.session.state, "ready");
+  assert.equal(payload.session.compilation.metric, "spearman");
+  assert.equal(typeof payload.assistant_message, "string");
+  assert.equal(storedSession.conversation_log_json.length, 2);
 });
 
 test("POST /sessions/:id/respond accepts file answers as artifact refs", async () => {
@@ -373,6 +406,8 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
           payload.authoring_ir_json ?? storedSession.authoring_ir_json,
         compilation_json:
           payload.compilation_json ?? storedSession.compilation_json,
+        conversation_log_json:
+          payload.conversation_log_json ?? storedSession.conversation_log_json,
         failure_message: payload.failure_message ?? storedSession.failure_message,
         uploaded_artifacts_json:
           (payload.uploaded_artifacts_json as never) ??
@@ -426,7 +461,7 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.state, "ready");
+  assert.equal(payload.session.state, "ready");
   assert.deepEqual(capturedArtifactAssignments, [
     {
       artifactIndex: 0,
@@ -434,6 +469,53 @@ test("POST /sessions/:id/respond accepts file answers as artifact refs", async (
       visibility: "private",
     },
   ]);
+});
+
+test("GET /sessions/:id exposes blocked_by on rejected sessions", async () => {
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () =>
+      createSession({
+        creator_type: "agent",
+        creator_agent_id: "agent-abc",
+        poster_address: null,
+        state: "rejected",
+        failure_message:
+          "Agora requires deterministic scoring for managed challenges.",
+        authoring_ir_json: buildManagedAuthoringIr({
+          intent: createIntent(),
+          uploadedArtifacts: createArtifacts(),
+          sourceTitle: "Docking challenge",
+          sourceMessages: [],
+          origin: {
+            provider: "direct",
+            ingested_at: "2026-03-22T00:00:00.000Z",
+          },
+          compileError: {
+            code: "MANAGED_COMPILER_UNSUPPORTED",
+            message:
+              "Agora requires deterministic scoring for managed challenges.",
+          },
+          rejectionReasons: ["unsupported_task"],
+          assessmentOutcome: "rejected",
+          assessmentReasonCodes: ["unsupported_task"],
+        }),
+      }),
+  });
+
+  const response = await router.request("http://localhost/sessions/session-123");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.state, "rejected");
+  assert.deepEqual(payload.blocked_by, {
+    layer: 3,
+    code: "unsupported_task",
+    message: "Agora requires deterministic scoring for managed challenges.",
+  });
 });
 
 test("POST /uploads ingests a URL and returns a normalized artifact", async () => {
@@ -467,7 +549,7 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
 });
 
 test("POST /sessions/:id/publish publishes a ready sponsor-funded agent session", async () => {
-  const readySession = createSession({
+  let storedSession = createSession({
     creator_type: "agent",
     creator_agent_id: "agent-abc",
     poster_address: null,
@@ -488,15 +570,45 @@ test("POST /sessions/:id/publish publishes a ready sponsor-funded agent session"
       }),
       requireWriteQuotaImpl: allowQuota(),
       createSupabaseClient: () => ({}) as never,
-      getAuthoringSessionById: async () => readySession,
-      sponsorAndPublishAuthoringSession: async () => ({
-        session: createSession({
-          ...readySession,
+      getAuthoringSessionById: async () => storedSession,
+      updateAuthoringSession: async (_db, payload) => {
+        storedSession = createSession({
+          ...storedSession,
+          state: payload.state ?? storedSession.state,
+          published_challenge_id:
+            payload.published_challenge_id ?? storedSession.published_challenge_id,
+          published_at: payload.published_at ?? storedSession.published_at,
+          poster_address: payload.poster_address ?? storedSession.poster_address,
+          published_spec_json:
+            payload.published_spec_json ?? storedSession.published_spec_json,
+          published_spec_cid:
+            payload.published_spec_cid ?? storedSession.published_spec_cid,
+          compilation_json:
+            payload.compilation_json ?? storedSession.compilation_json,
+          conversation_log_json:
+            payload.conversation_log_json ?? storedSession.conversation_log_json,
+          expires_at: payload.expires_at ?? storedSession.expires_at,
+          failure_message: payload.failure_message ?? storedSession.failure_message,
+          updated_at: "2026-03-22T01:00:00.000Z",
+        });
+        return storedSession;
+      },
+      sponsorAndPublishAuthoringSession: async () => {
+        storedSession = createSession({
+          ...storedSession,
           state: "published",
           published_challenge_id: "challenge-1",
           published_at: "2026-03-22T01:00:00.000Z",
-        }),
-      }),
+        });
+        return {
+          session: storedSession,
+          txHash: "0xhash",
+          challenge: {
+            challengeId: "challenge-1",
+            challengeAddress: "0x00000000000000000000000000000000000000bb",
+          },
+        };
+      },
       getChallengeById: async () => ({
         id: "challenge-1",
         contract_address: "0x00000000000000000000000000000000000000bb",
@@ -558,6 +670,14 @@ test("POST /sessions/:id/publish prepares a ready wallet-funded web session", as
       requireWriteQuotaImpl: allowQuota(),
       createSupabaseClient: () => ({}) as never,
       getAuthoringSessionById: async () => readySession,
+      updateAuthoringSession: async (_db, payload) =>
+        createSession({
+          ...readySession,
+          state: payload.state ?? readySession.state,
+          conversation_log_json:
+            payload.conversation_log_json ?? readySession.conversation_log_json,
+          updated_at: "2026-03-22T01:00:00.000Z",
+        }),
     });
 
     const response = await router.request(
@@ -640,6 +760,8 @@ test("POST /sessions/:id/confirm-publish finalizes a ready wallet-funded web ses
           payload.published_spec_cid ?? storedSession.published_spec_cid,
         published_at: payload.published_at ?? storedSession.published_at,
         expires_at: payload.expires_at ?? storedSession.expires_at,
+        conversation_log_json:
+          payload.conversation_log_json ?? storedSession.conversation_log_json,
         failure_message: payload.failure_message ?? storedSession.failure_message,
         updated_at: "2026-03-22T01:00:00.000Z",
       });

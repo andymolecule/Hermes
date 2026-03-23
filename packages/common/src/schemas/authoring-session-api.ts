@@ -226,6 +226,13 @@ export const authoringSessionSchema = z
   })
   .strict();
 
+export const conversationalAuthoringSessionResponseSchema = z
+  .object({
+    session: authoringSessionSchema,
+    assistant_message: z.string().trim().min(1),
+  })
+  .strict();
+
 export const authoringSessionErrorEnvelopeSchema = z
   .object({
     error: z
@@ -263,6 +270,7 @@ export const listAuthoringSessionsResponseSchema = z
 
 export const createAuthoringSessionRequestSchema = z
   .object({
+    message: z.string().trim().min(1).optional(),
     summary: z.string().trim().min(1).optional(),
     messages: z.array(authoringSessionMessageInputSchema).min(1).optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
@@ -270,16 +278,18 @@ export const createAuthoringSessionRequestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    const hasMessage =
+      typeof value.message === "string" && value.message.length > 0;
     const hasSummary =
       typeof value.summary === "string" && value.summary.length > 0;
     const hasMessages =
       Array.isArray(value.messages) && value.messages.length > 0;
     const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-    if (!hasSummary && !hasMessages && !hasFiles) {
+    if (!hasMessage && !hasSummary && !hasMessages && !hasFiles) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Provide at least one of summary, messages, or files.",
+        message: "Provide at least one of message, summary, messages, or files.",
       });
     }
   });
@@ -287,21 +297,21 @@ export const createAuthoringSessionRequestSchema = z
 export const respondAuthoringSessionRequestSchema = z
   .object({
     answers: z.array(authoringSessionAnswerInputSchema).min(1).optional(),
-    context: z.string().trim().min(1).optional(),
+    message: z.string().trim().min(1).optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
     const hasAnswers =
       Array.isArray(value.answers) && value.answers.length > 0;
-    const hasContext =
-      typeof value.context === "string" && value.context.length > 0;
+    const hasMessage =
+      typeof value.message === "string" && value.message.length > 0;
     const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-    if (!hasAnswers && !hasContext && !hasFiles) {
+    if (!hasAnswers && !hasMessage && !hasFiles) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Provide at least one of answers, context, or files.",
+        message: "Provide at least one of answers, message, or files.",
       });
     }
   });
@@ -350,6 +360,12 @@ export type AuthoringSessionQuestionOutput = z.output<
 export type AuthoringSessionArtifactOutput = z.output<
   typeof authoringSessionArtifactSchema
 >;
+export type AuthoringSessionAnswerInputOutput = z.output<
+  typeof authoringSessionAnswerInputSchema
+>;
+export type AuthoringSessionFileInputOutput = z.output<
+  typeof authoringSessionFileInputSchema
+>;
 export type AuthoringSessionCompilationOutput = z.output<
   typeof authoringSessionCompilationSchema
 >;
@@ -360,6 +376,9 @@ export type AuthoringSessionListItemOutput = z.output<
   typeof authoringSessionListItemSchema
 >;
 export type AuthoringSessionOutput = z.output<typeof authoringSessionSchema>;
+export type ConversationalAuthoringSessionResponseOutput = z.output<
+  typeof conversationalAuthoringSessionResponseSchema
+>;
 export type AuthoringSessionCreatorOutput = z.output<
   typeof authoringSessionCreatorSchema
 >;
