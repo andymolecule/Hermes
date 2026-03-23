@@ -74,7 +74,7 @@ pnpm --filter <package> test
 
 | Package | Key Test Areas |
 |---------|---------------|
-| `@agora/common` | Spec validation, templates, runtime families, CSV validation, submission contracts, sealing, x402 |
+| `@agora/common` | Spec validation, execution templates, CSV validation, submission contracts, sealing, x402 |
 | `@agora/db` | Event projections, schema compatibility, score job lifecycle, submission intents, analytics |
 | `@agora/chain` | Indexer status projection, confirmation depth, chain integration |
 | `@agora/ipfs` | Fetch resilience, pin/fetch roundtrip |
@@ -101,7 +101,7 @@ Useful focused API regression slices:
 
 ```bash
 cd apps/api
-node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-artifacts.test.ts tests/authoring-sponsored-publish.test.ts tests/managed-authoring-ir.test.ts tests/managed-authoring.test.ts
+node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-artifacts.test.ts tests/authoring-sponsored-publish.test.ts tests/authoring-ir.test.ts tests/authoring-compiler.test.ts
 ```
 
 ---

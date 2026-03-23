@@ -82,12 +82,16 @@ Each replay entry stores:
   summary: string,
   state_before: string | null,
   state_after: string | null,
-  caller_message?: string | null,
-  answers?: [...],
+  intent?: {...},
+  execution?: {...},
   files?: [...],
-  assistant_message?: string | null,
-  questions?: [...],
-  blocked_by?: { layer, code, message } | null,
+  resolved?: {...},
+  validation?: {
+    missing_fields: [...],
+    invalid_fields: [...],
+    dry_run_failure?: {...} | null,
+    unsupported_reason?: {...} | null,
+  },
   artifacts?: [...],
   publish?: {
     funding?: string | null,
@@ -112,10 +116,10 @@ Append replay entries on:
 - `POST /api/authoring/sessions`
   - caller turn
   - Agora turn
-- `POST /api/authoring/sessions/:id/respond`
+- `PATCH /api/authoring/sessions/:id`
   - caller turn
   - Agora turn
-- invalid create/respond/publish/confirm turns against an existing session
+- invalid create/patch/publish/confirm turns against an existing session
   - validation-failed entry
 - `POST /api/authoring/sessions/:id/publish`
   - publish requested
@@ -175,11 +179,10 @@ These logs are for correlation and fallback, not the primary replay surface.
 
 Allowed in replay entries:
 
-- caller freeform message text
-- Agora `assistant_message`
-- structured answers
-- question prompts
-- blocker codes/messages
+- structured intent patches
+- structured execution patches
+- resolved state snapshots
+- validation blockers
 - artifact metadata and safe URLs
 - publish refs after success
 
@@ -216,8 +219,8 @@ Those are explicitly out of scope for this MVP.
 This spec is satisfied when an operator can:
 
 1. fetch one session replay by `session_id`
-2. see the caller and Agora turns in order
-3. see the exact `assistant_message` returned on each turn
+2. see the caller inputs and Agora state transitions in order
+3. see the resolved state and validation output returned on each turn
 4. see validation failures and rejection blockers in context
 5. see publish preparation / success / failure in the same replay
 6. correlate replay entries to backend logs using `request_id`

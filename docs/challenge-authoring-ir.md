@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Define the typed intermediate representation that sits between rough authoring
-context and a compiled challenge spec.
+Define the typed intermediate representation that sits between structured
+authoring state and a compiled challenge spec.
 
 This is the durable interpretation layer used by:
 
@@ -22,33 +22,33 @@ Agora should never jump directly from natural language to an on-chain publish.
 The safe path is:
 
 ```text
-rough context + files
+structured session state + files
   -> typed authoring IR
   -> deterministic compile + dry-run
   -> challenge spec candidate
   -> explicit publish confirmation
 ```
 
-The LLM helps interpret intent and identify gaps. Deterministic compile remains
-authoritative.
+Deterministic compile remains authoritative. Any future assist/inference path is
+separate from this default session contract.
 
 ## Current Session Flow
 
 ```mermaid
 flowchart LR
-    A["summary/messages/files"] --> B["POST /api/authoring/sessions"]
+    A["intent/execution/files"] --> B["POST /api/authoring/sessions"]
     B --> C["authoring IR"]
     C --> D["deterministic compile + dry-run"]
     D --> E{"result"}
     E -- "ready" --> F["compiled challenge spec"]
-    E -- "awaiting_input" --> G["typed follow-up questions"]
+    E -- "awaiting_input" --> G["structured validation blockers"]
     E -- "rejected" --> H["explicit unsupported/rejection reasons"]
 ```
 
-Conversational path:
+Machine-first path:
 
 ```text
-create session -> answer questions -> respond -> ready -> publish
+create session -> patch structured fields -> ready -> publish
 ```
 
 There is no separate public `compile` endpoint and no legacy helper response
@@ -115,9 +115,6 @@ type ChallengeAuthoringIr = {
     compile_error_codes: string[];
     compile_error_message: string | null;
   };
-  questions: {
-    pending: AuthoringQuestion[];
-  };
 };
 ```
 
@@ -137,23 +134,6 @@ Public session state then adds the lifecycle terminals:
 Internal transient `created` exists only briefly at insert time and is not part
 of the public contract.
 
-## What The LLM Does
-
-The LLM may:
-
-- read rough context and artifact metadata
-- propose the most likely execution template
-- propose the most likely metric
-- identify missing required fields
-- suggest artifact roles
-
-The LLM may not:
-
-- invent unsupported execution templates
-- invent unsupported metrics
-- skip deterministic compile
-- publish directly from prose
-
 ## What Deterministic Compile Does
 
 Deterministic compile decides whether Agora can produce a valid challenge spec.
@@ -171,30 +151,16 @@ It validates:
 Compile output is the authoritative source for:
 
 - whether the session is `ready`
-- which questions remain blocking
+- which validation blockers remain
 - what the final compilation object contains
 - whether the task must be `rejected`
-
-## Runtime-Family Selection
-
-Managed authoring only targets supported Agora runtime families:
-
-- `reproducibility`
-- `tabular_regression`
-- `tabular_classification`
-- `ranking`
-- `docking`
-
-If a task needs a different evaluator model, Agora should reject it clearly and
-point the creator toward the explicit custom scorer workflow rather than
-pretending it can compile it.
 
 ## Bottom Line
 
 The right abstraction is:
 
 ```text
-create/respond = interpret + validate + compile dry-run
+create/patch = interpret + validate + compile dry-run
 publish = explicit irreversible creation path
 ```
 

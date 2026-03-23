@@ -22,8 +22,30 @@ export const AGENT_BOOTSTRAP_CREATE_COMMAND = `curl -X POST "${API_BASE_URL}/api
   -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "message": "<human's rough challenge request>",
-    "summary": "<optional compact restatement>"
+    "intent": {
+      "title": "<challenge title>",
+      "description": "<objective challenge description>",
+      "reward_total": "${CHALLENGE_LIMITS.rewardMaxUsdc}",
+      "distribution": "winner_take_all",
+      "timezone": "UTC"
+    },
+    "execution": {
+      "metric": "spearman",
+      "submission_value_column": "predicted_score"
+    }
+  }'`;
+
+export const AGENT_BOOTSTRAP_PATCH_COMMAND = `curl -X PATCH "${API_BASE_URL}/api/authoring/sessions/<session_id>" \\
+  -H "Authorization: Bearer <api_key>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "execution": {
+      "evaluation_artifact_id": "<artifact id>",
+      "evaluation_id_column": "peptide_id",
+      "evaluation_value_column": "reference_rank",
+      "submission_id_column": "peptide_id",
+      "submission_value_column": "predicted_score"
+    }
   }'`;
 
 export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/sessions/<session_id>/publish" \\
@@ -68,28 +90,23 @@ For all future Agora calls send:
 Core runtime loop:
 1. When your human asks you to create a challenge, call:
    ${API_BASE_URL}/api/authoring/sessions
-2. Minimum create rule: provide at least one of message, summary, one messages entry, or one file.
-3. On create/respond success, treat assistant_message as Agora's primary user-facing reply. Show it directly or with only minimal adaptation.
+2. Minimum create rule: provide at least one of structured intent, structured execution, or one file.
+3. Agora validates deterministically. It returns one session object with:
+   - state
+   - resolved intent/execution
+   - validation missing_fields / invalid_fields / dry_run_failure / unsupported_reason
 4. Inspect the returned session object and branch on state only:
-   - awaiting_input -> inspect questions, ask your human only those missing questions, then call POST /api/authoring/sessions/:id/respond
+   - awaiting_input -> inspect validation.missing_fields and validation.invalid_fields, fill only those fields, then call PATCH /api/authoring/sessions/:id
    - ready -> call POST /api/authoring/sessions/:id/publish with funding: "sponsor"
-   - rejected -> quote blocked_by.message as the official reason; any extra explanation from you must be labeled as inference
+   - rejected -> quote validation.unsupported_reason.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
-5. Repeat respond until the session reaches ready or rejected.
+5. Repeat PATCH until the session reaches ready or rejected.
 
 Create example:
 ${AGENT_BOOTSTRAP_CREATE_COMMAND}
 
-Respond example:
-curl -X POST "${API_BASE_URL}/api/authoring/sessions/<session_id>/respond" \\
-  -H "Authorization: Bearer <api_key>" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "answers": [
-      { "question_id": "q1", "value": "spearman" }
-    ],
-    "message": "<optional extra context>"
-  }'
+Patch example:
+${AGENT_BOOTSTRAP_PATCH_COMMAND}
 
 Publish example:
 ${AGENT_BOOTSTRAP_PUBLISH_COMMAND}
@@ -98,7 +115,7 @@ Operational guardrails:
 - Use Agora only for challenges that can become deterministic, scoreable tasks with a concrete submission format.
 - If the human asks for a subjective or open-ended research bounty, ask them to reframe it before creating a session.
 - Do not invent subjective default winner rules like "best rationale" or "best idea".
-- Use assistant_message as the conversational layer. Use session.questions and blocked_by as the structured source of truth.
+- Treat session.validation as the source of truth. Do not wait for conversational hints when the blocker is already machine-readable.
 
 Question semantics:
 - "How should Agora decide the winner?" is payout_condition. It is free text in the current contract and should usually be a deterministic metric rule like "Highest Spearman correlation wins."
@@ -113,13 +130,13 @@ Files:
 - If Telegram or another platform gives you files, translate them into:
   - POST ${API_BASE_URL}/api/authoring/uploads
   - or fetchable URLs
-- Use artifact refs in file answers.
+- Use artifact refs in session files or execution patches.
 - Ask for scorer-relevant artifacts only: datasets, target structures, reference outputs, evaluation files, or required schemas.
 - Do not upload filler briefs or arbitrary notes just to satisfy a file requirement.
 
 Rejected sessions:
-- If state = rejected, blocked_by explains why Agora stopped.
-- Treat blocked_by.message as fact from Agora.
+- If state = rejected, validation.unsupported_reason explains why Agora stopped.
+- Treat validation.unsupported_reason.message as fact from Agora.
 - If you add your own guess about how to fix it, clearly label that as inference.
 
 Telegram reply policy:
@@ -127,8 +144,8 @@ Telegram reply policy:
 - Prefer one user-facing reply per Agora state transition.
 - Structure each reply in this order:
   1. One short status line.
-  2. Agora's assistant_message.
-  3. "Needed from you" with only the missing inputs, if any.
+  2. "Needed from you" with only the missing or invalid inputs, if any.
+  3. "Resolved so far" with the fields Agora has already accepted, when helpful.
   4. "Suggested defaults" only when helpful.
   5. One clear next action line.
 - If Agora is still working in the background, do not send multiple rapid-fire progress messages unless the session state actually changed.

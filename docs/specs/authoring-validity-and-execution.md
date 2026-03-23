@@ -13,7 +13,7 @@ valid.
 
 This is intentionally separate from the session API spec.
 
-- The session API spec defines how callers create, respond to, and publish
+- The session API spec defines how callers create, patch, and publish
   sessions.
 - This document defines what a session must converge to before it can become
   `ready`.
@@ -21,7 +21,8 @@ This is intentionally separate from the session API spec.
 If this model is not explicit, the system drifts into:
 
 - rigid hardcoded gates that reject business-valid challenges
-- inconsistent routing between managed, semi-custom, and expert paths
+- inconsistent routing between legacy preset selection, execution-template
+  resolution, and expert fallbacks
 - unclear reasoning about whether a challenge is invalid, incomplete, or just
   mapped to the wrong scorer lane
 
@@ -53,8 +54,9 @@ contract with:
 - an explicit metric and comparator
 - enough bindings and mappings for dry-run execution to pass
 
-`managed`, `semi_custom`, and `expert` may still exist internally as authoring
-or routing strategies, but they are not distinct public validity classes.
+Internal routing stages may still exist while Agora resolves missing fields or
+determines that a custom evaluator is required, but they are not distinct
+public validity classes.
 
 ## 3. Ready Means Executable
 
@@ -71,6 +73,75 @@ That includes:
 
 Agora must not mark a session `ready` only because the problem appears
 scoreable in theory.
+
+## 3.1 Naming Contract
+
+This spec also locks the canonical naming model for the authoring system.
+
+### Public Terms
+
+These are the terms callers and solver-facing surfaces should use:
+
+- `authoring session`
+- `execution template`
+- `execution contract`
+- `table scorer`
+- `awaiting_input`
+- `ready`
+- `rejected`
+- `published`
+
+Public authoring should not expose family-era labels such as:
+
+- `ranking`
+- `docking`
+- `tabular_regression`
+- `tabular_classification`
+- `managed`
+- `semi_custom`
+- `expert`
+
+Those may exist as implementation history or future internal routing concepts,
+but they are not part of the canonical public authoring vocabulary.
+
+### Internal Layer Terms
+
+The internal layer names are:
+
+- `authoring assessor` = Layer 2
+- `authoring compiler` = Layer 3
+
+Layer responsibilities:
+
+- the assessor interprets caller input, infers deterministic fields when
+  possible, and identifies unresolved fields
+- the compiler validates the resolved execution contract, binds artifacts,
+  builds the challenge spec, and executes the dry-run
+
+### Canonical Engine Terms
+
+The active deterministic engine modules should use these names:
+
+- `authoring-compiler`
+- `authoring-ir`
+- `authoring-dry-run`
+- `authoring-artifact-resolution`
+- `authoring-checklist`
+
+If an explicit assist path is added later, it should be treated as a separate
+assist surface, not part of the active deterministic engine.
+
+### Deprecated Legacy Terms
+
+The following terms are deprecated and should be removed from the active path:
+
+- `managed authoring`
+- `managed-authoring-*`
+- `MANAGED_*` error codes where the error is part of the active session engine
+- `managed compiler` when referring to Layer 2
+
+If legacy names remain temporarily in archival docs or historical notes, they
+should be treated as documentation debt, not canonical terminology.
 
 ## 4. Locked Decisions So Far
 
@@ -152,7 +223,7 @@ Examples that stay in `awaiting_input`:
 - missing metric
 - malformed evaluation file
 - incomplete scorer configuration
-- any other issue the poster can correct by answering follow-up questions or
+- any other issue the poster can correct by submitting structured field patches or
   replacing files
 
 Examples that may become `rejected`:
@@ -188,7 +259,7 @@ Agora should ask only when the metric does not imply a clear direction.
 
 Design rule:
 
-- do not ask the poster questions Agora can answer deterministically itself
+- do not require extra caller input for anything Agora can derive deterministically itself
 - do not require the scorer to re-derive comparator semantics at execution time
 
 Comparator is therefore:
@@ -676,28 +747,23 @@ This is the contract Layer 3 validates and the scorer image executes.
 
 The clean target pipeline is:
 
-1. caller sends rough challenge intent and files
-2. Layer 2 infers any deterministic fields it can
-3. Layer 2 asks only for unresolved execution-contract fields
-4. Layer 3 resolves a concrete execution contract
+1. caller sends structured partial authoring state
+2. Agora deterministically normalizes any obvious defaults and derived fields
+3. Layer 3 resolves a concrete execution contract from the submitted state
+4. Layer 3 validates artifacts, mappings, and metric compatibility
 5. Layer 3 dry-runs the official scorer image against that contract
 6. if dry-run passes, session becomes `ready`
 7. if the poster can fix any missing or malformed field, stay in
-   `awaiting_input`
+   `awaiting_input` with exact structured validation blockers
 8. reject only when the challenge fundamentally cannot be expressed as
    deterministic table scoring under the current official framework
 
+The default path does not invoke Layer 2 at all.
+
+If Agora later exposes an assist path for loose natural-language inference,
+that path is separate and out of scope for this default authoring model.
+
 ### 8.4 Layer Responsibilities
-
-Layer 2 should do only:
-
-- infer likely metric/comparator when possible
-- infer likely hidden versus visible file roles when obvious
-- infer likely id/value columns when obvious
-- ask for unresolved fields in machine-friendly questions
-- explain blockers and minimum fixes clearly
-
-Layer 2 should not decide challenge validity by old family-era labels.
 
 Layer 3 should do only:
 
@@ -709,13 +775,21 @@ Layer 3 should do only:
 - run dry-run execution
 - produce a concrete success or blocker result
 
+If a future assist path exists, it should do only:
+
+- translate loose prose into candidate structured fields
+- write those fields into the same partial authoring state the default path
+  accepts
+- never decide validity
+- never override explicit caller-provided structured fields
+- never be required for the default `/sessions` contract
+
 ### 8.5 Smallest Clean Cutover
 
 The lowest-entropy implementation is not to invent a new execution system.
 
-The repository already has a partial structured-table execution path in the
-semi-custom evaluator contract and `official_table_metric_v1` execution
-template.
+The repository already has a partial structured-table execution path and the
+`official_table_metric_v1` execution template.
 
 So the smallest clean cutover is:
 
@@ -723,15 +797,17 @@ So the smallest clean cutover is:
    target
 2. make structured-table execution through the broad official scorer template
    the default authoring target
-3. have Layer 2 fill the explicit table execution contract instead of choosing
-   `ranking`, `docking`, or `tabular_regression`
+3. have the session API accept structured partial intent + execution state as
+   the primary contract
 4. have Layer 3 compile that contract into the existing executable structured
    table path
-5. keep any legacy preset-handling only as temporary internal migration
+5. keep any assist/inference behavior completely outside the default session
+   contract
+6. keep any legacy preset-handling only as temporary internal migration
    glue, not as the public or primary design
 
-This reuses existing scorer-runtime and semi-custom machinery instead of
-creating another abstraction layer.
+This reuses existing scorer-runtime and structured-table execution machinery
+instead of creating another abstraction layer.
 
 For V1, the primary execution template should map to the existing tabular
 scorer path, not the generated-scorer runner.
@@ -804,16 +880,18 @@ Responsibilities:
 
 This replaces public dependence on the old family-id field.
 
-#### `authoring-assessor.ts`
+#### Future explicit assist path (out of scope for the default session API)
 
-Layer 2 field extraction and missing-field logic.
+Optional assist-only adapter, not part of the default authoring session flow.
 
-Responsibilities:
+Responsibilities if it exists later:
 
-- infer deterministic fields from intent and uploaded file headers
-- ask for only unresolved execution-contract fields
+- translate loose prose into candidate structured fields
+- write only unresolved fields into the same partial authoring state the
+  machine-first session API already accepts
 - never classify into legacy runtime families
 - never expose family-style labels in public authoring responses
+- never become the source of truth for validity
 
 #### `authoring-compiler.ts`
 
@@ -871,7 +949,7 @@ Not:
 
 - family-era label
 - evaluator archetype
-- managed versus semi-custom mode
+- multiple hidden execution modes
 
 ### 9.3 What Should Be Deleted
 
@@ -888,9 +966,9 @@ authoring concepts:
 Examples in the current codebase that should not survive as the primary model:
 
 - the family-switch model in
-  `/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-artifacts.ts`
-- the family classifier contract in
-  `/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-compiler.ts`
+  `/Users/changyuesin/Agora/apps/api/src/lib/authoring-artifact-resolution.ts`
+- any future assist path must stay outside the default deterministic
+  `/sessions` flow
 - public family validation as the primary path in legacy scorer registries
 
 ### 9.4 What Can Stay
@@ -904,7 +982,7 @@ These pieces can stay if repointed to the new model:
 - session transport contract
 - reward/distribution/deadline/session lifecycle rules
 
-The existing structured-table semi-custom execution path is useful only as an
+The existing structured-table execution machinery is useful only as an
 implementation bridge into the new model. It should not remain a second public
 concept once the new path is complete.
 
@@ -938,27 +1016,24 @@ Do not carry over:
 
 as first-class design inputs.
 
-### 10.2 Step 2: Replace Layer 2 Family Classification
+### 10.2 Step 2: Replace Conversation-First Intake With Structured State
 
-Replace the current family-mapping behavior with field extraction.
+Replace the current question/answer and prose-first intake with direct
+structured state patches.
 
-Layer 2 should return:
+The default session contract should accept and return:
 
-- `outcome`
-- `metric`
-- `evaluation_artifact`
-- `evaluation_id_column`
-- `evaluation_value_column`
-- `submission_id_column`
-- `submission_value_column`
-- `visible_artifacts`
-- `missing_fields`
-- optional inferred policies
+- partial `intent`
+- partial `execution`
+- normalized `artifacts`
+- structured `validation`
 
-It should not return:
+It should not depend on:
 
 - `legacy_family_id`
-- family-specific artifact roles
+- question IDs
+- answer payloads
+- hidden Layer 2 inference
 
 ### 10.3 Step 3: Replace Family-Based Artifact Assignment
 
@@ -1020,7 +1095,8 @@ non-authoring purpose. If it does not serve a live purpose, remove it.
 The redesign should explicitly avoid:
 
 - preserving family-based public abstractions for comfort
-- adding a second new abstraction layer on top of semi-custom and managed
+- adding a second new abstraction layer on top of the single execution-contract
+  model
 - keeping multiple public execution modes that mean the same thing
 - treating transition convenience as a reason to keep conceptual debt
 - broadening validity without executable dry-run proof
@@ -1032,11 +1108,11 @@ The target system is:
 - one public execution model
 - one official table scorer template in V1
 - one explicit execution contract
-- one Layer 2 field-completion loop
 - one Layer 3 validation and dry-run path
+- one deterministic machine-first session contract
 
-This is cleaner than "managed families plus semi-custom fallback" and cleaner
-than "three modes with hidden overlap".
+This is cleaner than legacy multi-lane routing and cleaner than multiple
+public modes with hidden overlap.
 
 The right replacement is not a better wrapper around the old model.
 

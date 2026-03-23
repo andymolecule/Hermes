@@ -3,9 +3,10 @@ import {
   PROTOCOL_FEE_PERCENT,
   authoringSessionListItemSchema,
   authoringSessionSchema,
+  authoringSessionValidationSchema,
   getExecutionTemplateMetric,
   resolveExecutionTemplateLimits,
-  type ChallengeAuthoringIrOutput,
+  type AuthoringSessionValidationOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
 } from "@agora/common";
@@ -20,15 +21,6 @@ type ChallengeRefs = {
   contract_address: string;
   tx_hash: string;
 } | null;
-
-export interface SessionQuestionDescriptor {
-  id: string;
-  field: string;
-  kind: "text" | "select" | "file";
-  text: string;
-  reason: string;
-  options?: string[];
-}
 
 function toPublicState(input: {
   state: AuthoringSessionRow["state"];
@@ -89,107 +81,6 @@ function parseMemoryMb(value: string) {
   return Math.round(numeric);
 }
 
-function toQuestionReason(question: {
-  why?: string | null;
-  prompt: string;
-}) {
-  return question.why?.trim() || question.prompt;
-}
-
-function buildArtifactRoleQuestionText(roleLabel: string) {
-  return `Which file should Agora use for ${roleLabel.toLowerCase()}?`;
-}
-
-export function buildSessionQuestionDescriptors(
-  authoringIr: ChallengeAuthoringIrOutput | null,
-): SessionQuestionDescriptor[] {
-  const pending = authoringIr?.questions.pending ?? [];
-  const descriptors: SessionQuestionDescriptor[] = [];
-
-  for (const question of pending) {
-    if (question.kind === "artifact_select") {
-      descriptors.push({
-        id: question.id,
-        field: question.field,
-        kind: "file",
-        text: question.prompt,
-        reason: toQuestionReason(question),
-      });
-      continue;
-    }
-
-    if (question.kind === "single_select") {
-      descriptors.push({
-        id: question.id,
-        field: question.field,
-        kind: "select",
-        text: question.prompt,
-        reason: toQuestionReason(question),
-        options: question.options.map((option) => option.id),
-      });
-      continue;
-    }
-
-    descriptors.push({
-      id: question.id,
-      field: question.field,
-      kind: "text",
-      text: question.prompt,
-      reason: toQuestionReason(question),
-    });
-  }
-
-  return descriptors;
-}
-
-function buildBlockedBy(
-  session: AuthoringSessionRow,
-  questions: SessionQuestionDescriptor[],
-  nowIso?: string,
-) {
-  const state = toPublicState({
-    state: session.state,
-    expiresAt: session.expires_at,
-    nowIso,
-  });
-  if (
-    state !== "awaiting_input" &&
-    state !== "rejected"
-  ) {
-    return null;
-  }
-
-  const compileErrorCode =
-    session.authoring_ir_json?.evaluation.compile_error_codes[0] ?? null;
-  const rejectionReason =
-    session.authoring_ir_json?.evaluation.rejection_reasons[0] ?? null;
-  const assessmentReason =
-    session.authoring_ir_json?.assessment.reason_codes[0] ?? null;
-  const compileErrorMessage =
-    session.authoring_ir_json?.evaluation.compile_error_message ?? null;
-
-  if (state === "rejected") {
-    return {
-      layer: 3 as const,
-      code: rejectionReason ?? compileErrorCode ?? "unsupported_task",
-      message:
-        session.failure_message ??
-        compileErrorMessage ??
-        "Agora could not prepare a publishable challenge from this session.",
-    };
-  }
-
-  return {
-    layer: compileErrorCode ? (3 as const) : (2 as const),
-    code: compileErrorCode ?? assessmentReason ?? "missing_input",
-    message:
-      compileErrorMessage ??
-      questions[0]?.reason ??
-      session.failure_message ??
-      "Agora needs more information before it can prepare a publishable challenge.",
-  };
-}
-
 function buildCompilation(compilation: CompilationResultOutput | null) {
   if (!compilation) {
     return null;
@@ -211,7 +102,7 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
 
   return {
     template: compilation.template,
-    metric: compilation.metric,
+    metric: metric?.id ?? compilation.metric,
     objective: compilation.comparator,
     scorer_image: compilation.execution_contract.scorer_image,
     evaluation_artifact_uri:
@@ -265,10 +156,6 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
   }
 
   const challengeSpec = compilation.challenge_spec;
-  const metric = getExecutionTemplateMetric(
-    compilation.template,
-    compilation.metric,
-  );
 
   return {
     title: challengeSpec.title,
@@ -286,38 +173,269 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
 
 function buildArtifactRoleMap(session: AuthoringSessionRow) {
   const roleByUri = new Map<string, string>();
-
   for (const artifact of session.compilation_json?.resolved_artifacts ?? []) {
     roleByUri.set(artifact.uri, artifact.role);
   }
-
   return roleByUri;
 }
 
 function resolveCreator(session: AuthoringSessionRow) {
-  if (session.creator_type === "agent" && session.creator_agent_id) {
+  if (
+    session.creator_type === "agent" &&
+    typeof session.creator_agent_id === "string"
+  ) {
     return {
       type: "agent" as const,
       agent_id: session.creator_agent_id,
     };
   }
 
-  if (session.poster_address) {
-    return {
-      type: "web" as const,
-      address: session.poster_address,
-    };
+  return {
+    type: "web" as const,
+    address: session.poster_address ?? "",
+  };
+}
+
+function buildValidationIssue(input: {
+  field: string;
+  code: string;
+  message: string;
+  nextAction: string;
+}) {
+  return {
+    field: input.field,
+    code: input.code,
+    message: input.message,
+    next_action: input.nextAction,
+  };
+}
+
+function buildFieldPrompt(field: string) {
+  switch (field) {
+    case "title":
+      return {
+        message: "Agora still needs the challenge title.",
+        nextAction: "Provide the title and retry.",
+      };
+    case "description":
+      return {
+        message: "Agora still needs the challenge description.",
+        nextAction: "Provide the description and retry.",
+      };
+    case "payout_condition":
+      return {
+        message: "Agora still needs a deterministic winner rule.",
+        nextAction: "Provide a deterministic payout condition and retry.",
+      };
+    case "reward_total":
+      return {
+        message: "Agora still needs the total reward amount.",
+        nextAction: "Provide an in-range reward_total and retry.",
+      };
+    case "deadline":
+      return {
+        message: "Agora still needs the challenge deadline.",
+        nextAction: "Provide an exact deadline timestamp and retry.",
+      };
+    case "distribution":
+      return {
+        message: "Agora still needs the reward distribution.",
+        nextAction: "Provide the distribution and retry.",
+      };
+    case "metric":
+      return {
+        message: "Agora still needs the scoring metric.",
+        nextAction: "Provide the metric and retry.",
+      };
+    case "evaluation_artifact":
+      return {
+        message: "Agora still needs the hidden evaluation artifact.",
+        nextAction: "Attach the hidden evaluation file and retry.",
+      };
+    case "evaluation_id_column":
+      return {
+        message: "Agora still needs the evaluation ID column.",
+        nextAction: "Provide the evaluation_id_column and retry.",
+      };
+    case "evaluation_value_column":
+      return {
+        message: "Agora still needs the evaluation value column.",
+        nextAction: "Provide the evaluation_value_column and retry.",
+      };
+    case "submission_id_column":
+      return {
+        message: "Agora still needs the submission ID column.",
+        nextAction: "Provide the submission_id_column and retry.",
+      };
+    case "submission_value_column":
+      return {
+        message: "Agora still needs the submission value column.",
+        nextAction: "Provide the submission_value_column and retry.",
+      };
+    default:
+      return {
+        message: `Agora still needs ${field}.`,
+        nextAction: `Provide ${field} and retry.`,
+      };
+  }
+}
+
+function buildValidation(
+  session: AuthoringSessionRow,
+  publicState: ReturnType<typeof toPublicState>,
+): AuthoringSessionValidationOutput {
+  const compileErrorCode =
+    session.authoring_ir_json?.evaluation.compile_error_codes[0] ?? null;
+  const compileErrorMessage =
+    session.authoring_ir_json?.evaluation.compile_error_message ?? null;
+  const rejectionReason =
+    session.authoring_ir_json?.evaluation.rejection_reasons[0] ?? null;
+  const missingFields = [
+    ...(session.authoring_ir_json?.assessment.missing_fields ?? []),
+  ];
+
+  if (publicState === "ready" || publicState === "published") {
+    return authoringSessionValidationSchema.parse({
+      missing_fields: [],
+      invalid_fields: [],
+      dry_run_failure: null,
+      unsupported_reason: null,
+    });
   }
 
-  if (session.creator_type === "agent" && !session.creator_agent_id) {
-    throw new Error(
-      `Authoring session ${session.id} is missing creator_agent_id for an agent-owned row.`,
-    );
+  if (publicState === "rejected") {
+    return authoringSessionValidationSchema.parse({
+      missing_fields: [],
+      invalid_fields: [],
+      dry_run_failure: null,
+      unsupported_reason: buildValidationIssue({
+        field: "task",
+        code: rejectionReason ?? compileErrorCode ?? "unsupported_task",
+        message:
+          session.failure_message ??
+          compileErrorMessage ??
+          "Agora could not prepare a publishable challenge from this session.",
+        nextAction:
+          "Create a new session with a supported deterministic table-scoring challenge.",
+      }),
+    });
   }
 
-  throw new Error(
-    `Authoring session ${session.id} is missing creator identity. Next step: backfill creator fields and retry.`,
-  );
+  if (compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")) {
+    return authoringSessionValidationSchema.parse({
+      missing_fields: [],
+      invalid_fields: [],
+      dry_run_failure: buildValidationIssue({
+        field: "execution_contract",
+        code: compileErrorCode,
+        message:
+          compileErrorMessage ??
+          "Agora could not validate the scoring contract during dry-run.",
+        nextAction: "Adjust the execution fields or artifacts and retry.",
+      }),
+      unsupported_reason: null,
+    });
+  }
+
+  if (missingFields.length > 0) {
+    return authoringSessionValidationSchema.parse({
+      missing_fields: missingFields.map((field) => {
+        const prompt = buildFieldPrompt(field);
+        return buildValidationIssue({
+          field,
+          code: compileErrorCode ?? "missing_field",
+          message: compileErrorMessage ?? prompt.message,
+          nextAction: prompt.nextAction,
+        });
+      }),
+      invalid_fields: [],
+      dry_run_failure: null,
+      unsupported_reason: null,
+    });
+  }
+
+  if (compileErrorCode) {
+    return authoringSessionValidationSchema.parse({
+      missing_fields: [],
+      invalid_fields: [
+        buildValidationIssue({
+          field: "execution_contract",
+          code: compileErrorCode,
+          message:
+            compileErrorMessage ??
+            "Agora could not validate the current execution contract.",
+          nextAction: "Fix the execution fields or artifacts and retry.",
+        }),
+      ],
+      dry_run_failure: null,
+      unsupported_reason: null,
+    });
+  }
+
+  return authoringSessionValidationSchema.parse({
+    missing_fields: [],
+    invalid_fields: [],
+    dry_run_failure: null,
+    unsupported_reason: null,
+  });
+}
+
+export function buildSessionIntentCandidate(session: AuthoringSessionRow) {
+  return {
+    ...(session.authoring_ir_json?.intent.current ?? {}),
+    ...(session.intent_json ?? {}),
+  } as Partial<ChallengeIntentOutput> & Record<string, unknown>;
+}
+
+function buildResolved(session: AuthoringSessionRow) {
+  const intent = buildSessionIntentCandidate(session);
+  const execution = {
+    ...(session.compilation_json?.template
+      ? { template: session.compilation_json.template }
+      : session.authoring_ir_json?.evaluation.template
+        ? { template: session.authoring_ir_json.evaluation.template }
+        : {}),
+    ...(session.compilation_json?.metric
+      ? { metric: session.compilation_json.metric }
+      : session.authoring_ir_json?.evaluation.metric
+        ? { metric: session.authoring_ir_json.evaluation.metric }
+        : {}),
+    ...(session.authoring_ir_json?.evaluation.evaluation_artifact_id
+      ? {
+          evaluation_artifact_id:
+            session.authoring_ir_json.evaluation.evaluation_artifact_id,
+        }
+      : {}),
+    ...(session.authoring_ir_json?.evaluation.evaluation_columns.id
+      ? {
+          evaluation_id_column:
+            session.authoring_ir_json.evaluation.evaluation_columns.id,
+        }
+      : {}),
+    ...(session.authoring_ir_json?.evaluation.evaluation_columns.value
+      ? {
+          evaluation_value_column:
+            session.authoring_ir_json.evaluation.evaluation_columns.value,
+        }
+      : {}),
+    ...(session.authoring_ir_json?.evaluation.submission_columns.id
+      ? {
+          submission_id_column:
+            session.authoring_ir_json.evaluation.submission_columns.id,
+        }
+      : {}),
+    ...(session.authoring_ir_json?.evaluation.submission_columns.value
+      ? {
+          submission_value_column:
+            session.authoring_ir_json.evaluation.submission_columns.value,
+        }
+      : {}),
+  };
+
+  return {
+    intent,
+    execution,
+  };
 }
 
 export function buildAuthoringSessionPayload(
@@ -332,7 +450,6 @@ export function buildAuthoringSessionPayload(
     expiresAt: session.expires_at,
     nowIso: options?.nowIso,
   });
-  const questions = buildSessionQuestionDescriptors(session.authoring_ir_json);
   const roleByUri = buildArtifactRoleMap(session);
   const uploadedArtifacts = (session.uploaded_artifacts_json ??
     []) as StoredAuthoringSessionArtifact[];
@@ -342,25 +459,8 @@ export function buildAuthoringSessionPayload(
     id: session.id,
     state: publicState,
     creator: resolveCreator(session),
-    summary: buildSummary(session),
-    questions: questions.map((question) => {
-      if (question.kind === "select") {
-        return {
-          id: question.id,
-          text: question.text,
-          reason: question.reason,
-          kind: "select" as const,
-          options: question.options ?? [],
-        };
-      }
-      return {
-        id: question.id,
-        text: question.text,
-        reason: question.reason,
-        kind: question.kind,
-      };
-    }),
-    blocked_by: buildBlockedBy(session, questions, options?.nowIso),
+    resolved: buildResolved(session),
+    validation: buildValidation(session, publicState),
     checklist: buildChecklist(session.compilation_json),
     compilation: buildCompilation(session.compilation_json),
     artifacts: uploadedArtifacts.map((artifact) =>
@@ -430,11 +530,4 @@ export function isAuthoringSessionExpired(
   }
 
   return expiresAtMs <= nowMs;
-}
-
-export function buildSessionIntentCandidate(session: AuthoringSessionRow) {
-  return {
-    ...(session.authoring_ir_json?.intent.current ?? {}),
-    ...(session.intent_json ?? {}),
-  } as Partial<ChallengeIntentOutput> & Record<string, unknown>;
 }

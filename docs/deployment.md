@@ -189,7 +189,7 @@ This section covers non-code work for deployment across hosted systems.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
 - If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API or worker environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
 - Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
-- Verify tags/digests referenced by runtime families are available.
+- Verify tags/digests referenced by official execution templates are available.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 

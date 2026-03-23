@@ -2,10 +2,9 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { ChatPostClient } from "./ChatPostClient";
+import { SessionPostClient } from "./SessionPostClient";
 import {
   ExpertModePanel,
-  PostNotice,
   PostingModeSection,
 } from "./PostSections";
 
@@ -17,13 +16,13 @@ export function PostClient() {
 
   const hostedSessionId = searchParams.get("session")?.trim() || null;
 
-  /* If a hosted session was passed in, always use managed/chat mode. */
+  /* If a hosted session was passed in, always use the standard session editor. */
   if (hostedSessionId && !expertMode) {
-    return <ChatPostClient />;
+    return <SessionPostClient hostedSessionId={hostedSessionId} />;
   }
 
   if (!expertMode) {
-    return <ChatPostClient />;
+    return <SessionPostClient />;
   }
 
   /* Expert mode: keep the existing YAML-based panel */
@@ -37,7 +36,8 @@ export function PostClient() {
           Create a science bounty
         </h1>
         <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-warm-500">
-          Expert Mode — post a fully formed challenge YAML via the CLI.
+          Expert Mode keeps the fully custom YAML and scorer path available from
+          the CLI.
         </p>
       </header>
 

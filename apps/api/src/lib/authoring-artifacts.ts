@@ -63,6 +63,75 @@ function normalizeMimeType(value: string | null | undefined) {
   return type?.trim() || null;
 }
 
+function isCsvLikeArtifact(input: {
+  fileName: string;
+  mimeType?: string | null;
+}) {
+  const normalizedMime = normalizeMimeType(input.mimeType);
+  return (
+    input.fileName.trim().toLowerCase().endsWith(".csv") ||
+    normalizedMime === "text/csv" ||
+    normalizedMime === "application/csv"
+  );
+}
+
+function splitCsvHeaderRow(line: string) {
+  const cells: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') {
+      const nextChar = line[index + 1];
+      if (quoted && nextChar === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+      quoted = !quoted;
+      continue;
+    }
+
+    if (char === "," && !quoted) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+export function detectAuthoringArtifactColumns(input: {
+  bytes: Uint8Array;
+  fileName: string;
+  mimeType?: string | null;
+}) {
+  if (!isCsvLikeArtifact(input)) {
+    return undefined;
+  }
+
+  const text = new TextDecoder("utf8", { fatal: false }).decode(input.bytes);
+  const firstLine = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstLine) {
+    return undefined;
+  }
+
+  const columns = splitCsvHeaderRow(firstLine).filter(
+    (column) => column.length > 0,
+  );
+  return columns.length > 0 ? columns : undefined;
+}
+
 function artifactFetchError(input: {
   code: string;
   message: string;
@@ -304,6 +373,11 @@ export async function normalizeExternalArtifactsForDraft(input: {
           file_name: fetched.fileName,
           mime_type: fetched.mimeType,
           size_bytes: fetched.bytes.byteLength,
+          detected_columns: detectAuthoringArtifactColumns({
+            bytes: fetched.bytes,
+            fileName: fetched.fileName,
+            mimeType: fetched.mimeType,
+          }),
         });
       } catch (error) {
         throw artifactFetchError({

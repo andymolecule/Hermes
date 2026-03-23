@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AuthoringArtifactOutput, ChallengeIntentOutput } from "@agora/common";
+import type {
+  AuthoringArtifactOutput,
+  ChallengeIntentOutput,
+  ExecutionTemplateIdOutput,
+} from "@agora/common";
 
 const BENCHMARK_ROOT = path.resolve(
   process.cwd(),
@@ -11,7 +15,7 @@ type BenchmarkCompileState = "ready" | "awaiting_input";
 
 type BenchmarkJson = {
   id: string;
-  managed_support: "supported" | "custom_workflow_required";
+  table_scorer_support: "supported" | "custom_workflow_required";
   intent_family: string;
   artifacts_root: string;
   prompt_variants_root: string;
@@ -56,6 +60,16 @@ export interface AuthoringBenchmarkCase {
   intent: ChallengeIntentOutput;
   uploadedArtifacts: AuthoringArtifactOutput[];
   artifactTextByUri: Map<string, string>;
+}
+
+export interface AuthoringBenchmarkExecutionOverrides {
+  templateOverride: ExecutionTemplateIdOutput;
+  metricOverride: string;
+  evaluationArtifactIdOverride: string;
+  evaluationIdColumnOverride: string;
+  evaluationValueColumnOverride: string;
+  submissionIdColumnOverride: string;
+  submissionValueColumnOverride: string;
 }
 
 function titleFromPrompt(promptText: string, benchmarkId: string) {
@@ -144,6 +158,41 @@ function inferTableColumns(input: {
     evaluationValueColumn,
     submissionIdColumn,
     submissionValueColumn,
+  };
+}
+
+export function buildAuthoringBenchmarkExecutionOverrides(
+  benchmarkCase: AuthoringBenchmarkCase,
+): AuthoringBenchmarkExecutionOverrides | null {
+  if (benchmarkCase.benchmark.table_scorer_support !== "supported") {
+    return null;
+  }
+
+  const hiddenArtifact = benchmarkCase.uploadedArtifacts.find(
+    (_artifact, index) =>
+      benchmarkCase.benchmark.compile_invariants.artifact_roles[index]
+        ?.visibility === "private",
+  );
+  if (!hiddenArtifact?.id) {
+    throw new Error(
+      `Supported benchmark ${benchmarkCase.benchmark.id}/${benchmarkCase.variantId} is missing a hidden evaluation artifact id.`,
+    );
+  }
+
+  const tableColumns = inferTableColumns({
+    hiddenArtifact,
+    submissionContract:
+      benchmarkCase.benchmark.compile_invariants.submission_contract,
+  });
+
+  return {
+    templateOverride: "official_table_metric_v1",
+    metricOverride: benchmarkCase.benchmark.compile_invariants.metric,
+    evaluationArtifactIdOverride: hiddenArtifact.id,
+    evaluationIdColumnOverride: tableColumns.evaluationIdColumn,
+    evaluationValueColumnOverride: tableColumns.evaluationValueColumn,
+    submissionIdColumnOverride: tableColumns.submissionIdColumn,
+    submissionValueColumnOverride: tableColumns.submissionValueColumn,
   };
 }
 
@@ -268,8 +317,8 @@ export function buildAuthoringBenchmarkDependencies(
     submissionContract:
       benchmarkCase.benchmark.compile_invariants.submission_contract,
   });
-  const compilerResponse =
-    benchmarkCase.benchmark.managed_support === "supported"
+  const assessorResponse =
+    benchmarkCase.benchmark.table_scorer_support === "supported"
       ? {
           outcome: "supported",
           metric,
@@ -322,7 +371,7 @@ export function buildAuthoringBenchmarkDependencies(
             content: [
               {
                 type: "tool_use",
-                input: compilerResponse,
+                input: assessorResponse,
               },
             ],
           }),
@@ -369,5 +418,7 @@ export function buildAuthoringBenchmarkDependencies(
       inputPaths: [],
       cleanup: async () => undefined,
     }),
+    resolvePinnedExecutionTemplateImageImpl: async () =>
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   };
 }

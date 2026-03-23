@@ -3,6 +3,11 @@
 Date: 2026-03-22
 Baseline spec: [authoring-session-api.md](/Users/changyuesin/Agora/docs/specs/authoring-session-api.md)
 
+> Historical note: this audit is a pre-cutover snapshot of the old draft- and
+> callback-era codebase. It is kept for context only. The active runtime has
+> since been rewritten around deterministic `POST /sessions` + `PATCH
+> /sessions/:id` authoring sessions.
+
 ## 1. Purpose
 
 This audit compares the current codebase against the locked authoring session spec and classifies each relevant surface as:
@@ -35,7 +40,7 @@ These public endpoints are required by the spec and currently do not exist:
 - `GET /api/authoring/sessions`
 - `POST /api/authoring/sessions`
 - `GET /api/authoring/sessions/:id`
-- `POST /api/authoring/sessions/:id/respond`
+- `PATCH /api/authoring/sessions/:id`
 - `POST /api/authoring/sessions/:id/publish`
 - `POST /api/authoring/uploads`
 
@@ -92,7 +97,7 @@ See [apps/api/src/routes/integrations-beach.ts:42](/Users/changyuesin/Agora/apps
 
 `challengeIntentSchema` still defaults `distribution`, `domain`, and `timezone`, and the file still defines the old draft-oriented workflow objects.  
 Those defaults and labels are inconsistent with the locked session contract.  
-See [packages/common/src/schemas/managed-authoring.ts:142](/Users/changyuesin/Agora/packages/common/src/schemas/managed-authoring.ts#L142), [packages/common/src/schemas/managed-authoring.ts:151](/Users/changyuesin/Agora/packages/common/src/schemas/managed-authoring.ts#L151), and [packages/common/src/schemas/managed-authoring.ts:169](/Users/changyuesin/Agora/packages/common/src/schemas/managed-authoring.ts#L169).
+See [packages/common/src/schemas/authoring-core.ts](/Users/changyuesin/Agora/packages/common/src/schemas/authoring-core.ts) and [packages/common/src/schemas/authoring-session-api.ts](/Users/changyuesin/Agora/packages/common/src/schemas/authoring-session-api.ts).
 
 ### 3.6 The web client is still coded against the old draft contract, and is already internally inconsistent
 
@@ -165,13 +170,13 @@ The earlier review did not fully account for:
 | `DELETE` | [apps/api/src/lib/authoring-drafts.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-drafts.ts) and [apps/api/tests/authoring-drafts.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-drafts.test.ts) | Built around callback delivery, return URLs, draft cards, lifecycle events, and partner callbacks | Delete and replace with a session-native payload/workflow module |
 | `DELETE` | [apps/api/src/lib/authoring-draft-payloads.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-draft-payloads.ts) | Emits legacy `draft`, `card`, `assessment`, and old-state payloads | Delete and replace with canonical session serializer |
 | `CHANGE` | [apps/api/src/lib/authoring-draft-transitions.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-draft-transitions.ts) | Transition logic survives conceptually, but state names, publish handling, and callback helpers are stale | Rewrite as session transitions and remove callback logic |
-| `CHANGE` | [apps/api/src/lib/authoring-intake-workflow.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-intake-workflow.ts) | Intake flow concept survives, but it still targets draft rows, old states, and old payload expectations | Rebuild around sessions, new TTLs, and new respond semantics |
-| `CHANGE` | [apps/api/src/lib/managed-authoring-ir.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-ir.ts) and [apps/api/tests/managed-authoring-ir.test.ts](/Users/changyuesin/Agora/apps/api/tests/managed-authoring-ir.test.ts) | IR still encodes `assessment`, old outcomes, and partner/provider assumptions | Keep the IR concept, but align it to the locked session contract and provenance model |
-| `CHANGE` | [apps/api/src/lib/managed-authoring.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring.ts), [apps/api/tests/managed-authoring.test.ts](/Users/changyuesin/Agora/apps/api/tests/managed-authoring.test.ts), [apps/api/tests/authoring-benchmarks.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-benchmarks.test.ts), and [apps/api/tests/authoring-benchmark-fixtures.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-benchmark-fixtures.ts) | Core compile engine is still useful, but it returns old state names and old public objects | Keep the deterministic engine, replace the public mapping and tests |
-| `CHANGE` | [apps/api/src/lib/managed-authoring-confirmation.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-confirmation.ts) | Confirmation summary concept survives, but it still builds the old confirmation-contract object rather than the locked checklist | Rewrite to emit `checklist` only |
-| `CHANGE` | [apps/api/src/lib/managed-authoring-compiler.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-compiler.ts) | Compiler concept survives, but outputs and reason mapping still target old IR/public shapes | Rewire to the locked question/checklist/session states |
-| `CHANGE` | [apps/api/src/lib/managed-authoring-artifacts.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-artifacts.ts) and [apps/api/src/lib/managed-authoring-dry-run.ts](/Users/changyuesin/Agora/apps/api/src/lib/managed-authoring-dry-run.ts) | These are reusable internals, but they still consume and emit old common schema shapes | Keep the core logic, update type/contracts around them |
-| `CHANGE` | [apps/api/src/lib/authoring-questions.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-questions.ts) | Current question construction does not match the locked `text / select / file` public type system | Rewrite against the new question schema |
+| `CHANGE` | [apps/api/src/lib/authoring-intake-workflow.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-intake-workflow.ts) | Intake flow concept survives, but it still targets draft rows, old states, and old payload expectations | Rebuild around sessions, new TTLs, and new patch semantics |
+| `CHANGE` | [apps/api/src/lib/authoring-ir.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-ir.ts) and [apps/api/tests/authoring-ir.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-ir.test.ts) | IR still encodes `assessment`, old outcomes, and partner/provider assumptions | Keep the IR concept, but align it to the locked session contract and provenance model |
+| `CHANGE` | [apps/api/src/lib/authoring-compiler.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-compiler.ts), [apps/api/tests/authoring-compiler.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-compiler.test.ts), [apps/api/tests/authoring-benchmarks.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-benchmarks.test.ts), and [apps/api/tests/authoring-benchmark-fixtures.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-benchmark-fixtures.ts) | Core compile engine is still useful, but it returns old state names and old public objects | Keep the deterministic engine, replace the public mapping and tests |
+| `CHANGE` | [apps/api/src/lib/authoring-checklist.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-checklist.ts) | Confirmation summary concept survives, but it still builds the old confirmation-contract object rather than the locked checklist | Rewrite to emit `checklist` only |
+| `CHANGE` | future assist path | Any future assist path must be separated from the default deterministic session contract | Keep only as an explicit assist surface, not as part of `/sessions` |
+| `CHANGE` | [apps/api/src/lib/authoring-artifact-resolution.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-artifact-resolution.ts) and [apps/api/src/lib/authoring-dry-run.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-dry-run.ts) | These are reusable internals, but they still consume and emit old common schema shapes | Keep the core logic, update type/contracts around them |
+| `CHANGE` | future assist question builder | Question construction is no longer part of the default machine-first session contract | Move to an explicit assist-only surface if retained |
 | `CHANGE` | [apps/api/src/lib/authoring-artifacts.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-artifacts.ts) and [apps/api/tests/authoring-artifacts.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-artifacts.test.ts) | Artifact ingestion survives, but current inputs/outputs still reflect external-source draft payloads and older artifact IDs | Keep the ingestion capability, retarget it to the upload/session artifact contract |
 | `CHANGE` | [apps/api/src/lib/authoring-source-attribution.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-source-attribution.ts) | Provenance survives, but source attribution is still modeled as external provider identity | Align it to the locked `provenance` metadata rules |
 | `CHANGE` | [apps/api/src/lib/authoring-sponsored-publish.ts](/Users/changyuesin/Agora/apps/api/src/lib/authoring-sponsored-publish.ts) and [apps/api/tests/authoring-sponsored-publish.test.ts](/Users/changyuesin/Agora/apps/api/tests/authoring-sponsored-publish.test.ts) | Sponsor-funded publish stays in scope, but current implementation is draft/provider oriented | Keep sponsor publish, rewrite it around agent/session funding rules |
@@ -180,11 +185,11 @@ The earlier review did not fully account for:
 
 | Status | Surface | Why | Required action |
 | --- | --- | --- | --- |
-| `CHANGE` | [packages/common/src/schemas/managed-authoring.ts](/Users/changyuesin/Agora/packages/common/src/schemas/managed-authoring.ts) | Still defines old draft states, old response envelopes, old confirmation contract, and defaulted intent fields | Replace with the locked session/request/response schemas |
+| `CHANGE` | [packages/common/src/schemas/authoring-core.ts](/Users/changyuesin/Agora/packages/common/src/schemas/authoring-core.ts) | Still defines old draft states, old response envelopes, old confirmation contract, and defaulted intent fields | Replace with the locked session/request/response schemas |
 | `CHANGE` | [packages/common/src/schemas/authoring-source.ts](/Users/changyuesin/Agora/packages/common/src/schemas/authoring-source.ts) and [packages/common/src/config/authoring.ts](/Users/changyuesin/Agora/packages/common/src/config/authoring.ts) | Still encode Beach partner providers, callback secrets, partner return origins, and provider-scoped sponsor budgets | Split out what still matters and remove partner/callback assumptions |
-| `CHANGE` | [packages/common/src/authoring/intake-questions.ts](/Users/changyuesin/Agora/packages/common/src/authoring/intake-questions.ts) | Public question schema is wrong for the locked contract | Replace with the minimal `text / select / file` system |
+| `CHANGE` | future assist question schema | Intake-question scaffolding is no longer part of the default machine-first authoring contract | Keep only for a future explicit assist path if needed |
 | `CHANGE` | [packages/common/src/schemas/submission-contract.ts](/Users/changyuesin/Agora/packages/common/src/schemas/submission-contract.ts) and [packages/common/src/tests/submission-contract.ts](/Users/changyuesin/Agora/packages/common/src/tests/submission-contract.ts) | Public submission-contract shape does not match the locked compilation contract | Rewrite the public schema and helper constructors |
-| `CHANGE` | [packages/common/src/tests/managed-authoring.ts](/Users/changyuesin/Agora/packages/common/src/tests/managed-authoring.ts) and [packages/common/src/tests/authoring-benchmarks.ts](/Users/changyuesin/Agora/packages/common/src/tests/authoring-benchmarks.ts) | Test fixtures still reinforce the old contract | Update to the new session schema and transition rules |
+| `CHANGE` | [packages/common/src/tests/authoring-core.ts](/Users/changyuesin/Agora/packages/common/src/tests/authoring-core.ts) and [packages/common/src/tests/authoring-benchmarks.ts](/Users/changyuesin/Agora/packages/common/src/tests/authoring-benchmarks.ts) | Test fixtures still reinforce the old contract | Update to the new session schema and transition rules |
 
 ### 5.5 Database Query Layer And Runtime Schema
 
@@ -204,7 +209,7 @@ The earlier review did not fully account for:
 | --- | --- | --- | --- |
 | `CHANGE` | [apps/web/src/app/post/post-authoring-api.ts](/Users/changyuesin/Agora/apps/web/src/app/post/post-authoring-api.ts) | Still targets `AuthoringDraftOutput`, `/drafts/*`, and `/api/pin-data` | Rebuild around agent/session/upload endpoints and the bare-object success envelope |
 | `CHANGE` | [apps/web/src/app/post/use-post-authoring.ts](/Users/changyuesin/Agora/apps/web/src/app/post/use-post-authoring.ts), [apps/web/src/app/post/guided-state.ts](/Users/changyuesin/Agora/apps/web/src/app/post/guided-state.ts), and the `apps/web/tests/post-guided-*` tests | Entire guided flow stores draft IDs, old states, and old question/compilation shapes | Rewire around sessions, creator ownership, new states, and new question kinds |
-| `CHANGE` | [apps/web/src/app/post/use-chat-stream.ts](/Users/changyuesin/Agora/apps/web/src/app/post/use-chat-stream.ts) and [apps/web/src/app/post/ChatPostClient.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/ChatPostClient.tsx) | Chat flow still assumes draft compile semantics, `needs_input`, `failed`, and a future draft SSE route | Rebuild around `respond`, `invalid_request`, and the locked no-SSE scope |
+| `CHANGE` | [apps/web/src/app/post/use-chat-stream.ts](/Users/changyuesin/Agora/apps/web/src/app/post/use-chat-stream.ts) and [apps/web/src/app/post/ChatPostClient.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/ChatPostClient.tsx) | Chat flow still assumes draft compile semantics, `needs_input`, `failed`, and a future draft SSE route | Rebuild around `PATCH /sessions/:id`, deterministic validation errors, and the locked no-SSE scope |
 | `CHANGE` | [apps/web/src/app/post/managed-post-flow.ts](/Users/changyuesin/Agora/apps/web/src/app/post/managed-post-flow.ts), [apps/web/src/lib/challenge-post.ts](/Users/changyuesin/Agora/apps/web/src/lib/challenge-post.ts), and [apps/web/tests/challenge-post.test.ts](/Users/changyuesin/Agora/apps/web/tests/challenge-post.test.ts) | Publish flow still calls `/api/authoring/drafts/:id/publish` and assumes old auth body shape | Rebuild around `POST /api/authoring/sessions/:id/publish` with explicit `funding` |
 | `CHANGE` | [apps/web/src/app/post/ReviewPanel.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/ReviewPanel.tsx) and [apps/web/src/app/post/PostSections.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/PostSections.tsx) | UI still renders old compilation and confirmation-contract fields | Update to render `checklist`, new `compilation`, and flat session fields |
 | `CHANGE` | [apps/web/src/app/post/PostClient.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/PostClient.tsx), [apps/web/src/app/post/GuidedComposer.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/GuidedComposer.tsx), [apps/web/src/app/post/AuthoringQuestionList.tsx](/Users/changyuesin/Agora/apps/web/src/app/post/AuthoringQuestionList.tsx), and related post UI files | These presentation components are fed by the old draft/question payloads | Update once the flow modules switch to the locked session contract |
@@ -259,7 +264,7 @@ These are the changes that unlock the rest of the cutover:
    - `GET /api/authoring/sessions`
    - `POST /api/authoring/sessions`
    - `GET /api/authoring/sessions/:id`
-   - `POST /api/authoring/sessions/:id/respond`
+   - `PATCH /api/authoring/sessions/:id`
    - `POST /api/authoring/sessions/:id/publish`
    - `POST /api/authoring/uploads`
 3. Replace the public state enum with:
@@ -289,7 +294,7 @@ These are the changes that unlock the rest of the cutover:
 4. Implement the new API surface:
    - agent registration
    - uploads
-   - sessions list/create/get/respond/publish
+   - sessions list/create/get/patch/publish
 5. Rewire sponsor-funded publish onto the session model.
 6. Cut the web flow over to the session API.
 7. Rewrite docs and tests last, but before the branch is considered complete.

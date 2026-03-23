@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import {
-  authoringQuestionFieldSchema,
-  authoringQuestionSchema,
-} from "../authoring/intake-questions.js";
-import {
   authoringSourceSessionFieldsSchema,
   authoringSourceRawContextSchema,
   externalSourceArtifactRefSchema,
@@ -44,10 +40,31 @@ const distributionSchema = z.enum(["winner_take_all", "top_3", "proportional"]);
 
 const authoringRoutingModeSchema = z.enum([
   "not_ready",
-  "managed_supported",
-  "semi_custom",
-  "expert_mode_required",
+  "table_supported",
+  "custom_evaluator_required",
 ]);
+
+const AUTHORING_VALIDATION_FIELDS = [
+  "title",
+  "description",
+  "payout_condition",
+  "reward_total",
+  "distribution",
+  "deadline",
+  "metric",
+  "evaluation_artifact",
+  "evaluation_id_column",
+  "evaluation_value_column",
+  "submission_id_column",
+  "submission_value_column",
+] as const;
+
+export const authoringValidationFieldSchema = z.enum(
+  AUTHORING_VALIDATION_FIELDS,
+);
+export type AuthoringValidationFieldOutput = z.output<
+  typeof authoringValidationFieldSchema
+>;
 
 const authoringScoreabilitySchema = z.enum([
   "deterministic",
@@ -281,14 +298,14 @@ export const challengeAuthoringIrSchema = z.object({
   }),
   intent: z.object({
     current: partialChallengeIntentSchema,
-    missing_fields: z.array(authoringQuestionFieldSchema),
+    missing_fields: z.array(authoringValidationFieldSchema),
   }),
   assessment: z.object({
     input_hash: z.string().trim().min(1).nullable(),
     outcome: z.enum(["ready", "awaiting_input", "rejected"]).nullable(),
     reason_codes: z.array(z.string().trim().min(1)).default([]),
     warnings: z.array(z.string().trim().min(1)).default([]),
-    missing_fields: z.array(authoringQuestionFieldSchema).default([]),
+    missing_fields: z.array(authoringValidationFieldSchema).default([]),
   }),
   evaluation: z.object({
     template: z.string().trim().min(1).nullable(),
@@ -314,9 +331,6 @@ export const challengeAuthoringIrSchema = z.object({
     rejection_reasons: z.array(z.string().trim().min(1)),
     compile_error_codes: z.array(z.string().trim().min(1)),
     compile_error_message: z.string().trim().min(1).nullable(),
-  }),
-  questions: z.object({
-    pending: z.array(authoringQuestionSchema),
   }),
 });
 
@@ -362,7 +376,7 @@ export const compilationResultSchema = z.object({
   challenge_spec: challengeSpecSchema,
 });
 
-export const submitManagedAuthoringSessionRequestSchema = z
+export const submitAuthoringSessionRequestSchema = z
   .object({
     session_id: z.string().uuid().optional(),
     poster_address: z
@@ -421,9 +435,9 @@ export type SubmitAuthoringSourceSessionRequestInput = z.input<
 export type SubmitAuthoringSourceSessionRequestOutput = z.output<
   typeof submitAuthoringSourceSessionRequestSchema
 >;
-export type SubmitManagedAuthoringSessionRequestInput = z.input<
-  typeof submitManagedAuthoringSessionRequestSchema
+export type SubmitAuthoringSessionRequestInput = z.input<
+  typeof submitAuthoringSessionRequestSchema
 >;
-export type SubmitManagedAuthoringSessionRequestOutput = z.output<
-  typeof submitManagedAuthoringSessionRequestSchema
+export type SubmitAuthoringSessionRequestOutput = z.output<
+  typeof submitAuthoringSessionRequestSchema
 >;

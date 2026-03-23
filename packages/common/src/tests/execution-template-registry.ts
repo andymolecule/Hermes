@@ -63,10 +63,17 @@ const ghcrFetch = async () => {
   });
 };
 
-await resolveOfficialImageToDigest(OFFICIAL_SCORER_IMAGES.table_metric, {
+const resolvedWithAuth = await resolveOfficialImageToDigest(
+  OFFICIAL_SCORER_IMAGES.table_metric,
+  {
   env: { AGORA_GHCR_TOKEN: "secret-token" },
   fetchImpl: ghcrFetch,
-});
+  },
+);
+assert.equal(
+  resolvedWithAuth,
+  `ghcr.io/andymolecule/gems-tabular-scorer@${ghcrDigest}`,
+);
 await resolveOfficialImageToDigest(OFFICIAL_SCORER_IMAGES.table_metric, {
   env: { AGORA_GHCR_TOKEN: "secret-token" },
   fetchImpl: ghcrFetch,

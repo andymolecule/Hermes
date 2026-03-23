@@ -64,7 +64,7 @@ Historical note: the agent-auth and creator persistence work is now folded into 
 - [x] Add `GET /api/authoring/sessions`
 - [x] Add `POST /api/authoring/sessions`
 - [x] Add `GET /api/authoring/sessions/:id`
-- [x] Add `POST /api/authoring/sessions/:id/respond`
+- [x] Add `PATCH /api/authoring/sessions/:id`
 - [x] Add `POST /api/authoring/sessions/:id/publish`
 - [x] Add `POST /api/authoring/sessions/:id/confirm-publish`
 - [x] Replace old draft serializers with the canonical flat session object
@@ -91,4 +91,4 @@ Validation completed with:
 - `pnpm turbo build`
 - `pnpm --filter @agora/common test`
 - `pnpm exec tsc -p apps/api/tsconfig.json --noEmit`
-- `node --import tsx --test apps/api/tests/openapi-route.test.ts apps/api/tests/authoring-sessions-route.test.ts apps/api/tests/managed-authoring.test.ts apps/api/tests/authoring-sponsored-publish.test.ts`
+- `node --import tsx --test apps/api/tests/openapi-route.test.ts apps/api/tests/authoring-sessions-route.test.ts apps/api/tests/authoring-compiler.test.ts apps/api/tests/authoring-sponsored-publish.test.ts`

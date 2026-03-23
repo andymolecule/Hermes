@@ -6,16 +6,16 @@ This benchmark checks that Agora cleanly rejects a deterministic opaque exact-ma
 
 ## What Should Happen
 
-- The draft should fail out of the managed Gems path.
+- The draft should fail out of the official table-scorer path.
 - Agora should keep the role vocabulary generic:
   - `source_packet.pdf` -> `public_inputs`
   - `reference_output.pdf` -> `hidden_reference`
 - The submission contract expectations should stay `opaque_file` with PDF metadata.
-- The final outcome should be a clean managed-runtime rejection with an explicit custom-scorer next step.
+- The final outcome should be a clean table-scorer rejection with an explicit custom-scorer next step.
 
 ## What Should Not Happen
 
-- It should not collapse into the managed `reproducibility` family.
+- It should not collapse into the legacy `reproducibility` family.
 - It should not relabel the source packet as hidden just because both files are
   PDFs.
 

@@ -91,7 +91,7 @@ flowchart TB
 **What the poster provides:**
 - Title and description of the problem
 - Public and private challenge artifacts (CSV, SDF, PDB files)
-- Either an official managed runtime (`reproducibility`, `tabular_regression`, `tabular_classification`, `docking`, `ranking`) or a custom scoring container (Docker image)
+- Either the official table scorer template with an explicit execution contract, or a custom scoring container (Docker image) through Expert Mode
 - Reward amount (USDC)
 - Deadline
 - Distribution type (winner-take-all, top 3, or proportional)

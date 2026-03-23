@@ -3,9 +3,8 @@
 import type {
   AuthoringSessionArtifactOutput,
   AuthoringSessionOutput,
-  ConversationalAuthoringSessionResponseOutput,
   CreateAuthoringSessionRequestInput,
-  RespondAuthoringSessionRequestInput,
+  PatchAuthoringSessionRequestInput,
 } from "@agora/common";
 export type AuthoringSessionRequestError = Error & { status?: number };
 
@@ -87,7 +86,7 @@ export async function createAuthoringSession(
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as ConversationalAuthoringSessionResponseOutput;
+  return (await response.json()) as AuthoringSessionOutput;
 }
 
 export async function getAuthoringSession(sessionId: string) {
@@ -101,20 +100,17 @@ export async function getAuthoringSession(sessionId: string) {
   return (await response.json()) as AuthoringSessionOutput;
 }
 
-export async function respondToAuthoringSession(input: {
+export async function patchAuthoringSession(input: {
   sessionId: string;
-  body: RespondAuthoringSessionRequestInput;
+  body: PatchAuthoringSessionRequestInput;
 }) {
-  const response = await fetch(
-    `/api/authoring/sessions/${input.sessionId}/respond`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input.body),
-    },
-  );
+  const response = await fetch(`/api/authoring/sessions/${input.sessionId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input.body),
+  });
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as ConversationalAuthoringSessionResponseOutput;
+  return (await response.json()) as AuthoringSessionOutput;
 }

@@ -14,13 +14,13 @@ import {
   loadIpfsConfig,
   readApiClientRuntimeConfig,
   readApiServerRuntimeConfig,
+  readAuthoringCompilerRuntimeConfig,
   readAuthoringOperatorRuntimeConfig,
   readAuthoringSponsorRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
-  readManagedAuthoringRuntimeConfig,
   readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readWorkerTimingConfig,
@@ -228,37 +228,15 @@ try {
     "blank API client URLs should be treated as unset so CLI preflight can report a missing config error",
   );
 
-  const defaultManagedAuthoringRuntime = readManagedAuthoringRuntimeConfig({
-    AGORA_MANAGED_AUTHORING_MODEL: "",
-    AGORA_MANAGED_AUTHORING_BASE_URL: "",
-    AGORA_MANAGED_AUTHORING_API_KEY: "",
-    AGORA_MANAGED_AUTHORING_TIMEOUT_MS: undefined,
-    AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: undefined,
+  const defaultAuthoringCompilerRuntime = readAuthoringCompilerRuntimeConfig({
+    AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: undefined,
   });
-  assert.equal(defaultManagedAuthoringRuntime.model, "claude-sonnet-4-5");
-  assert.equal(
-    defaultManagedAuthoringRuntime.baseUrl,
-    "https://api.anthropic.com/v1",
-  );
-  assert.equal(defaultManagedAuthoringRuntime.apiKey, undefined);
-  assert.equal(defaultManagedAuthoringRuntime.timeoutMs, 30_000);
-  assert.equal(defaultManagedAuthoringRuntime.dryRunTimeoutMs, 180_000);
+  assert.equal(defaultAuthoringCompilerRuntime.dryRunTimeoutMs, 180_000);
 
-  const anthropicManagedAuthoringRuntime = readManagedAuthoringRuntimeConfig({
-    AGORA_MANAGED_AUTHORING_MODEL: "claude-haiku-4-5",
-    AGORA_MANAGED_AUTHORING_BASE_URL: "https://api.anthropic.com/v1",
-    AGORA_MANAGED_AUTHORING_API_KEY: "sk-test",
-    AGORA_MANAGED_AUTHORING_TIMEOUT_MS: "45000",
-    AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: "90000",
+  const authoringCompilerRuntime = readAuthoringCompilerRuntimeConfig({
+    AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: "90000",
   });
-  assert.equal(anthropicManagedAuthoringRuntime.model, "claude-haiku-4-5");
-  assert.equal(
-    anthropicManagedAuthoringRuntime.baseUrl,
-    "https://api.anthropic.com/v1",
-  );
-  assert.equal(anthropicManagedAuthoringRuntime.apiKey, "sk-test");
-  assert.equal(anthropicManagedAuthoringRuntime.timeoutMs, 45_000);
-  assert.equal(anthropicManagedAuthoringRuntime.dryRunTimeoutMs, 90_000);
+  assert.equal(authoringCompilerRuntime.dryRunTimeoutMs, 90_000);
 
   const authoringOperatorRuntime = readAuthoringOperatorRuntimeConfig({
     AGORA_API_URL: "https://api.agora.example",

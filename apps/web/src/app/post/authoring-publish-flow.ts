@@ -27,7 +27,7 @@ type WriteContractAsync = ReturnType<
   typeof useWriteContract
 >["writeContractAsync"];
 
-export interface PreparedManagedChallenge {
+export interface PreparedAuthoringChallenge {
   sessionId: string;
   specCid: string;
   factoryAddress: `0x${string}`;
@@ -54,9 +54,9 @@ export async function assertFactoryIsSupported(input: {
   });
 }
 
-export async function publishManagedAuthoringSession(input: {
+export async function prepareAuthoringPublish(input: {
   sessionId: string;
-}): Promise<PreparedManagedChallenge> {
+}): Promise<PreparedAuthoringChallenge> {
   const publishResponse = await fetch(
     `/api/authoring/sessions/${input.sessionId}/publish`,
     {
@@ -151,7 +151,7 @@ export async function createChallengeWithApproval(input: {
   publicClient: WalletPublicClient;
   writeContractAsync: WriteContractAsync;
   address: `0x${string}`;
-  prepared: PreparedManagedChallenge;
+  prepared: PreparedAuthoringChallenge;
 }) {
   return simulateAndWriteContract({
     publicClient: input.publicClient,
@@ -178,7 +178,7 @@ export async function createChallengeWithPermit(input: {
   publicClient: WalletPublicClient;
   writeContractAsync: WriteContractAsync;
   address: `0x${string}`;
-  prepared: PreparedManagedChallenge;
+  prepared: PreparedAuthoringChallenge;
   permit: Awaited<ReturnType<typeof signRewardPermit>>;
 }) {
   return simulateAndWriteContract({
@@ -225,7 +225,7 @@ export async function approveUsdc(input: {
   });
 }
 
-export async function finalizeManagedChallengePost(input: {
+export async function finalizeAuthoringPublish(input: {
   sessionId: string;
   createTx: `0x${string}`;
   publicClient: WalletPublicClient;

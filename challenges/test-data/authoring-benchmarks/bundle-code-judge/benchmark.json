@@ -1,6 +1,6 @@
 {
   "id": "bundle-code-judge",
-  "managed_support": "custom_workflow_required",
+  "table_scorer_support": "custom_workflow_required",
   "intent_family": "bundle_or_code_judge",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
@@ -26,7 +26,7 @@
       "mime": "application/zip"
     }
   },
-  "acceptable_compile_states": ["rejected"],
+  "acceptable_compile_states": ["awaiting_input"],
   "disallowed_outcomes": {
     "disallowed_templates": [
       "official_table_metric_v1"
@@ -37,7 +37,7 @@
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "judge rubric",
         "required bundle contents",
@@ -48,7 +48,7 @@
     {
       "id": "ops-thread-brief",
       "file": "prompt-variants/ops-thread-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "how the bundle is judged",
         "what stays hidden",
@@ -58,7 +58,7 @@
     {
       "id": "minimal-brief",
       "file": "prompt-variants/minimal-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "zip submission format",
         "deterministic judging rule",

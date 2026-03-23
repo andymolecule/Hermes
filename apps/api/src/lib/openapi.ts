@@ -837,7 +837,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         },
         post: {
           operationId: "createAuthoringSession",
-          summary: "Create a new authoring session from rough context",
+          summary: "Create a new deterministic authoring validation session",
           requestBody: {
             required: true,
             content: {
@@ -850,12 +850,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           responses: {
             "200": {
-              description: "Conversational authoring session response.",
+              description: "Canonical authoring session state.",
               content: {
                 "application/json": {
-                  schema: {
-                    $ref: "#/components/schemas/AuthoringSessionConversationalResponse",
-                  },
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
                 },
               },
             },
@@ -886,12 +884,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           ],
           responses: {
             "200": {
-              description: "Conversational authoring session response.",
+              description: "Canonical authoring session state.",
               content: {
                 "application/json": {
-                  schema: {
-                    $ref: "#/components/schemas/AuthoringSessionConversationalResponse",
-                  },
+                  schema: { $ref: "#/components/schemas/AuthoringSession" },
                 },
               },
             },
@@ -907,11 +903,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             },
           },
         },
-      },
-      "/api/authoring/sessions/{id}/respond": {
-        post: {
-          operationId: "respondToAuthoringSession",
-          summary: "Answer questions and continue an authoring session",
+        patch: {
+          operationId: "patchAuthoringSession",
+          summary: "Patch a private authoring session with structured fields",
           parameters: [
             {
               in: "path",
@@ -925,7 +919,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             content: {
               "application/json": {
                 schema: {
-                  $ref: "#/components/schemas/AuthoringSessionRespondRequest",
+                  $ref: "#/components/schemas/AuthoringSessionPatchRequest",
                 },
               },
             },
@@ -1116,41 +1110,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             },
           ],
         },
-        AuthoringSessionQuestion: {
-          oneOf: [
-            {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                text: { type: "string" },
-                reason: { type: "string" },
-                kind: { type: "string", enum: ["text"] },
-              },
-              required: ["id", "text", "reason", "kind"],
-            },
-            {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                text: { type: "string" },
-                reason: { type: "string" },
-                kind: { type: "string", enum: ["select"] },
-                options: { type: "array", items: { type: "string" } },
-              },
-              required: ["id", "text", "reason", "kind", "options"],
-            },
-            {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                text: { type: "string" },
-                reason: { type: "string" },
-                kind: { type: "string", enum: ["file"] },
-              },
-              required: ["id", "text", "reason", "kind"],
-            },
-          ],
-        },
         AuthoringArtifact: {
           type: "object",
           properties: {
@@ -1162,6 +1121,79 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["artifact_id", "uri", "file_name", "role", "source_url"],
         },
+        AuthoringSessionExecution: {
+          type: "object",
+          properties: {
+            template: { type: "string", enum: ["official_table_metric_v1"] },
+            metric: { type: "string" },
+            evaluation_artifact_id: { type: "string" },
+            evaluation_id_column: { type: "string" },
+            evaluation_value_column: { type: "string" },
+            submission_id_column: { type: "string" },
+            submission_value_column: { type: "string" },
+          },
+        },
+        AuthoringSessionResolved: {
+          type: "object",
+          properties: {
+            intent: {
+              $ref: "#/components/schemas/ChallengeIntentPatch",
+            },
+            execution: {
+              $ref: "#/components/schemas/AuthoringSessionExecution",
+            },
+          },
+          required: ["intent", "execution"],
+        },
+        AuthoringSessionValidationIssue: {
+          type: "object",
+          properties: {
+            field: { type: "string" },
+            code: { type: "string" },
+            message: { type: "string" },
+            next_action: { type: "string" },
+          },
+          required: ["field", "code", "message", "next_action"],
+        },
+        AuthoringSessionValidation: {
+          type: "object",
+          properties: {
+            missing_fields: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/AuthoringSessionValidationIssue",
+              },
+            },
+            invalid_fields: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/AuthoringSessionValidationIssue",
+              },
+            },
+            dry_run_failure: {
+              allOf: [
+                {
+                  $ref: "#/components/schemas/AuthoringSessionValidationIssue",
+                },
+              ],
+              nullable: true,
+            },
+            unsupported_reason: {
+              allOf: [
+                {
+                  $ref: "#/components/schemas/AuthoringSessionValidationIssue",
+                },
+              ],
+              nullable: true,
+            },
+          },
+          required: [
+            "missing_fields",
+            "invalid_fields",
+            "dry_run_failure",
+            "unsupported_reason",
+          ],
+        },
         AuthoringSessionProvenance: {
           type: "object",
           properties: {
@@ -1170,15 +1202,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             source_url: { type: "string", format: "uri", nullable: true },
           },
           required: ["source", "external_id", "source_url"],
-        },
-        AuthoringSessionBlockedBy: {
-          type: "object",
-          properties: {
-            layer: { type: "integer", enum: [2, 3] },
-            code: { type: "string" },
-            message: { type: "string" },
-          },
-          required: ["layer", "code", "message"],
         },
         AuthoringSessionChecklist: {
           type: "object",
@@ -1283,16 +1306,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             creator: {
               $ref: "#/components/schemas/AuthoringSessionCreator",
             },
-            summary: { type: "string", nullable: true },
-            questions: {
-              type: "array",
-              items: { $ref: "#/components/schemas/AuthoringSessionQuestion" },
+            resolved: {
+              $ref: "#/components/schemas/AuthoringSessionResolved",
             },
-            blocked_by: {
-              allOf: [
-                { $ref: "#/components/schemas/AuthoringSessionBlockedBy" },
-              ],
-              nullable: true,
+            validation: {
+              $ref: "#/components/schemas/AuthoringSessionValidation",
             },
             checklist: {
               allOf: [
@@ -1328,9 +1346,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "id",
             "state",
             "creator",
-            "summary",
-            "questions",
-            "blocked_by",
+            "resolved",
+            "validation",
             "checklist",
             "compilation",
             "artifacts",
@@ -1356,30 +1373,33 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["sessions"],
         },
-        AuthoringSessionConversationalResponse: {
+        ChallengeIntentPatch: {
           type: "object",
           properties: {
-            session: {
-              $ref: "#/components/schemas/AuthoringSession",
+            title: { type: "string" },
+            description: { type: "string" },
+            payout_condition: { type: "string" },
+            reward_total: { type: "string" },
+            distribution: {
+              type: "string",
+              enum: ["winner_take_all", "top_3", "proportional"],
             },
-            assistant_message: { type: "string" },
+            deadline: isoDateTimeSchema(),
+            dispute_window_hours: { type: "integer", minimum: 0 },
+            domain: { type: "string" },
+            tags: { type: "array", items: { type: "string" } },
+            solver_instructions: { type: "string" },
+            timezone: { type: "string" },
           },
-          required: ["session", "assistant_message"],
         },
         AuthoringSessionCreateRequest: {
           type: "object",
           properties: {
-            message: { type: "string" },
-            summary: { type: "string" },
-            messages: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  text: { type: "string" },
-                },
-                required: ["text"],
-              },
+            intent: {
+              $ref: "#/components/schemas/ChallengeIntentPatch",
+            },
+            execution: {
+              $ref: "#/components/schemas/AuthoringSessionExecution",
             },
             files: {
               type: "array",
@@ -1390,26 +1410,15 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             },
           },
         },
-        AuthoringSessionRespondRequest: {
+        AuthoringSessionPatchRequest: {
           type: "object",
           properties: {
-            answers: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  question_id: { type: "string" },
-                  value: {
-                    oneOf: [
-                      { type: "string" },
-                      { $ref: "#/components/schemas/AuthoringFileInput" },
-                    ],
-                  },
-                },
-                required: ["question_id", "value"],
-              },
+            intent: {
+              $ref: "#/components/schemas/ChallengeIntentPatch",
             },
-            message: { type: "string" },
+            execution: {
+              $ref: "#/components/schemas/AuthoringSessionExecution",
+            },
             files: {
               type: "array",
               items: { $ref: "#/components/schemas/AuthoringFileInput" },

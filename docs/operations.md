@@ -140,7 +140,7 @@ Architecture boundary:
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
-- Official managed-runtime challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
+- Official scorer-template challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
 ### Worker / Executor Flow
@@ -200,7 +200,7 @@ Expected results:
 - `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
-- Managed authoring has no dedicated health endpoint. Validate it with a create/respond/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
+- Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
 Existing testnet DBs:
@@ -332,7 +332,7 @@ Check every 15-30 minutes during first launch window:
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
-6. Authoring canary: create/respond/publish flows succeed for the intended caller type. There is no separate `/api/authoring/health` endpoint.
+6. Authoring canary: create/patch/publish flows succeed for the intended caller type. There is no separate `/api/authoring/health` endpoint.
 7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 

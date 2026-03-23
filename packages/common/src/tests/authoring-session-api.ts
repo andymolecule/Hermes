@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import {
   authoringSessionErrorEnvelopeSchema,
   authoringSessionSchema,
-  conversationalAuthoringSessionResponseSchema,
   createAuthoringSessionRequestSchema,
+  patchAuthoringSessionRequestSchema,
   registerAgentRequestSchema,
   registerAgentResponseSchema,
-  respondAuthoringSessionRequestSchema,
 } from "../index.js";
 
 const registerRequest = registerAgentRequestSchema.parse({
@@ -24,48 +23,54 @@ const registerResponse = registerAgentResponseSchema.parse({
 assert.equal(registerResponse.status, "created");
 
 const createRequest = createAuthoringSessionRequestSchema.parse({
-  message: "Create a KRAS docking challenge.",
-  messages: [{ text: "Need a KRAS docking challenge" }],
+  intent: {
+    title: "KRAS docking challenge",
+  },
+  execution: {
+    metric: "spearman",
+  },
   provenance: {
     source: "beach",
     external_id: "thread-abc",
   },
 });
-assert.equal(createRequest.messages?.length, 1);
+assert.equal(createRequest.execution?.metric, "spearman");
 
-const respondRequest = respondAuthoringSessionRequestSchema.parse({
-  message: "Use Spearman and the uploaded artifact.",
-  answers: [
-    { question_id: "q1", value: "spearman" },
-    {
-      question_id: "q2",
-      value: { type: "artifact", artifact_id: "art-123" },
-    },
-  ],
+const patchRequest = patchAuthoringSessionRequestSchema.parse({
+  execution: {
+    metric: "spearman",
+    evaluation_artifact_id: "art-123",
+  },
 });
-assert.equal(respondRequest.answers?.length, 2);
+assert.equal(patchRequest.execution?.evaluation_artifact_id, "art-123");
 
 const session = authoringSessionSchema.parse({
   id: "session-123",
   state: "awaiting_input",
   creator: {
-    type: "agent",
-    agent_id: "agent-abc",
+      type: "agent",
+      agent_id: "agent-abc",
   },
-  summary: "Docking challenge against KRAS",
-  questions: [
-    {
-      id: "q1",
-      text: "What metric should solvers optimize?",
-      reason: "Needed to select the right scoring runtime",
-      kind: "select",
-      options: ["r2", "rmse", "spearman"],
+  resolved: {
+    intent: {
+      title: "Docking challenge against KRAS",
     },
-  ],
-  blocked_by: {
-    layer: 2,
-    code: "missing_metric",
-    message: "Agora needs the evaluation metric.",
+    execution: {
+      evaluation_artifact_id: "art-123",
+    },
+  },
+  validation: {
+    missing_fields: [
+      {
+        field: "metric",
+        code: "AUTHORING_INPUT_REQUIRED",
+        message: "Agora still needs the scoring metric.",
+        next_action: "Provide the metric and retry.",
+      },
+    ],
+    invalid_fields: [],
+    dry_run_failure: null,
+    unsupported_reason: null,
   },
   checklist: null,
   compilation: null,
@@ -92,16 +97,10 @@ const session = authoringSessionSchema.parse({
 });
 assert.equal(session.creator.type, "agent");
 
-const conversationalResponse = conversationalAuthoringSessionResponseSchema.parse({
-  session,
-  assistant_message: "I still need the scoring metric before I can continue.",
-});
-assert.equal(conversationalResponse.session.id, "session-123");
-
 const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   error: {
     code: "invalid_request",
-    message: "Provide at least one of message, summary, messages, or files.",
+    message: "Provide at least one of intent, execution, or files.",
     next_action: "Fix the request body and retry.",
   },
 });

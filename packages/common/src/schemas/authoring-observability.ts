@@ -1,12 +1,13 @@
 import { z } from "zod";
 import {
-  authoringSessionAnswerInputSchema,
   authoringSessionArtifactSchema,
-  authoringSessionBlockedBySchema,
   authoringSessionFileInputSchema,
   authoringSessionPublicStateSchema,
-  authoringSessionQuestionSchema,
+  authoringSessionResolvedSchema,
+  authoringSessionValidationSchema,
+  authoringSessionExecutionInputSchema,
 } from "./authoring-session-api.js";
+import { partialChallengeIntentSchema } from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -57,12 +58,11 @@ export const authoringConversationLogEntrySchema = z
     summary: z.string().trim().min(1),
     state_before: z.string().trim().min(1).nullable(),
     state_after: z.string().trim().min(1).nullable(),
-    caller_message: z.string().trim().min(1).nullable().optional(),
-    answers: z.array(authoringSessionAnswerInputSchema).optional(),
+    intent: partialChallengeIntentSchema.optional(),
+    execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).optional(),
-    assistant_message: z.string().trim().min(1).nullable().optional(),
-    questions: z.array(authoringSessionQuestionSchema).optional(),
-    blocked_by: authoringSessionBlockedBySchema.nullable().optional(),
+    resolved: authoringSessionResolvedSchema.optional(),
+    validation: authoringSessionValidationSchema.optional(),
     artifacts: z.array(authoringSessionArtifactSchema).optional(),
     publish: authoringConversationLogPublishSchema.optional(),
     error: authoringConversationLogErrorSchema.optional(),

@@ -4,11 +4,11 @@ import {
   type CompilationResultOutput,
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
+  type ExecutionTemplateIdOutput,
   PROTOCOL_FEE_PERCENT,
   getExecutionTemplateMetric,
   lookupExecutionTemplate,
 } from "@agora/common";
-import type { SupportedExecutionTemplate } from "./managed-authoring-compiler.js";
 
 export interface ParsedThreshold {
   operator: "gte" | "lte";
@@ -101,8 +101,8 @@ export function parsePayoutThreshold(
   };
 }
 
-export function buildConfirmationContract(input: {
-  template: SupportedExecutionTemplate;
+export function buildAuthoringChecklist(input: {
+  template: ExecutionTemplateIdOutput;
   metric: string;
   comparator: "maximize" | "minimize";
   challengeSpec: ChallengeSpecOutput;

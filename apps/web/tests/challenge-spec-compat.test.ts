@@ -42,8 +42,8 @@ test("hydrateChallengeSpec accepts current specs", () => {
         uri: "ipfs://train",
       },
       {
-        role: "reference_output",
-        visibility: "public",
+        role: "hidden_evaluation",
+        visibility: "private",
         uri: "ipfs://test",
       },
     ],
@@ -57,6 +57,8 @@ test("hydrateChallengeSpec accepts current specs", () => {
       },
       columns: {
         required: ["sample_id", "normalized_signal", "condition"],
+        id: "sample_id",
+        value: "normalized_signal",
         allow_extra: true,
       },
     },

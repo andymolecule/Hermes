@@ -78,7 +78,7 @@ async function buildSubmissionSource(input: {
     throw new AgoraError(
       "This challenge needs a hidden evaluation table before dry-run execution. Next step: attach the missing evaluation artifact and retry.",
       {
-        code: "MANAGED_DRY_RUN_MISSING_EVALUATION_BUNDLE",
+        code: "AUTHORING_DRY_RUN_MISSING_EVALUATION_BUNDLE",
         status: 422,
       },
     );
@@ -88,7 +88,7 @@ async function buildSubmissionSource(input: {
     throw new AgoraError(
       "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
       {
-        code: "MANAGED_DRY_RUN_UNSUPPORTED_CONTRACT",
+        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
         status: 500,
       },
     );
@@ -100,7 +100,7 @@ async function buildSubmissionSource(input: {
     throw new AgoraError(
       "Agora could not build a dry-run submission because the evaluation bundle is empty. Next step: upload a non-empty evaluation file and retry.",
       {
-        code: "MANAGED_DRY_RUN_EMPTY_EVALUATION_BUNDLE",
+        code: "AUTHORING_DRY_RUN_EMPTY_EVALUATION_BUNDLE",
         status: 422,
       },
     );
@@ -120,7 +120,7 @@ async function buildSubmissionSource(input: {
       throw new AgoraError(
         `Agora could not derive dry-run predictions from the evaluation table. Next step: upload an evaluation file with ${evaluationColumns.id} and ${evaluationColumns.value} columns and retry.`,
         {
-          code: "MANAGED_DRY_RUN_EVALUATION_FORMAT_UNSUPPORTED",
+          code: "AUTHORING_DRY_RUN_EVALUATION_FORMAT_UNSUPPORTED",
           status: 422,
         },
       );
@@ -134,19 +134,6 @@ async function buildSubmissionSource(input: {
   return {
     content: serializeCsv(submissionColumns.required, submissionRows),
   };
-}
-
-export async function executeManagedAuthoringDryRun(
-  input: {
-    challengeSpec: ChallengeSpecOutput;
-    timeoutMs: number;
-  },
-  dependencies: {
-    executeScoringPipelineImpl?: ExecuteScoringPipelineFn;
-    getTextImpl?: GetTextFn;
-  } = {},
-): Promise<DryRunPreviewOutput> {
-  return executeAuthoringDryRun(input, dependencies);
 }
 
 export async function executeAuthoringDryRun(
@@ -202,9 +189,9 @@ export async function executeAuthoringDryRun(
   try {
     if (!run.result.ok) {
       throw new AgoraError(
-        `Managed dry-run failed: ${run.result.error ?? "the scorer rejected the sample submission"}. Next step: fix the uploaded files and retry.`,
+        `Authoring dry-run failed: ${run.result.error ?? "the scorer rejected the sample submission"}. Next step: fix the uploaded files and retry.`,
         {
-          code: "MANAGED_DRY_RUN_REJECTED",
+          code: "AUTHORING_DRY_RUN_REJECTED",
           status: 422,
           details: run.result.details,
         },

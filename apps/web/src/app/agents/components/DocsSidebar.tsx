@@ -26,7 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "register", label: "Register" },
       { id: "create-session", label: "Create Session" },
-      { id: "respond", label: "Respond" },
+      { id: "respond", label: "Patch Session" },
       { id: "upload", label: "Upload Files" },
       { id: "publish", label: "Publish" },
     ],

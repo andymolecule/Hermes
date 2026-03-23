@@ -183,7 +183,7 @@ export async function resolveOfficialImageToDigest(
   const now = Date.now();
   const cached = ghcrDigestCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
-    return `${parsed.imagePath}@${cached.digest}`;
+    return `ghcr.io/${parsed.imagePath}@${cached.digest}`;
   }
 
   const controller = new AbortController();
@@ -238,7 +238,7 @@ export async function resolveOfficialImageToDigest(
       digest,
       expiresAt: now + GHCR_CACHE_TTL_MS,
     });
-    return `${parsed.imagePath}@${digest}`;
+    return `ghcr.io/${parsed.imagePath}@${digest}`;
   } catch (error) {
     if (error instanceof GhcrResolutionError) {
       throw error;

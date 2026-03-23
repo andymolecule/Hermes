@@ -63,18 +63,6 @@ export const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
-  AGORA_MANAGED_AUTHORING_MODEL: z.string().min(1).default("claude-sonnet-4-5"),
-  AGORA_MANAGED_AUTHORING_BASE_URL: z
-    .string()
-    .url()
-    .default("https://api.anthropic.com/v1"),
-  AGORA_MANAGED_AUTHORING_API_KEY: z.string().min(1).optional(),
-  AGORA_MANAGED_AUTHORING_TIMEOUT_MS: z
-    .preprocess(
-      (value) => (typeof value === "string" ? Number(value) : value),
-      z.number().int().positive(),
-    )
-    .default(30_000),
   AGORA_AUTHORING_OPERATOR_TOKEN: z.string().min(1).optional(),
   AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: z
     .string()
@@ -82,7 +70,7 @@ export const configSchema = z.object({
     .transform((value) => value as `0x${string}`)
     .optional(),
   AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: z.string().optional(),
-  AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: z
+  AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
       z.number().int().positive(),

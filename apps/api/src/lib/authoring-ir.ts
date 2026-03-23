@@ -1,7 +1,6 @@
 import {
   type AuthoringArtifactOutput,
-  type AuthoringQuestionFieldOutput,
-  type AuthoringQuestionOutput,
+  type AuthoringValidationFieldOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentInput,
   challengeAuthoringIrSchema,
@@ -10,13 +9,13 @@ import type { ExternalSourceMessageOutput } from "@agora/common";
 
 type PartialIntent = Partial<ChallengeIntentInput> | null | undefined;
 
-export const REQUIRED_MANAGED_INTENT_FIELDS = [
+export const REQUIRED_AUTHORING_INTENT_FIELDS = [
   "title",
   "description",
   "payout_condition",
   "reward_total",
   "deadline",
-] as const satisfies readonly AuthoringQuestionFieldOutput[];
+] as const satisfies readonly AuthoringValidationFieldOutput[];
 
 function trimmed(value?: string | null) {
   if (typeof value !== "string") {
@@ -36,7 +35,7 @@ function summarizeTitle(description?: string | null) {
   return cleaned.slice(0, 160) || null;
 }
 
-export function deriveManagedIntentCandidate(input: {
+export function deriveAuthoringIntentCandidate(input: {
   intent?: PartialIntent;
   sourceTitle?: string | null;
 }) {
@@ -52,7 +51,7 @@ export function deriveManagedIntentCandidate(input: {
 }
 
 export function extractMissingIntentFields(intent: PartialIntent) {
-  return REQUIRED_MANAGED_INTENT_FIELDS.filter((field) => {
+  return REQUIRED_AUTHORING_INTENT_FIELDS.filter((field) => {
     const value = intent?.[field];
     return typeof value !== "string" || value.trim().length === 0;
   });
@@ -62,7 +61,7 @@ function artifactId(artifact: AuthoringArtifactOutput, index: number) {
   return artifact.id?.trim() || `artifact-${index + 1}`;
 }
 
-export function buildManagedAuthoringIr(input: {
+export function buildAuthoringIr(input: {
   intent?: PartialIntent;
   uploadedArtifacts: AuthoringArtifactOutput[];
   sourceTitle?: string | null;
@@ -83,7 +82,6 @@ export function buildManagedAuthoringIr(input: {
   evaluationValueColumn?: string | null;
   submissionIdColumn?: string | null;
   submissionValueColumn?: string | null;
-  questions?: AuthoringQuestionOutput[];
   compileError?: {
     code?: string | null;
     message?: string | null;
@@ -93,9 +91,9 @@ export function buildManagedAuthoringIr(input: {
   assessmentOutcome?: "ready" | "awaiting_input" | "rejected" | null;
   assessmentReasonCodes?: string[];
   assessmentWarnings?: string[];
-  missingFields?: AuthoringQuestionFieldOutput[];
+  missingFields?: AuthoringValidationFieldOutput[];
 }) {
-  const effectiveIntent = deriveManagedIntentCandidate({
+  const effectiveIntent = deriveAuthoringIntentCandidate({
     intent: input.intent,
     sourceTitle: input.sourceTitle,
   });
@@ -151,12 +149,5 @@ export function buildManagedAuthoringIr(input: {
         input.compileError?.code != null ? [input.compileError.code] : [],
       compile_error_message: input.compileError?.message ?? null,
     },
-    questions: {
-      pending: input.questions ?? [],
-    },
   });
-}
-
-export function getPendingAuthoringQuestions(authoringIr: ChallengeAuthoringIrOutput) {
-  return authoringIr.questions.pending;
 }

@@ -6,7 +6,7 @@ import {
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
-import { buildManagedAuthoringIr } from "../src/lib/managed-authoring-ir.js";
+import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
 
 function createSession(): AuthoringSessionRow {
   return {
@@ -26,7 +26,7 @@ function createSession(): AuthoringSessionRow {
       tags: [],
       timezone: "UTC",
     },
-    authoring_ir_json: buildManagedAuthoringIr({
+    authoring_ir_json: buildAuthoringIr({
       intent: {
         title: "Drug response challenge",
         description: "Predict held-out drug response values.",
@@ -42,7 +42,7 @@ function createSession(): AuthoringSessionRow {
       template: "official_table_metric_v1",
       metric: "r2",
       comparator: "maximize",
-      routingMode: "managed_supported",
+      routingMode: "table_supported",
       sourceMessages: [
         {
           id: "msg-1",

@@ -13,7 +13,6 @@ import {
 import { CHAIN_ID, FACTORY_ADDRESS, USDC_ADDRESS } from "../../lib/config";
 import { computeProtocolFee } from "../../lib/format";
 import {
-  APP_CHAIN_NAME,
   getWrongChainMessage,
   isWrongWalletChain,
 } from "../../lib/wallet/network";
@@ -22,7 +21,7 @@ import {
   isUserRejectedError,
   waitForTransactionReceiptWithTimeout,
 } from "../../lib/wallet/tx";
-import { ChatComposer } from "./ChatComposer";
+import { AuthoringWorkspace } from "./AuthoringWorkspace";
 import { PostNotice } from "./PostSections";
 import { ReviewPanel } from "./ReviewPanel";
 import {
@@ -30,29 +29,36 @@ import {
   assertFactoryIsSupported,
   createChallengeWithApproval,
   createChallengeWithPermit,
-  finalizeManagedChallengePost,
-  publishManagedAuthoringSession,
+  finalizeAuthoringPublish,
+  prepareAuthoringPublish,
   signRewardPermit,
-} from "./managed-post-flow";
+} from "./authoring-publish-flow";
 import {
-  getFundingSummaryMessage,
   getRewardUnitsFromInput,
   isPermitUnsupportedError,
   usePostFunding,
 } from "./post-funding";
-import { useChatStream } from "./use-chat-stream";
+import { useAuthoringSession } from "./use-authoring-session";
 
-/* ── Main component ────────────────────────────────────── */
+interface SessionPostClientProps {
+  hostedSessionId?: string | null;
+}
 
-export function ChatPostClient() {
+export function SessionPostClient({
+  hostedSessionId = null,
+}: SessionPostClientProps) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [postedChallengeId, setPostedChallengeId] = useState<string | null>(
     null,
   );
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [publishStatusMessage, setPublishStatusMessage] = useState<string | null>(
+    null,
+  );
+  const [publishErrorMessage, setPublishErrorMessage] = useState<string | null>(
+    null,
+  );
 
   const { isConnected, chainId, address } = useAccount();
   const publicClient = usePublicClient();
@@ -62,27 +68,31 @@ export function ChatPostClient() {
   const { openChainModal } = useChainModal();
   const isWrongChain = isConnected && isWrongWalletChain(chainId);
 
-  /* Chat stream */
   const {
-    messages,
-    isStreaming,
-    streamingText,
+    form,
     session,
-    compilation,
-    uploads,
     sessionId,
-    sendMessage,
-    sendFiles,
+    uploads,
+    artifactOptions,
+    isLoadingSession,
+    isSubmitting,
+    statusMessage,
+    errorMessage,
+    updateField,
+    uploadFiles,
     removeUpload,
-  } = useChatStream({
-    posterAddress: address as `0x${string}` | undefined,
+    refreshSession,
+    validateSession,
+    compilation,
+  } = useAuthoringSession({
+    hostedSessionId,
     onCompileReady: () => setReviewOpen(true),
   });
 
-  const rewardInput = compilation?.reward?.total ?? "10";
+  const rewardInput =
+    compilation?.reward?.total ?? (form.reward_total || "0");
   const { feeUsdc, payoutUsdc } = computeProtocolFee(Number(rewardInput || 0));
 
-  /* Funding */
   const {
     fundingState,
     allowanceReady,
@@ -102,25 +112,25 @@ export function ChatPostClient() {
 
   const requiresApproval = fundingState.method === "approve" && !allowanceReady;
 
-  /* ── Approve USDC ──────────────────────────────── */
-
   async function handleApprove() {
-    if (!publicClient || !writeContractAsync || !address) return;
+    if (!publicClient || !writeContractAsync || !address) {
+      return;
+    }
 
     try {
       setIsApproving(true);
-      setErrorMessage(null);
+      setPublishErrorMessage(null);
       const rewardUnits = getRewardUnitsFromInput(rewardInput);
       const latestFunding = await refreshPostingFundingState(rewardUnits);
       if (latestFunding.balance < rewardUnits) {
         throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
       }
       if (latestFunding.allowance >= rewardUnits) {
-        setStatusMessage("Allowance already covers this reward.");
+        setPublishStatusMessage("Allowance already covers this reward.");
         return;
       }
 
-      setStatusMessage("Approve USDC in your wallet...");
+      setPublishStatusMessage("Approve USDC in your wallet...");
       const approveTx = await approveUsdc({
         publicClient,
         writeContractAsync,
@@ -129,15 +139,15 @@ export function ChatPostClient() {
         factoryAddress: FACTORY_ADDRESS,
         rewardUnits,
       });
-      setStatusMessage("Approval submitted. Waiting for confirmation...");
+      setPublishStatusMessage("Approval submitted. Waiting for confirmation...");
       await waitForTransactionReceiptWithTimeout({
         publicClient,
         hash: approveTx,
       });
       await waitForAllowanceUpdate(rewardUnits);
-      setStatusMessage("USDC approved. You can publish now.");
+      setPublishStatusMessage("USDC approved. You can publish now.");
     } catch (error) {
-      setErrorMessage(
+      setPublishErrorMessage(
         isUserRejectedError(error)
           ? "Approval cancelled."
           : getErrorMessage(error, "Approval failed."),
@@ -147,22 +157,19 @@ export function ChatPostClient() {
     }
   }
 
-  /* ── Publish on-chain ──────────────────────────── */
-
   async function handlePublish() {
-    if (!session || !compilation || !publicClient || !writeContractAsync || !address)
+    if (!session || !compilation || !publicClient || !writeContractAsync || !address) {
       return;
+    }
     if (!sessionId) {
-      setErrorMessage("No authoring session found. Send more messages first.");
+      setPublishErrorMessage("No authoring session found. Validate a session first.");
       return;
     }
 
     try {
       setIsPublishing(true);
-      setErrorMessage(null);
-      const rewardUnits = getRewardUnitsFromInput(
-        compilation.reward.total,
-      );
+      setPublishErrorMessage(null);
+      const rewardUnits = getRewardUnitsFromInput(compilation.reward.total);
       const latestFunding = await refreshPostingFundingState(rewardUnits);
       if (latestFunding.balance < rewardUnits) {
         throw new Error(latestFunding.message ?? "Insufficient USDC balance.");
@@ -179,8 +186,8 @@ export function ChatPostClient() {
         factoryAddress: FACTORY_ADDRESS,
       });
 
-      setStatusMessage("Pinning the compiled challenge spec...");
-      const prepared = await publishManagedAuthoringSession({
+      setPublishStatusMessage("Pinning the compiled challenge spec...");
+      const prepared = await prepareAuthoringPublish({
         sessionId,
       });
 
@@ -189,7 +196,7 @@ export function ChatPostClient() {
         latestFunding.method === "permit" &&
         latestFunding.allowance < rewardUnits
       ) {
-        setStatusMessage("Sign permit in your wallet...");
+        setPublishStatusMessage("Sign permit in your wallet...");
         try {
           const permit = await signRewardPermit({
             publicClient,
@@ -202,7 +209,7 @@ export function ChatPostClient() {
             rewardUnits: prepared.rewardUnits,
             signTypedDataAsync,
           });
-          setStatusMessage("Creating the challenge on-chain...");
+          setPublishStatusMessage("Creating the challenge on-chain...");
           createTx = await createChallengeWithPermit({
             publicClient,
             writeContractAsync,
@@ -224,7 +231,7 @@ export function ChatPostClient() {
           throw error;
         }
       } else {
-        setStatusMessage("Creating the challenge on-chain...");
+        setPublishStatusMessage("Creating the challenge on-chain...");
         createTx = await createChallengeWithApproval({
           publicClient,
           writeContractAsync,
@@ -233,16 +240,16 @@ export function ChatPostClient() {
         });
       }
 
-      setStatusMessage("Waiting for chain confirmation...");
-      const publishedSession = await finalizeManagedChallengePost({
+      setPublishStatusMessage("Waiting for chain confirmation...");
+      const publishedSession = await finalizeAuthoringPublish({
         sessionId,
         createTx,
         publicClient,
       });
       setPostedChallengeId(publishedSession.challenge_id);
-      setStatusMessage("Challenge published successfully.");
+      setPublishStatusMessage("Challenge published successfully.");
     } catch (error) {
-      setErrorMessage(
+      setPublishErrorMessage(
         isUserRejectedError(error)
           ? "Publish cancelled."
           : getErrorMessage(error, "Publish failed."),
@@ -252,11 +259,8 @@ export function ChatPostClient() {
     }
   }
 
-  /* ── Render ────────────────────────────────────── */
-
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 pb-12">
-      {/* Header */}
       <header className="rounded-md bg-white p-8">
         <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
           Agora · Post
@@ -264,13 +268,13 @@ export function ChatPostClient() {
         <h1 className="mt-4 font-display text-[2.25rem] font-bold leading-[0.95] tracking-[-0.02em] text-warm-900 sm:text-[2.75rem]">
           Create a science bounty
         </h1>
-        <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-warm-500">
-          Describe your problem in plain language. Agora figures out the scoring
-          engine, maps your files, and compiles a deterministic contract.
+        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-warm-500">
+          Fill the structured challenge contract directly. Agora validates the
+          session, returns exact blockers, and only reaches publish once the
+          dry-run passes.
         </p>
       </header>
 
-      {/* Success notice */}
       {postedChallengeId ? (
         <PostNotice tone="success">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -291,26 +295,33 @@ export function ChatPostClient() {
         </PostNotice>
       ) : null}
 
-      {/* Chat + Review layout */}
-      <div
-        className="flex flex-col gap-0 md:flex-row"
-        style={{ minHeight: 560 }}
-      >
-        {/* Chat side */}
+      <div className="flex flex-col gap-0 md:flex-row" style={{ minHeight: 560 }}>
         <div className={`flex-1 ${reviewOpen ? "" : "w-full"}`}>
-          <ChatComposer
-            messages={messages}
-            isStreaming={isStreaming}
-            streamingText={streamingText}
+          <AuthoringWorkspace
+            form={form}
+            session={session}
+            sessionId={sessionId}
             uploads={uploads}
-            onSendMessage={sendMessage}
-            onFilesSelected={(files) => void sendFiles(files)}
+            artifactOptions={artifactOptions}
+            isLoadingSession={isLoadingSession}
+            isSubmitting={isSubmitting}
+            statusMessage={statusMessage}
+            errorMessage={errorMessage}
+            onFieldChange={updateField}
+            onValidate={() => {
+              void validateSession();
+            }}
+            onRefresh={() => {
+              void refreshSession();
+            }}
+            onFilesSelected={(files) => {
+              void uploadFiles(files);
+            }}
             onRemoveUpload={removeUpload}
-            disabled={!!postedChallengeId}
+            onOpenReview={() => setReviewOpen(true)}
           />
         </div>
 
-        {/* Review panel */}
         {compilation ? (
           <ReviewPanel
             session={session}
@@ -332,13 +343,12 @@ export function ChatPostClient() {
             rewardInput={rewardInput}
             feeUsdc={feeUsdc}
             payoutUsdc={payoutUsdc}
-            statusMessage={statusMessage}
-            errorMessage={errorMessage}
+            statusMessage={publishStatusMessage}
+            errorMessage={publishErrorMessage}
           />
         ) : null}
       </div>
 
-      {/* Footer */}
       <div className="text-center text-xs text-warm-500">
         Need a custom scorer?{" "}
         <span className="font-mono text-warm-700">

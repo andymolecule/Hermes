@@ -12,26 +12,23 @@ function printEntry(entry: Awaited<ReturnType<typeof getAuthoringSessionTimeline
     `[${entry.timestamp}] ${entry.actor.toUpperCase()} ${entry.event} ${entry.summary}`,
   );
 
-  if (entry.caller_message) {
-    console.log(`  caller: ${entry.caller_message}`);
+  if (entry.intent) {
+    console.log(`  intent: ${JSON.stringify(entry.intent)}`);
   }
-  if (entry.assistant_message) {
-    console.log(`  agora: ${entry.assistant_message}`);
+  if (entry.execution) {
+    console.log(`  execution: ${JSON.stringify(entry.execution)}`);
   }
-  if (entry.questions?.length) {
-    console.log("  questions:");
-    for (const question of entry.questions) {
-      const suffix =
-        question.kind === "select" && question.options?.length
-          ? ` [${question.options.join(", ")}]`
-          : "";
-      console.log(`    - ${question.text}${suffix}`);
-    }
+  if (entry.resolved) {
+    console.log(`  resolved: ${JSON.stringify(entry.resolved)}`);
   }
-  if (entry.blocked_by) {
-    console.log(
-      `  blocked_by: layer ${entry.blocked_by.layer} / ${entry.blocked_by.code} / ${entry.blocked_by.message}`,
-    );
+  if (entry.validation) {
+    console.log(`  validation: ${JSON.stringify(entry.validation)}`);
+  }
+  if (entry.files?.length) {
+    console.log(`  files: ${JSON.stringify(entry.files)}`);
+  }
+  if (entry.artifacts?.length) {
+    console.log(`  artifacts: ${JSON.stringify(entry.artifacts)}`);
   }
   if (entry.error) {
     console.log(`  error: ${entry.error.message}`);

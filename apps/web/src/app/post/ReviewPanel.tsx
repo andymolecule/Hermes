@@ -14,10 +14,6 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { formatUsdc } from "../../lib/format";
-import {
-  GUIDED_DISPUTE_WINDOW_OPTIONS,
-  GUIDED_DISTRIBUTION_OPTIONS,
-} from "./guided-prompts";
 import type { PostingFundingState } from "./post-funding";
 
 /* ── Types ─────────────────────────────────────────────── */
@@ -66,19 +62,20 @@ function daysRemaining(deadline: string): string {
 
 /* ── Field components ──────────────────────────────────── */
 
-function SelectField({
+const DISTRIBUTION_LABELS: Record<string, string> = {
+  winner_take_all: "Winner take all",
+  top_3: "Top 3",
+  proportional: "Proportional",
+};
+
+function StaticField({
   value,
-  options,
-  disabled,
 }: {
   value: string;
-  options: readonly { label: string; value: string }[];
-  disabled?: boolean;
 }) {
-  const label = options.find((o) => o.value === value)?.label ?? value;
   return (
     <div className="rounded-md bg-warm-50 px-3 py-2 text-sm text-warm-700">
-      {disabled ? label : <span className="text-warm-800">{label}</span>}
+      <span className="text-warm-800">{value}</span>
     </div>
   );
 }
@@ -112,9 +109,12 @@ export function ReviewPanel({
   const checklist = session?.checklist;
   const compilation = session?.compilation;
   const artifacts = session?.artifacts ?? [];
+  const resolvedIntent = session?.resolved.intent;
+  const sessionTitle =
+    checklist?.title ?? resolvedIntent?.title ?? "Untitled challenge";
 
   /* Extract description for intent section */
-  const description = session?.summary ?? "";
+  const description = resolvedIntent?.description ?? "";
 
   return (
     <AnimatePresence>
@@ -130,10 +130,10 @@ export function ReviewPanel({
           <div className="flex items-center justify-between bg-warm-50/60 px-5 py-3">
             <div className="flex items-center gap-3">
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
-                Live Session Preview
+                Session contract
               </div>
               <span className="rounded-full bg-warm-900 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-white">
-                Syncing
+                {session?.state ?? "draft"}
               </span>
             </div>
             <button
@@ -154,7 +154,7 @@ export function ReviewPanel({
                 Bounty Title
               </div>
               <h2 className="font-display text-2xl font-bold text-warm-900">
-                {checklist?.title ?? session?.summary ?? "Untitled challenge"}
+                {sessionTitle}
               </h2>
             </div>
 
@@ -228,21 +228,19 @@ export function ReviewPanel({
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
                 Distribution
               </div>
-              <SelectField
+              <StaticField
                 value={
-                  compilation?.reward?.distribution ?? "winner_take_all"
+                  DISTRIBUTION_LABELS[
+                    compilation?.reward?.distribution ?? "winner_take_all"
+                  ] ?? (compilation?.reward?.distribution ?? "winner_take_all")
                 }
-                options={GUIDED_DISTRIBUTION_OPTIONS}
-                disabled
               />
 
               <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-400">
                 Dispute Window
               </div>
-              <SelectField
-                value={String(compilation?.dispute_window_hours ?? "0")}
-                options={GUIDED_DISPUTE_WINDOW_OPTIONS}
-                disabled
+              <StaticField
+                value={`${compilation?.dispute_window_hours ?? 0} hours`}
               />
             </div>
 

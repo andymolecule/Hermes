@@ -1,6 +1,6 @@
 {
   "id": "drug-response-prediction",
-  "managed_support": "supported",
+  "table_scorer_support": "supported",
   "intent_family": "prediction",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
@@ -33,7 +33,7 @@
       "value_column": "prediction"
     }
   },
-  "acceptable_compile_states": ["ready"],
+  "acceptable_compile_states": ["awaiting_input"],
   "disallowed_outcomes": {
     "disallowed_templates": [],
     "recommended_actions": []
@@ -42,7 +42,7 @@
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["ready"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "winning condition",
         "reward",
@@ -54,7 +54,7 @@
     {
       "id": "ambiguous-biology-brief",
       "file": "prompt-variants/ambiguous-biology-brief.md",
-      "acceptable_compile_states": ["ready"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "winning condition",
         "confirm hidden labels remain private",
@@ -66,7 +66,7 @@
     {
       "id": "minimal-slack-style-brief",
       "file": "prompt-variants/minimal-slack-style-brief.md",
-      "acceptable_compile_states": ["ready"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "what a winning result means",
         "which uploaded file contains hidden labels",

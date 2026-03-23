@@ -70,8 +70,8 @@ The worker hot path reads the resolved submission contract and scoring env from
 the `challenges` table first. IPFS spec reads during scoring are now legacy
 fallback only.
 
-Official managed runtimes may also declare scorer-facing runtime defaults that the
-pipeline serializes into `/input/agora-runtime.json` for the container.
+Official scorer templates may also declare scorer-facing runtime defaults that
+the pipeline serializes into `/input/agora-runtime.json` for the container.
 
 ### `packages/common/src/schemas/challenge-spec.ts`
 

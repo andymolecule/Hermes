@@ -6,7 +6,7 @@ import {
   type ExecutionComparatorOutput,
 } from "@agora/common";
 
-export interface ResolvedManagedArtifacts {
+export interface ResolvedAuthoringArtifacts {
   resolvedArtifacts: Array<
     AuthoringArtifactOutput & {
       role: string;
@@ -48,7 +48,7 @@ export function resolveAuthoringArtifacts(input: {
   comparator: ExecutionComparatorOutput;
   template: "official_table_metric_v1";
   scorerImage: string;
-}): ResolvedManagedArtifacts {
+}): ResolvedAuthoringArtifacts {
   const evaluationArtifactIndex = resolveEvaluationArtifactIndex({
     uploadedArtifacts: input.uploadedArtifacts,
     evaluationArtifactId: input.evaluationArtifactId,
@@ -61,7 +61,7 @@ export function resolveAuthoringArtifacts(input: {
     throw new AgoraError(
       "Agora could not identify the hidden evaluation table from the uploaded files. Next step: select the evaluation file and retry.",
       {
-        code: "MANAGED_EVALUATION_ARTIFACT_MISSING",
+        code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
         status: 422,
       },
     );
@@ -72,7 +72,7 @@ export function resolveAuthoringArtifacts(input: {
     throw new AgoraError(
       "Agora could not load the selected evaluation file. Next step: choose a valid uploaded file and retry.",
       {
-        code: "MANAGED_EVALUATION_ARTIFACT_MISSING",
+        code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
         status: 422,
       },
     );
@@ -85,7 +85,7 @@ export function resolveAuthoringArtifacts(input: {
     throw new AgoraError(
       "The selected evaluation file does not contain the chosen ID/value columns. Next step: pick columns that exist in the uploaded file and retry.",
       {
-        code: "MANAGED_EVALUATION_COLUMNS_INVALID",
+        code: "AUTHORING_EVALUATION_COLUMNS_INVALID",
         status: 422,
       },
     );

@@ -17,7 +17,7 @@ const compileStateSchema = z.enum([
 
 const benchmarkSchema = z.object({
   id: z.string().min(1),
-  managed_support: z.enum(["supported", "custom_workflow_required"]),
+  table_scorer_support: z.enum(["supported", "custom_workflow_required"]),
   intent_family: z.string().min(1),
   artifacts_root: z.string().min(1),
   prompt_variants_root: z.string().min(1),
@@ -144,9 +144,9 @@ for (const benchmarkId of benchmarkEntries) {
     );
   }
 
-  sawSupported ||= benchmark.managed_support === "supported";
+  sawSupported ||= benchmark.table_scorer_support === "supported";
   sawCustomWorkflowRequired ||=
-    benchmark.managed_support === "custom_workflow_required";
+    benchmark.table_scorer_support === "custom_workflow_required";
 }
 
 assert.ok(

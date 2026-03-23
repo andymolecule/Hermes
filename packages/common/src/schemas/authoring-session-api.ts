@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { partialChallengeIntentSchema } from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -23,16 +24,22 @@ export const authoringSessionErrorCodeSchema = z.enum([
   "unsupported_task",
 ]);
 
-export const authoringSessionMessageInputSchema = z
-  .object({
-    text: z.string().trim().min(1),
-  })
-  .strict();
-
 export const authoringSessionArtifactRefSchema = z
   .object({
     type: z.literal("artifact"),
     artifact_id: z.string().trim().min(1),
+  })
+  .strict();
+
+export const authoringSessionExecutionInputSchema = z
+  .object({
+    template: z.literal("official_table_metric_v1").optional(),
+    metric: z.string().trim().min(1).optional(),
+    evaluation_artifact_id: z.string().trim().min(1).optional(),
+    evaluation_id_column: z.string().trim().min(1).optional(),
+    evaluation_value_column: z.string().trim().min(1).optional(),
+    submission_id_column: z.string().trim().min(1).optional(),
+    submission_value_column: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -69,46 +76,6 @@ export const authoringSessionCreatorSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
-export const authoringSessionQuestionSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      id: z.string().trim().min(1),
-      text: z.string().trim().min(1),
-      reason: z.string().trim().min(1),
-      kind: z.literal("text"),
-    })
-    .strict(),
-  z
-    .object({
-      id: z.string().trim().min(1),
-      text: z.string().trim().min(1),
-      reason: z.string().trim().min(1),
-      kind: z.literal("select"),
-      options: z.array(z.string().trim().min(1)).min(1),
-    })
-    .strict(),
-  z
-    .object({
-      id: z.string().trim().min(1),
-      text: z.string().trim().min(1),
-      reason: z.string().trim().min(1),
-      kind: z.literal("file"),
-    })
-    .strict(),
-]);
-
-export const authoringSessionAnswerValueSchema = z.union([
-  z.string().trim().min(1),
-  authoringSessionArtifactRefSchema,
-]);
-
-export const authoringSessionAnswerInputSchema = z
-  .object({
-    question_id: z.string().trim().min(1),
-    value: authoringSessionAnswerValueSchema,
-  })
-  .strict();
-
 export const authoringSessionArtifactSchema = z
   .object({
     artifact_id: z.string().trim().min(1),
@@ -116,14 +83,6 @@ export const authoringSessionArtifactSchema = z
     file_name: z.string().trim().min(1),
     role: z.string().trim().min(1).nullable(),
     source_url: z.string().url().nullable(),
-  })
-  .strict();
-
-export const authoringSessionBlockedBySchema = z
-  .object({
-    layer: z.union([z.literal(2), z.literal(3)]),
-    code: z.string().trim().min(1),
-    message: z.string().trim().min(1),
   })
   .strict();
 
@@ -202,6 +161,35 @@ export const authoringSessionChecklistSchema = z
   })
   .strict();
 
+export const authoringSessionResolvedSchema = z
+  .object({
+    intent: partialChallengeIntentSchema.default({}),
+    execution: authoringSessionExecutionInputSchema.default({}),
+  })
+  .strict();
+
+export const authoringSessionValidationIssueSchema = z
+  .object({
+    field: z.string().trim().min(1),
+    code: z.string().trim().min(1),
+    message: z.string().trim().min(1),
+    next_action: z.string().trim().min(1),
+  })
+  .strict();
+
+export const authoringSessionValidationSchema = z
+  .object({
+    missing_fields: z.array(authoringSessionValidationIssueSchema).default([]),
+    invalid_fields: z.array(authoringSessionValidationIssueSchema).default([]),
+    dry_run_failure: authoringSessionValidationIssueSchema.nullable().default(
+      null,
+    ),
+    unsupported_reason: authoringSessionValidationIssueSchema.nullable().default(
+      null,
+    ),
+  })
+  .strict();
+
 export const authoringSessionListItemSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -218,9 +206,8 @@ export const authoringSessionSchema = z
     id: z.string().trim().min(1),
     state: authoringSessionPublicStateSchema,
     creator: authoringSessionCreatorSchema,
-    summary: z.string().nullable(),
-    questions: z.array(authoringSessionQuestionSchema),
-    blocked_by: authoringSessionBlockedBySchema.nullable(),
+    resolved: authoringSessionResolvedSchema,
+    validation: authoringSessionValidationSchema,
     checklist: authoringSessionChecklistSchema.nullable(),
     compilation: authoringSessionCompilationSchema.nullable(),
     artifacts: z.array(authoringSessionArtifactSchema),
@@ -232,13 +219,6 @@ export const authoringSessionSchema = z
     created_at: isoDatetimeSchema,
     updated_at: isoDatetimeSchema,
     expires_at: isoDatetimeSchema,
-  })
-  .strict();
-
-export const conversationalAuthoringSessionResponseSchema = z
-  .object({
-    session: authoringSessionSchema,
-    assistant_message: z.string().trim().min(1),
   })
   .strict();
 
@@ -279,48 +259,46 @@ export const listAuthoringSessionsResponseSchema = z
 
 export const createAuthoringSessionRequestSchema = z
   .object({
-    message: z.string().trim().min(1).optional(),
-    summary: z.string().trim().min(1).optional(),
-    messages: z.array(authoringSessionMessageInputSchema).min(1).optional(),
+    intent: partialChallengeIntentSchema.optional(),
+    execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
     provenance: authoringSessionProvenanceSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const hasMessage =
-      typeof value.message === "string" && value.message.length > 0;
-    const hasSummary =
-      typeof value.summary === "string" && value.summary.length > 0;
-    const hasMessages =
-      Array.isArray(value.messages) && value.messages.length > 0;
+    const hasIntent =
+      value.intent != null && Object.keys(value.intent).length > 0;
+    const hasExecution =
+      value.execution != null && Object.keys(value.execution).length > 0;
     const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-    if (!hasMessage && !hasSummary && !hasMessages && !hasFiles) {
+    if (!hasIntent && !hasExecution && !hasFiles) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Provide at least one of message, summary, messages, or files.",
+        message:
+          "Provide at least one of intent, execution, or files.",
       });
     }
   });
 
-export const respondAuthoringSessionRequestSchema = z
+export const patchAuthoringSessionRequestSchema = z
   .object({
-    answers: z.array(authoringSessionAnswerInputSchema).min(1).optional(),
-    message: z.string().trim().min(1).optional(),
+    intent: partialChallengeIntentSchema.optional(),
+    execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const hasAnswers =
-      Array.isArray(value.answers) && value.answers.length > 0;
-    const hasMessage =
-      typeof value.message === "string" && value.message.length > 0;
+    const hasIntent =
+      value.intent != null && Object.keys(value.intent).length > 0;
+    const hasExecution =
+      value.execution != null && Object.keys(value.execution).length > 0;
     const hasFiles = Array.isArray(value.files) && value.files.length > 0;
 
-    if (!hasAnswers && !hasMessage && !hasFiles) {
+    if (!hasIntent && !hasExecution && !hasFiles) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Provide at least one of answers, message, or files.",
+        message: "Provide at least one of intent, execution, or files.",
       });
     }
   });
@@ -363,14 +341,8 @@ export const uploadUrlRequestSchema = z
 export type AuthoringSessionPublicStateOutput = z.output<
   typeof authoringSessionPublicStateSchema
 >;
-export type AuthoringSessionQuestionOutput = z.output<
-  typeof authoringSessionQuestionSchema
->;
 export type AuthoringSessionArtifactOutput = z.output<
   typeof authoringSessionArtifactSchema
->;
-export type AuthoringSessionAnswerInputOutput = z.output<
-  typeof authoringSessionAnswerInputSchema
 >;
 export type AuthoringSessionFileInputOutput = z.output<
   typeof authoringSessionFileInputSchema
@@ -381,13 +353,19 @@ export type AuthoringSessionCompilationOutput = z.output<
 export type AuthoringSessionChecklistOutput = z.output<
   typeof authoringSessionChecklistSchema
 >;
+export type AuthoringSessionResolvedOutput = z.output<
+  typeof authoringSessionResolvedSchema
+>;
+export type AuthoringSessionValidationIssueOutput = z.output<
+  typeof authoringSessionValidationIssueSchema
+>;
+export type AuthoringSessionValidationOutput = z.output<
+  typeof authoringSessionValidationSchema
+>;
 export type AuthoringSessionListItemOutput = z.output<
   typeof authoringSessionListItemSchema
 >;
 export type AuthoringSessionOutput = z.output<typeof authoringSessionSchema>;
-export type ConversationalAuthoringSessionResponseOutput = z.output<
-  typeof conversationalAuthoringSessionResponseSchema
->;
 export type AuthoringSessionCreatorOutput = z.output<
   typeof authoringSessionCreatorSchema
 >;
@@ -397,8 +375,8 @@ export type AuthoringSessionErrorCodeOutput = z.output<
 export type CreateAuthoringSessionRequestInput = z.input<
   typeof createAuthoringSessionRequestSchema
 >;
-export type RespondAuthoringSessionRequestInput = z.input<
-  typeof respondAuthoringSessionRequestSchema
+export type PatchAuthoringSessionRequestInput = z.input<
+  typeof patchAuthoringSessionRequestSchema
 >;
 export type PublishAuthoringSessionRequestInput = z.input<
   typeof publishAuthoringSessionRequestSchema

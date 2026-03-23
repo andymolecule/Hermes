@@ -202,7 +202,7 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `3` for the active managed-authoring model. |
+| `schema_version` | integer | Must be `3` for the active authoring-session execution-contract model. |
 | `id` | string | Unique challenge identifier (e.g., `ch-001`). |
 | `title` | string | Human-readable challenge title. |
 | `domain` | enum | One of: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`. |
@@ -321,14 +321,14 @@ deadline: "2026-03-04T23:59:59Z"
 ## Scoring Model
 
 - **Deterministic Docker execution:** Same container + same input = same score, every time.
-- **Public official scorers:** Agora-managed scorer code and images are public artifacts so solvers can inspect the exact scoring logic before they submit.
+- **Public official scorers:** Agora official scorer code and images are public artifacts so solvers can inspect the exact scoring logic before they submit.
 - **No hidden data in images:** Hidden labels, reference outputs, and other non-public evaluation material must live in the evaluation bundle or mounted dataset CIDs, not inside the scorer image.
 - **Container constraints:**
   - `--network=none` — no network access, cannot exfiltrate data
   - `--read-only` — only `/output` is writable
   - `--cap-drop=ALL` — no Linux capabilities
   - Base runner fallback: 256 MB memory, 0.5 CPUs, 32 PIDs, 30-minute timeout
-  - Official managed runtime range today: 512 MB – 4 GB memory, 1 – 2 CPUs, 64 PIDs, 5 – 20 minute timeouts
+  - Official scorer-template range today: 512 MB – 4 GB memory, 1 – 2 CPUs, 64 PIDs, 5 – 20 minute timeouts
   - `--user 65532:65532` — non-root execution
   - `--security-opt=no-new-privileges` — no privilege escalation
 - **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state.

@@ -17,6 +17,7 @@ test("authoring session artifact IDs round-trip encoded file metadata", () => {
     mime_type: "text/csv",
     size_bytes: 42,
     source_url: "https://example.com/dataset.csv",
+    detected_columns: ["id", "label"],
   });
 
   const decoded = decodeAuthoringSessionArtifactId(artifactId);
@@ -27,6 +28,7 @@ test("authoring session artifact IDs round-trip encoded file metadata", () => {
   assert.equal(decoded.mime_type, "text/csv");
   assert.equal(decoded.size_bytes, 42);
   assert.equal(decoded.source_url, "https://example.com/dataset.csv");
+  assert.deepEqual(decoded.detected_columns, ["id", "label"]);
 });
 
 test("decodeAuthoringSessionArtifactId rejects invalid prefixes", () => {
@@ -88,6 +90,7 @@ test("normalizeExternalArtifactsForDraft fetches, pins, and returns pinned artif
   assert.equal(artifacts[0]?.file_name, "beach-dataset.csv");
   assert.equal(artifacts[0]?.mime_type, "text/csv");
   assert.equal(artifacts[0]?.size_bytes, 24);
+  assert.deepEqual(artifacts[0]?.detected_columns, ["id", "prediction"]);
 });
 
 test("normalizeExternalArtifactsForDraft rejects mime mismatches", async () => {

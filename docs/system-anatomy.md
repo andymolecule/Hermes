@@ -118,8 +118,8 @@ Authoring is now session-native:
 
 - web posters and OpenClaw agents both use `/api/authoring/sessions/*`
 - every `POST /sessions` creates a new private session
-- Agora interprets rough context, asks typed follow-up questions, and compiles a
-  challenge spec candidate
+- Agora validates structured intent, execution, and files, then returns exact
+  missing or invalid fields until the challenge spec candidate compiles
 - `ready` sessions are frozen until publish or expiry
 
 There is no legacy parallel authoring surface anymore. The session API is the
@@ -194,7 +194,7 @@ POST /api/authoring/uploads
 GET  /api/authoring/sessions
 POST /api/authoring/sessions
 GET  /api/authoring/sessions/:id
-POST /api/authoring/sessions/:id/respond
+PATCH /api/authoring/sessions/:id
 POST /api/authoring/sessions/:id/publish
 POST /api/authoring/sessions/:id/confirm-publish
 ```

@@ -7,7 +7,7 @@ This benchmark is intentionally broad and non-ML:
 - the poster uploads a public schema/example
 - Agora keeps a validation rubric hidden
 - solvers submit one structured JSON report
-- the challenge should not route to a managed Gems family
+- the challenge should not route to the official table scorer
 
 ## Benchmark Goal
 
@@ -30,5 +30,5 @@ This benchmark passes when:
 
 - the artifact roles stay generic
 - the submission contract is a JSON file contract
-- the final outcome is a clean managed-runtime rejection
+- the final outcome is a clean table-scorer rejection
 - the rejection points the poster toward the explicit custom scorer workflow

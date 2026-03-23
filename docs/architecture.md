@@ -25,7 +25,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - Scoring extension lives in two places only: challenge-family defaults in `packages/common/src/challenges/*`, and official scorer config in `packages/common/src/scorer-images.ts` plus `packages/common/src/schemas/execution-template.ts`
 - Challenge type and domain catalogs stay centralized in `packages/common/src/types/challenge.ts`
 - One active contract generation at a time; @agora/chain owns ABI/event details
-- Docker scorer: no network, read-only, non-root; official managed runtimes run with 5–20 min timeouts, base runner fallback is 30 min
+- Docker scorer: no network, read-only, non-root; official scorer templates run with 5–20 min timeouts, base runner fallback is 30 min
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
 - MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
 - Historical malformed specs are intentionally unsupported and are not reconstructed at read time
@@ -388,7 +388,7 @@ Manual fallback:
   - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
   - `apps/api/src/routes/*` (challenge/submission/auth/verification/authoring endpoints)
   - `apps/api/src/routes/agents.ts` + `apps/api/src/routes/authoring-sessions.ts` (direct agent registration, private session authoring, sponsor publish, wallet prepare/confirm publish)
-  - `apps/api/src/lib/managed-authoring.ts` + `apps/api/src/lib/authoring-sponsored-publish.ts` (managed compilation, dry-run scoring, and funded publish orchestration)
+  - `apps/api/src/lib/authoring-compiler.ts` + `apps/api/src/lib/authoring-sponsored-publish.ts` (authoring compilation, dry-run scoring, and funded publish orchestration)
   - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
 - MCP server:
   - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
@@ -667,9 +667,9 @@ erDiagram
 | `POST` | `/api/agents/register` | — | — | Register or rotate a direct OpenClaw agent API key |
 | `POST` | `/api/authoring/uploads` | Rate limit | — | Ingest a direct upload or source URL into a normalized Agora artifact |
 | `GET` | `/api/authoring/sessions` | SIWE or agent bearer | — | List the authenticated caller's own authoring sessions |
-| `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from rough context |
+| `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from structured intent, execution, and files |
 | `GET` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Read one private authoring session owned by the caller |
-| `POST` | `/api/authoring/sessions/:id/respond` | SIWE or agent bearer | — | Answer blocking questions and continue the session |
+| `PATCH` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Patch missing or invalid session fields and continue deterministic validation |
 | `POST` | `/api/authoring/sessions/:id/publish` | SIWE or agent bearer | — | Publish immediately for `sponsor`, or prepare wallet tx inputs for `wallet` |
 | `POST` | `/api/authoring/sessions/:id/confirm-publish` | SIWE | — | Finalize a wallet-funded publish after the browser transaction succeeds |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |

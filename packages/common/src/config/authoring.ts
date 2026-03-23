@@ -8,12 +8,8 @@ import {
   unsetBlankStringValues,
 } from "./base.js";
 
-const managedAuthoringRuntimeConfigSchema = configSchema.pick({
-  AGORA_MANAGED_AUTHORING_MODEL: true,
-  AGORA_MANAGED_AUTHORING_BASE_URL: true,
-  AGORA_MANAGED_AUTHORING_API_KEY: true,
-  AGORA_MANAGED_AUTHORING_TIMEOUT_MS: true,
-  AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS: true,
+const authoringCompilerRuntimeConfigSchema = configSchema.pick({
+  AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: true,
 });
 
 const authoringOperatorRuntimeConfigSchema = configSchema.pick({
@@ -26,11 +22,7 @@ const authoringSponsorRuntimeConfigSchema = configSchema.pick({
   AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: true,
 });
 
-export interface AgoraManagedAuthoringRuntimeConfig {
-  model: string;
-  baseUrl: string;
-  apiKey?: string;
-  timeoutMs: number;
+export interface AgoraAuthoringCompilerRuntimeConfig {
   dryRunTimeoutMs: number;
 }
 
@@ -44,24 +36,18 @@ export interface AgoraAuthoringSponsorRuntimeConfig {
   monthlyBudgetsUsdc: Partial<Record<HostedSourceProviderOutput, number>>;
 }
 
-export function readManagedAuthoringRuntimeConfig(
+export function readAuthoringCompilerRuntimeConfig(
   env: Record<string, string | undefined> = process.env,
-): AgoraManagedAuthoringRuntimeConfig {
+): AgoraAuthoringCompilerRuntimeConfig {
   const parsed = parseConfigSection(
-    managedAuthoringRuntimeConfigSchema,
+    authoringCompilerRuntimeConfigSchema,
     unsetBlankStringValues(env, [
-      "AGORA_MANAGED_AUTHORING_MODEL",
-      "AGORA_MANAGED_AUTHORING_BASE_URL",
-      "AGORA_MANAGED_AUTHORING_API_KEY",
+      "AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS",
     ]),
   );
 
   return {
-    model: parsed.AGORA_MANAGED_AUTHORING_MODEL,
-    baseUrl: parsed.AGORA_MANAGED_AUTHORING_BASE_URL,
-    apiKey: parsed.AGORA_MANAGED_AUTHORING_API_KEY,
-    timeoutMs: parsed.AGORA_MANAGED_AUTHORING_TIMEOUT_MS,
-    dryRunTimeoutMs: parsed.AGORA_MANAGED_AUTHORING_DRY_RUN_TIMEOUT_MS,
+    dryRunTimeoutMs: parsed.AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS,
   };
 }
 

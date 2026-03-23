@@ -1,6 +1,6 @@
 {
   "id": "json-reference-match",
-  "managed_support": "custom_workflow_required",
+  "table_scorer_support": "custom_workflow_required",
   "intent_family": "exact_artifact_match",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
@@ -26,7 +26,7 @@
       "mime": "application/json"
     }
   },
-  "acceptable_compile_states": ["rejected"],
+  "acceptable_compile_states": ["awaiting_input"],
   "disallowed_outcomes": {
     "disallowed_templates": [
       "official_table_metric_v1"
@@ -37,7 +37,7 @@
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "confirm exact-match winning rule",
         "public versus hidden artifact split",
@@ -49,7 +49,7 @@
     {
       "id": "ops-chat-brief",
       "file": "prompt-variants/ops-chat-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "which JSON stays hidden",
         "what exact match means",
@@ -60,7 +60,7 @@
     {
       "id": "minimal-thread-brief",
       "file": "prompt-variants/minimal-thread-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "submission artifact format",
         "hidden reference artifact",

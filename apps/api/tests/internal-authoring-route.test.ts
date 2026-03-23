@@ -26,7 +26,9 @@ function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringS
           summary: "Caller started an authoring session.",
           state_before: null,
           state_after: null,
-          caller_message: "Create a docking challenge for KRAS",
+          intent: {
+            title: "Create a docking challenge for KRAS",
+          },
         },
       ],
     published_challenge_id: overrides.published_challenge_id ?? null,
@@ -79,7 +81,9 @@ test("GET /sessions/:id/timeline returns the session conversation log", async ()
               summary: "Caller started an authoring session.",
               state_before: null,
               state_after: null,
-              caller_message: "Create a docking challenge for KRAS",
+              intent: {
+                title: "Create a docking challenge for KRAS",
+              },
             },
             {
               timestamp: "2026-03-23T10:00:01.000Z",
@@ -90,19 +94,24 @@ test("GET /sessions/:id/timeline returns the session conversation log", async ()
               summary: "Agora requested more information.",
               state_before: null,
               state_after: "awaiting_input",
-              assistant_message: "I need a deterministic metric and a deadline.",
-              questions: [
-                {
-                  id: "metric",
-                  text: "What metric should Agora use?",
-                  reason: "Needed to compile the scoring contract.",
-                  kind: "text",
+              resolved: {
+                intent: {
+                  title: "KRAS challenge",
                 },
-              ],
-              blocked_by: {
-                layer: 2,
-                code: "missing_input",
-                message: "Agora needs the scoring metric.",
+                execution: {},
+              },
+              validation: {
+                missing_fields: [
+                  {
+                    field: "metric",
+                    code: "AUTHORING_INPUT_REQUIRED",
+                    message: "Agora still needs the scoring metric.",
+                    next_action: "Provide the metric and retry.",
+                  },
+                ],
+                invalid_fields: [],
+                dry_run_failure: null,
+                unsupported_reason: null,
               },
             },
           ],

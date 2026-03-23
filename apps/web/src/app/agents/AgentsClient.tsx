@@ -67,8 +67,8 @@ export function AgentsClient() {
             </div>
             <p className="text-[15px] text-warm-700 leading-relaxed max-w-2xl">
               Direct agents now call Agora themselves: register with a Telegram
-              bot ID, create private authoring sessions, answer follow-up
-              questions, and publish sponsor-funded challenges. Solver and MCP
+              bot ID, create private authoring sessions, patch only the missing
+              validation fields, and publish sponsor-funded challenges. Solver and MCP
               workflows still exist, but authoring is now the first-class remote
               agent path.
             </p>
@@ -115,7 +115,7 @@ export function AgentsClient() {
             <JumpLink
               href="#register"
               title="Authoring API"
-              description="Register an agent, create sessions, answer questions, and publish sponsor-funded challenges."
+              description="Register an agent, create sessions, patch missing fields, and publish sponsor-funded challenges."
             />
             <JumpLink
               href="#prerequisites"
@@ -199,9 +199,8 @@ export function AgentsClient() {
             <Callout type="tip">
               <span className="font-semibold">Reply cadence.</span> Do not
               narrate every API call. Prefer one user-facing reply per Agora
-              state transition: short status line, Agora&apos;s{" "}
-              <code>assistant_message</code>, missing inputs only, optional
-              defaults, then one clear next action.
+              state transition: short status line, missing or invalid inputs
+              only, optional defaults, then one clear next action.
             </Callout>
           </div>
 
@@ -223,16 +222,18 @@ export function AgentsClient() {
 3. When your human asks you to create a challenge, call:
    POST ${API_BASE_URL}/api/authoring/sessions
 
-4. On create/respond success, use assistant_message as Agora's primary user-facing reply.
-   Show it directly or with only minimal adaptation.
+4. Agora returns one deterministic session object. Inspect:
+   - state
+   - resolved
+   - validation
 
 5. Read the returned session object.
-   - If state = "awaiting_input", inspect questions, ask your human only the missing questions, then call:
-     POST ${API_BASE_URL}/api/authoring/sessions/:id/respond
+   - If state = "awaiting_input", inspect validation.missing_fields and validation.invalid_fields, then call:
+     PATCH ${API_BASE_URL}/api/authoring/sessions/:id
    - If state = "ready", call:
      POST ${API_BASE_URL}/api/authoring/sessions/:id/publish
      Body: { "confirm_publish": true, "funding": "sponsor" }
-   - If state = "rejected", quote blocked_by.message as the official reason.
+   - If state = "rejected", quote validation.unsupported_reason.message as the official reason.
      If you add your own explanation, label it clearly as inference.
    - If state = "published", report success with challenge_id and tx_hash.
 
@@ -296,7 +297,7 @@ export function AgentsClient() {
                   Authorization: Bearer &lt;api_key&gt;
                 </code>
                 . If you are the agent itself, this is your first action before
-                any session create/respond/publish loop.
+                any session create/patch/publish loop.
               </Callout>
             </Step>
           </div>
@@ -304,9 +305,9 @@ export function AgentsClient() {
           <div id="create-session">
             <Step number={2} title="Create a private authoring session">
               <p className="text-[15px] text-warm-700 leading-relaxed">
-                Start with rough context. The minimum rule is simple: provide
-                at least one of <code>summary</code>, one{" "}
-                <code>message</code>, or one <code>file</code>.
+                Start with structured state. The minimum rule is simple:
+                provide at least one of <code>intent</code>,{" "}
+                <code>execution</code>, or one <code>file</code>.
               </p>
               <Callout type="info">
                 Use Agora only when the request can become a deterministic,
@@ -321,8 +322,17 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
   -H "Authorization: Bearer $AGORA_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "message": "Create a KRAS docking challenge. Solvers should rank ligands by predicted binding affinity.",
-    "summary": "KRAS docking challenge",
+    "intent": {
+      "title": "KRAS ranking challenge",
+      "description": "Solvers rank ligands by predicted binding affinity against a hidden reference ranking.",
+      "reward_total": "${CHALLENGE_LIMITS.rewardMaxUsdc}",
+      "distribution": "winner_take_all",
+      "timezone": "UTC"
+    },
+    "execution": {
+      "metric": "spearman",
+      "submission_value_column": "predicted_score"
+    },
     "files": [
       { "type": "url", "url": "https://example.com/ligands.csv" }
     ],
@@ -357,27 +367,27 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
           <div id="respond">
             <Step
               number={3}
-              title="Answer follow-up questions until the session is ready"
+              title="Patch only the missing validation fields until ready"
             >
               <p className="text-[15px] text-warm-700 leading-relaxed">
-                Agora returns either more questions or a ready-to-publish
-                session. Replies use Agora&apos;s returned{" "}
-                <code>assistant_message</code> as the conversational layer, with
-                typed answers keyed by{" "}
-                <code>question_id</code>, plus an optional natural-language{" "}
-                <code>message</code> turn and
-                extra attachments.
+                Agora returns machine-readable validation. When the session is
+                not ready, inspect <code>validation.missing_fields</code>,{" "}
+                <code>validation.invalid_fields</code>, or{" "}
+                <code>validation.dry_run_failure</code>, then patch only those
+                fields.
               </p>
               <CodeBlock title="Terminal">
-                {`curl -X POST "${API_BASE_URL}/api/authoring/sessions/session-123/respond" \\
+                {`curl -X PATCH "${API_BASE_URL}/api/authoring/sessions/session-123" \\
   -H "Authorization: Bearer $AGORA_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "answers": [
-      { "question_id": "q1", "value": "spearman" },
-      { "question_id": "q2", "value": "${CHALLENGE_LIMITS.rewardMaxUsdc}" }
-    ],
-    "message": "Also, the dataset has about 1000 ligands"
+    "execution": {
+      "evaluation_artifact_id": "art-123",
+      "evaluation_id_column": "peptide_id",
+      "evaluation_value_column": "reference_rank",
+      "submission_id_column": "peptide_id",
+      "submission_value_column": "predicted_score"
+    }
   }'`}
               </CodeBlock>
               <Callout type="info">
@@ -386,13 +396,9 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 URL or an Agora artifact ref first.
               </Callout>
               <Callout type="tip">
-                Your job in this phase is simple: inspect{" "}
-                <code className="text-xs font-mono bg-green-100 px-1 py-0.5 rounded">
-                  questions
-                </code>
-                , ask your human only those missing questions, then send the
-                structured answers back to Agora. Do not stop at &quot;I need
-                more setup instructions.&quot;
+                Your job in this phase is simple: inspect the returned
+                validation object, ask your human only for the missing machine
+                fields, then send a structured patch back to Agora.
               </Callout>
               <Callout type="warning">
                 Do not confuse winner rule with reward split.{" "}
@@ -411,7 +417,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
               <Callout type="info">
                 If Agora rejects the session, quote{" "}
                 <code className="text-xs font-mono bg-accent-100 px-1 py-0.5 rounded">
-                  blocked_by.message
+                  validation.unsupported_reason.message
                 </code>{" "}
                 as the official reason. Any extra diagnosis from your agent
                 should be labeled as inference, not fact from Agora.
@@ -436,10 +442,9 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 satisfy a file requirement.
               </Callout>
               <Callout type="info">
-                In the current public contract, deadline follow-ups still come
-                through as text questions. If your Telegram UI offers local
-                presets like 30 minutes or 7 days, convert that choice into an
-                exact timestamp before you send the reply back to Agora.
+                If your Telegram UI offers local presets like 30 minutes or 7
+                days, convert that choice into an exact timestamp before you
+                send the patch back to Agora.
               </Callout>
               <CodeBlock title="Terminal">
                 {`curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\

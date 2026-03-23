@@ -1,6 +1,6 @@
 {
   "id": "structured-report-validation",
-  "managed_support": "custom_workflow_required",
+  "table_scorer_support": "custom_workflow_required",
   "intent_family": "structured_record_score",
   "artifacts_root": "uploads",
   "prompt_variants_root": "prompt-variants",
@@ -26,7 +26,7 @@
       "mime": "application/json"
     }
   },
-  "acceptable_compile_states": ["rejected"],
+  "acceptable_compile_states": ["awaiting_input"],
   "disallowed_outcomes": {
     "disallowed_templates": [
       "official_table_metric_v1"
@@ -37,7 +37,7 @@
     {
       "id": "direct-poster-brief",
       "file": "prompt-variants/direct-poster-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "scoring rubric",
         "required JSON fields",
@@ -48,7 +48,7 @@
     {
       "id": "thread-summary-brief",
       "file": "prompt-variants/thread-summary-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "what counts as a valid report",
         "what stays hidden",
@@ -58,7 +58,7 @@
     {
       "id": "minimal-ops-brief",
       "file": "prompt-variants/minimal-ops-brief.md",
-      "acceptable_compile_states": ["rejected"],
+      "acceptable_compile_states": ["awaiting_input"],
       "expected_follow_up_topics": [
         "JSON submission format",
         "deterministic judging rule",

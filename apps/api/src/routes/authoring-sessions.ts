@@ -1,16 +1,15 @@
-import { randomUUID } from "node:crypto";
 import {
   AgoraError,
   CHALLENGE_LIMITS,
   challengeIntentSchema,
-  conversationalAuthoringSessionResponseSchema,
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
+  partialChallengeIntentSchema,
   defaultMinimumScoreForEvaluation,
   loadConfig,
+  patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
   readAuthoringSponsorRuntimeConfig,
-  respondAuthoringSessionRequestSchema,
   SUBMISSION_LIMITS,
   uploadUrlRequestSchema,
   walletPublishPreparationSchema,
@@ -43,18 +42,16 @@ import {
   createConversationLogEntry,
   logConversationEntries,
 } from "../lib/authoring-session-observability.js";
-import { compileManagedAuthoringSessionOutcome } from "../lib/managed-authoring.js";
+import { compileAuthoringSessionOutcome } from "../lib/authoring-compiler.js";
 import {
-  buildManagedAuthoringIr,
-  deriveManagedIntentCandidate,
+  buildAuthoringIr,
+  deriveAuthoringIntentCandidate,
   extractMissingIntentFields,
-} from "../lib/managed-authoring-ir.js";
-import { buildAuthoringQuestions } from "../lib/authoring-questions.js";
+} from "../lib/authoring-ir.js";
 import { jsonAuthoringSessionApiError } from "../lib/authoring-session-api-error.js";
 import {
   type StoredAuthoringSessionArtifact,
   createDirectAuthoringSessionArtifact,
-  decodeAuthoringSessionArtifactId,
   mergeStoredArtifacts,
   normalizeAuthoringSessionFileInputs,
   toAuthoringSessionArtifactPayload,
@@ -63,9 +60,7 @@ import {
   buildAuthoringSessionListItemPayload,
   buildAuthoringSessionPayload,
   buildSessionIntentCandidate,
-  buildSessionQuestionDescriptors,
   isAuthoringSessionExpired,
-  type SessionQuestionDescriptor,
 } from "../lib/authoring-session-payloads.js";
 import {
   sponsorAndPublishAuthoringSession,
@@ -95,7 +90,7 @@ type AuthoringSessionRouteDependencies = {
   listAuthoringSessionsByCreator?: typeof listAuthoringSessionsByCreator;
   updateAuthoringSession?: typeof updateAuthoringSession;
   getChallengeById?: typeof getChallengeById;
-  compileManagedAuthoringSessionOutcome?: typeof compileManagedAuthoringSessionOutcome;
+  compileAuthoringSessionOutcome?: typeof compileAuthoringSessionOutcome;
   requireAuthoringPrincipalMiddleware?: MiddlewareHandler<ApiEnv>;
   requireWriteQuotaImpl?: typeof requireWriteQuota;
   sponsorAndPublishAuthoringSession?: typeof sponsorAndPublishAuthoringSession;
@@ -164,15 +159,6 @@ function buildWalletPublishPreparation(input: {
   });
 }
 
-function buildPosterMessage(content: string) {
-  return {
-    id: `poster-${randomUUID()}`,
-    role: "poster" as const,
-    content,
-    created_at: buildNowIso(),
-  };
-}
-
 function cleanText(value?: string | null) {
   if (typeof value !== "string") {
     return null;
@@ -193,144 +179,35 @@ function invalidAuthoringIntentError(error: z.ZodError) {
   });
 }
 
-function appendFreeformContext(
+function applyStructuredIntent(
   intentCandidate: Record<string, unknown>,
-  contextText: string | null,
+  intent?: Record<string, unknown>,
 ) {
-  if (!contextText) {
+  if (!intent) {
     return intentCandidate;
   }
-
-  if (typeof intentCandidate.description !== "string") {
-    return {
-      ...intentCandidate,
-      description: contextText,
-    };
-  }
-
-  const existingInstructions =
-    typeof intentCandidate.solver_instructions === "string"
-      ? intentCandidate.solver_instructions.trim()
-      : "";
-
   return {
     ...intentCandidate,
-    solver_instructions:
-      existingInstructions.length > 0
-        ? `${existingInstructions}\n\n${contextText}`
-        : contextText,
+    ...intent,
   };
-}
-
-function buildCreateSourceMessages(input: {
-  message?: string;
-  summary?: string;
-  messages?: Array<{ text: string }>;
-}) {
-  const sourceMessages = [];
-  const message = cleanText(input.message);
-  if (message) {
-    sourceMessages.push(buildPosterMessage(message));
-  }
-
-  const summary = cleanText(input.summary);
-  if (summary) {
-    sourceMessages.push(buildPosterMessage(summary));
-  }
-
-  for (const message of input.messages ?? []) {
-    sourceMessages.push(buildPosterMessage(message.text));
-  }
-
-  return sourceMessages;
-}
-
-function buildRespondSourceMessages(input: {
-  current: AuthoringSessionRow;
-  message?: string;
-}) {
-  const sourceMessages = [
-    ...(input.current.authoring_ir_json?.source.poster_messages ?? []),
-  ];
-  const message = cleanText(input.message);
-  if (message) {
-    sourceMessages.push(buildPosterMessage(message));
-  }
-  return sourceMessages;
-}
-
-function buildCreateFreeformSeed(input: {
-  message?: string;
-  summary?: string;
-  messages?: Array<{ text: string }>;
-}) {
-  const parts = [
-    cleanText(input.message),
-    cleanText(input.summary),
-    ...(input.messages ?? []).map((entry) => cleanText(entry.text)),
-  ].filter((value): value is string => Boolean(value));
-
-  return parts.length > 0 ? parts.join("\n\n") : null;
-}
-
-function buildQuestionPromptAssistantMessage(
-  questions: SessionQuestionDescriptor[],
-) {
-  if (questions.length === 0) {
-    return "I need a little more information before I can continue.";
-  }
-
-  if (questions.length === 1) {
-    return `I need one more thing before I can continue: ${questions[0]?.text ?? ""}`;
-  }
-
-  return `I need a few more things before I can continue: ${questions
-    .map((question) => question.text)
-    .join(" ")}`;
-}
-
-function fallbackAssistantMessage(session: AuthoringSessionRow) {
-  const sessionPayload = buildAuthoringSessionPayload(session);
-  if (sessionPayload.state === "awaiting_input") {
-    return buildQuestionPromptAssistantMessage(
-      buildSessionQuestionDescriptors(session.authoring_ir_json),
-    );
-  }
-
-  if (sessionPayload.state === "rejected") {
-    return (
-      sessionPayload.blocked_by?.message ??
-      session.failure_message ??
-      "I can't continue with this session as written. Create a new one with a deterministic scoring setup."
-    );
-  }
-
-  if (sessionPayload.state === "ready") {
-    return "Your challenge is ready to review and publish.";
-  }
-
-  return "Session updated.";
-}
-
-function buildConversationalAuthoringSessionResponse(input: {
-  session: AuthoringSessionRow;
-  assistantMessage?: string | null;
-}) {
-  return conversationalAuthoringSessionResponseSchema.parse({
-    session: buildAuthoringSessionPayload(input.session),
-    assistant_message:
-      cleanText(input.assistantMessage) ?? fallbackAssistantMessage(input.session),
-  });
 }
 
 function getSessionPublicState(session: AuthoringSessionRow) {
   return buildAuthoringSessionPayload(session).state;
 }
 
-function buildTurnInputSummary(route: "create" | "respond") {
+function buildTurnInputSummary(route: "create" | "patch") {
   return route === "create"
     ? "Caller started an authoring session."
-    : "Caller replied to Agora.";
+    : "Caller patched an authoring session.";
+}
+
+function normalizeLoggedIntent(intent: unknown) {
+  const parsed = partialChallengeIntentSchema.safeParse(intent);
+  if (!parsed.success || Object.keys(parsed.data).length === 0) {
+    return undefined;
+  }
+  return parsed.data;
 }
 
 function buildTurnOutputSummary(state: ReturnType<typeof getSessionPublicState>) {
@@ -351,11 +228,11 @@ function buildTurnOutputSummary(state: ReturnType<typeof getSessionPublicState>)
 }
 
 function buildTurnInputLogEntry(input: {
-  route: "create" | "respond";
+  route: "create" | "patch";
   requestId: string | null;
   stateBefore: string | null;
-  callerMessage: string | null;
-  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
+  intent?: unknown;
+  execution?: z.input<typeof createAuthoringSessionRequestSchema>["execution"];
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
 }) {
   return createConversationLogEntry({
@@ -366,37 +243,34 @@ function buildTurnInputLogEntry(input: {
     summary: buildTurnInputSummary(input.route),
     state_before: input.stateBefore,
     state_after: input.stateBefore,
-    caller_message: input.callerMessage,
-    answers:
-      input.answers && input.answers.length > 0 ? input.answers : undefined,
+    intent: normalizeLoggedIntent(input.intent),
+    execution:
+      input.execution && Object.keys(input.execution).length > 0
+        ? input.execution
+        : undefined,
     files: buildLoggedFileInputs(input.files),
   });
 }
 
 function buildTurnOutputLogEntry(input: {
-  route: "create" | "respond";
+  route: "create" | "patch";
   requestId: string | null;
   stateBefore: string | null;
   session: AuthoringSessionRow;
-  assistantMessage?: string | null;
   artifacts?: StoredAuthoringSessionArtifact[];
 }) {
-  const response = buildConversationalAuthoringSessionResponse({
-    session: input.session,
-    assistantMessage: input.assistantMessage,
-  });
+  const response = buildAuthoringSessionPayload(input.session);
 
   return createConversationLogEntry({
     request_id: input.requestId,
     route: input.route,
     event: "turn.output.recorded",
     actor: "agora",
-    summary: buildTurnOutputSummary(response.session.state),
+    summary: buildTurnOutputSummary(response.state),
     state_before: input.stateBefore,
-    state_after: response.session.state,
-    assistant_message: response.assistant_message,
-    questions: response.session.questions,
-    blocked_by: response.session.blocked_by,
+    state_after: response.state,
+    resolved: response.resolved,
+    validation: response.validation,
     artifacts: buildLoggedArtifacts(input.artifacts),
   });
 }
@@ -565,137 +439,6 @@ function normalizeFileName(fileName: string | null) {
   return normalized && normalized.length > 0 ? normalized : "artifact";
 }
 
-function collectAnswerArtifacts(input: {
-  answers?: Array<{ question_id: string; value: string | { type: "artifact"; artifact_id: string } }>;
-}) {
-  const artifacts: StoredAuthoringSessionArtifact[] = [];
-  for (const answer of input.answers ?? []) {
-    if (typeof answer.value === "string") {
-      continue;
-    }
-    artifacts.push(decodeAuthoringSessionArtifactId(answer.value.artifact_id));
-  }
-  return artifacts;
-}
-
-function resolveQuestionById(
-  session: AuthoringSessionRow,
-  questionId: string,
-) {
-  return buildSessionQuestionDescriptors(session.authoring_ir_json).find(
-    (question) => question.id === questionId,
-  );
-}
-
-function applyAnswerPatch(input: {
-  session: AuthoringSessionRow;
-  answers?: Array<{ question_id: string; value: string | { type: "artifact"; artifact_id: string } }>;
-}) {
-  const intentCandidate = buildSessionIntentCandidate(input.session);
-  let metricOverride =
-    input.session.compilation_json?.metric ??
-    input.session.authoring_ir_json?.evaluation.metric ??
-    null;
-  let evaluationArtifactIdOverride =
-    input.session.authoring_ir_json?.evaluation.evaluation_artifact_id ?? null;
-  let evaluationIdColumnOverride =
-    input.session.authoring_ir_json?.evaluation.evaluation_columns.id ?? null;
-  let evaluationValueColumnOverride =
-    input.session.authoring_ir_json?.evaluation.evaluation_columns.value ?? null;
-  let submissionIdColumnOverride =
-    input.session.authoring_ir_json?.evaluation.submission_columns.id ?? null;
-  let submissionValueColumnOverride =
-    input.session.authoring_ir_json?.evaluation.submission_columns.value ?? null;
-
-  for (const answer of input.answers ?? []) {
-    const question = resolveQuestionById(input.session, answer.question_id);
-    if (!question) {
-      throw new Error(
-        "Answer references an unknown question_id. Next step: reload the session and answer one of the current pending questions.",
-      );
-    }
-
-    if (question.kind === "file") {
-      if (typeof answer.value === "string") {
-        throw new Error(
-          "File questions require an artifact reference answer. Next step: upload the file first, then retry with the returned artifact_id.",
-        );
-      }
-      if (question.field === "evaluation_artifact") {
-        evaluationArtifactIdOverride = answer.value.artifact_id;
-      }
-      continue;
-    }
-
-    if (typeof answer.value !== "string") {
-      throw new Error(
-        "This question expects a text or select answer. Next step: send a string value and retry.",
-      );
-    }
-
-    if (
-      question.kind === "select" &&
-      question.options &&
-      !question.options.includes(answer.value)
-    ) {
-      throw new Error(
-        "Answer value is not one of the allowed options. Next step: choose one of the current question options and retry.",
-      );
-    }
-
-    switch (question.field) {
-      case "title":
-        intentCandidate.title = answer.value;
-        break;
-      case "description":
-        intentCandidate.description = answer.value;
-        break;
-      case "payout_condition":
-        intentCandidate.payout_condition = answer.value;
-        break;
-      case "reward_total":
-        intentCandidate.reward_total = answer.value;
-        break;
-      case "distribution":
-        intentCandidate.distribution = answer.value as
-          | "winner_take_all"
-          | "top_3"
-          | "proportional";
-        break;
-      case "deadline":
-        intentCandidate.deadline = answer.value;
-        break;
-      case "metric":
-        metricOverride = answer.value;
-        break;
-      case "evaluation_id_column":
-        evaluationIdColumnOverride = answer.value;
-        break;
-      case "evaluation_value_column":
-        evaluationValueColumnOverride = answer.value;
-        break;
-      case "submission_id_column":
-        submissionIdColumnOverride = answer.value;
-        break;
-      case "submission_value_column":
-        submissionValueColumnOverride = answer.value;
-        break;
-      default:
-        break;
-    }
-  }
-
-  return {
-    intentCandidate,
-    metricOverride,
-    evaluationArtifactIdOverride,
-    evaluationIdColumnOverride,
-    evaluationValueColumnOverride,
-    submissionIdColumnOverride,
-    submissionValueColumnOverride,
-  };
-}
-
 async function ensureSessionVisibility(
   c: import("hono").Context<ApiEnv>,
   db: ReturnType<typeof createSupabaseClient>,
@@ -804,9 +547,9 @@ async function appendValidationFailureLog(input: {
   code: string;
   message: string;
   nextAction: string;
-  callerMessage?: string | null;
-  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
-  files?: z.input<typeof respondAuthoringSessionRequestSchema>["files"];
+  intent?: unknown;
+  execution?: z.input<typeof createAuthoringSessionRequestSchema>["execution"];
+  files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
 }) {
   const entry = createConversationLogEntry({
     request_id: getRequestId(input.c) ?? null,
@@ -816,9 +559,11 @@ async function appendValidationFailureLog(input: {
     summary: "Agora rejected the turn before state changed.",
     state_before: getSessionPublicState(input.session),
     state_after: getSessionPublicState(input.session),
-    caller_message: input.callerMessage ?? null,
-    answers:
-      input.answers && input.answers.length > 0 ? input.answers : undefined,
+    intent: normalizeLoggedIntent(input.intent),
+    execution:
+      input.execution && Object.keys(input.execution).length > 0
+        ? input.execution
+        : undefined,
     files: buildLoggedFileInputs(input.files),
     error: {
       status: input.status,
@@ -876,26 +621,19 @@ function nextEditableStateError(
 async function persistAssessmentResult(input: {
   db: ReturnType<typeof createSupabaseClient>;
   session: AuthoringSessionRow | null;
-  route: "create" | "respond";
+  route: "create" | "patch";
   requestId: string | null;
   principal: AuthoringSessionCreatorOutput;
-  callerMessage: string | null;
-  answers?: z.input<typeof respondAuthoringSessionRequestSchema>["answers"];
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
+  intentPatch?: z.input<typeof createAuthoringSessionRequestSchema>["intent"];
   intentCandidate: Record<string, unknown>;
-  sourceMessages: Array<{
-    id: string;
-    role: "poster" | "participant" | "system";
-    content: string;
-    created_at: string;
-  }>;
   origin?: {
     provider: "direct" | "beach_science";
     external_id?: string | null;
     external_url?: string | null;
   };
   uploadedArtifacts: StoredAuthoringSessionArtifact[];
-  compileManagedAuthoringSessionOutcomeImpl: typeof compileManagedAuthoringSessionOutcome;
+  compileAuthoringSessionOutcomeImpl: typeof compileAuthoringSessionOutcome;
   createAuthoringSessionImpl: typeof createAuthoringSession;
   updateAuthoringSessionImpl: typeof updateAuthoringSession;
   appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
@@ -913,9 +651,8 @@ async function persistAssessmentResult(input: {
         ? input.intentCandidate.title
         : null,
     ) ??
-    input.sourceMessages[0]?.content ??
     null;
-  const effectiveIntentCandidate = deriveManagedIntentCandidate({
+  const effectiveIntentCandidate = deriveAuthoringIntentCandidate({
     intent: input.intentCandidate,
     sourceTitle,
   });
@@ -923,32 +660,40 @@ async function persistAssessmentResult(input: {
   const missingFields = extractMissingIntentFields(effectiveIntentCandidate);
 
   if (missingFields.length > 0) {
-    const pendingQuestions = buildAuthoringQuestions({
-      missingFields,
-      uploadedArtifacts: input.uploadedArtifacts,
-      selectedEvaluationArtifactId: input.evaluationArtifactIdOverride ?? null,
-    });
-    const authoringIr = buildManagedAuthoringIr({
+    const authoringIr = buildAuthoringIr({
       intent: effectiveIntentCandidate,
       uploadedArtifacts: input.uploadedArtifacts,
       sourceTitle,
-      sourceMessages: input.sourceMessages,
       origin:
         input.origin ??
         input.session?.authoring_ir_json?.origin ?? { provider: "direct" },
-      questions: pendingQuestions,
       assessmentOutcome: "awaiting_input",
       missingFields,
     });
-    const questionDescriptors = buildSessionQuestionDescriptors(authoringIr);
-    const assistantMessage =
-      buildQuestionPromptAssistantMessage(questionDescriptors);
     const inputEntry = buildTurnInputLogEntry({
       route: input.route,
       requestId: input.requestId,
       stateBefore: input.session ? getSessionPublicState(input.session) : null,
-      callerMessage: input.callerMessage,
-      answers: input.answers,
+      intent: input.intentPatch,
+      execution: {
+        ...(input.templateOverride ? { template: input.templateOverride } : {}),
+        ...(input.metricOverride ? { metric: input.metricOverride } : {}),
+        ...(input.evaluationArtifactIdOverride
+          ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
+          : {}),
+        ...(input.evaluationIdColumnOverride
+          ? { evaluation_id_column: input.evaluationIdColumnOverride }
+          : {}),
+        ...(input.evaluationValueColumnOverride
+          ? { evaluation_value_column: input.evaluationValueColumnOverride }
+          : {}),
+        ...(input.submissionIdColumnOverride
+          ? { submission_id_column: input.submissionIdColumnOverride }
+          : {}),
+        ...(input.submissionValueColumnOverride
+          ? { submission_value_column: input.submissionValueColumnOverride }
+          : {}),
+      },
       files: input.files,
     });
 
@@ -969,7 +714,6 @@ async function persistAssessmentResult(input: {
         requestId: input.requestId,
         stateBefore: getSessionPublicState(input.session),
         session,
-        assistantMessage,
         artifacts: input.uploadedArtifacts,
       });
       const sessionWithLog = await appendConversationEntries({
@@ -983,7 +727,6 @@ async function persistAssessmentResult(input: {
       });
       return {
         session: sessionWithLog,
-        assistantMessage,
         logEntries: [inputEntry, outputEntry],
       };
     }
@@ -1000,7 +743,6 @@ async function persistAssessmentResult(input: {
       requestId: input.requestId,
       stateBefore: null,
       session,
-      assistantMessage,
       artifacts: input.uploadedArtifacts,
     });
     const sessionWithLog = await appendConversationEntries({
@@ -1014,7 +756,6 @@ async function persistAssessmentResult(input: {
     });
     return {
       session: sessionWithLog,
-      assistantMessage,
       logEntries: [inputEntry, outputEntry],
     };
   }
@@ -1026,7 +767,7 @@ async function persistAssessmentResult(input: {
     throw invalidAuthoringIntentError(parsedIntentResult.error);
   }
   const parsedIntent = parsedIntentResult.data;
-  const outcome = await input.compileManagedAuthoringSessionOutcomeImpl(
+  const outcome = await input.compileAuthoringSessionOutcomeImpl(
     {
       intent: parsedIntent,
       uploadedArtifacts: input.uploadedArtifacts,
@@ -1062,8 +803,26 @@ async function persistAssessmentResult(input: {
     route: input.route,
     requestId: input.requestId,
     stateBefore: input.session ? getSessionPublicState(input.session) : null,
-    callerMessage: input.callerMessage,
-    answers: input.answers,
+    intent: input.intentPatch,
+    execution: {
+      ...(input.templateOverride ? { template: input.templateOverride } : {}),
+      ...(input.metricOverride ? { metric: input.metricOverride } : {}),
+      ...(input.evaluationArtifactIdOverride
+        ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
+        : {}),
+      ...(input.evaluationIdColumnOverride
+        ? { evaluation_id_column: input.evaluationIdColumnOverride }
+        : {}),
+      ...(input.evaluationValueColumnOverride
+        ? { evaluation_value_column: input.evaluationValueColumnOverride }
+        : {}),
+      ...(input.submissionIdColumnOverride
+        ? { submission_id_column: input.submissionIdColumnOverride }
+        : {}),
+      ...(input.submissionValueColumnOverride
+        ? { submission_value_column: input.submissionValueColumnOverride }
+        : {}),
+    },
     files: input.files,
   });
 
@@ -1076,7 +835,7 @@ async function persistAssessmentResult(input: {
       authoring_ir_json: outcome.authoringIr,
       uploaded_artifacts_json: input.uploadedArtifacts,
       compilation_json: outcome.compilation ?? null,
-      failure_message: state === "rejected" ? outcome.message ?? null : null,
+      failure_message: state === "rejected" ? outcome.failureMessage ?? null : null,
       expires_at: expiresAt,
     });
     const outputEntry = buildTurnOutputLogEntry({
@@ -1084,7 +843,6 @@ async function persistAssessmentResult(input: {
       requestId: input.requestId,
       stateBefore: getSessionPublicState(input.session),
       session,
-      assistantMessage: outcome.message ?? null,
       artifacts: input.uploadedArtifacts,
     });
     const sessionWithLog = await appendConversationEntries({
@@ -1098,7 +856,6 @@ async function persistAssessmentResult(input: {
     });
     return {
       session: sessionWithLog,
-      assistantMessage: outcome.message ?? null,
       logEntries: [inputEntry, outputEntry],
     };
   }
@@ -1110,7 +867,7 @@ async function persistAssessmentResult(input: {
     authoring_ir_json: outcome.authoringIr,
     uploaded_artifacts_json: input.uploadedArtifacts,
     compilation_json: outcome.compilation ?? null,
-    failure_message: state === "rejected" ? outcome.message ?? null : null,
+    failure_message: state === "rejected" ? outcome.failureMessage ?? null : null,
     expires_at: expiresAt,
   });
   const outputEntry = buildTurnOutputLogEntry({
@@ -1118,7 +875,6 @@ async function persistAssessmentResult(input: {
     requestId: input.requestId,
     stateBefore: null,
     session,
-    assistantMessage: outcome.message ?? null,
     artifacts: input.uploadedArtifacts,
   });
   const sessionWithLog = await appendConversationEntries({
@@ -1132,7 +888,6 @@ async function persistAssessmentResult(input: {
   });
   return {
     session: sessionWithLog,
-    assistantMessage: outcome.message ?? null,
     logEntries: [inputEntry, outputEntry],
   };
 }
@@ -1153,9 +908,9 @@ export function createAuthoringSessionRoutes(
       listAuthoringSessionsByCreator,
     updateAuthoringSession: updateAuthoringSessionImpl = updateAuthoringSession,
     getChallengeById: getChallengeByIdImpl = getChallengeById,
-    compileManagedAuthoringSessionOutcome:
-      compileManagedAuthoringSessionOutcomeImpl =
-        compileManagedAuthoringSessionOutcome,
+    compileAuthoringSessionOutcome:
+      compileAuthoringSessionOutcomeImpl =
+        compileAuthoringSessionOutcome,
     requireAuthoringPrincipalMiddleware = requireAuthoringPrincipal,
     requireWriteQuotaImpl = requireWriteQuota,
     sponsorAndPublishAuthoringSession:
@@ -1243,17 +998,7 @@ export function createAuthoringSessionRoutes(
         }
         throw error;
       }
-      const sourceMessages = buildCreateSourceMessages({
-        message: parsed.data.message,
-        summary: parsed.data.summary,
-        messages: parsed.data.messages,
-      });
-      const freeformSeed = buildCreateFreeformSeed({
-        message: parsed.data.message,
-        summary: parsed.data.summary,
-        messages: parsed.data.messages,
-      });
-      const intentCandidate = appendFreeformContext({}, freeformSeed);
+      const intentCandidate = applyStructuredIntent({}, parsed.data.intent);
 
       try {
         const result = await persistAssessmentResult({
@@ -1262,10 +1007,9 @@ export function createAuthoringSessionRoutes(
           route: "create",
           requestId: getRequestId(c) ?? null,
           principal: c.get("authoringPrincipal"),
-          callerMessage: freeformSeed,
           files: parsed.data.files,
+          intentPatch: parsed.data.intent,
           intentCandidate,
-          sourceMessages,
           origin: parsed.data.provenance
             ? {
                 provider: toOriginProvider(parsed.data.provenance.source),
@@ -1274,22 +1018,29 @@ export function createAuthoringSessionRoutes(
               }
             : undefined,
           uploadedArtifacts: incomingArtifacts,
-          compileManagedAuthoringSessionOutcomeImpl,
+          compileAuthoringSessionOutcomeImpl,
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          templateOverride: parsed.data.execution?.template ?? null,
+          metricOverride: parsed.data.execution?.metric ?? null,
+          evaluationArtifactIdOverride:
+            parsed.data.execution?.evaluation_artifact_id ?? null,
+          evaluationIdColumnOverride:
+            parsed.data.execution?.evaluation_id_column ?? null,
+          evaluationValueColumnOverride:
+            parsed.data.execution?.evaluation_value_column ?? null,
+          submissionIdColumnOverride:
+            parsed.data.execution?.submission_id_column ?? null,
+          submissionValueColumnOverride:
+            parsed.data.execution?.submission_value_column ?? null,
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
           entries: result.logEntries,
         });
 
-        return c.json(
-          buildConversationalAuthoringSessionResponse({
-            session: result.session,
-            assistantMessage: result.assistantMessage,
-          }),
-        );
+        return c.json(buildAuthoringSessionPayload(result.session));
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1312,12 +1063,12 @@ export function createAuthoringSessionRoutes(
     },
   );
 
-  router.post(
-    "/sessions/:id/respond",
+  router.patch(
+    "/sessions/:id",
     requireAuthoringPrincipalMiddleware,
-    requireWriteQuotaImpl("/api/authoring/sessions/respond"),
+    requireWriteQuotaImpl("/api/authoring/sessions/patch"),
     async (c) => {
-      const parsed = await parseJsonBody(c, respondAuthoringSessionRequestSchema);
+      const parsed = await parseJsonBody(c, patchAuthoringSessionRequestSchema);
       if (!parsed.ok) {
         return parsed.response;
       }
@@ -1330,7 +1081,7 @@ export function createAuthoringSessionRoutes(
         current,
         updateAuthoringSessionImpl,
         appendAuthoringSessionConversationLogImpl,
-        { route: "respond" },
+        { route: "patch" },
       );
       if (!visible.ok) {
         return visible.response;
@@ -1343,13 +1094,13 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          route: "respond",
+          route: "patch",
           status: 409,
           code: "session_expired",
           message: "This session has expired.",
           nextAction: "Create a new session to continue.",
-          callerMessage: cleanText(parsed.data.message),
-          answers: parsed.data.answers,
+          intent: parsed.data.intent,
+          execution: parsed.data.execution,
           files: parsed.data.files,
         });
         return jsonAuthoringSessionApiError(c, {
@@ -1372,7 +1123,7 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          route: "respond",
+          route: "patch",
           status: 400,
           code: "invalid_request",
           message:
@@ -1382,51 +1133,15 @@ export function createAuthoringSessionRoutes(
                 ? "This session has already been published and cannot accept more input."
                 : "This session was rejected and cannot accept more input.",
           nextAction: "Create a new session to make changes.",
-          callerMessage: cleanText(parsed.data.message),
-          answers: parsed.data.answers,
+          intent: parsed.data.intent,
+          execution: parsed.data.execution,
           files: parsed.data.files,
         });
         return nextEditableStateError(c, visible.session);
       }
 
-      let questionPatch;
-      try {
-        questionPatch = applyAnswerPatch({
-          session: visible.session,
-          answers: parsed.data.answers,
-        });
-      } catch (error) {
-        await appendValidationFailureLog({
-          c,
-          db,
-          session: visible.session,
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-          route: "respond",
-          status: 400,
-          code: "invalid_request",
-          message:
-            error instanceof Error ? error.message : "Invalid respond payload.",
-          nextAction: "Fix the request body and retry.",
-          callerMessage: cleanText(parsed.data.message),
-          answers: parsed.data.answers,
-          files: parsed.data.files,
-        });
-        return jsonAuthoringSessionApiError(c, {
-          status: 400,
-          code: "invalid_request",
-          message:
-            error instanceof Error ? error.message : "Invalid respond payload.",
-          nextAction: "Fix the request body and retry.",
-        });
-      }
-
-      let artifactsFromAnswers: StoredAuthoringSessionArtifact[] = [];
       let artifactsFromFiles: StoredAuthoringSessionArtifact[] = [];
       try {
-        artifactsFromAnswers = collectAnswerArtifacts({
-          answers: parsed.data.answers,
-        });
         artifactsFromFiles = parsed.data.files?.length
           ? await normalizeAuthoringSessionFileInputsImpl({
               files: parsed.data.files,
@@ -1440,14 +1155,14 @@ export function createAuthoringSessionRoutes(
             session: visible.session,
             updateAuthoringSessionImpl,
             appendAuthoringSessionConversationLogImpl,
-            route: "respond",
+            route: "patch",
             status: 400,
             code: "invalid_request",
             message: error.message,
             nextAction:
               error.nextAction ?? "Fix the file references or upload payload and retry.",
-            callerMessage: cleanText(parsed.data.message),
-            answers: parsed.data.answers,
+            intent: parsed.data.intent,
+            execution: parsed.data.execution,
             files: parsed.data.files,
           });
           return jsonAuthoringSessionApiError(c, {
@@ -1462,65 +1177,75 @@ export function createAuthoringSessionRoutes(
       }
       const currentArtifacts = (visible.session.uploaded_artifacts_json ??
         []) as StoredAuthoringSessionArtifact[];
-      const uploadedArtifacts = mergeStoredArtifacts(currentArtifacts, [
-        ...artifactsFromAnswers,
-        ...artifactsFromFiles,
-      ]);
-      const intentCandidate = appendFreeformContext(
-        questionPatch.intentCandidate,
-        cleanText(parsed.data.message),
+      const uploadedArtifacts = mergeStoredArtifacts(currentArtifacts, artifactsFromFiles);
+      const intentCandidate = applyStructuredIntent(
+        buildSessionIntentCandidate(visible.session),
+        parsed.data.intent,
       );
-      const sourceMessages = buildRespondSourceMessages({
-        current: visible.session,
-        message: parsed.data.message,
-      });
+      const templateOverride =
+        parsed.data.execution?.template ??
+        ((visible.session.compilation_json?.template as
+          | "official_table_metric_v1"
+          | undefined) ??
+          (visible.session.authoring_ir_json?.evaluation.template as
+            | "official_table_metric_v1"
+            | undefined) ??
+          "official_table_metric_v1");
+      const metricOverride =
+        parsed.data.execution?.metric ??
+        visible.session.compilation_json?.metric ??
+        visible.session.authoring_ir_json?.evaluation.metric ??
+        null;
+      const evaluationArtifactIdOverride =
+        parsed.data.execution?.evaluation_artifact_id ??
+        visible.session.authoring_ir_json?.evaluation.evaluation_artifact_id ??
+        null;
+      const evaluationIdColumnOverride =
+        parsed.data.execution?.evaluation_id_column ??
+        visible.session.authoring_ir_json?.evaluation.evaluation_columns.id ??
+        null;
+      const evaluationValueColumnOverride =
+        parsed.data.execution?.evaluation_value_column ??
+        visible.session.authoring_ir_json?.evaluation.evaluation_columns.value ??
+        null;
+      const submissionIdColumnOverride =
+        parsed.data.execution?.submission_id_column ??
+        visible.session.authoring_ir_json?.evaluation.submission_columns.id ??
+        null;
+      const submissionValueColumnOverride =
+        parsed.data.execution?.submission_value_column ??
+        visible.session.authoring_ir_json?.evaluation.submission_columns.value ??
+        null;
       try {
         const result = await persistAssessmentResult({
           db,
           session: visible.session,
-          route: "respond",
+          route: "patch",
           requestId: getRequestId(c) ?? null,
           principal: c.get("authoringPrincipal"),
-          callerMessage: cleanText(parsed.data.message),
-          answers: parsed.data.answers,
           files: parsed.data.files,
+          intentPatch: parsed.data.intent,
           intentCandidate,
-          sourceMessages,
           origin: visible.session.authoring_ir_json?.origin,
           uploadedArtifacts,
-          compileManagedAuthoringSessionOutcomeImpl,
+          compileAuthoringSessionOutcomeImpl,
           createAuthoringSessionImpl,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          templateOverride:
-            (visible.session.compilation_json?.template as
-              | "official_table_metric_v1"
-              | undefined) ??
-            (visible.session.authoring_ir_json?.evaluation.template as
-              | "official_table_metric_v1"
-              | undefined) ??
-            "official_table_metric_v1",
-          metricOverride: questionPatch.metricOverride,
-          evaluationArtifactIdOverride:
-            questionPatch.evaluationArtifactIdOverride,
-          evaluationIdColumnOverride: questionPatch.evaluationIdColumnOverride,
-          evaluationValueColumnOverride:
-            questionPatch.evaluationValueColumnOverride,
-          submissionIdColumnOverride: questionPatch.submissionIdColumnOverride,
-          submissionValueColumnOverride:
-            questionPatch.submissionValueColumnOverride,
+          templateOverride,
+          metricOverride,
+          evaluationArtifactIdOverride,
+          evaluationIdColumnOverride,
+          evaluationValueColumnOverride,
+          submissionIdColumnOverride,
+          submissionValueColumnOverride,
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
           entries: result.logEntries,
         });
 
-        return c.json(
-          buildConversationalAuthoringSessionResponse({
-            session: result.session,
-            assistantMessage: result.assistantMessage,
-          }),
-        );
+        return c.json(buildAuthoringSessionPayload(result.session));
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1537,13 +1262,13 @@ export function createAuthoringSessionRoutes(
             session: visible.session,
             updateAuthoringSessionImpl,
             appendAuthoringSessionConversationLogImpl,
-            route: "respond",
+            route: "patch",
             status: 400,
             code: "invalid_request",
             message: error.message,
             nextAction: error.nextAction ?? "Fix the request values and retry.",
-            callerMessage: cleanText(parsed.data.message),
-            answers: parsed.data.answers,
+            intent: parsed.data.intent,
+            execution: parsed.data.execution,
             files: parsed.data.files,
           });
           return jsonAuthoringSessionApiError(c, {

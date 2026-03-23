@@ -10,7 +10,10 @@ import {
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
 import { z } from "zod";
-import { normalizeExternalArtifactsForDraft } from "./authoring-artifacts.js";
+import {
+  detectAuthoringArtifactColumns,
+  normalizeExternalArtifactsForDraft,
+} from "./authoring-artifacts.js";
 
 const ARTIFACT_REF_PREFIX = "agora_artifact_v1_";
 
@@ -32,6 +35,7 @@ function encodeArtifactPayload(input: {
   mime_type?: string | null;
   size_bytes?: number;
   source_url?: string | null;
+  detected_columns?: string[];
 }) {
   return Buffer.from(JSON.stringify(input), "utf8").toString("base64url");
 }
@@ -44,6 +48,7 @@ function decodeArtifactPayload(encoded: string) {
       mime_type?: string | null;
       size_bytes?: number;
       source_url?: string | null;
+      detected_columns?: string[];
     };
   } catch {
     throw new AgoraError(
@@ -59,7 +64,12 @@ function decodeArtifactPayload(encoded: string) {
 export function encodeAuthoringSessionArtifactId(
   artifact: Pick<
     StoredAuthoringSessionArtifact,
-    "uri" | "file_name" | "mime_type" | "size_bytes" | "source_url"
+    | "uri"
+    | "file_name"
+    | "mime_type"
+    | "size_bytes"
+    | "source_url"
+    | "detected_columns"
   >,
 ) {
   return `${ARTIFACT_REF_PREFIX}${encodeArtifactPayload({
@@ -68,6 +78,7 @@ export function encodeAuthoringSessionArtifactId(
     mime_type: artifact.mime_type ?? null,
     size_bytes: artifact.size_bytes,
     source_url: artifact.source_url ?? null,
+    detected_columns: artifact.detected_columns,
   })}`;
 }
 
@@ -90,6 +101,7 @@ export function decodeAuthoringSessionArtifactId(artifactId: string) {
     mime_type: payload.mime_type ?? undefined,
     size_bytes: payload.size_bytes,
     source_url: payload.source_url ?? null,
+    detected_columns: payload.detected_columns,
   } satisfies StoredAuthoringSessionArtifact;
 }
 
@@ -102,6 +114,7 @@ export function toStoredAuthoringSessionArtifact(
     file_name: artifact.file_name ?? "artifact",
     role: artifact.role ?? null,
     source_url: artifact.source_url ?? null,
+    detected_columns: artifact.detected_columns,
   };
 }
 
@@ -193,6 +206,10 @@ export async function createDirectAuthoringSessionArtifact(input: {
       size_bytes: input.bytes.byteLength,
       source_url: null,
       role: null,
+      detected_columns: detectAuthoringArtifactColumns({
+        bytes: input.bytes,
+        fileName: safeFileName,
+      }),
     });
   } finally {
     if (tempFilePath) {

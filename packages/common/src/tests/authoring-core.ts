@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { authoringSourceSessionInputSchema } from "../schemas/authoring-source.js";
 import {
   challengeAuthoringIrSchema,
-  submitManagedAuthoringSessionRequestSchema,
-} from "../schemas/managed-authoring.js";
+  submitAuthoringSessionRequestSchema,
+} from "../schemas/authoring-core.js";
 
 const baseIntent = {
   title: "Dock ligands against KRAS",
@@ -32,7 +32,7 @@ const baseArtifacts = [
   },
 ];
 
-const validSubmitRequest = submitManagedAuthoringSessionRequestSchema.parse({
+const validSubmitRequest = submitAuthoringSessionRequestSchema.parse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: baseArtifacts,
@@ -41,7 +41,7 @@ const validSubmitRequest = submitManagedAuthoringSessionRequestSchema.parse({
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
 assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
 
-const outOfRangeReward = submitManagedAuthoringSessionRequestSchema.safeParse({
+const outOfRangeReward = submitAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: {
     ...baseIntent,
@@ -53,10 +53,10 @@ const outOfRangeReward = submitManagedAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   outOfRangeReward.success,
   false,
-  "managed authoring should reject out-of-range reward totals at intake time",
+  "authoring core should reject out-of-range reward totals at intake time",
 );
 
-const duplicateUri = submitManagedAuthoringSessionRequestSchema.safeParse({
+const duplicateUri = submitAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: baseIntent,
   uploaded_artifacts: [
@@ -72,10 +72,10 @@ const duplicateUri = submitManagedAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   duplicateUri.success,
   false,
-  "managed authoring should reject duplicate artifact URIs",
+  "authoring core should reject duplicate artifact URIs",
 );
 
-const unsupportedUri = submitManagedAuthoringSessionRequestSchema.safeParse({
+const unsupportedUri = submitAuthoringSessionRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: [
     {
@@ -89,10 +89,10 @@ const unsupportedUri = submitManagedAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   unsupportedUri.success,
   false,
-  "managed authoring should only accept pinned or hosted artifact URIs",
+  "authoring core should only accept pinned or hosted artifact URIs",
 );
 
-const tooManyArtifacts = submitManagedAuthoringSessionRequestSchema.safeParse({
+const tooManyArtifacts = submitAuthoringSessionRequestSchema.safeParse({
   intent: baseIntent,
   uploaded_artifacts: Array.from({ length: 13 }, (_value, index) => ({
     id: `artifact-${index}`,
@@ -104,10 +104,10 @@ const tooManyArtifacts = submitManagedAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   tooManyArtifacts.success,
   false,
-  "managed authoring should cap uploaded artifacts per session",
+  "authoring core should cap uploaded artifacts per session",
 );
 
-const tooManyTags = submitManagedAuthoringSessionRequestSchema.safeParse({
+const tooManyTags = submitAuthoringSessionRequestSchema.safeParse({
   intent: {
     ...baseIntent,
     tags: Array.from({ length: 13 }, (_value, index) => `tag-${index}`),
@@ -118,7 +118,7 @@ const tooManyTags = submitManagedAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   tooManyTags.success,
   false,
-  "managed authoring should cap tag count per session",
+  "authoring core should cap tag count per session",
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
@@ -171,9 +171,6 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     compile_error_codes: [],
     compile_error_message: null,
   },
-  questions: {
-    pending: [],
-  },
 });
 
 assert.equal(
@@ -224,4 +221,4 @@ assert.equal(
   "external session URLs must stay on https origins",
 );
 
-console.log("managed authoring schemas validation passed");
+console.log("authoring core schemas validation passed");
