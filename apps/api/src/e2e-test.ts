@@ -28,6 +28,7 @@ import {
   hasSubmissionSealWorkerConfig,
   importSubmissionSealPublicKey,
   loadConfig,
+  readLifecycleE2ERuntimeConfig,
   resolveExecutionTemplateImage,
   resolveRuntimePrivateKey,
   sealSubmission,
@@ -44,7 +45,6 @@ import { processJob } from "./worker/jobs.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const E2E_REWARD_USDC = 1;
-const E2E_DISPUTE_WINDOW_HOURS = 1;
 const E2E_DEADLINE_SECONDS = 60;
 const E2E_POLL_INTERVAL_MS = 1_000;
 const E2E_POLL_TIMEOUT_MS = 60_000;
@@ -77,6 +77,7 @@ function isLocalRpcUrl(value: string | undefined) {
 function requiredConfigPresent() {
   try {
     const config = loadConfig();
+    readLifecycleE2ERuntimeConfig();
     return Boolean(
       config.AGORA_SUPABASE_URL &&
         config.AGORA_SUPABASE_SERVICE_KEY &&
@@ -675,6 +676,7 @@ async function runLifecycleScenario(input: {
     prepared,
   } = input;
   const config = loadConfig();
+  const lifecycleE2EConfig = readLifecycleE2ERuntimeConfig();
 
   console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
   console.log("1. Base fixtures pinned");
@@ -690,7 +692,7 @@ async function runLifecycleScenario(input: {
     specCid: prepared.specCid,
     rewardAmount: E2E_REWARD_USDC,
     deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
-    disputeWindowHours: E2E_DISPUTE_WINDOW_HOURS,
+    disputeWindowHours: lifecycleE2EConfig.disputeWindowHours,
     minimumScore: 0n,
     distributionType: 1,
     labTba: ZERO_ADDRESS,

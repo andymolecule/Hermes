@@ -166,9 +166,10 @@ Wallet/session hardening checks now live in:
 
 ## End-to-End Test
 
-`pnpm smoke:lifecycle` is the preferred entrypoint for the complete challenge lifecycle smoke test on a live environment. It wraps the TypeScript harness in `apps/api/src/e2e-test.ts`.
+`pnpm smoke:lifecycle` is the preferred entrypoint for the challenge lifecycle smoke test on a local Anvil-backed environment. It wraps the TypeScript harness in `apps/api/src/e2e-test.ts`.
 
-`scripts/e2e-test.sh` remains available as the CLI-driven shell harness. Both cover the same lifecycle:
+`apps/api/src/e2e-test.ts` exercises the dispute branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
+`scripts/e2e-test.sh` remains available as the CLI-driven shell harness for the direct finalization branch (`post -> submit -> verify -> finalize -> claim`).
 
 1. Create challenge YAML fixture
 2. Post challenge on-chain
@@ -199,12 +200,12 @@ AGORA_PRIVATE_KEY
 # Optional overrides
 AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/gems-match-scorer:v1"
 AGORA_E2E_DEADLINE_MINUTES="10"
-AGORA_E2E_DISPUTE_WINDOW_HOURS="0"      # 0 for same-session testing
+AGORA_E2E_DISPUTE_WINDOW_HOURS="168"    # contract minimum; use Anvil time travel for fast runs
 AGORA_E2E_ENABLE_TIME_TRAVEL="1"         # allow evm_increaseTime on Anvil
 AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS="600"
 ```
 
-For the full post-deadline path, run this against local Anvil with `AGORA_CHAIN_ID=31337` and `AGORA_E2E_ENABLE_TIME_TRAVEL=1`. Public RPC environments can validate challenge creation, submission intent binding, and open-gate enforcement, but they cannot fast-forward deadline/dispute windows.
+For the full post-deadline path, run this against local Anvil with `AGORA_CHAIN_ID=31337` and `AGORA_E2E_ENABLE_TIME_TRAVEL=1`. The contracts now enforce a minimum 168 hour dispute window, so public RPC environments can validate challenge creation, submission intent binding, and open-gate enforcement, but they cannot complete settlement in one session.
 
 ### Running
 
@@ -215,9 +216,11 @@ pnpm smoke:lifecycle
 # CLI-driven shell harness
 ./scripts/e2e-test.sh
 
-# Fast mode (shorter deadline, no dispute window)
+# Fast local mode (shorter deadline, minimum dispute window, Anvil time travel)
+AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
-AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
+AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
+AGORA_E2E_ENABLE_TIME_TRAVEL=1 \
 ./scripts/e2e-test.sh
 ```
 

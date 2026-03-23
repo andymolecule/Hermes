@@ -5,9 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
+MIN_DISPUTE_WINDOW_HOURS=168
 E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/andymolecule/gems-match-scorer:v1}"
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
-E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-0}"
+E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
 E2E_ENABLE_TIME_TRAVEL="${AGORA_E2E_ENABLE_TIME_TRAVEL:-1}"
 
@@ -53,6 +54,14 @@ fail() {
   echo "❌ E2E failed: $1"
   exit 1
 }
+
+if ! [[ "$E2E_DISPUTE_WINDOW_HOURS" =~ ^[0-9]+$ ]]; then
+  fail "AGORA_E2E_DISPUTE_WINDOW_HOURS must be an integer hour value."
+fi
+
+if (( E2E_DISPUTE_WINDOW_HOURS < MIN_DISPUTE_WINDOW_HOURS )); then
+  fail "AGORA_E2E_DISPUTE_WINDOW_HOURS must be at least ${MIN_DISPUTE_WINDOW_HOURS} to match the contract minimum. Next step: run against local Anvil with AGORA_E2E_ENABLE_TIME_TRAVEL=1 so the script can fast-forward the 7-day dispute window."
+fi
 
 poll_until() {
   local timeout_seconds="$1"
@@ -280,7 +289,7 @@ if [[ "$finalize_wait_seconds" -gt 0 ]]; then
     echo "Advanced chain time by ${finalize_wait_seconds}s via evm_increaseTime."
   else
     if [[ "$finalize_wait_seconds" -gt "$E2E_MAX_FINALIZE_WAIT_SECONDS" ]]; then
-      fail "finalize window requires ${finalize_wait_seconds}s wait (set AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS higher or run against Anvil with time-travel)"
+      fail "finalize window requires ${finalize_wait_seconds}s wait (the contract minimum dispute window is ${MIN_DISPUTE_WINDOW_HOURS}h; run against Anvil with time-travel or raise AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS)"
     fi
     sleep "$finalize_wait_seconds"
   fi

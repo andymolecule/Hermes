@@ -18,6 +18,7 @@ import {
   readAuthoringOperatorRuntimeConfig,
   readAuthoringSponsorRuntimeConfig,
   readCliRuntimeConfig,
+  readLifecycleE2ERuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
@@ -119,6 +120,26 @@ assert.equal(
   getPublicRpcUrlForChainId(999999),
   null,
   "unknown chains should not guess a public RPC URL",
+);
+assert.equal(
+  readLifecycleE2ERuntimeConfig({}).disputeWindowHours,
+  168,
+  "lifecycle E2E should default to the on-chain minimum dispute window",
+);
+assert.equal(
+  readLifecycleE2ERuntimeConfig({
+    AGORA_E2E_DISPUTE_WINDOW_HOURS: "336",
+  }).disputeWindowHours,
+  336,
+  "lifecycle E2E should honor explicit dispute window overrides",
+);
+assert.throws(
+  () =>
+    readLifecycleE2ERuntimeConfig({
+      AGORA_E2E_DISPUTE_WINDOW_HOURS: "24",
+    }),
+  /AGORA_E2E_DISPUTE_WINDOW_HOURS/,
+  "lifecycle E2E should reject dispute windows below the contract minimum",
 );
 
 const originalEnv = { ...process.env };
