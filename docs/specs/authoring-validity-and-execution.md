@@ -241,6 +241,13 @@ Hard rules for recoverable execution issues:
 - if Agora cannot currently resolve the official scorer dependency, the session
   stays in `awaiting_input`, but the blocker must be classified as a platform
   blocker rather than as missing poster input
+- if a session is already `ready`, sponsor-funded publish must still re-simulate
+  the live `createChallenge` call against the active factory before broadcast,
+  because deadline and contract-limit reverts are chain-state dependent rather
+  than authoring-state dependent
+- if that live sponsor publish simulation or the later broadcast reverts,
+  Agora should preserve decoded revert diagnostics such as the contract error
+  name or revert reason when the underlying viem error exposes them
 
 Examples that may become `rejected`:
 

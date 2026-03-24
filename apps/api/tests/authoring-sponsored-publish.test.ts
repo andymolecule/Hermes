@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AgoraError,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
   resolveOfficialScorerImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
-import { enforceAuthoringSponsorMonthlyBudget } from "../src/lib/authoring-sponsored-publish.js";
 import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
+import {
+  assertSponsorChallengeCreationSimulates,
+  enforceAuthoringSponsorMonthlyBudget,
+} from "../src/lib/authoring-sponsored-publish.js";
 
 function createSession(): AuthoringSessionRow {
   return {
@@ -143,5 +147,58 @@ test("enforceAuthoringSponsorMonthlyBudget rejects publishes that exceed the sou
         sumRewardAmountForSourceProviderImpl: async () => 95,
       }),
     /sponsor budget for beach_science would be exceeded/i,
+  );
+});
+
+test("assertSponsorChallengeCreationSimulates surfaces decoded factory reverts", async () => {
+  const publicClient = {
+    simulateContract: async () => {
+      const error = new Error("execution reverted");
+      throw Object.assign(error, {
+        shortMessage:
+          'The contract function "createChallenge" reverted with the following error:\nInvalidRewardAmount()',
+        walk(visitor: (candidate: unknown) => unknown) {
+          return visitor({
+            name: "ContractFunctionRevertedError",
+            shortMessage:
+              'The contract function "createChallenge" reverted with the following error:\nInvalidRewardAmount()',
+            data: {
+              errorName: "InvalidRewardAmount",
+              args: [],
+            },
+          });
+        },
+      });
+    },
+  } as const;
+
+  await assert.rejects(
+    () =>
+      assertSponsorChallengeCreationSimulates({
+        sponsorAddress: "0x00000000000000000000000000000000000000aa",
+        factoryAddress: "0x00000000000000000000000000000000000000bb",
+        args: [
+          "ipfs://spec",
+          10_000_000n,
+          1_800_000_000n,
+          168n,
+          0n,
+          0,
+          "0x0000000000000000000000000000000000000000",
+          100n,
+          5n,
+        ],
+        publicClient: publicClient as never,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof AgoraError);
+      assert.equal(error.code, "TX_REVERTED");
+      assert.match(error.message, /InvalidRewardAmount/);
+      assert.equal(error.details?.revertErrorName, "InvalidRewardAmount");
+      assert.equal(error.details?.phase, "simulate");
+      assert.equal(error.details?.funding, "sponsor");
+      assert.equal(error.details?.operation, "createChallenge");
+      return true;
+    },
   );
 });

@@ -81,6 +81,29 @@ test("applySessionToForm hydrates the form from resolved and compiled session da
       dry_run_failure: null,
       unsupported_reason: null,
     },
+    readiness: {
+      spec: {
+        status: "pass",
+        code: "AUTHORING_SPEC_READY",
+        message: "The challenge intent and execution settings are valid.",
+      },
+      artifact_binding: {
+        status: "pass",
+        code: "AUTHORING_ARTIFACT_BOUND",
+        message: "The selected evaluation artifact is available.",
+      },
+      scorer: {
+        status: "pass",
+        code: "AUTHORING_SCORER_READY",
+        message: "The official scorer is resolved and pinned.",
+      },
+      dry_run: {
+        status: "pass",
+        code: "AUTHORING_DRY_RUN_READY",
+        message: "The scoring dry-run passed.",
+      },
+      publishable: true,
+    },
     checklist: {
       title: "MDM2 benchmark",
       domain: "drug_discovery",

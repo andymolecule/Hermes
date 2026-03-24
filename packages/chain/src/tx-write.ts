@@ -30,6 +30,23 @@ const WRITE_NON_RETRYABLE_ERROR_PATTERNS = [
 const DEFAULT_WRITE_MAX_ATTEMPTS = 3;
 const DEFAULT_WRITE_RETRY_BASE_MS = 1_000;
 
+type WriteErrorPhase = "simulate" | "write";
+
+type WriteErrorClassificationInput = {
+  label: string;
+  phase?: WriteErrorPhase;
+  revertNextAction?: string;
+  details?: Record<string, unknown>;
+};
+
+type RevertDiagnostics = {
+  errorName?: string;
+  errorArgs?: unknown[];
+  reason?: string;
+  shortMessage?: string;
+  rawMessage: string;
+};
+
 export class AmbiguousWriteResultError extends AgoraError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, {
@@ -50,40 +67,238 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function isRetryableWriteError(error: unknown) {
-  const message = toErrorMessage(error);
-  if (WRITE_NON_RETRYABLE_ERROR_PATTERNS.some((pattern) => pattern.test(message))) {
-    return false;
-  }
-  return WRITE_RETRYABLE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
-function classifyWriteError(error: unknown, label: string) {
+function callErrorWalk(
+  error: unknown,
+  predicate: (candidate: Record<string, unknown>) => boolean,
+) {
+  if (!isRecord(error) || typeof error.walk !== "function") {
+    return null;
+  }
+
+  try {
+    const result = (
+      error.walk as (visitor: (candidate: unknown) => unknown) => unknown
+    )((candidate: unknown) =>
+      isRecord(candidate) && predicate(candidate) ? candidate : undefined,
+    );
+    return isRecord(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function walkCauseChain(
+  error: unknown,
+  predicate: (candidate: Record<string, unknown>) => boolean,
+) {
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (isRecord(current) && !seen.has(current)) {
+    if (predicate(current)) {
+      return current;
+    }
+    seen.add(current);
+    current = current.cause;
+  }
+
+  return null;
+}
+
+function findNestedError(
+  error: unknown,
+  predicate: (candidate: Record<string, unknown>) => boolean,
+) {
+  return callErrorWalk(error, predicate) ?? walkCauseChain(error, predicate);
+}
+
+function readStringProperty(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const candidate = value?.[key];
+  return typeof candidate === "string" && candidate.trim().length > 0
+    ? candidate.trim()
+    : undefined;
+}
+
+function readArrayProperty(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const candidate = value?.[key];
+  return Array.isArray(candidate) ? candidate : undefined;
+}
+
+function extractInlineRevertReason(message: string) {
+  const patterns = [
+    /execution reverted(?::|\s+with reason string\s+['"]?)(.+?)(?:['"])?$/i,
+    /reverted(?: with reason string)?[:\s]+(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = pattern.exec(message);
+    const reason = match?.[1]?.trim();
+    if (
+      reason &&
+      !/^during contract execution\.?$/i.test(reason) &&
+      !/^execution reverted\.?$/i.test(reason)
+    ) {
+      return reason;
+    }
+  }
+
+  return undefined;
+}
+
+function extractRevertDiagnostics(error: unknown): RevertDiagnostics | null {
+  const rawMessage = toErrorMessage(error);
+  if (!/execution reverted|revert/i.test(rawMessage) && !isRecord(error)) {
+    return null;
+  }
+
+  const reverted = findNestedError(error, (candidate) => {
+    if (readStringProperty(candidate, "reason")) {
+      return true;
+    }
+
+    const data = isRecord(candidate.data) ? candidate.data : null;
+    if (readStringProperty(data, "errorName")) {
+      return true;
+    }
+
+    const name = readStringProperty(candidate, "name");
+    return (
+      name === "ContractFunctionRevertedError" ||
+      name === "ExecutionRevertedError"
+    );
+  });
+
+  const data = reverted && isRecord(reverted.data) ? reverted.data : null;
+  const reason =
+    readStringProperty(reverted, "reason") ??
+    extractInlineRevertReason(rawMessage);
+  const errorName = readStringProperty(data, "errorName");
+  const errorArgs = readArrayProperty(data, "args");
+  const shortMessage =
+    readStringProperty(reverted, "shortMessage") ??
+    (isRecord(error) ? readStringProperty(error, "shortMessage") : undefined);
+
+  return {
+    errorName,
+    errorArgs,
+    reason,
+    shortMessage,
+    rawMessage,
+  };
+}
+
+function formatRevertSummary(diagnostics: RevertDiagnostics) {
+  if (diagnostics.reason) {
+    return diagnostics.reason;
+  }
+  if (diagnostics.errorName) {
+    return `Contract error: ${diagnostics.errorName}`;
+  }
+  if (
+    diagnostics.shortMessage &&
+    !/execution reverted|reverted during contract execution/i.test(
+      diagnostics.shortMessage,
+    )
+  ) {
+    return diagnostics.shortMessage;
+  }
+  return null;
+}
+
+function toRevertDetails(
+  diagnostics: RevertDiagnostics,
+  details?: Record<string, unknown>,
+) {
+  return {
+    ...(details ?? {}),
+    ...(diagnostics.errorName
+      ? { revertErrorName: diagnostics.errorName }
+      : {}),
+    ...(diagnostics.errorArgs
+      ? { revertErrorArgs: diagnostics.errorArgs }
+      : {}),
+    ...(diagnostics.reason ? { revertReason: diagnostics.reason } : {}),
+    ...(diagnostics.shortMessage
+      ? { revertShortMessage: diagnostics.shortMessage }
+      : {}),
+    rawMessage: diagnostics.rawMessage,
+  };
+}
+
+export function isRetryableWriteError(error: unknown) {
+  const message = toErrorMessage(error);
+  if (
+    WRITE_NON_RETRYABLE_ERROR_PATTERNS.some((pattern) => pattern.test(message))
+  ) {
+    return false;
+  }
+  return WRITE_RETRYABLE_ERROR_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+}
+
+export function classifyWriteError(
+  error: unknown,
+  input: WriteErrorClassificationInput,
+) {
   const message = toErrorMessage(error);
   if (/insufficient funds/i.test(message)) {
-    return new AgoraError(`${label} failed because the wallet lacks gas.`, {
-      code: AGORA_ERROR_CODES.insufficientGas,
-      nextAction: "Fund the wallet with native gas and retry.",
-      details: { label },
-      cause: error,
-    });
+    return new AgoraError(
+      `${input.label} failed because the wallet lacks gas.`,
+      {
+        code: AGORA_ERROR_CODES.insufficientGas,
+        nextAction: "Fund the wallet with native gas and retry.",
+        details: {
+          label: input.label,
+          ...(input.details ?? {}),
+        },
+        cause: error,
+      },
+    );
   }
   if (/user rejected|rejected/i.test(message)) {
-    return new AgoraError(`${label} was rejected by the wallet signer.`, {
+    return new AgoraError(`${input.label} was rejected by the wallet signer.`, {
       code: AGORA_ERROR_CODES.userRejected,
       retriable: false,
-      nextAction: "Approve the wallet request or use a signer that can submit automatically.",
-      details: { label },
+      nextAction:
+        "Approve the wallet request or use a signer that can submit automatically.",
+      details: {
+        label: input.label,
+        ...(input.details ?? {}),
+      },
       cause: error,
     });
   }
   if (/execution reverted|revert/i.test(message)) {
-    return new AgoraError(`${label} reverted during contract execution.`, {
+    const diagnostics = extractRevertDiagnostics(error) ?? {
+      rawMessage: message,
+    };
+    const summary = formatRevertSummary(diagnostics);
+    const prefix =
+      input.phase === "simulate"
+        ? `${input.label} cannot be submitted because preflight simulation reverted.`
+        : `${input.label} reverted during contract execution.`;
+
+    return new AgoraError(summary ? `${prefix} ${summary}.` : prefix, {
       code: AGORA_ERROR_CODES.txReverted,
       retriable: false,
       nextAction:
+        input.revertNextAction ??
         "Confirm the challenge state, submission limits, and wallet eligibility before retrying.",
-      details: { label },
+      details: {
+        label: input.label,
+        ...toRevertDetails(diagnostics, input.details),
+      },
       cause: error,
     });
   }
@@ -95,6 +310,8 @@ export async function sendWriteWithRetry<T extends `0x${string}`>(input: {
   label: string;
   write: () => Promise<T>;
   maxAttempts?: number;
+  revertNextAction?: string;
+  errorDetails?: Record<string, unknown>;
   publicClient?: Pick<
     ReturnType<typeof getPublicClient>,
     "getTransactionCount"
@@ -116,7 +333,12 @@ export async function sendWriteWithRetry<T extends `0x${string}`>(input: {
       return await input.write();
     } catch (error) {
       if (!isRetryableWriteError(error)) {
-        throw classifyWriteError(error, input.label);
+        throw classifyWriteError(error, {
+          label: input.label,
+          phase: "write",
+          revertNextAction: input.revertNextAction,
+          details: input.errorDetails,
+        });
       }
       lastRetryableError = error;
       if (attempt >= maxAttempts) {
@@ -139,6 +361,7 @@ export async function sendWriteWithRetry<T extends `0x${string}`>(input: {
           {
             label: input.label,
             accountAddress: input.accountAddress,
+            ...(input.errorDetails ?? {}),
           },
         );
       }
@@ -147,26 +370,24 @@ export async function sendWriteWithRetry<T extends `0x${string}`>(input: {
     }
   }
 
-  throw new AgoraError(
-    `${input.label} failed after ${maxAttempts} attempts.`,
-    {
-      code: AGORA_ERROR_CODES.chainWriteRetryExhausted,
-      retriable: true,
-      nextAction: "Inspect the RPC endpoint and retry.",
-      cause: lastRetryableError ?? undefined,
-      details: {
-        label: input.label,
-        accountAddress: input.accountAddress,
-        maxAttempts,
-        lastError:
-          lastRetryableError instanceof Error
-            ? lastRetryableError.message
-            : lastRetryableError
-              ? String(lastRetryableError)
-              : null,
-      },
+  throw new AgoraError(`${input.label} failed after ${maxAttempts} attempts.`, {
+    code: AGORA_ERROR_CODES.chainWriteRetryExhausted,
+    retriable: true,
+    nextAction: "Inspect the RPC endpoint and retry.",
+    cause: lastRetryableError ?? undefined,
+    details: {
+      label: input.label,
+      accountAddress: input.accountAddress,
+      ...(input.errorDetails ?? {}),
+      maxAttempts,
+      lastError:
+        lastRetryableError instanceof Error
+          ? lastRetryableError.message
+          : lastRetryableError
+            ? String(lastRetryableError)
+            : null,
     },
-  );
+  });
 }
 
 export function getChainTopUpHint(chainId: number | undefined) {

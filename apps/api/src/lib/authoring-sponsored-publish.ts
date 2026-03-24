@@ -1,6 +1,7 @@
 import {
   allowance,
   balanceOf,
+  classifyWriteError,
   createAgoraWalletClientForPrivateKey,
   getFactoryContractVersion,
   getPublicClient,
@@ -24,8 +25,8 @@ import {
   attachAuthoringSponsorBudgetReservationTx,
   buildChallengeInsert,
   consumeAuthoringSponsorBudgetReservation,
-  reserveAuthoringSponsorBudget,
   releaseAuthoringSponsorBudgetReservation,
+  reserveAuthoringSponsorBudget,
   sumRewardAmountForSourceProvider,
   updateAuthoringSession,
   upsertChallenge,
@@ -41,6 +42,21 @@ const DISTRIBUTION_TO_ENUM = {
   top_3: 1,
   proportional: 2,
 } as const;
+
+const SPONSOR_CREATE_REVERT_NEXT_ACTION =
+  "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.";
+
+type SponsorCreateChallengeArgs = readonly [
+  string,
+  bigint,
+  bigint,
+  bigint,
+  bigint,
+  number,
+  `0x${string}`,
+  bigint,
+  bigint,
+];
 
 function parseRewardAmountUsdc(spec: ChallengeSpecOutput) {
   const rewardAmount = Number(spec.reward.total);
@@ -73,6 +89,60 @@ function resolveSponsorBudgetWindow(now = new Date()) {
     periodStart: periodStart.toISOString(),
     periodEnd: periodEnd.toISOString(),
   };
+}
+
+function buildSponsorCreateChallengeArgs(input: {
+  specCid: string;
+  rewardUnits: bigint;
+  deadlineSeconds: number;
+  disputeWindowHours: number;
+  minimumScore: bigint;
+  distributionType: number;
+  labTba: `0x${string}`;
+  maxSubmissions: number;
+  maxSubmissionsPerSolver: number;
+}): SponsorCreateChallengeArgs {
+  return [
+    input.specCid,
+    input.rewardUnits,
+    BigInt(input.deadlineSeconds),
+    BigInt(input.disputeWindowHours),
+    input.minimumScore,
+    input.distributionType,
+    input.labTba,
+    BigInt(input.maxSubmissions),
+    BigInt(input.maxSubmissionsPerSolver),
+  ];
+}
+
+export async function assertSponsorChallengeCreationSimulates(input: {
+  sponsorAddress: `0x${string}`;
+  factoryAddress: `0x${string}`;
+  args: SponsorCreateChallengeArgs;
+  publicClient?: Pick<ReturnType<typeof getPublicClient>, "simulateContract">;
+}) {
+  const publicClient = input.publicClient ?? getPublicClient();
+
+  try {
+    await publicClient.simulateContract({
+      account: input.sponsorAddress,
+      address: input.factoryAddress,
+      abi: AgoraFactoryAbi,
+      functionName: "createChallenge",
+      args: input.args,
+    });
+  } catch (error) {
+    throw classifyWriteError(error, {
+      label: "Authoring sponsor challenge creation",
+      phase: "simulate",
+      revertNextAction: SPONSOR_CREATE_REVERT_NEXT_ACTION,
+      details: {
+        funding: "sponsor",
+        phase: "simulate",
+        operation: "createChallenge",
+      },
+    });
+  }
 }
 
 export async function enforceAuthoringSponsorMonthlyBudget(input: {
@@ -297,28 +367,42 @@ export async function sponsorAndPublishAuthoringSession(input: {
     const maxSubmissionsPerSolver =
       input.spec.max_submissions_per_solver ??
       SUBMISSION_LIMITS.maxPerSolverPerChallenge;
+    const createArgs = buildSponsorCreateChallengeArgs({
+      specCid: input.specCid,
+      rewardUnits,
+      deadlineSeconds,
+      disputeWindowHours,
+      minimumScore,
+      distributionType,
+      labTba: (input.spec.lab_tba ??
+        "0x0000000000000000000000000000000000000000") as `0x${string}`,
+      maxSubmissions,
+      maxSubmissionsPerSolver,
+    });
+
+    await assertSponsorChallengeCreationSimulates({
+      sponsorAddress,
+      factoryAddress: config.AGORA_FACTORY_ADDRESS,
+      args: createArgs,
+      publicClient,
+    });
 
     createTxHash = await sendWriteWithRetry({
       accountAddress: sponsorAddress,
       label: "Authoring sponsor challenge creation",
+      revertNextAction: SPONSOR_CREATE_REVERT_NEXT_ACTION,
+      errorDetails: {
+        funding: "sponsor",
+        phase: "write",
+        operation: "createChallenge",
+      },
       publicClient,
       write: () =>
         sponsorWalletClient.writeContract({
           address: config.AGORA_FACTORY_ADDRESS,
           abi: AgoraFactoryAbi,
           functionName: "createChallenge",
-          args: [
-            input.specCid,
-            rewardUnits,
-            BigInt(deadlineSeconds),
-            BigInt(disputeWindowHours),
-            minimumScore,
-            distributionType,
-            (input.spec.lab_tba ??
-              "0x0000000000000000000000000000000000000000") as `0x${string}`,
-            BigInt(maxSubmissions),
-            BigInt(maxSubmissionsPerSolver),
-          ],
+          args: createArgs,
         }),
     });
     if (!createTxHash) {
@@ -338,7 +422,7 @@ export async function sponsorAndPublishAuthoringSession(input: {
     });
     if (receipt.status !== "success") {
       throw new Error(
-        "Sponsored challenge creation transaction failed. Next step: inspect the sponsor wallet and retry.",
+        `Sponsored challenge creation transaction failed. Next step: ${SPONSOR_CREATE_REVERT_NEXT_ACTION}`,
       );
     }
     challengeCreationConfirmed = true;
@@ -348,7 +432,9 @@ export async function sponsorAndPublishAuthoringSession(input: {
       challengeAddress,
       posterAddress,
     } = parseChallengeCreatedReceipt(receipt);
-    const transaction = await publicClient.getTransaction({ hash: createTxHash });
+    const transaction = await publicClient.getTransaction({
+      hash: createTxHash,
+    });
     const transactionInput =
       (transaction as { input?: `0x${string}`; data?: `0x${string}` }).input ??
       (transaction as { data?: `0x${string}` }).data;
@@ -398,8 +484,9 @@ export async function sponsorAndPublishAuthoringSession(input: {
     });
     challengeRow = await upsertChallenge(input.db, challengeInsert);
 
-    const publishedSession = await (input.updateAuthoringSessionImpl ??
-      updateAuthoringSession)(input.db, {
+    const publishedSession = await (
+      input.updateAuthoringSessionImpl ?? updateAuthoringSession
+    )(input.db, {
       id: input.session.id,
       poster_address: sponsorAddress,
       state: "published",

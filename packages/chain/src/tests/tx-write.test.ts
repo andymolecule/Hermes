@@ -3,11 +3,29 @@ import test from "node:test";
 import { AgoraError } from "@agora/common";
 import {
   AmbiguousWriteResultError,
+  classifyWriteError,
   isRetryableWriteError,
   sendWriteWithRetry,
 } from "../tx-write.js";
 
 const accountAddress = "0x0000000000000000000000000000000000000001";
+
+function createCustomRevertError(errorName: string) {
+  const error = new Error("execution reverted");
+  return Object.assign(error, {
+    shortMessage: `The contract function "createChallenge" reverted with the following error:\n${errorName}()`,
+    walk(visitor: (candidate: unknown) => unknown) {
+      return visitor({
+        name: "ContractFunctionRevertedError",
+        shortMessage: `The contract function "createChallenge" reverted with the following error:\n${errorName}()`,
+        data: {
+          errorName,
+          args: [],
+        },
+      });
+    },
+  });
+}
 
 test("sendWriteWithRetry retries transient transport errors", async () => {
   let attempts = 0;
@@ -92,4 +110,33 @@ test("retryable write detection excludes deterministic reverts", () => {
     ),
     false,
   );
+});
+
+test("classifyWriteError surfaces decoded custom revert details", () => {
+  const error = classifyWriteError(
+    createCustomRevertError("InvalidSubmissionLimits"),
+    {
+      label: "Authoring sponsor challenge creation",
+      phase: "simulate",
+      revertNextAction:
+        "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+      details: {
+        funding: "sponsor",
+        phase: "simulate",
+        operation: "createChallenge",
+      },
+    },
+  );
+
+  assert.ok(error instanceof AgoraError);
+  assert.equal(error.code, "TX_REVERTED");
+  assert.equal(error.retriable, false);
+  assert.match(error.message, /InvalidSubmissionLimits/);
+  assert.equal(
+    error.nextAction,
+    "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+  );
+  assert.equal(error.details?.revertErrorName, "InvalidSubmissionLimits");
+  assert.equal(error.details?.phase, "simulate");
+  assert.equal(error.details?.operation, "createChallenge");
 });

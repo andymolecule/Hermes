@@ -273,6 +273,9 @@ Public names in this table are permanent. Internal names can change freely.
 24. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
 25. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
 26. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
+27. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
+28. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
+29. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` and should include decoded revert details such as `revertErrorName` and `revertReason` in the generic error `details` payload when the underlying viem error exposes them.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
@@ -569,6 +572,11 @@ Rules:
 
 Both models go through the same publish gate. The funding source is a publish-time decision, not a session-level concept.
 
+Sponsor-funded publish hard rule:
+- immediately before broadcast, Agora simulates the exact `createChallenge` call from the sponsor account against the active factory
+- if that simulation reverts, Agora must fail the publish attempt before broadcast and return the decoded revert diagnostics when available
+- if the later broadcast/write still reverts, Agora should preserve the same decoded revert diagnostics and return a sponsor-create-specific `next_action`
+
 Locked publish rule:
 - web callers send `funding: "wallet"` or `funding: "sponsor"` explicitly
 - agent callers also send `funding` explicitly
@@ -599,6 +607,7 @@ Locked rule:
 | Caller tries to `GET`, `PATCH`, or `publish` another principal's session | Return `404 not_found`. Do not reveal whether the session exists. |
 | Dry-run fails after all required fields are supplied | State stays `awaiting_input` with a concrete `validation.dry_run_failure`. Caller may need to change a field, mapping, or artifact. |
 | Publish called when state is not `ready` | Reject with current state and what's still needed. |
+| Sponsor-funded publish passes `ready` but factory simulation or tx broadcast reverts | Return `TX_REVERTED` with a sponsor-create-specific `next_action` and decoded revert details in `details` when viem exposes them. |
 
 ### 1.14 Response Transparency
 
