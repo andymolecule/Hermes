@@ -107,6 +107,8 @@ test("GET /sessions/:id/timeline returns the session conversation log", async ()
                     code: "AUTHORING_INPUT_REQUIRED",
                     message: "Agora still needs the scoring metric.",
                     next_action: "Provide the metric and retry.",
+                    blocking_layer: "input",
+                    candidate_values: [],
                   },
                 ],
                 invalid_fields: [],

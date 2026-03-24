@@ -624,6 +624,141 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
   assert.equal(payload.validation.unsupported_reason.code, "unsupported_task");
 });
 
+test("GET /sessions/:id exposes artifact candidates and readiness for stale evaluation bindings", async () => {
+  const uploadedArtifacts = [
+    {
+      id: "candidates",
+      uri: "ipfs://artifact-candidates",
+      file_name: "candidates.csv",
+      detected_columns: ["peptide_id", "sequence"],
+      source_url: "https://example.com/candidates.csv",
+    },
+    {
+      id: "reference",
+      uri: "ipfs://artifact-reference",
+      file_name: "reference.csv",
+      detected_columns: ["peptide_id", "reference_rank"],
+      source_url: "https://example.com/reference.csv",
+    },
+  ];
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () =>
+      createSession({
+        creator_type: "agent",
+        creator_agent_id: "agent-abc",
+        poster_address: null,
+        uploaded_artifacts_json: uploadedArtifacts as never,
+        authoring_ir_json: buildAuthoringIr({
+          intent: createIntent(),
+          uploadedArtifacts,
+          sourceTitle: "Docking challenge",
+          sourceMessages: [],
+          origin: {
+            provider: "direct",
+            ingested_at: "2026-03-22T00:00:00.000Z",
+          },
+          template: "official_table_metric_v1",
+          metric: "spearman",
+          comparator: "maximize",
+          evaluationIdColumn: "peptide_id",
+          evaluationValueColumn: "reference_rank",
+          submissionIdColumn: "peptide_id",
+          submissionValueColumn: "predicted_score",
+          compileError: {
+            code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+            message:
+              "Agora could not find the selected evaluation artifact. Next step: upload the evaluation file or use one of the current artifact IDs and retry.",
+          },
+          assessmentOutcome: "awaiting_input",
+          missingFields: ["evaluation_artifact"],
+        }),
+      }),
+  });
+
+  const response = await router.request("http://localhost/sessions/session-123");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.validation.missing_fields[0].field, "evaluation_artifact");
+  assert.deepEqual(payload.validation.missing_fields[0].candidate_values, [
+    "candidates",
+    "reference",
+  ]);
+  assert.equal(payload.validation.missing_fields[0].blocking_layer, "input");
+  assert.equal(payload.readiness.artifact_binding.status, "pending");
+  assert.equal(payload.readiness.publishable, false);
+});
+
+test("GET /sessions/:id exposes platform blockers distinctly from input blockers", async () => {
+  const uploadedArtifacts = [
+    {
+      id: "reference",
+      uri: "ipfs://artifact-reference",
+      file_name: "reference.csv",
+      detected_columns: ["ligand_id", "reference_score"],
+      source_url: "https://example.com/reference.csv",
+    },
+  ];
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () =>
+      createSession({
+        creator_type: "agent",
+        creator_agent_id: "agent-abc",
+        poster_address: null,
+        uploaded_artifacts_json: uploadedArtifacts as never,
+        authoring_ir_json: buildAuthoringIr({
+          intent: createIntent(),
+          uploadedArtifacts,
+          sourceTitle: "Docking challenge",
+          sourceMessages: [],
+          origin: {
+            provider: "direct",
+            ingested_at: "2026-03-22T00:00:00.000Z",
+          },
+          template: "official_table_metric_v1",
+          metric: "spearman",
+          comparator: "maximize",
+          evaluationArtifactId: "reference",
+          evaluationIdColumn: "ligand_id",
+          evaluationValueColumn: "reference_score",
+          submissionIdColumn: "ligand_id",
+          submissionValueColumn: "predicted_score",
+          compileError: {
+            code: "AUTHORING_PLATFORM_UNAVAILABLE",
+            message:
+              "Agora could not resolve the official scorer dependency for this session. GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.",
+          },
+          assessmentOutcome: "awaiting_input",
+          missingFields: [],
+        }),
+      }),
+  });
+
+  const response = await router.request("http://localhost/sessions/session-123");
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.validation.invalid_fields[0].field, "execution.scorer_image");
+  assert.equal(
+    payload.validation.invalid_fields[0].blocking_layer,
+    "platform",
+  );
+  assert.equal(payload.readiness.spec.status, "fail");
+  assert.equal(payload.readiness.scorer.status, "fail");
+  assert.equal(payload.readiness.dry_run.status, "pending");
+  assert.equal(payload.readiness.publishable, false);
+});
+
 test("POST /uploads ingests a URL and returns a normalized artifact", async () => {
   const router = createAuthoringSessionRoutes({
     requireAuthoringPrincipalMiddleware: withPrincipal({

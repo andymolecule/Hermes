@@ -270,6 +270,9 @@ Public names in this table are permanent. Internal names can change freely.
 21. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
 22. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
 23. **Standard V1 authoring resolves the official template internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves `official_table_metric_v1` and the exact pinned scorer image during compilation and returns them in `resolved` and `compilation`.
+24. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
+25. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
+26. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
@@ -732,7 +735,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q29 | Should all canonical session fields always exist, even when not yet applicable? | Determines whether clients can rely on one flat stable type instead of conditional field presence | Prefer all fields always present | `LOCKED: all canonical session fields always exist; arrays default to []; objects/scalars default to null` |
 | Q30 | What shape should error responses have? | Determines whether failure handling is consistent and machine-readable across the contract | Prefer one structured error envelope | `LOCKED: one structured error envelope everywhere with code, message, next_action, and relevant context such as state when applicable` |
 | Q31 | Should `created` remain in the public state enum? | Determines whether callers must handle a transient state they should almost never see | Prefer internal-only if create/patch are synchronous best-effort | `LOCKED: created is internal-only and not part of the public state enum` |
-| Q32 | What should each public validation issue contain? | Determines whether callers can remediate blockers without heuristically parsing prose | Prefer typed validation issues | `LOCKED: each validation issue includes field, code, message, and next_action. The default contract has no public question objects` |
+| Q32 | What should each public validation issue contain? | Determines whether callers can remediate blockers without heuristically parsing prose | Prefer typed validation issues | `LOCKED: each validation issue includes field, code, message, next_action, blocking_layer, and candidate_values. The default contract has no public question objects` |
 | Q33 | What shape should updates use in `PATCH /sessions/:id`? | Determines whether Agora can validate updates immediately at the boundary instead of inferring which conversational turn was intended | Prefer typed structured patches | `LOCKED: patch includes intent?, execution?, and files?; at least one must be present. There is no answers collection in the default contract` |
 | Q34 | Which published fields belong on the canonical session object? | Prevents publish outputs from drifting into ad hoc per-caller convenience fields | Prefer a minimal explicit published field set | `LOCKED: canonical published fields are challenge_id, contract_address, spec_cid, and tx_hash; derived data stays out of the core contract` |
 | Q35 | Should the canonical session object expose Agora's current resolved state? | Determines whether callers can see and correct what Agora currently accepts as the machine-readable challenge definition | Prefer explicit resolved state | `LOCKED: expose resolved.intent and resolved.execution on the session object; they reflect Agora's current accepted structured state, not a raw echo of caller input` |
@@ -863,6 +866,8 @@ const ValidationIssueSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),
   next_action: z.string().min(1),
+  blocking_layer: z.enum(["input", "dry_run", "platform"]),
+  candidate_values: z.array(z.string().min(1)),
 });
 
 const DryRunFailureSchema = z.object({
@@ -895,6 +900,20 @@ const ValidationSchema = z.object({
   invalid_fields: z.array(ValidationIssueSchema),
   dry_run_failure: DryRunFailureSchema.nullable(),
   unsupported_reason: UnsupportedReasonSchema.nullable(),
+});
+
+const ReadinessCheckSchema = z.object({
+  status: z.enum(["pass", "pending", "fail"]),
+  code: z.string().min(1),
+  message: z.string().min(1),
+});
+
+const ReadinessSchema = z.object({
+  spec: ReadinessCheckSchema,
+  artifact_binding: ReadinessCheckSchema,
+  scorer: ReadinessCheckSchema,
+  dry_run: ReadinessCheckSchema,
+  publishable: z.boolean(),
 });
 
 const SubmissionContractSchema = z.object({
@@ -978,6 +997,7 @@ const SessionSchema = z.object({
   creator: CreatorSchema,
   resolved: ResolvedStateSchema,
   validation: ValidationSchema,
+  readiness: ReadinessSchema,
   checklist: ChecklistSchema.nullable(),
   compilation: CompilationSchema.nullable(),
   artifacts: z.array(ArtifactSchema),
@@ -1184,21 +1204,48 @@ Example success response:
   "validation": {
     "missing_fields": [
       {
-        "field": "execution.evaluation_value_column",
+        "field": "evaluation_value_column",
         "code": "missing_field",
-        "message": "Agora needs the evaluation score column before it can validate this challenge.",
-        "next_action": "Provide the evaluation value column name."
+        "message": "Agora still needs the evaluation value column.",
+        "next_action": "Provide the evaluation_value_column and retry.",
+        "blocking_layer": "input",
+        "candidate_values": []
       },
       {
-        "field": "execution.submission_value_column",
+        "field": "submission_value_column",
         "code": "missing_field",
-        "message": "Agora needs the submission score column before it can build the submission contract.",
-        "next_action": "Provide the submission value column name."
+        "message": "Agora still needs the submission value column.",
+        "next_action": "Provide the submission_value_column and retry.",
+        "blocking_layer": "input",
+        "candidate_values": []
       }
     ],
     "invalid_fields": [],
     "dry_run_failure": null,
     "unsupported_reason": null
+  },
+  "readiness": {
+    "spec": {
+      "status": "pending",
+      "code": "spec_pending_input",
+      "message": "Agora still needs enough structured input to build the canonical challenge spec."
+    },
+    "artifact_binding": {
+      "status": "pending",
+      "code": "artifact_binding_pending",
+      "message": "Agora still needs a valid evaluation artifact binding and column mappings."
+    },
+    "scorer": {
+      "status": "pending",
+      "code": "scorer_pending_resolution",
+      "message": "Agora has not yet resolved the official scorer dependency for this session."
+    },
+    "dry_run": {
+      "status": "pending",
+      "code": "dry_run_pending",
+      "message": "Dry-run validation has not passed yet for this session."
+    },
+    "publishable": false
   },
   "checklist": null,
   "compilation": null,
@@ -1280,6 +1327,29 @@ Example success response:
     "invalid_fields": [],
     "dry_run_failure": null,
     "unsupported_reason": null
+  },
+  "readiness": {
+    "spec": {
+      "status": "pass",
+      "code": "spec_ready",
+      "message": "Agora compiled the canonical challenge spec."
+    },
+    "artifact_binding": {
+      "status": "pass",
+      "code": "artifact_binding_ready",
+      "message": "The hidden evaluation artifact and column mappings are resolved."
+    },
+    "scorer": {
+      "status": "pass",
+      "code": "scorer_ready",
+      "message": "The official scorer image is resolved and pinned."
+    },
+    "dry_run": {
+      "status": "pass",
+      "code": "dry_run_ready",
+      "message": "Dry-run validation passed."
+    },
+    "publishable": true
   },
   "checklist": {
     "title": "Rank ligands for KRAS binding affinity",
@@ -1451,6 +1521,29 @@ Example success response:
     "dry_run_failure": null,
     "unsupported_reason": null
   },
+  "readiness": {
+    "spec": {
+      "status": "pass",
+      "code": "spec_ready",
+      "message": "Agora compiled the canonical challenge spec."
+    },
+    "artifact_binding": {
+      "status": "pass",
+      "code": "artifact_binding_ready",
+      "message": "The hidden evaluation artifact and column mappings are resolved."
+    },
+    "scorer": {
+      "status": "pass",
+      "code": "scorer_ready",
+      "message": "The official scorer image is resolved and pinned."
+    },
+    "dry_run": {
+      "status": "pass",
+      "code": "dry_run_ready",
+      "message": "Dry-run validation passed."
+    },
+    "publishable": true
+  },
   "checklist": {
     "title": "MDM2 benchmark ranking challenge",
     "domain": "drug_discovery",
@@ -1558,8 +1651,33 @@ Rejected response example:
     "unsupported_reason": {
       "code": "unsupported_task",
       "message": "Agora requires deterministic scoring. Subjective winner criteria are not supported.",
-      "next_action": "Reframe the challenge so the winner is determined by a metric computed from structured table submissions."
+      "next_action": "Reframe the challenge so the winner is determined by a metric computed from structured table submissions.",
+      "blocking_layer": "input",
+      "candidate_values": []
     }
+  },
+  "readiness": {
+    "spec": {
+      "status": "fail",
+      "code": "AUTHORING_TASK_UNSUPPORTED",
+      "message": "Agora requires deterministic scoring. Subjective winner criteria are not supported."
+    },
+    "artifact_binding": {
+      "status": "fail",
+      "code": "AUTHORING_TASK_UNSUPPORTED",
+      "message": "Agora requires deterministic scoring. Subjective winner criteria are not supported."
+    },
+    "scorer": {
+      "status": "fail",
+      "code": "AUTHORING_TASK_UNSUPPORTED",
+      "message": "Agora requires deterministic scoring. Subjective winner criteria are not supported."
+    },
+    "dry_run": {
+      "status": "fail",
+      "code": "AUTHORING_TASK_UNSUPPORTED",
+      "message": "Agora requires deterministic scoring. Subjective winner criteria are not supported."
+    },
+    "publishable": false
   },
   "checklist": null,
   "compilation": null,
@@ -1669,6 +1787,29 @@ Sponsor-funded example success response:
     "invalid_fields": [],
     "dry_run_failure": null,
     "unsupported_reason": null
+  },
+  "readiness": {
+    "spec": {
+      "status": "pass",
+      "code": "spec_ready",
+      "message": "Agora compiled the canonical challenge spec."
+    },
+    "artifact_binding": {
+      "status": "pass",
+      "code": "artifact_binding_ready",
+      "message": "The hidden evaluation artifact and column mappings are resolved."
+    },
+    "scorer": {
+      "status": "pass",
+      "code": "scorer_ready",
+      "message": "The official scorer image is resolved and pinned."
+    },
+    "dry_run": {
+      "status": "pass",
+      "code": "dry_run_ready",
+      "message": "Dry-run validation passed."
+    },
+    "publishable": true
   },
   "checklist": {
     "title": "Rank ligands for KRAS binding affinity",

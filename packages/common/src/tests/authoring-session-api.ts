@@ -67,11 +67,39 @@ const session = authoringSessionSchema.parse({
         code: "AUTHORING_INPUT_REQUIRED",
         message: "Agora still needs the scoring metric.",
         next_action: "Provide the metric and retry.",
+        blocking_layer: "input",
+        candidate_values: [],
       },
     ],
     invalid_fields: [],
     dry_run_failure: null,
     unsupported_reason: null,
+  },
+  readiness: {
+    spec: {
+      status: "pending",
+      code: "spec_pending_input",
+      message:
+        "Agora still needs enough structured input to build the canonical challenge spec.",
+    },
+    artifact_binding: {
+      status: "pending",
+      code: "artifact_binding_pending",
+      message:
+        "Agora still needs a valid evaluation artifact binding and column mappings.",
+    },
+    scorer: {
+      status: "pending",
+      code: "scorer_pending_metric",
+      message:
+        "Agora still needs a supported metric before it can resolve the official scorer.",
+    },
+    dry_run: {
+      status: "pending",
+      code: "dry_run_pending",
+      message: "Dry-run validation has not passed yet for this session.",
+    },
+    publishable: false,
   },
   checklist: null,
   compilation: null,

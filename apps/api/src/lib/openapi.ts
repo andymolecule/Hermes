@@ -1191,8 +1191,23 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             code: { type: "string" },
             message: { type: "string" },
             next_action: { type: "string" },
+            blocking_layer: {
+              type: "string",
+              enum: ["input", "dry_run", "platform"],
+            },
+            candidate_values: {
+              type: "array",
+              items: { type: "string" },
+            },
           },
-          required: ["field", "code", "message", "next_action"],
+          required: [
+            "field",
+            "code",
+            "message",
+            "next_action",
+            "blocking_layer",
+            "candidate_values",
+          ],
         },
         AuthoringSessionValidation: {
           type: "object",
@@ -1231,6 +1246,43 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "invalid_fields",
             "dry_run_failure",
             "unsupported_reason",
+          ],
+        },
+        AuthoringSessionReadinessCheck: {
+          type: "object",
+          properties: {
+            status: {
+              type: "string",
+              enum: ["pass", "pending", "fail"],
+            },
+            code: { type: "string" },
+            message: { type: "string" },
+          },
+          required: ["status", "code", "message"],
+        },
+        AuthoringSessionReadiness: {
+          type: "object",
+          properties: {
+            spec: {
+              $ref: "#/components/schemas/AuthoringSessionReadinessCheck",
+            },
+            artifact_binding: {
+              $ref: "#/components/schemas/AuthoringSessionReadinessCheck",
+            },
+            scorer: {
+              $ref: "#/components/schemas/AuthoringSessionReadinessCheck",
+            },
+            dry_run: {
+              $ref: "#/components/schemas/AuthoringSessionReadinessCheck",
+            },
+            publishable: { type: "boolean" },
+          },
+          required: [
+            "spec",
+            "artifact_binding",
+            "scorer",
+            "dry_run",
+            "publishable",
           ],
         },
         AuthoringSessionProvenance: {
@@ -1354,6 +1406,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             validation: {
               $ref: "#/components/schemas/AuthoringSessionValidation",
             },
+            readiness: {
+              $ref: "#/components/schemas/AuthoringSessionReadiness",
+            },
             checklist: {
               allOf: [
                 { $ref: "#/components/schemas/AuthoringSessionChecklist" },
@@ -1390,6 +1445,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "creator",
             "resolved",
             "validation",
+            "readiness",
             "checklist",
             "compilation",
             "artifacts",

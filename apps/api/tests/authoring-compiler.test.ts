@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GhcrResolutionError } from "@agora/common";
 import { resolveAuthoringArtifacts } from "../src/lib/authoring-artifact-resolution.js";
 import {
   compileAuthoringSession,
@@ -61,7 +62,7 @@ const benchmarkArtifacts = [
 
 function buildRegressionDryRunDependencies() {
   return {
-    resolvePinnedExecutionTemplateImageImpl: async () =>
+    resolvePinnedOfficialScorerImageImpl: async () =>
       "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
     getTextImpl: async (_uri: string) => "id,label\nrow-1,1.5\nrow-2,2.5\n",
     executeScoringPipelineImpl: async (_input: unknown) => ({
@@ -90,7 +91,7 @@ function buildRegressionDryRunDependencies() {
 
 function buildRankingDryRunDependencies() {
   return {
-    resolvePinnedExecutionTemplateImageImpl: async () =>
+    resolvePinnedOfficialScorerImageImpl: async () =>
       "ghcr.io/andymolecule/gems-tabular-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
     getTextImpl: async (_uri: string) =>
       "peptide_id,reference_rank\npep-1,1\npep-2,2\n",
@@ -233,7 +234,7 @@ test("authoring compiler surfaces dry-run failures as validation.dry_run_failure
       submissionValueColumnOverride: "predicted_score",
     },
     {
-      resolvePinnedExecutionTemplateImageImpl: async () =>
+      resolvePinnedOfficialScorerImageImpl: async () =>
         "ghcr.io/andymolecule/gems-tabular-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
       getTextImpl: async (_uri: string) =>
         "peptide_id,reference_rank\npep-1,1\npep-2,2\n",
@@ -264,6 +265,121 @@ test("authoring compiler surfaces dry-run failures as validation.dry_run_failure
     "AUTHORING_DRY_RUN_REJECTED",
   );
   assert.equal(result.validation.missing_fields.length, 0);
+});
+
+test("authoring compiler auto-heals a stale evaluation artifact id when only one artifact remains", async () => {
+  const result = await compileAuthoringSessionOutcome(
+    {
+      intent: baseIntent,
+      uploadedArtifacts: [regressionArtifacts[1] as (typeof regressionArtifacts)[number]],
+      metricOverride: "rmse",
+      evaluationArtifactIdOverride: "stale-artifact-id",
+      evaluationIdColumnOverride: "id",
+      evaluationValueColumnOverride: "label",
+      submissionIdColumnOverride: "id",
+      submissionValueColumnOverride: "predicted_value",
+    },
+    buildRegressionDryRunDependencies(),
+  );
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.authoringIr.execution.evaluation_artifact_id, "labels");
+  assert.equal(
+    result.authoringIr.assessment.reason_codes.includes(
+      "evaluation_artifact_rebound_to_only_uploaded_file",
+    ),
+    true,
+  );
+  assert.equal(
+    result.authoringIr.assessment.warnings.includes(
+      "stale_evaluation_artifact_id_cleared",
+    ),
+    true,
+  );
+});
+
+test("authoring compiler returns artifact candidates when a stale evaluation artifact id cannot be auto-healed", async () => {
+  const result = await compileAuthoringSessionOutcome(
+    {
+      intent: {
+        ...baseIntent,
+        title: "Benchmark ranking challenge",
+        description: "Rank candidates against a hidden reference.",
+        payout_condition: "Highest Spearman wins.",
+        domain: "drug_discovery",
+      },
+      uploadedArtifacts: benchmarkArtifacts,
+      metricOverride: "spearman",
+      evaluationArtifactIdOverride: "stale-artifact-id",
+      evaluationIdColumnOverride: "peptide_id",
+      evaluationValueColumnOverride: "reference_rank",
+      submissionIdColumnOverride: "peptide_id",
+      submissionValueColumnOverride: "predicted_score",
+    },
+    buildRankingDryRunDependencies(),
+  );
+
+  assert.equal(result.state, "awaiting_input");
+  assert.equal(result.authoringIr.execution.evaluation_artifact_id, null);
+  assert.deepEqual(result.validation.missing_fields, [
+    {
+      field: "evaluation_artifact",
+      code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+      message:
+        "Agora could not find the selected evaluation artifact. Next step: upload the evaluation file or use one of the current artifact IDs and retry.",
+      next_action:
+        "upload the evaluation file or use one of the current artifact IDs and retry.",
+      blocking_layer: "input",
+      candidate_values: ["candidates", "reference", "brief"],
+    },
+  ]);
+});
+
+test("authoring compiler classifies scorer registry outages as platform blockers", async () => {
+  const result = await compileAuthoringSessionOutcome(
+    {
+      intent: {
+        ...baseIntent,
+        title: "Benchmark ranking challenge",
+        description: "Rank candidates against a hidden reference.",
+        payout_condition: "Highest Spearman wins.",
+        domain: "drug_discovery",
+      },
+      uploadedArtifacts: benchmarkArtifacts,
+      metricOverride: "spearman",
+      evaluationArtifactIdOverride: "reference",
+      evaluationIdColumnOverride: "peptide_id",
+      evaluationValueColumnOverride: "reference_rank",
+      submissionIdColumnOverride: "peptide_id",
+      submissionValueColumnOverride: "predicted_score",
+    },
+    {
+      resolvePinnedOfficialScorerImageImpl: async () => {
+        throw new GhcrResolutionError(
+          "http_error",
+          "GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: confirm the image tag exists and is readable.",
+        );
+      },
+    },
+  );
+
+  assert.equal(result.state, "awaiting_input");
+  assert.equal(
+    result.authoringIr.execution.compile_error_codes[0],
+    "AUTHORING_PLATFORM_UNAVAILABLE",
+  );
+  assert.deepEqual(result.validation.invalid_fields, [
+    {
+      field: "execution.scorer_image",
+      code: "AUTHORING_PLATFORM_UNAVAILABLE",
+      message:
+        "Agora could not resolve the official scorer dependency for this session. GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.",
+      next_action:
+        "retry later or contact Agora support if the official scorer registry remains unavailable.",
+      blocking_layer: "platform",
+      candidate_values: [],
+    },
+  ]);
 });
 
 test("authoring artifact resolution builds the explicit table execution contract", () => {

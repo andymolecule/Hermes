@@ -1,7 +1,10 @@
 import {
   AgoraError,
+  GhcrResolutionError,
   STANDARD_AUTHORING_TEMPLATE,
   type AuthoringArtifactOutput,
+  type AuthoringSessionBlockingLayerOutput,
+  type AuthoringSessionValidationIssueOutput,
   type AuthoringSessionValidationOutput,
   type AuthoringValidationFieldOutput,
   type ChallengeAuthoringIrOutput,
@@ -40,6 +43,10 @@ const NEEDS_INPUT_ERROR_CODES = new Set([
   "AUTHORING_DRY_RUN_REJECTED",
 ]);
 
+const RECOVERABLE_PLATFORM_ERROR_CODES = new Set([
+  "AUTHORING_PLATFORM_UNAVAILABLE",
+]);
+
 export interface AuthoringSessionOutcome {
   state: "ready" | "awaiting_input" | "rejected";
   compilation?: CompilationResultOutput;
@@ -66,6 +73,13 @@ interface SessionCompilationCandidate {
   compilation: CompilationResultOutput;
 }
 
+function artifactIdentifier(
+  artifact: AuthoringArtifactOutput,
+  index: number,
+) {
+  return artifact.id?.trim() || `artifact-${index + 1}`;
+}
+
 function findArtifactIndexById(
   uploadedArtifacts: AuthoringArtifactOutput[],
   artifactId: string | null | undefined,
@@ -75,13 +89,54 @@ function findArtifactIndexById(
   }
 
   return uploadedArtifacts.findIndex(
-    (artifact, index) =>
-      (artifact.id?.trim() || `artifact-${index + 1}`) === artifactId,
+    (artifact, index) => artifactIdentifier(artifact, index) === artifactId,
   );
 }
 
 function defaultEvaluationArtifactIndex(uploadedArtifacts: AuthoringArtifactOutput[]) {
   return uploadedArtifacts.length === 1 ? 0 : null;
+}
+
+function listArtifactCandidateValues(
+  uploadedArtifacts: AuthoringArtifactOutput[],
+) {
+  return uploadedArtifacts.map(artifactIdentifier);
+}
+
+function classifyBlockingLayer(
+  code: string,
+): AuthoringSessionBlockingLayerOutput {
+  if (code.startsWith("AUTHORING_DRY_RUN_")) {
+    return "dry_run";
+  }
+  if (RECOVERABLE_PLATFORM_ERROR_CODES.has(code)) {
+    return "platform";
+  }
+  return "input";
+}
+
+function stripNextStepInstruction(message: string) {
+  return message
+    .replace(/\s+Next step:.*$/i, "")
+    .replace(/[.!?]+$/, "")
+    .trim();
+}
+
+function resolveRetainedEvaluationArtifactId(input: {
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  selectedArtifactId?: string | null;
+}) {
+  if (!input.selectedArtifactId) {
+    return null;
+  }
+
+  const artifactIndex = findArtifactIndexById(
+    input.uploadedArtifacts,
+    input.selectedArtifactId,
+  );
+  return artifactIndex !== null && artifactIndex >= 0
+    ? input.selectedArtifactId
+    : null;
 }
 
 function buildDeterministicProposal(input: {
@@ -143,7 +198,9 @@ function buildDeterministicProposal(input: {
     );
   }
 
-  const explicitEvaluationArtifactIndex = findArtifactIndexById(
+  const reasonCodes = ["structured_contract_supplied"];
+  const warnings: string[] = [];
+  let explicitEvaluationArtifactIndex = findArtifactIndexById(
     input.uploadedArtifacts,
     input.evaluationArtifactIdOverride,
   );
@@ -151,18 +208,28 @@ function buildDeterministicProposal(input: {
     input.evaluationArtifactIdOverride &&
     explicitEvaluationArtifactIndex === -1
   ) {
-    throw new AgoraError(
-      "Agora could not find the selected evaluation artifact. Next step: upload the evaluation file or use one of the current artifact IDs and retry.",
-      {
-        code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
-        status: 422,
-        details: {
-          missingFields: ["evaluation_artifact"],
-          reasonCodes: ["evaluation_artifact_missing"],
-          warnings: [],
-        },
-      },
+    const fallbackEvaluationArtifactIndex = defaultEvaluationArtifactIndex(
+      input.uploadedArtifacts,
     );
+    if (fallbackEvaluationArtifactIndex !== null) {
+      explicitEvaluationArtifactIndex = fallbackEvaluationArtifactIndex;
+      reasonCodes.push("evaluation_artifact_rebound_to_only_uploaded_file");
+      warnings.push("stale_evaluation_artifact_id_cleared");
+    } else {
+      throw new AgoraError(
+        "Agora could not find the selected evaluation artifact. Next step: upload the evaluation file or use one of the current artifact IDs and retry.",
+        {
+          code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+          status: 422,
+          details: {
+            missingFields: ["evaluation_artifact"],
+            reasonCodes: ["evaluation_artifact_missing"],
+            warnings: ["stale_evaluation_artifact_id_cleared"],
+            candidateValues: listArtifactCandidateValues(input.uploadedArtifacts),
+          },
+        },
+      );
+    }
   }
 
   const evaluationArtifactIndex =
@@ -230,8 +297,8 @@ function buildDeterministicProposal(input: {
     evaluationValueColumn,
     submissionIdColumn,
     submissionValueColumn,
-    reasonCodes: ["structured_contract_supplied"],
-    warnings: [],
+    reasonCodes,
+    warnings,
   };
 }
 
@@ -240,13 +307,16 @@ function buildValidationIssue(input: {
   code: string;
   message: string;
   nextAction: string;
+  candidateValues?: string[];
 }) {
   return {
     field: input.field,
     code: input.code,
     message: input.message,
     next_action: input.nextAction,
-  } satisfies AuthoringSessionValidationOutput["missing_fields"][number];
+    blocking_layer: classifyBlockingLayer(input.code),
+    candidate_values: input.candidateValues ?? [],
+  } satisfies AuthoringSessionValidationIssueOutput;
 }
 
 function buildValidationFromAgoraError(input: {
@@ -255,6 +325,12 @@ function buildValidationFromAgoraError(input: {
 }): AuthoringSessionValidationOutput {
   const nextAction =
     input.error.nextAction ?? "Fix the session fields and retry.";
+  const candidateValues = Array.isArray(input.error.details?.candidateValues)
+    ? input.error.details.candidateValues.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      )
+    : [];
 
   if (input.error.code.startsWith("AUTHORING_DRY_RUN_")) {
     return {
@@ -278,6 +354,8 @@ function buildValidationFromAgoraError(input: {
           code: input.error.code,
           message: input.error.message,
           nextAction,
+          candidateValues:
+            field === "evaluation_artifact" ? candidateValues : [],
         }),
       ),
       invalid_fields: [],
@@ -290,10 +368,14 @@ function buildValidationFromAgoraError(input: {
     missing_fields: [],
     invalid_fields: [
       buildValidationIssue({
-        field: "execution",
+        field:
+          input.error.code === "AUTHORING_PLATFORM_UNAVAILABLE"
+            ? "execution.scorer_image"
+            : "execution",
         code: input.error.code,
         message: input.error.message,
         nextAction,
+        candidateValues,
       }),
     ],
     dry_run_failure: null,
@@ -343,10 +425,15 @@ async function compileAuthoringSessionCandidate(
     metric: input.metricOverride?.trim() || assessed.metric,
     evaluationArtifactIndex:
       input.evaluationArtifactIdOverride != null
-        ? findArtifactIndexById(
-            input.uploadedArtifacts,
-            input.evaluationArtifactIdOverride,
-          )
+        ? (() => {
+            const explicitIndex = findArtifactIndexById(
+              input.uploadedArtifacts,
+              input.evaluationArtifactIdOverride,
+            );
+            return explicitIndex !== null && explicitIndex >= 0
+              ? explicitIndex
+              : assessed.evaluationArtifactIndex;
+          })()
         : assessed.evaluationArtifactIndex,
     evaluationIdColumn:
       input.evaluationIdColumnOverride?.trim() || assessed.evaluationIdColumn,
@@ -370,15 +457,38 @@ async function compileAuthoringSessionCandidate(
           missingFields: ["evaluation_artifact"],
           reasonCodes: ["evaluation_artifact_missing"],
           warnings: proposal.warnings,
+          candidateValues: listArtifactCandidateValues(input.uploadedArtifacts),
         },
       },
     );
   }
 
-  const scorerImage = await (
-    dependencies.resolvePinnedOfficialScorerImageImpl ??
-    resolvePinnedOfficialScorerImage
-  )(proposal.template);
+  let scorerImage: string | null = null;
+  try {
+    scorerImage = await (
+      dependencies.resolvePinnedOfficialScorerImageImpl ??
+      resolvePinnedOfficialScorerImage
+    )(proposal.template);
+  } catch (error) {
+    if (error instanceof GhcrResolutionError) {
+      throw new AgoraError(
+        `Agora could not resolve the official scorer dependency for this session. ${stripNextStepInstruction(error.message)}. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.`,
+        {
+          code: "AUTHORING_PLATFORM_UNAVAILABLE",
+          status: 503,
+          retriable: true,
+          cause: error,
+          details: {
+            dependency: "official_scorer_registry",
+            reasonCodes: ["official_scorer_unavailable"],
+            warnings: [],
+            platformErrorCode: error.code,
+          },
+        },
+      );
+    }
+    throw error;
+  }
   if (!scorerImage) {
     throw new AgoraError(
       `Unknown official scorer template ${proposal.template}. Next step: choose a supported template and retry.`,
@@ -583,7 +693,11 @@ export async function compileAuthoringSessionOutcome(
       },
     };
   } catch (error) {
-    if (error instanceof AgoraError && NEEDS_INPUT_ERROR_CODES.has(error.code)) {
+    if (
+      error instanceof AgoraError &&
+      (NEEDS_INPUT_ERROR_CODES.has(error.code) ||
+        RECOVERABLE_PLATFORM_ERROR_CODES.has(error.code))
+    ) {
       const reasonCodes = Array.isArray(error.details?.reasonCodes)
         ? (error.details.reasonCodes as string[])
         : [];
@@ -594,9 +708,13 @@ export async function compileAuthoringSessionOutcome(
         ? (error.details.missingFields as AuthoringValidationFieldOutput[])
         : [];
       const selectedEvaluationArtifactId =
-        typeof input.evaluationArtifactIdOverride === "string"
-          ? input.evaluationArtifactIdOverride
-          : null;
+        resolveRetainedEvaluationArtifactId({
+          uploadedArtifacts: input.uploadedArtifacts,
+          selectedArtifactId:
+            typeof input.evaluationArtifactIdOverride === "string"
+              ? input.evaluationArtifactIdOverride
+              : null,
+        });
       const authoringIr = buildAuthoringIr({
         intent: input.intent,
         uploadedArtifacts: input.uploadedArtifacts,
@@ -662,6 +780,7 @@ export async function compileAuthoringSessionOutcome(
             nextAction:
               error.nextAction ??
               "Create a new session with a supported deterministic table-scoring challenge.",
+            candidateValues: [],
           }),
         },
         failureMessage: error.message,

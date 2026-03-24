@@ -223,8 +223,24 @@ Examples that stay in `awaiting_input`:
 - missing metric
 - malformed evaluation file
 - incomplete scorer configuration
+- temporary platform/dependency failures such as official scorer registry
+  resolution outages
 - any other issue the poster can correct by submitting structured field patches or
   replacing files
+
+Hard rules for recoverable execution issues:
+
+- if a previously selected `evaluation_artifact_id` no longer exists after the
+  current artifact set is merged, Agora must clear it and re-run normal
+  artifact resolution
+- if exactly one uploaded artifact remains after that reset, Agora should
+  auto-bind it and continue
+- if multiple candidate artifacts remain, Agora should stay in
+  `awaiting_input` and return the valid artifact IDs as machine-readable
+  candidates
+- if Agora cannot currently resolve the official scorer dependency, the session
+  stays in `awaiting_input`, but the blocker must be classified as a platform
+  blocker rather than as missing poster input
 
 Examples that may become `rejected`:
 
@@ -739,6 +755,7 @@ Stay in `awaiting_input` when the poster still needs to provide or fix:
 - hidden/public artifact decisions
 - evaluation file format
 - other scorer configuration details
+- temporary official scorer dependency outages
 
 Move to `rejected` only when the challenge fundamentally cannot be reduced to
 deterministic table scoring under the current official framework.

@@ -188,12 +188,20 @@ export const authoringSessionResolvedSchema = z
   })
   .strict();
 
+export const authoringSessionBlockingLayerSchema = z.enum([
+  "input",
+  "dry_run",
+  "platform",
+]);
+
 export const authoringSessionValidationIssueSchema = z
   .object({
     field: z.string().trim().min(1),
     code: z.string().trim().min(1),
     message: z.string().trim().min(1),
     next_action: z.string().trim().min(1),
+    blocking_layer: authoringSessionBlockingLayerSchema,
+    candidate_values: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();
 
@@ -207,6 +215,30 @@ export const authoringSessionValidationSchema = z
     unsupported_reason: authoringSessionValidationIssueSchema
       .nullable()
       .default(null),
+  })
+  .strict();
+
+export const authoringSessionReadinessStatusSchema = z.enum([
+  "pass",
+  "pending",
+  "fail",
+]);
+
+export const authoringSessionReadinessCheckSchema = z
+  .object({
+    status: authoringSessionReadinessStatusSchema,
+    code: z.string().trim().min(1),
+    message: z.string().trim().min(1),
+  })
+  .strict();
+
+export const authoringSessionReadinessSchema = z
+  .object({
+    spec: authoringSessionReadinessCheckSchema,
+    artifact_binding: authoringSessionReadinessCheckSchema,
+    scorer: authoringSessionReadinessCheckSchema,
+    dry_run: authoringSessionReadinessCheckSchema,
+    publishable: z.boolean(),
   })
   .strict();
 
@@ -228,6 +260,7 @@ export const authoringSessionSchema = z
     creator: authoringSessionCreatorSchema,
     resolved: authoringSessionResolvedSchema,
     validation: authoringSessionValidationSchema,
+    readiness: authoringSessionReadinessSchema,
     checklist: authoringSessionChecklistSchema.nullable(),
     compilation: authoringSessionCompilationSchema.nullable(),
     artifacts: z.array(authoringSessionArtifactSchema),
@@ -384,11 +417,23 @@ export type AuthoringSessionChecklistOutput = z.output<
 export type AuthoringSessionResolvedOutput = z.output<
   typeof authoringSessionResolvedSchema
 >;
+export type AuthoringSessionBlockingLayerOutput = z.output<
+  typeof authoringSessionBlockingLayerSchema
+>;
 export type AuthoringSessionValidationIssueOutput = z.output<
   typeof authoringSessionValidationIssueSchema
 >;
 export type AuthoringSessionValidationOutput = z.output<
   typeof authoringSessionValidationSchema
+>;
+export type AuthoringSessionReadinessStatusOutput = z.output<
+  typeof authoringSessionReadinessStatusSchema
+>;
+export type AuthoringSessionReadinessCheckOutput = z.output<
+  typeof authoringSessionReadinessCheckSchema
+>;
+export type AuthoringSessionReadinessOutput = z.output<
+  typeof authoringSessionReadinessSchema
 >;
 export type AuthoringSessionListItemOutput = z.output<
   typeof authoringSessionListItemSchema
