@@ -39,7 +39,7 @@ function TopNav() {
       }}
     >
       {/* 3-column layout: logo | nav (centered) | wallet */}
-      <div className="grid grid-cols-[auto_1fr_auto] items-center w-full max-w-7xl mx-auto px-6">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center w-full px-6">
         {/* Left: Logo */}
         <Link
           href="/"

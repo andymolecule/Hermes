@@ -147,6 +147,7 @@ export type AnalyticsData = {
   distributedUsdc: number;
   protocolRevenueUsdc: number;
   avgBountyUsdc: number;
+  registeredAgents: number;
   completionRate: number;
   scoringSuccessRate: number;
   recentChallenges: {

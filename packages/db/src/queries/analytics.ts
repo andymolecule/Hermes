@@ -21,6 +21,8 @@ export interface PlatformAnalytics {
   distributedUsdc: number;
   protocolRevenueUsdc: number;
   avgBountyUsdc: number;
+  // Platform participation
+  registeredAgents: number;
   // Platform health metrics
   completionRate: number;
   scoringSuccessRate: number;
@@ -87,6 +89,7 @@ export interface BuildPlatformAnalyticsSnapshotInput {
   recentSubmissions: AnalyticsSubmissionRow[];
   payoutRows: AnalyticsPayoutRow[];
   scoreJobRows: AnalyticsScoreJobRow[];
+  registeredAgents: number;
 }
 
 function parseNumericValue(value: string | number | null | undefined) {
@@ -223,6 +226,7 @@ export function buildPlatformAnalyticsSnapshot(
     distributedUsdc,
     protocolRevenueUsdc,
     avgBountyUsdc,
+    registeredAgents: input.registeredAgents,
     completionRate: Math.round(completionRate),
     scoringSuccessRate: Math.round(scoringSuccessRate),
     recentChallenges: input.recentChallenges.map((challenge) => ({
@@ -267,6 +271,7 @@ export async function getPlatformAnalytics(
     recentSubmissionsResult,
     payoutRowsResult,
     scoreJobsResult,
+    agentCountResult,
   ] = await Promise.all([
     // 1. All challenges — explicit columns for grouping + reward sum
     db
@@ -313,6 +318,9 @@ export async function getPlatformAnalytics(
     db.from("challenge_payouts").select("challenge_id, amount, claimed_at"),
 
     db.from("score_jobs").select("status"),
+
+    // 10. Registered agent count
+    db.from("auth_agents").select("id", { count: "exact", head: true }),
   ]);
 
   if (challengesResult.error) {
@@ -360,6 +368,11 @@ export async function getPlatformAnalytics(
       `Analytics: failed to fetch score jobs: ${scoreJobsResult.error.message}`,
     );
   }
+  if (agentCountResult.error) {
+    throw new Error(
+      `Analytics: failed to count registered agents: ${agentCountResult.error.message}`,
+    );
+  }
 
   return buildPlatformAnalyticsSnapshot({
     challenges: challengesResult.data ?? [],
@@ -371,5 +384,6 @@ export async function getPlatformAnalytics(
     recentSubmissions: recentSubmissionsResult.data ?? [],
     payoutRows: payoutRowsResult.data ?? [],
     scoreJobRows: scoreJobsResult.data ?? [],
+    registeredAgents: agentCountResult.count ?? 0,
   });
 }

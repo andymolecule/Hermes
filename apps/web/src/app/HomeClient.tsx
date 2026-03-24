@@ -3,9 +3,11 @@
 import { CHALLENGE_STATUS } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Bot,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Lock,
   RefreshCw,
   Shield,
   SlidersHorizontal,
@@ -16,7 +18,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChallengeCard } from "../components/ChallengeCard";
-import { listChallenges } from "../lib/api";
+import { getAnalytics, listChallenges } from "../lib/api";
 import { type ChallengeListSort, sortChallenges } from "../lib/challenge-list";
 import { formatUsdc } from "../lib/format";
 
@@ -94,10 +96,14 @@ export function HomeClient() {
 
   const query = useQuery({ queryKey: ["challenges"], queryFn: () => listChallenges({}) });
   const challenges = query.data ?? [];
+  const analyticsQuery = useQuery({ queryKey: ["analytics"], queryFn: () => getAnalytics() });
+  const analytics = analyticsQuery.data;
 
   const openCount = challenges.filter((c) => c.status?.toLowerCase() === CHALLENGE_STATUS.open).length;
   const totalPool = challenges.reduce((s, c) => s + Number(c.reward_amount || 0), 0);
   const totalSubs = challenges.reduce((s, c) => s + (c.submissions_count ?? 0), 0);
+  const tvl = analytics?.tvlUsdc ?? 0;
+  const registeredAgents = analytics?.registeredAgents ?? 0;
 
   const rows = useMemo(() => {
     let filtered = [...challenges];
@@ -162,10 +168,10 @@ export function HomeClient() {
       </section>
 
       {/* ═══ KPI STRIP ═══ */}
-      <section className="rounded-2xl py-10 px-8 grid grid-cols-3" style={{ backgroundColor: "var(--surface-container-low)" }}>
-        <div className="text-center px-8 border-r" style={{ borderColor: "var(--border-subtle)" }}>
+      <section className="rounded-2xl py-10 px-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-y-8" style={{ backgroundColor: "var(--surface-container-low)" }}>
+        <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Bounties</div>
-          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "3rem", color: "var(--text-primary)" }}>
+          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             <CountUp target={challenges.length} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
@@ -174,11 +180,11 @@ export function HomeClient() {
           </div>
         </div>
 
-        <div className="text-center px-8 border-r" style={{ borderColor: "var(--border-subtle)" }}>
+        <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Payout</div>
-          <div className="mt-3 flex items-baseline justify-center gap-2">
-            <span className="font-display font-bold tabular-nums" style={{ fontSize: "3rem", color: "var(--text-primary)" }}>$<CountUp target={totalPool} /></span>
-            <span className="font-display font-medium text-xl" style={{ color: "var(--text-secondary)" }}>USDC</span>
+          <div className="mt-3 flex items-baseline justify-center gap-1.5">
+            <span className="font-display font-bold tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>$<CountUp target={totalPool} /></span>
+            <span className="font-display font-medium text-lg" style={{ color: "var(--text-secondary)" }}>USDC</span>
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
             <Shield className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
@@ -186,14 +192,37 @@ export function HomeClient() {
           </div>
         </div>
 
-        <div className="text-center px-8">
+        <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
+          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total TVL</div>
+          <div className="mt-3 flex items-baseline justify-center gap-1.5">
+            <span className="font-display font-bold tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>$<CountUp target={tvl} /></span>
+            <span className="font-display font-medium text-lg" style={{ color: "var(--text-secondary)" }}>USDC</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <Lock className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-secondary)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
+          </div>
+        </div>
+
+        <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Submissions</div>
-          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "3rem", color: "var(--text-primary)" }}>
+          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             <CountUp target={totalSubs} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
             <Users className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
             <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Across all challenges</span>
+          </div>
+        </div>
+
+        <div className="text-center px-4">
+          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Registered Agents</div>
+          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
+            <CountUp target={registeredAgents} />
+          </div>
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <Bot className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>API key holders</span>
           </div>
         </div>
       </section>

@@ -91,6 +91,7 @@ test("analytics snapshot uses claimed finalized payouts as distributed value", (
       { status: "failed" },
       { status: "queued" },
     ],
+    registeredAgents: 5,
   });
 
   assert.equal(snapshot.totalChallenges, 3);
@@ -104,6 +105,7 @@ test("analytics snapshot uses claimed finalized payouts as distributed value", (
   assert.equal(snapshot.protocolRevenueUsdc, 2);
   assert.equal(snapshot.completionRate, 50);
   assert.equal(snapshot.scoringSuccessRate, 50);
+  assert.equal(snapshot.registeredAgents, 5);
   assert.equal(snapshot.recentChallenges[0]?.status, "scoring");
   assert.deepEqual(snapshot.topSolvers[0], { address: "0xaaa", count: 2 });
 });
