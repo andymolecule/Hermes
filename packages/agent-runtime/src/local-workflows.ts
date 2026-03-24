@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   AmbiguousWriteResultError,
+  type SolverSigner,
   assertClaimChallengePayoutAffordable,
   assertSubmitChallengeResultAffordable,
   claimPayoutWithSigner,
@@ -10,7 +11,6 @@ import {
   getPublicClient,
   parseSubmittedReceipt,
   sendWriteWithRetry,
-  type SolverSigner,
   submitChallengeResultWithSigner,
 } from "@agora/chain";
 import {
@@ -26,8 +26,8 @@ import {
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
   resolveChallengeExecution,
-  resolvePinnedChallengeExecution,
   resolveChallengeRuntimeConfig,
+  resolvePinnedChallengeExecution,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
@@ -43,10 +43,10 @@ import {
 } from "@agora/db";
 import { getJSON, getText } from "@agora/ipfs";
 import {
-  executeScoringPipeline,
   type ExecuteScoringPipelineInput,
   type ScoringSpecRuntimeConfig,
-  resolveScoringRuntimeConfig,
+  executeScoringPipeline,
+  resolveLocalScoringRuntimeConfig,
   resolveSubmissionSource,
   wadToScore,
 } from "@agora/scorer";
@@ -568,7 +568,7 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
     );
   }
   const evaluationBundleCid = executionPlan.evaluationBundleCid;
-  const scoringSpecConfig = await resolveScoringRuntimeConfig({
+  const scoringSpecConfig = await resolveLocalScoringRuntimeConfig({
     submissionContract: cachedRuntimeConfig.submissionContract,
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     policies: cachedRuntimeConfig.policies,
@@ -695,7 +695,7 @@ export async function verifySubmission(input: {
       );
     }
 
-    const scoringSpecConfig = await resolveScoringRuntimeConfig({
+    const scoringSpecConfig = await resolveLocalScoringRuntimeConfig({
       submissionContract: cachedRuntimeConfig.submissionContract,
       evaluationContract: cachedRuntimeConfig.evaluationContract,
       policies: cachedRuntimeConfig.policies,

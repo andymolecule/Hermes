@@ -7,6 +7,7 @@ import {
   isTransientPinnedContractReadError,
   parseSubmittedReceipt,
 } from "@agora/chain";
+import { projectOnChainSubmissionFromRegistration } from "@agora/chain/indexer/submissions";
 import {
   CHALLENGE_STATUS,
   SUBMISSION_RESULT_FORMAT,
@@ -21,12 +22,15 @@ import {
   countSubmissionsByResultCid,
   createSubmissionIntent,
   createSupabaseClient,
+  deleteUnmatchedSubmission,
   ensureScoreJobForRegisteredSubmission,
   findActiveSubmissionIntentByMatch,
   getChallengeByContractAddress,
   getChallengeById,
+  getSubmissionByChainId,
   getSubmissionByIntentId,
   getSubmissionIntentById,
+  listUnmatchedSubmissionsByMatch,
   upsertSubmissionOnChain,
 } from "@agora/db";
 import { unpinCid } from "@agora/ipfs";
@@ -150,6 +154,84 @@ export function toSubmissionRegistrationResponse(input: {
   };
 }
 
+export async function reconcileTrackedSubmissionsForIntent(
+  input: {
+    db: ReturnType<typeof createSupabaseClient>;
+    challenge: ChallengeRow;
+    intent: {
+      id: string;
+      solver_address: string;
+      result_hash: string;
+      trace_id?: string | null;
+    };
+    requestId: string;
+    logger: AgoraLogger;
+  },
+  dependencies: {
+    listUnmatchedSubmissionsByMatchImpl?: typeof listUnmatchedSubmissionsByMatch;
+    getOnChainSubmissionImpl?: typeof getOnChainSubmission;
+    getSubmissionByChainIdImpl?: typeof getSubmissionByChainId;
+    projectOnChainSubmissionFromRegistrationImpl?: typeof projectOnChainSubmissionFromRegistration;
+  } = {},
+) {
+  const listUnmatched =
+    dependencies.listUnmatchedSubmissionsByMatchImpl ??
+    listUnmatchedSubmissionsByMatch;
+  const getOnChainSubmissionForIntent =
+    dependencies.getOnChainSubmissionImpl ?? getOnChainSubmission;
+  const getSubmissionByChainIdForIntent =
+    dependencies.getSubmissionByChainIdImpl ?? getSubmissionByChainId;
+  const projectSubmissionForIntent =
+    dependencies.projectOnChainSubmissionFromRegistrationImpl ??
+    projectOnChainSubmissionFromRegistration;
+
+  const unmatchedRows = await listUnmatched(input.db, {
+    challengeId: input.challenge.id,
+    solverAddress: input.intent.solver_address,
+    resultHash: input.intent.result_hash,
+  });
+
+  let reconciled = 0;
+  for (const unmatched of unmatchedRows) {
+    const onChainSubmission = await getOnChainSubmissionForIntent(
+      input.challenge.contract_address as `0x${string}`,
+      BigInt(unmatched.on_chain_sub_id),
+    );
+    const existingSubmission = await getSubmissionByChainIdForIntent(
+      input.db,
+      input.challenge.id,
+      unmatched.on_chain_sub_id,
+    );
+    const projected = await projectSubmissionForIntent({
+      db: input.db,
+      challenge: input.challenge,
+      onChainSubmissionId: unmatched.on_chain_sub_id,
+      onChainSubmission,
+      txHash: unmatched.tx_hash,
+      existingSubmission,
+    });
+    if (!projected) {
+      continue;
+    }
+    reconciled += 1;
+    input.logger.info(
+      {
+        event: "submission.intent.reconciled_unmatched",
+        challengeId: input.challenge.id,
+        intentId: input.intent.id,
+        onChainSubmissionId: unmatched.on_chain_sub_id,
+        traceId: input.intent.trace_id ?? input.requestId,
+      },
+      "Recovered a tracked unmatched submission after intent creation",
+    );
+  }
+
+  return {
+    attempted: unmatchedRows.length,
+    reconciled,
+  };
+}
+
 export async function createSubmissionIntentWorkflow(input: {
   challengeId?: string;
   challengeAddress?: string;
@@ -180,7 +262,11 @@ export async function createSubmissionIntentWorkflow(input: {
     challengeId: input.challengeId,
     challengeAddress: input.challengeAddress,
   });
-  if (hasChallengeTargetConflict(challenge, { challengeAddress: input.challengeAddress })) {
+  if (
+    hasChallengeTargetConflict(challenge, {
+      challengeAddress: input.challengeAddress,
+    })
+  ) {
     throw new SubmissionWorkflowError(
       400,
       "CHALLENGE_TARGET_CONFLICT",
@@ -207,9 +293,7 @@ export async function createSubmissionIntentWorkflow(input: {
       "Challenge submission deadline has passed. Next step: do not submit on-chain; wait for scoring or create a new challenge.",
     );
   }
-  if (
-    window.deadlineMs <= Date.now() + SUBMISSION_DEADLINE_SAFETY_WINDOW_MS
-  ) {
+  if (window.deadlineMs <= Date.now() + SUBMISSION_DEADLINE_SAFETY_WINDOW_MS) {
     throw new SubmissionWorkflowError(
       409,
       "CHALLENGE_DEADLINE_TOO_CLOSE",
@@ -266,6 +350,27 @@ export async function createSubmissionIntentWorkflow(input: {
     "Submission intent created",
   );
 
+  try {
+    await reconcileTrackedSubmissionsForIntent({
+      db,
+      challenge,
+      intent,
+      requestId: input.requestId,
+      logger: input.logger,
+    });
+  } catch (error) {
+    input.logger.warn(
+      {
+        event: "submission.intent.reconcile_unmatched_failed",
+        challengeId: challenge.id,
+        intentId: intent.id,
+        traceId: input.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to reconcile tracked unmatched submissions after intent creation",
+    );
+  }
+
   return {
     intentId: intent.id,
     resultHash,
@@ -283,9 +388,11 @@ export async function cleanupSubmissionArtifact(input: {
   unpinCidImpl?: typeof unpinCid;
 }) {
   const db = (input.createSupabaseClientImpl ?? createSupabaseClient)(true);
-  const getIntent = input.getSubmissionIntentByIdImpl ?? getSubmissionIntentById;
+  const getIntent =
+    input.getSubmissionIntentByIdImpl ?? getSubmissionIntentById;
   const countIntents =
-    input.countSubmissionIntentsByResultCidImpl ?? countSubmissionIntentsByResultCid;
+    input.countSubmissionIntentsByResultCidImpl ??
+    countSubmissionIntentsByResultCid;
   const countSubmissions =
     input.countSubmissionsByResultCidImpl ?? countSubmissionsByResultCid;
   const unpin = input.unpinCidImpl ?? unpinCid;
@@ -348,7 +455,11 @@ export async function registerSubmissionWorkflow(input: {
     challengeId: input.challengeId,
     challengeAddress: input.challengeAddress,
   });
-  if (hasChallengeTargetConflict(challenge, { challengeAddress: input.challengeAddress })) {
+  if (
+    hasChallengeTargetConflict(challenge, {
+      challengeAddress: input.challengeAddress,
+    })
+  ) {
     throw new SubmissionWorkflowError(
       400,
       "CHALLENGE_TARGET_CONFLICT",
@@ -382,7 +493,10 @@ export async function registerSubmissionWorkflow(input: {
     );
   }
 
-  const existingSubmissionForIntent = await getSubmissionByIntentId(db, intent.id);
+  const existingSubmissionForIntent = await getSubmissionByIntentId(
+    db,
+    intent.id,
+  );
   if (
     !existingSubmissionForIntent &&
     isSubmissionIntentExpired(intent.expires_at)
@@ -556,6 +670,11 @@ export async function registerSubmissionWorkflow(input: {
     }
     throw error;
   }
+
+  await deleteUnmatchedSubmission(db, {
+    challengeId: challenge.id,
+    onChainSubmissionId: Number(subId),
+  });
 
   const scoreJob = await ensureScoreJobForRegisteredSubmission(
     db,

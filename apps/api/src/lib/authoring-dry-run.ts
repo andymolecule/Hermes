@@ -1,12 +1,17 @@
 import {
   AgoraError,
-  type TrustedChallengeSpecOutput,
   type DryRunPreviewOutput,
+  type TrustedChallengeSpecOutput,
   resolveChallengeExecution,
   resolveChallengeRunnerLimits,
 } from "@agora/common";
 import { getText } from "@agora/ipfs";
 import { executeScoringPipeline } from "@agora/scorer";
+import {
+  type AuthoringStepResult,
+  stepFailure,
+  stepOk,
+} from "./authoring-step.js";
 
 type ExecuteScoringPipelineFn = typeof executeScoringPipeline;
 type GetTextFn = typeof getText;
@@ -67,53 +72,77 @@ function summarizeDryRunScore(input: {
   return normalizedScore;
 }
 
-async function buildSubmissionSource(input: {
+async function buildSubmissionSourceResult(input: {
   challengeSpec: TrustedChallengeSpecOutput;
   getTextImpl: GetTextFn;
-}) {
+}): Promise<AuthoringStepResult<{ content: string }>> {
   const execution = resolveChallengeExecution(input.challengeSpec);
   const evaluationUri = execution.execution.evaluation_artifact_uri;
   if (!evaluationUri) {
-    throw new AgoraError(
-      "This challenge needs a hidden evaluation table before dry-run execution. Next step: attach the missing evaluation artifact and retry.",
-      {
-        code: "AUTHORING_DRY_RUN_MISSING_EVALUATION_BUNDLE",
-        status: 422,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_DRY_RUN_MISSING_EVALUATION_BUNDLE",
+      message:
+        "This challenge needs a hidden evaluation table before dry-run execution. Next step: attach the missing evaluation artifact and retry.",
+      nextAction: "attach the missing evaluation artifact and retry.",
+      blockingLayer: "dry_run",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["dry_run_missing_evaluation_bundle"],
+      warnings: [],
+    });
   }
 
   if (input.challengeSpec.submission_contract.kind !== "csv_table") {
-    throw new AgoraError(
-      "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
-      {
-        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
-        status: 500,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
+      message:
+        "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
+      nextAction: "use a table submission format and retry.",
+      blockingLayer: "dry_run",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["dry_run_unsupported_contract"],
+      warnings: [],
+    });
   }
 
   const bundleText = await input.getTextImpl(evaluationUri);
   const rows = parseCsv(bundleText);
   if (rows.length === 0) {
-    throw new AgoraError(
-      "Agora could not build a dry-run submission because the evaluation bundle is empty. Next step: upload a non-empty evaluation file and retry.",
-      {
-        code: "AUTHORING_DRY_RUN_EMPTY_EVALUATION_BUNDLE",
-        status: 422,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_DRY_RUN_EMPTY_EVALUATION_BUNDLE",
+      message:
+        "Agora could not build a dry-run submission because the evaluation bundle is empty. Next step: upload a non-empty evaluation file and retry.",
+      nextAction: "upload a non-empty evaluation file and retry.",
+      blockingLayer: "dry_run",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["dry_run_empty_evaluation_bundle"],
+      warnings: [],
+    });
   }
 
   const submissionContract = input.challengeSpec.submission_contract;
   if (submissionContract.kind !== "csv_table") {
-    throw new AgoraError(
-      "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
-      {
-        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
-        status: 500,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
+      message:
+        "V1 dry-run requires a csv_table submission contract. Next step: use a table submission format and retry.",
+      nextAction: "use a table submission format and retry.",
+      blockingLayer: "dry_run",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["dry_run_unsupported_contract"],
+      warnings: [],
+    });
   }
 
   const submissionColumns = submissionContract.columns;
@@ -121,16 +150,23 @@ async function buildSubmissionSource(input: {
   const submissionValueColumn = submissionColumns.value;
   const evaluationColumns = execution.execution.evaluation_contract.columns;
   if (!submissionIdColumn || !submissionValueColumn) {
-    throw new AgoraError(
-      "The submission contract is missing required ID/value columns. Next step: define the solver submission columns and retry.",
-      {
-        code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
-        status: 500,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_DRY_RUN_UNSUPPORTED_CONTRACT",
+      message:
+        "The submission contract is missing required ID/value columns. Next step: define the solver submission columns and retry.",
+      nextAction: "define the solver submission columns and retry.",
+      blockingLayer: "dry_run",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["dry_run_unsupported_contract"],
+      warnings: [],
+    });
   }
 
-  const submissionRows = rows.map((row) => {
+  const submissionRows: CsvRow[] = [];
+  for (const row of rows) {
     const evaluationId = row[evaluationColumns.id];
     const evaluationValue = row[evaluationColumns.value];
     if (
@@ -139,26 +175,31 @@ async function buildSubmissionSource(input: {
       typeof evaluationValue !== "string" ||
       evaluationValue.length === 0
     ) {
-      throw new AgoraError(
-        `Agora could not derive dry-run predictions from the evaluation table. Next step: upload an evaluation file with ${evaluationColumns.id} and ${evaluationColumns.value} columns and retry.`,
-        {
-          code: "AUTHORING_DRY_RUN_EVALUATION_FORMAT_UNSUPPORTED",
-          status: 422,
-        },
-      );
+      return stepFailure({
+        kind: "awaiting_input",
+        code: "AUTHORING_DRY_RUN_EVALUATION_FORMAT_UNSUPPORTED",
+        message: `Agora could not derive dry-run predictions from the evaluation table. Next step: upload an evaluation file with ${evaluationColumns.id} and ${evaluationColumns.value} columns and retry.`,
+        nextAction: `upload an evaluation file with ${evaluationColumns.id} and ${evaluationColumns.value} columns and retry.`,
+        blockingLayer: "dry_run",
+        field: "execution",
+        missingFields: [],
+        candidateValues: [],
+        reasonCodes: ["dry_run_evaluation_format_unsupported"],
+        warnings: [],
+      });
     }
-    return {
+    submissionRows.push({
       [submissionIdColumn]: evaluationId,
       [submissionValueColumn]: evaluationValue,
-    };
-  });
+    });
+  }
 
-  return {
+  return stepOk({
     content: serializeCsv(submissionColumns.required, submissionRows),
-  };
+  });
 }
 
-export async function executeAuthoringDryRun(
+export async function executeAuthoringDryRunResult(
   input: {
     challengeSpec: TrustedChallengeSpecOutput;
     timeoutMs: number;
@@ -167,16 +208,19 @@ export async function executeAuthoringDryRun(
     executeScoringPipelineImpl?: ExecuteScoringPipelineFn;
     getTextImpl?: GetTextFn;
   } = {},
-): Promise<DryRunPreviewOutput> {
+): Promise<AuthoringStepResult<DryRunPreviewOutput>> {
   const executeScoringPipelineImpl =
     dependencies.executeScoringPipelineImpl ?? executeScoringPipeline;
   const getTextImpl = dependencies.getTextImpl ?? getText;
   const execution = resolveChallengeExecution(input.challengeSpec);
   const runnerLimits = resolveChallengeRunnerLimits(execution.template);
-  const submission = await buildSubmissionSource({
+  const submission = await buildSubmissionSourceResult({
     challengeSpec: input.challengeSpec,
     getTextImpl,
   });
+  if (!submission.ok) {
+    return submission;
+  }
 
   const run = await executeScoringPipelineImpl({
     image: execution.image,
@@ -184,7 +228,7 @@ export async function executeAuthoringDryRun(
       ? { cid: execution.evaluationBundleCid }
       : undefined,
     mount: execution.mount,
-    submission,
+    submission: submission.value,
     submissionContract: input.challengeSpec.submission_contract,
     evaluationContract: input.challengeSpec.execution.evaluation_contract,
     metric: execution.metric,
@@ -204,14 +248,18 @@ export async function executeAuthoringDryRun(
 
   try {
     if (!run.result.ok) {
-      throw new AgoraError(
-        `Authoring dry-run failed: ${run.result.error ?? "the scorer rejected the sample submission"}. Next step: fix the uploaded files and retry.`,
-        {
-          code: "AUTHORING_DRY_RUN_REJECTED",
-          status: 422,
-          details: run.result.details,
-        },
-      );
+      return stepFailure({
+        kind: "awaiting_input",
+        code: "AUTHORING_DRY_RUN_REJECTED",
+        message: `Authoring dry-run failed: ${run.result.error ?? "the scorer rejected the sample submission"}. Next step: fix the uploaded files and retry.`,
+        nextAction: "fix the uploaded files and retry.",
+        blockingLayer: "dry_run",
+        field: "execution",
+        missingFields: [],
+        candidateValues: [],
+        reasonCodes: ["dry_run_rejected"],
+        warnings: [],
+      });
     }
 
     const sampleScore = summarizeDryRunScore({
@@ -220,12 +268,32 @@ export async function executeAuthoringDryRun(
       details: run.result.details,
     });
 
-    return {
+    return stepOk({
       status: "validated",
       summary: `Agora executed the official scorer against a sample submission derived from the hidden evaluation table and got ${sampleScore}.`,
       sample_score: sampleScore,
-    };
+    });
   } finally {
     await run.cleanup();
   }
+}
+
+export async function executeAuthoringDryRun(
+  input: {
+    challengeSpec: TrustedChallengeSpecOutput;
+    timeoutMs: number;
+  },
+  dependencies: {
+    executeScoringPipelineImpl?: ExecuteScoringPipelineFn;
+    getTextImpl?: GetTextFn;
+  } = {},
+): Promise<DryRunPreviewOutput> {
+  const result = await executeAuthoringDryRunResult(input, dependencies);
+  if (result.ok) {
+    return result.value;
+  }
+  throw new AgoraError(result.failure.message, {
+    code: result.failure.code,
+    status: result.failure.blockingLayer === "dry_run" ? 422 : 500,
+  });
 }

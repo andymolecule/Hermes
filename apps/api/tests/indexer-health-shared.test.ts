@@ -61,4 +61,39 @@ test("indexer health measures lag from the high-water cursor, not the replay cur
   assert.equal(snapshot.finalizedHead, 3_000);
   assert.equal(snapshot.lagBlocks, 0);
   assert.equal(snapshot.status, "ok");
+  assert.deepEqual(snapshot.unmatchedSubmissions, {
+    total: 0,
+    stale: 0,
+    staleThresholdMinutes: 5,
+  });
+});
+
+test("indexer health warns when stale unmatched submissions are present", () => {
+  const configuredCursorKey = buildFactoryCursorKey(
+    runtimeIdentity.chainId,
+    runtimeIdentity.factoryAddress,
+  );
+  const snapshot = buildIndexerHealthSnapshot({
+    runtimeIdentity,
+    healthConfig,
+    chainHead: 3_003,
+    indexedHead: 3_000,
+    configuredCursorKey,
+    factoryCursorRows: [
+      {
+        cursor_key: configuredCursorKey,
+        block_number: 1_000,
+        updated_at: "2026-03-12T09:20:00.000Z",
+      },
+    ],
+    unmatchedSubmissions: {
+      total: 2,
+      stale: 1,
+      staleThresholdMinutes: 5,
+    },
+    nowMs: Date.parse("2026-03-12T09:20:10.000Z"),
+  });
+
+  assert.equal(snapshot.status, "warning");
+  assert.equal(snapshot.unmatchedSubmissions.stale, 1);
 });

@@ -1,5 +1,10 @@
 import {
+  type AuthoringSessionReadinessCheckOutput,
+  type AuthoringSessionReadinessOutput,
+  type AuthoringSessionValidationOutput,
   CHALLENGE_LIMITS,
+  type ChallengeIntentOutput,
+  type CompilationResultOutput,
   PROTOCOL_FEE_PERCENT,
   authoringSessionListItemSchema,
   authoringSessionReadinessSchema,
@@ -7,18 +12,13 @@ import {
   authoringSessionValidationSchema,
   getOfficialScorerMetric,
   resolveOfficialScorerLimits,
-  type AuthoringSessionBlockingLayerOutput,
-  type AuthoringSessionReadinessCheckOutput,
-  type AuthoringSessionReadinessOutput,
-  type AuthoringSessionValidationOutput,
-  type ChallengeIntentOutput,
-  type CompilationResultOutput,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import {
   type StoredAuthoringSessionArtifact,
   toAuthoringSessionArtifactPayload,
 } from "./authoring-session-artifacts.js";
+import { classifyAuthoringBlockingLayer } from "./authoring-validation.js";
 
 type ChallengeRefs = {
   id: string;
@@ -91,10 +91,7 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
   }
 
   const execution = compilation.execution;
-  const metric = getOfficialScorerMetric(
-    execution.template,
-    execution.metric,
-  );
+  const metric = getOfficialScorerMetric(execution.template, execution.metric);
   const templateLimits = resolveOfficialScorerLimits(execution.template);
   const challengeSpec = compilation.challenge_spec;
   const submissionContract = compilation.submission_contract;
@@ -183,29 +180,14 @@ function buildArtifactRoleMap(session: AuthoringSessionRow) {
   return roleByUri;
 }
 
-function artifactId(
-  artifact: StoredAuthoringSessionArtifact,
-  index: number,
-) {
+function artifactId(artifact: StoredAuthoringSessionArtifact, index: number) {
   return artifact.id?.trim() || `artifact-${index + 1}`;
 }
 
 function listArtifactCandidateValues(session: AuthoringSessionRow) {
-  return ((session.uploaded_artifacts_json ?? []) as StoredAuthoringSessionArtifact[]).map(
-    artifactId,
-  );
-}
-
-function classifyBlockingLayer(
-  code: string,
-): AuthoringSessionBlockingLayerOutput {
-  if (code.startsWith("AUTHORING_DRY_RUN_")) {
-    return "dry_run";
-  }
-  if (code === "AUTHORING_PLATFORM_UNAVAILABLE") {
-    return "platform";
-  }
-  return "input";
+  return (
+    (session.uploaded_artifacts_json ?? []) as StoredAuthoringSessionArtifact[]
+  ).map(artifactId);
 }
 
 function resolveCreator(session: AuthoringSessionRow) {
@@ -234,7 +216,7 @@ function buildValidationIssue(input: {
     code: input.code,
     message: input.message,
     next_action: input.nextAction,
-    blocking_layer: classifyBlockingLayer(input.code),
+    blocking_layer: classifyAuthoringBlockingLayer(input.code),
     candidate_values: input.candidateValues ?? [],
   };
 }
@@ -472,7 +454,8 @@ function buildReadiness(
       artifact_binding: buildReadinessCheck({
         status: "pass",
         code: "artifact_binding_ready",
-        message: "The hidden evaluation artifact and column mappings are resolved.",
+        message:
+          "The hidden evaluation artifact and column mappings are resolved.",
       }),
       scorer: buildReadinessCheck({
         status: "pass",
@@ -525,34 +508,33 @@ function buildReadiness(
     Boolean(session.authoring_ir_json?.execution.submission_columns.id) &&
     Boolean(session.authoring_ir_json?.execution.submission_columns.value);
 
-  const spec =
-    compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")
+  const spec = compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")
+    ? buildReadinessCheck({
+        status: "pass",
+        code: "spec_built",
+        message: "Agora compiled the canonical challenge spec.",
+      })
+    : compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE"
       ? buildReadinessCheck({
-          status: "pass",
-          code: "spec_built",
-          message: "Agora compiled the canonical challenge spec.",
+          status: "fail",
+          code: compileErrorCode,
+          message:
+            compileErrorMessage ??
+            "Agora could not resolve the official scorer dependency needed to build this spec.",
         })
-      : compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE"
+      : missingFields.size > 0 || !session.intent_json
         ? buildReadinessCheck({
-            status: "fail",
-            code: compileErrorCode,
+            status: "pending",
+            code: "spec_pending_input",
             message:
-              compileErrorMessage ??
-              "Agora could not resolve the official scorer dependency needed to build this spec.",
+              "Agora still needs enough structured input to build the canonical challenge spec.",
           })
-        : missingFields.size > 0 || !session.intent_json
-          ? buildReadinessCheck({
-              status: "pending",
-              code: "spec_pending_input",
-              message:
-                "Agora still needs enough structured input to build the canonical challenge spec.",
-            })
-          : buildReadinessCheck({
-              status: "pending",
-              code: "spec_pending_compile",
-              message:
-                "Agora has not yet produced a publishable compiled spec for this session.",
-            });
+        : buildReadinessCheck({
+            status: "pending",
+            code: "spec_pending_compile",
+            message:
+              "Agora has not yet produced a publishable compiled spec for this session.",
+          });
 
   const artifactBinding =
     artifactBindingResolved &&
@@ -561,7 +543,8 @@ function buildReadiness(
       ? buildReadinessCheck({
           status: "pass",
           code: "artifact_binding_ready",
-          message: "The hidden evaluation artifact and column mappings are resolved.",
+          message:
+            "The hidden evaluation artifact and column mappings are resolved.",
         })
       : compileErrorCode === "AUTHORING_EVALUATION_COLUMNS_INVALID"
         ? buildReadinessCheck({
@@ -643,8 +626,7 @@ function buildReadiness(
         : buildReadinessCheck({
             status: "pending",
             code: "dry_run_pending",
-            message:
-              "Dry-run validation has not passed yet for this session.",
+            message: "Dry-run validation has not passed yet for this session.",
           });
 
   return authoringSessionReadinessSchema.parse({
@@ -680,7 +662,7 @@ function buildResolved(session: AuthoringSessionRow) {
       ? { objective: session.compilation_json.execution.comparator }
       : session.authoring_ir_json?.execution.comparator
         ? { objective: session.authoring_ir_json.execution.comparator }
-      : {}),
+        : {}),
     ...(session.authoring_ir_json?.execution.evaluation_artifact_id
       ? {
           evaluation_artifact_id:
@@ -764,13 +746,17 @@ export function buildAuthoringSessionPayload(
         }
       : null,
     challenge_id: challengeRefsVisible
-      ? session.published_challenge_id ?? options?.challenge?.id ?? null
+      ? (session.published_challenge_id ?? options?.challenge?.id ?? null)
       : null,
     contract_address: challengeRefsVisible
-      ? options?.challenge?.contract_address ?? null
+      ? (options?.challenge?.contract_address ?? null)
       : null,
-    spec_cid: challengeRefsVisible ? session.published_spec_cid ?? null : null,
-    tx_hash: challengeRefsVisible ? options?.challenge?.tx_hash ?? null : null,
+    spec_cid: challengeRefsVisible
+      ? (session.published_spec_cid ?? null)
+      : null,
+    tx_hash: challengeRefsVisible
+      ? (options?.challenge?.tx_hash ?? null)
+      : null,
     created_at: session.created_at,
     updated_at: session.updated_at,
     expires_at: session.expires_at,

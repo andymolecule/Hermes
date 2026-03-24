@@ -86,16 +86,16 @@ export async function processChallengeLog(input: {
           projectOnChainSubmissionFromRegistrationImpl,
         });
         needsRepair = result.needsRepair;
-        if (result.needsRepair) {
+        if (result.unmatchedTracked) {
           indexerLogger.warn(
             {
-              event: "indexer.submission.unregistered_requires_repair",
+              event: "indexer.submission.unmatched_tracked",
               challengeId: challenge.id,
               challengeAddress,
               onChainSubmissionId: result.onChainSubmissionId,
               txHash,
             },
-            "On-chain submission is missing a registered intent and now requires repair",
+            "On-chain submission is missing a registered intent and has been tracked for retry",
           );
         }
         break;
@@ -112,16 +112,16 @@ export async function processChallengeLog(input: {
           projectOnChainSubmissionFromRegistrationImpl,
         });
         needsRepair = result.needsRepair;
-        if (result.needsRepair) {
+        if (result.unmatchedTracked) {
           indexerLogger.warn(
             {
-              event: "indexer.submission.unregistered_requires_repair",
+              event: "indexer.submission.unmatched_tracked",
               challengeId: challenge.id,
               challengeAddress,
               onChainSubmissionId: result.onChainSubmissionId,
               txHash,
             },
-            "Scored on-chain submission is missing a registered intent and now requires repair",
+            "Scored on-chain submission is missing a registered intent and has been tracked for retry",
           );
         }
         break;
