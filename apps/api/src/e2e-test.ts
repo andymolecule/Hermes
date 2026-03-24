@@ -172,7 +172,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
   }
 
   return {
-    schema_version: 4 as const,
+    schema_version: 5 as const,
     id: `e2e-${Date.now()}`,
     title: `E2E Reproducibility ${Date.now()}`,
     description:
@@ -181,11 +181,13 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
     type: "prediction" as const,
     artifacts: [
       {
+        artifact_id: "artifact-source",
         role: "source_data",
         visibility: "public" as const,
         uri: input.trainCid,
       },
       {
+        artifact_id: "artifact-hidden",
         role: "reference_output",
         visibility: "private" as const,
         uri: input.expectedCid,
@@ -234,7 +236,7 @@ function buildPredictionE2ESpec(input: {
   }
 
   return {
-    schema_version: 4 as const,
+    schema_version: 5 as const,
     id: `e2e-prediction-${Date.now()}`,
     title: `E2E Prediction ${Date.now()}`,
     description:
@@ -243,16 +245,19 @@ function buildPredictionE2ESpec(input: {
     type: "prediction" as const,
     artifacts: [
       {
+        artifact_id: "artifact-train",
         role: "training_data",
         visibility: "public" as const,
         uri: input.trainCid,
       },
       {
+        artifact_id: "artifact-features",
         role: "evaluation_features",
         visibility: "public" as const,
         uri: input.testCid,
       },
       {
+        artifact_id: "artifact-hidden",
         role: "hidden_labels",
         visibility: "private" as const,
         uri: input.hiddenLabelsCid,

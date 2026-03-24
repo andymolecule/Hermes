@@ -1,14 +1,13 @@
-import { type AgoraConfig, CHALLENGE_LIMITS } from "@agora/common";
+import type { AgoraConfig } from "@agora/common";
 import {
-  buildChallengeInsert,
   isEventIndexed,
+  getChallengeByTxHash,
   markEventIndexed,
-  upsertChallenge,
 } from "@agora/db";
-import { loadChallengeDefinitionFromChain } from "../challenge-definition.js";
 import { indexerLogger } from "../observability.js";
 import {
   type IndexerPollingConfig,
+  RetryableIndexerEventError,
   clearRetryableEvent,
   isRetryableError,
   onRetryableEvent,
@@ -18,9 +17,6 @@ import {
   type DbClient,
   type ParsedLog,
   type PublicClient,
-  eventArg,
-  parseRequiredAddress,
-  parseRequiredBigInt,
 } from "./shared.js";
 
 export async function processFactoryLog(input: {
@@ -31,7 +27,7 @@ export async function processFactoryLog(input: {
   log: ParsedLog;
   fromBlock: bigint;
 }) {
-  const { db, publicClient, config, pollingConfig, log, fromBlock } = input;
+  const { db, pollingConfig, log, fromBlock } = input;
   if (!log.eventName || !log.transactionHash) return;
   const txHash = log.transactionHash;
   const logIndex = Number(log.logIndex ?? 0);
@@ -40,57 +36,12 @@ export async function processFactoryLog(input: {
 
   try {
     if (log.eventName === "ChallengeCreated") {
-      const id = parseRequiredBigInt(
-        eventArg(log.args, 0) ?? eventArg(log.args, "id"),
-        "id",
-      );
-      const challengeAddr = parseRequiredAddress(
-        eventArg(log.args, 1) ??
-          eventArg(log.args, "challenge") ??
-          eventArg(log.args, "challengeAddr") ??
-          eventArg(log.args, "challengeAddress"),
-        "challenge",
-      );
-      const poster = parseRequiredAddress(
-        eventArg(log.args, 2) ??
-          eventArg(log.args, "poster") ??
-          eventArg(log.args, "creator"),
-        "poster",
-      );
-      const reward = parseRequiredBigInt(
-        eventArg(log.args, 3) ??
-          eventArg(log.args, "rewardAmount") ??
-          eventArg(log.args, "reward"),
-        "rewardAmount",
-      );
-
-      const { specCid, spec, contractVersion, onChainDeadlineIso } =
-        await loadChallengeDefinitionFromChain({
-          publicClient,
-          challengeAddress: challengeAddr,
-          chainId: config.AGORA_CHAIN_ID,
-          ...(log.blockNumber !== null ? { blockNumber: log.blockNumber } : {}),
-        });
-
-      const challengeInsert = await buildChallengeInsert({
-        chainId: config.AGORA_CHAIN_ID,
-        contractVersion,
-        factoryChallengeId: Number(id),
-        contractAddress: challengeAddr,
-        factoryAddress: config.AGORA_FACTORY_ADDRESS,
-        posterAddress: poster,
-        specCid,
-        spec,
-        rewardAmountUsdc: Number(reward) / 1_000_000,
-        disputeWindowHours:
-          spec.dispute_window_hours ??
-          CHALLENGE_LIMITS.defaultDisputeWindowHours,
-        requirePinnedPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
-        txHash,
-        onChainDeadline: onChainDeadlineIso,
-      });
-
-      await upsertChallenge(db, challengeInsert);
+      const existingChallenge = await getChallengeByTxHash(db, txHash);
+      if (!existingChallenge) {
+        throw new RetryableIndexerEventError(
+          "ChallengeCreated requires trusted registration data before Agora can persist the private execution plan. Next step: wait for the canonical publish flow to register the challenge, then let the indexer retry.",
+        );
+      }
     }
 
     await markEventIndexed(

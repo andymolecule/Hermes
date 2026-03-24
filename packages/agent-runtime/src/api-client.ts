@@ -21,6 +21,7 @@ import {
   submissionStatusResponseSchema,
   submissionUploadResponseSchema,
   submissionWaitStatusResponseSchema,
+  type TrustedChallengeSpecOutput,
 } from "@agora/common";
 
 function isAddressRef(value: string) {
@@ -185,10 +186,14 @@ export async function getChallengeFromApi(
 export async function registerChallengeWithApi(
   input: {
     txHash: `0x${string}`;
+    trustedSpec?: TrustedChallengeSpecOutput;
   },
   apiUrl?: string,
 ) {
-  const payload = challengeRegistrationRequestSchema.parse(input);
+  const payload = challengeRegistrationRequestSchema.parse({
+    txHash: input.txHash,
+    trusted_spec: input.trustedSpec,
+  });
   const response = await requestJson({
     apiUrl,
     pathname: "/api/challenges",

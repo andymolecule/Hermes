@@ -86,7 +86,7 @@ function createSpec() {
   }
 
   return {
-    schema_version: 4 as const,
+    schema_version: 5 as const,
     id: "challenge-spec-1",
     title: "Drug response challenge",
     description: "Predict held-out drug response values.",
@@ -106,9 +106,16 @@ function createSpec() {
     }),
     artifacts: [
       {
+        artifact_id: "artifact-train",
         role: "training_data",
         visibility: "public" as const,
         uri: "ipfs://artifact",
+      },
+      {
+        artifact_id: "artifact-hidden",
+        role: "hidden_evaluation",
+        visibility: "private" as const,
+        uri: "ipfs://bundle",
       },
     ],
     submission_contract: createCsvTableSubmissionContract({

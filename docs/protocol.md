@@ -202,14 +202,14 @@ The authoritative schema for challenge specification files.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | integer | Must be `4` for the active simplified execution-contract model. |
+| `schema_version` | integer | Must be `5` for the active public pinned-spec model. |
 | `id` | string | Unique challenge identifier (e.g., `ch-001`). |
 | `title` | string | Human-readable challenge title. |
 | `domain` | enum | One of: `longevity`, `drug_discovery`, `protein_design`, `omics`, `neuroscience`, `other`. |
 | `type` | enum | One of: `reproducibility`, `prediction`, `docking`, `optimization`, `red_team`, `custom`. |
 | `description` | string | Full challenge description. |
-| `execution` | object | Canonical scoring contract. Challenge specs set `template`, `metric`, `comparator`, `scorer_image`, the hidden evaluation artifact binding, the evaluation contract, and runtime policies exactly once. |
-| `artifacts` | array | Normalized artifact list. Each artifact includes a `role`, `visibility`, and `uri`. |
+| `execution` | object | Canonical public scoring contract. Public specs set `template`, `metric`, `comparator`, `scorer_image`, the hidden evaluation artifact binding by artifact id, the evaluation contract, and runtime policies exactly once. |
+| `artifacts` | array | Normalized public artifact list. Each artifact includes `artifact_id`, `role`, and `visibility`. Public artifacts include `uri`; private artifacts do not. |
 | `submission_contract` | object | Canonical machine-readable submission artifact contract. This is the only source of truth for what solvers must upload. |
 | `reward.total` | decimal | USDC amount, up to 6 decimal places. |
 | `reward.distribution` | enum | One of: `winner_take_all`, `top_3`, `proportional`. |
@@ -222,12 +222,13 @@ The authoritative schema for challenge specification files.
 | `execution.template` | string | Official execution template ID (for example `official_table_metric_v1`). |
 | `execution.metric` | string | Metric ID executed by the chosen official scorer template. |
 | `execution.scorer_image` | string | Pinned scorer image digest used for deterministic execution. |
-| `execution.evaluation_artifact_uri` | string | Hidden evaluation artifact URI. Must point at one private artifact. |
+| `execution.evaluation_artifact_id` | string | Hidden evaluation artifact binding. Must point at one private artifact by `artifact_id`. |
 | `execution.evaluation_contract` | object | Evaluation-table contract including required columns and id/value mappings. |
 | `execution.policies` | object | Runtime scoring policies such as coverage and duplicate-id handling. |
+| `artifacts[].artifact_id` | string | Stable artifact identifier. Public execution binds hidden evaluation data through this id, not through a URI. |
 | `artifacts[].role` | string | Poster-defined artifact role label. Roles are descriptive metadata; the execution contract binds the hidden evaluation artifact explicitly. |
 | `artifacts[].visibility` | enum | One of: `public`, `private`. |
-| `artifacts[].uri` | string | Artifact URI. Accepts `ipfs://` or `https://`. |
+| `artifacts[].uri` | string | Artifact URI for public artifacts only. Private artifacts in the public spec must omit `uri`. |
 | `artifacts[].file_name` | string | Optional canonical file name when the source URI has no basename. |
 | `artifacts[].mime_type` | string | Optional MIME type metadata. |
 | `artifacts[].description` | string | Optional human-facing artifact description. |
@@ -241,7 +242,7 @@ The authoritative schema for challenge specification files.
 ### Example
 
 ```yaml
-schema_version: 4
+schema_version: 5
 id: ch-001
 title: "Rank ligands for KRAS binding affinity"
 domain: drug_discovery
@@ -253,7 +254,7 @@ execution:
   metric: spearman
   comparator: maximize
   scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:...
-  evaluation_artifact_uri: ipfs://QmReferenceScores
+  evaluation_artifact_id: reference_scores
   evaluation_contract:
     kind: csv_table
     columns:
@@ -266,17 +267,19 @@ execution:
     duplicate_id_policy: reject
     invalid_value_policy: reject
 artifacts:
-  - role: target_structure
+  - artifact_id: target_structure
+    role: target_structure
     visibility: public
     uri: ipfs://QmTarget
     file_name: kras_target.pdb
-  - role: ligand_library
+  - artifact_id: ligand_library
+    role: ligand_library
     visibility: public
     uri: ipfs://QmLigands
     file_name: ligands.csv
-  - role: reference_scores
+  - artifact_id: reference_scores
+    role: reference_scores
     visibility: private
-    uri: ipfs://QmReferenceScores
     file_name: hidden_scores.csv
 submission_contract:
   version: v1
@@ -297,6 +300,28 @@ reward:
   distribution: winner_take_all
 deadline: "2026-03-04T23:59:59Z"
 ```
+
+### Public Spec Privacy Boundary
+
+Public pinned challenge specs are solver-facing and safe to distribute through
+public IPFS gateways.
+
+Rules:
+
+- dereferenceable URIs may appear only on `artifacts[].visibility = public`
+- private artifact entries in the public spec keep metadata only and must not
+  expose `uri`
+- `execution.evaluation_artifact_id` binds the hidden evaluation artifact
+  without revealing its location
+- the real private evaluation artifact URI lives only in trusted runtime
+  surfaces such as `execution_plan_json` and private authoring-session publish
+  state
+- private-evaluation challenges must publish through Agora's authoring-session
+  flow so the trusted runtime plan exists before or at publish
+- all newly published challenge specs use this sanitized `schema_version: 5`
+  shape
+- Agora does not keep an active public compatibility mode where new published
+  specs expose `execution.evaluation_artifact_uri`
 
 ---
 

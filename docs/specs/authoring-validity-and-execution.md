@@ -492,6 +492,14 @@ The new path should converge on:
 There is no data-preservation or backward-compatibility requirement forcing the
 new path to preserve those labels as public concepts.
 
+The same applies to the public challenge-spec cutover:
+
+- no dual `schema_version: 4` / `schema_version: 5` support on the active path
+- no compatibility adapter that reconstructs private artifact URIs from public
+  specs
+- no transitional mode where Agora keeps pinning public specs that expose
+  private artifact URIs
+
 ## 5. Canonical V1 Model
 
 The clean target is one canonical execution model from authoring through worker
@@ -507,6 +515,14 @@ That means:
 - one DB execution plan cache derived from the challenge-level execution object
 - zero mirrored copies of template, metric, comparator, or scorer image across
   nested objects
+
+Hard-cut rule:
+
+- the active public pinned challenge spec is `schema_version: 5`
+- the active trusted scoring runtime path uses trusted execution state, not the
+  public pinned spec, for private evaluation artifact resolution
+- implementation should delete old public-spec assumptions rather than
+  supporting both models
 
 ### 5.1 Standard V1 Scope
 
@@ -549,15 +565,42 @@ Target ownership:
   resolution all read from that same file
 - no separate "bouncer list" is allowed
 
-### 5.3 Canonical Challenge Spec Shape
+### 5.3 Public vs Trusted Challenge Definition Surfaces
 
-The challenge spec should stop storing execution identity twice.
+Agora must distinguish between two different challenge-definition surfaces:
 
-The target active schema is:
+- the **public pinned challenge spec**, which is solver-facing and safe to pin
+  to public IPFS gateways
+- the **trusted execution plan**, which is private/internal and may contain the
+  real hidden evaluation artifact URI needed for scoring
+
+`sealed_submission_v2` remains unchanged. This section is about challenge
+definition privacy for private evaluation artifacts, not solver-answer sealing.
+
+The target active public schema is:
 
 ```ts
-type ChallengeSpecV4 = {
-  schema_version: 4;
+type PublicChallengeArtifactV5 =
+  | {
+      artifact_id: string;
+      role: string;
+      visibility: "public";
+      uri: string;
+      file_name?: string;
+      mime_type?: string;
+      description?: string;
+    }
+  | {
+      artifact_id: string;
+      role: string;
+      visibility: "private";
+      file_name?: string;
+      mime_type?: string;
+      description?: string;
+    };
+
+type PublicChallengeSpecV5 = {
+  schema_version: 5;
   id: string;
   title: string;
   domain: ChallengeDomain;
@@ -569,7 +612,7 @@ type ChallengeSpecV4 = {
     scorer_image: string; // pinned digest
     metric: string;
     comparator: "maximize" | "minimize";
-    evaluation_artifact_uri: string;
+    evaluation_artifact_id: string;
     evaluation_contract: {
       kind: "csv_table";
       columns: {
@@ -585,7 +628,7 @@ type ChallengeSpecV4 = {
       invalid_value_policy: "ignore" | "reject";
     };
   };
-  artifacts: ChallengeArtifact[];
+  artifacts: PublicChallengeArtifactV5[];
   submission_contract: SubmissionContractV1;
   reward: ChallengeReward;
   deadline: string;
@@ -601,15 +644,39 @@ type ChallengeSpecV4 = {
 
 Rules:
 
-- `execution` is the only execution source of truth in the spec
-- `submission_contract` is the only solver-submission source of truth
-- `artifacts` is the only artifact-visibility source of truth
-- visible artifact URIs are derived from `artifacts`, not copied into
-  `execution`
-- `execution` must not contain a second nested contract that repeats the same
-  fields
+- the public pinned challenge spec is the only challenge spec that is pinned to
+  public IPFS and referenced on-chain
+- `execution` is the only execution source of truth in the public spec
+- `submission_contract` is the only solver-submission source of truth in the
+  public spec
+- `artifacts` is the only artifact-visibility source of truth in the public
+  spec
+- every public-spec artifact must have a stable `artifact_id`
+- `execution.evaluation_artifact_id` must reference exactly one artifact whose
+  `visibility` is `private`
+- public artifacts must include a dereferenceable `uri`
+- private artifacts in the public spec must not include `uri`
+- public API payloads, public spec payloads, and public gateway links must
+  never expose dereferenceable URIs for private artifacts
+- the public spec remains sufficient for solver-facing transparency about the
+  scorer, metric, objective, submission contract, and visible artifacts
+- the public spec is not sufficient by itself to execute private-evaluation
+  scoring
+- private-evaluation challenges must publish through Agora's authoring-session
+  flow so Agora can persist the trusted execution plan before or at publish
 
-### 5.4 Canonical Execution Plan Cache Shape
+Implementation consequences:
+
+- `packages/common/src/schemas/challenge-spec.ts` should parse the active public
+  pinned spec as `schema_version: 5` only
+- `apps/api/src/routes/pin-spec.ts` should pin sanitized public specs only
+- authoring publish flows should always derive both:
+  - the sanitized public pinned spec
+  - the trusted private execution plan
+- no CLI, API, agent-runtime, scorer, or indexer path should fetch the public
+  pinned spec and expect `evaluation_artifact_uri` to exist there
+
+### 5.4 Trusted Execution Plan Cache Shape
 
 The worker cache should stop mirroring the old spec shape.
 
@@ -636,7 +703,7 @@ type ExecutionPlanCacheV1 = {
     pids: number;
     timeout_ms: number;
   };
-  evaluation_artifact_uri: string;
+  evaluation_artifact_uri: string; // trusted private URI
   evaluation_contract: {
     kind: "csv_table";
     columns: {
@@ -658,18 +725,33 @@ type ExecutionPlanCacheV1 = {
 Rules:
 
 - this is the single worker-facing cached runtime plan
+- this plan is trusted/private and is not solver-facing
 - there is no separate `evaluation_template` or `execution_template` DB column
-- this cache is derived from the challenge spec plus official scorer catalog
+- this cache is derived from private authoring/session state plus the official
+  scorer catalog
+- this cache may contain the real private evaluation artifact URI
+- this cache must never be serialized into the public pinned challenge spec or
+  any other public challenge surface
+- for private-evaluation challenges, this trusted plan is the runtime source of
+  truth; the public pinned spec alone is intentionally insufficient
 - the worker should not need to re-read IPFS challenge specs on the hot path
 
 ### 5.5 What Must Not Be Stored Twice
 
 These values are canonical once and only once:
 
-- `template` -> stored in `execution` and copied into `execution_plan_json`
-- `scorer_image` -> stored in `execution` and copied into `execution_plan_json`
-- `metric` -> stored in `execution` and copied into `execution_plan_json`
-- `comparator` -> stored in `execution` and copied into `execution_plan_json`
+- `template` -> stored in public-spec `execution` and copied into
+  `execution_plan_json`
+- `scorer_image` -> stored in public-spec `execution` and copied into
+  `execution_plan_json`
+- `metric` -> stored in public-spec `execution` and copied into
+  `execution_plan_json`
+- `comparator` -> stored in public-spec `execution` and copied into
+  `execution_plan_json`
+- `evaluation_artifact_id` -> stored in public-spec `execution`
+- `evaluation_artifact_uri` -> stored only in trusted/private execution state
+  such as `execution_plan_json` and private authoring-session publish state;
+  never in the public spec
 - submission table columns -> stored in `submission_contract`, not inside
   `execution`
 - visible artifact membership -> stored in `artifacts`, not inside `execution`
@@ -686,7 +768,8 @@ Rules:
 
 - same-repository matching is not sufficient for the canonical official path
 - tagged image references are a temporary authoring convenience only
-- canonical challenge specs and execution plans must persist the exact digest
+- canonical public challenge specs and trusted execution plans must persist the
+  exact digest
 - worker execution must refuse host-local builds that do not resolve to a
   registry-backed digest
 
@@ -846,7 +929,8 @@ Target responsibilities:
 
 #### `packages/common/src/schemas/challenge-spec.ts`
 
-Rewrite this file around `schema_version: 4`.
+Rewrite this file around the public pinned `schema_version: 5` shape plus the
+trusted private execution-plan cache.
 
 Changes:
 
@@ -855,9 +939,18 @@ Changes:
 - remove all "field X must match nested field X" validation
 - validate `execution` against the official scorer catalog
 - validate `submission_contract` independently
-- validate that `execution.evaluation_artifact_uri` points at one private
-  artifact
-- derive any worker/runtime cache from `execution` + `submission_contract`
+- validate that `execution.evaluation_artifact_id` points at one private
+  artifact in the public spec
+- require every artifact to have a stable `artifact_id`
+- require public artifacts to include `uri`
+- require private artifacts in the public spec to omit `uri`
+- keep the real `execution.evaluation_artifact_uri` only in trusted/private
+  execution-plan state
+- derive any worker/runtime cache from trusted execution state +
+  `submission_contract`, not from the public spec alone when the challenge has
+  private evaluation data
+- delete active-path parsing and tests that assume public specs expose
+  `execution.evaluation_artifact_uri`
 
 #### `packages/common/src/challenges/templates.ts`
 

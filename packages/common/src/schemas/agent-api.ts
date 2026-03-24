@@ -3,9 +3,7 @@ import { SUBMISSION_SEAL_VERSION } from "../submission-sealing.js";
 import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
 import { SCORE_JOB_STATUSES } from "../types/score-job.js";
 import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
-import {
-  challengeArtifactSchema,
-} from "./challenge-spec.js";
+import { trustedChallengeSpecSchema } from "./challenge-spec.js";
 import {
   officialScorerComparatorSchema,
   officialScorerTemplateIdSchema,
@@ -90,9 +88,12 @@ export const agentChallengesQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 
-export const challengeRegistrationRequestSchema = z.object({
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-});
+export const challengeRegistrationRequestSchema = z
+  .object({
+    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+    trusted_spec: trustedChallengeSpecSchema.optional(),
+  })
+  .strict();
 
 export const challengeSummarySchema = z
   .object({
@@ -114,25 +115,38 @@ export const challengeSummarySchema = z
   })
   .strict();
 
-const publicChallengeArtifactSchema = challengeArtifactSchema.extend({
-  visibility: z.literal("public"),
-  url: z.string().nullable(),
-});
+const publicChallengeArtifactSchema = z
+  .object({
+    artifact_id: z.string().trim().min(1),
+    role: z.string().trim().min(1),
+    visibility: z.literal("public"),
+    uri: z.string().trim().min(1),
+    file_name: z.string().nullable().optional(),
+    mime_type: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    url: z.string().nullable(),
+  })
+  .strict();
 
-const privateChallengeArtifactSchema = z.object({
-  role: z.string().trim().min(1),
-  visibility: z.literal("private"),
-  file_name: z.string().nullable().optional(),
-  mime_type: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-});
+const privateChallengeArtifactSchema = z
+  .object({
+    artifact_id: z.string().trim().min(1),
+    role: z.string().trim().min(1),
+    visibility: z.literal("private"),
+    file_name: z.string().nullable().optional(),
+    mime_type: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+  })
+  .strict();
 
-export const challengeArtifactsSchema = z.object({
-  public: z.array(publicChallengeArtifactSchema),
-  private: z.array(privateChallengeArtifactSchema),
-  spec_cid: z.string().nullable(),
-  spec_url: z.string().nullable(),
-});
+export const challengeArtifactsSchema = z
+  .object({
+    public: z.array(publicChallengeArtifactSchema),
+    private: z.array(privateChallengeArtifactSchema),
+    spec_cid: z.string().nullable(),
+    spec_url: z.string().nullable(),
+  })
+  .strict();
 
 export const challengeLeaderboardEntrySchema = z.object({
   id: submissionIdSchema.optional(),

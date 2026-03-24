@@ -11,11 +11,11 @@ import {
 } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
-  type ChallengeSpecOutput,
   SUBMISSION_LIMITS,
   defaultMinimumScoreForExecution,
   erc20Abi,
   loadConfig,
+  type TrustedChallengeSpecOutput,
 } from "@agora/common";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
@@ -58,7 +58,7 @@ type SponsorCreateChallengeArgs = readonly [
   bigint,
 ];
 
-function parseRewardAmountUsdc(spec: ChallengeSpecOutput) {
+function parseRewardAmountUsdc(spec: TrustedChallengeSpecOutput) {
   const rewardAmount = Number(spec.reward.total);
   if (!Number.isFinite(rewardAmount) || rewardAmount <= 0) {
     throw new Error(
@@ -148,7 +148,7 @@ export async function assertSponsorChallengeCreationSimulates(input: {
 export async function enforceAuthoringSponsorMonthlyBudget(input: {
   db: Parameters<typeof updateAuthoringSession>[0];
   session: AuthoringSessionRow;
-  spec: ChallengeSpecOutput;
+  spec: TrustedChallengeSpecOutput;
   sponsorMonthlyBudgetUsdc?: number | null;
   sumRewardAmountForSourceProviderImpl?: typeof sumRewardAmountForSourceProvider;
 }) {
@@ -179,7 +179,7 @@ export async function enforceAuthoringSponsorMonthlyBudget(input: {
 }
 
 function assertCreationMatchesSpec(input: {
-  spec: ChallengeSpecOutput;
+  spec: TrustedChallengeSpecOutput;
   rewardUnits: bigint;
   deadline: bigint;
   disputeWindowHours: bigint;
@@ -258,7 +258,7 @@ function assertCreationMatchesSpec(input: {
 export async function sponsorAndPublishAuthoringSession(input: {
   db: Parameters<typeof updateAuthoringSession>[0];
   session: AuthoringSessionRow;
-  spec: ChallengeSpecOutput;
+  spec: TrustedChallengeSpecOutput;
   specCid: string;
   sponsorPrivateKey: `0x${string}`;
   sponsorMonthlyBudgetUsdc?: number | null;

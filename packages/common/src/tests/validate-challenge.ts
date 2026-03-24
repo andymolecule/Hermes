@@ -5,9 +5,13 @@ import {
   challengeSpecSchema,
   parseChallengeSpecDocument,
   resolveChallengeExecution,
+  resolvePinnedChallengeExecution,
   resolveChallengeRuntimeConfig,
+  sanitizeChallengeSpecForPublish,
+  trustedChallengeSpecSchema,
   validateChallengeScoreability,
   validateChallengeSpec,
+  validateTrustedChallengeSpec,
 } from "../schemas/challenge-spec.js";
 import { createChallengeExecution } from "../schemas/execution-contract.js";
 import { createCsvTableEvaluationContract } from "../schemas/scorer-runtime.js";
@@ -20,7 +24,7 @@ if (!scorerImage) {
 }
 
 const sample = {
-  schema_version: 4,
+  schema_version: 5,
   id: "ch-001",
   title: "Predict assay response",
   domain: "omics",
@@ -45,12 +49,14 @@ const sample = {
   }),
   artifacts: [
     {
+      artifact_id: "artifact-train",
       role: "training_data",
       visibility: "public",
       uri: "ipfs://QmTrain",
       file_name: "train.csv",
     },
     {
+      artifact_id: "artifact-hidden",
       role: "hidden_labels",
       visibility: "private",
       uri: "ipfs://QmHiddenLabels",
@@ -70,14 +76,14 @@ const sample = {
   dispute_window_hours: 168,
 };
 
-const result = challengeSpecSchema.safeParse(sample);
+const result = trustedChallengeSpecSchema.safeParse(sample);
 assert.equal(result.success, true, "sample spec should validate");
 
-const chainValidated = validateChallengeSpec(sample, 84532);
+const chainValidated = validateTrustedChallengeSpec(sample, 84532);
 assert.equal(chainValidated.success, true, "chain validation should succeed");
 
 // Testnet factory allows dispute_window_hours=0; test negative values instead
-const tooShortDisputeWindow = validateChallengeSpec(
+const tooShortDisputeWindow = validateTrustedChallengeSpec(
   {
     ...sample,
     dispute_window_hours: -1,
@@ -98,6 +104,17 @@ const resolved = resolveChallengeExecution(result.data);
 assert.equal(resolved.template, "official_table_metric_v1");
 assert.equal(resolved.metric, "r2");
 assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
+
+const publicSpec = sanitizeChallengeSpecForPublish(result.data);
+const pinnedValidation = validateChallengeSpec(publicSpec, 84532);
+assert.equal(
+  pinnedValidation.success,
+  true,
+  "sanitized public spec should validate for the public schema",
+);
+const pinnedResolved = resolvePinnedChallengeExecution(publicSpec);
+assert.equal(pinnedResolved.template, "official_table_metric_v1");
+assert.equal(pinnedResolved.metric, "r2");
 
 const executionPlanCache = buildChallengeExecutionPlanCache(result.data);
 const resolvedFromPlan = resolveChallengeExecution({
@@ -125,18 +142,15 @@ assert.equal(
 );
 
 const invalidMetric = challengeSpecSchema.safeParse({
-  ...sample,
-  execution: {
-    ...sample.execution,
-    metric: "custom_metric",
-  },
+  ...publicSpec,
+  execution: { ...publicSpec.execution, metric: "custom_metric" },
 });
 assert.equal(invalidMetric.success, false, "unsupported metric should fail");
 
-const wrongVisibility = challengeSpecSchema.safeParse({
+const wrongVisibility = trustedChallengeSpecSchema.safeParse({
   ...sample,
   artifacts: sample.artifacts.map((artifact) =>
-    artifact.uri === "ipfs://QmHiddenLabels"
+    artifact.artifact_id === "artifact-hidden"
       ? { ...artifact, visibility: "public" as const }
       : artifact,
   ),
@@ -148,7 +162,7 @@ assert.equal(
 );
 
 const parsedYaml = parseChallengeSpecDocument(`
-schema_version: 4
+schema_version: 5
 id: yaml-001
 title: YAML example
 domain: omics

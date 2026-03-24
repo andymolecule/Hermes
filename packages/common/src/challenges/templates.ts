@@ -12,10 +12,10 @@ import {
   createCsvTableSubmissionContract,
 } from "../schemas/submission-contract.js";
 import type {
-  ChallengeArtifact,
   ChallengeDomain,
-  ChallengeSpec,
   ChallengeType,
+  TrustedChallengeArtifact,
+  TrustedChallengeSpec,
 } from "../types/challenge.js";
 
 export interface ChallengeTypeDefaults {
@@ -125,13 +125,13 @@ export interface ChallengeSpecCandidateInput {
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
-  artifacts: ChallengeArtifact[];
+  artifacts: TrustedChallengeArtifact[];
   scorerImage?: string;
   metric?: string;
   comparator?: OfficialScorerComparatorOutput;
   reward: {
     total: string;
-    distribution: ChallengeSpec["reward"]["distribution"];
+    distribution: TrustedChallengeSpec["reward"]["distribution"];
   };
   deadline: string;
   submission: ChallengeSubmissionContractDraftInput;
@@ -144,7 +144,7 @@ export interface ChallengeSpecCandidateInput {
 
 export function buildChallengeSpecCandidate(
   input: ChallengeSpecCandidateInput,
-): ChallengeSpec {
+): TrustedChallengeSpec {
   const defaults = getChallengeTypeDefaults(input.type);
   const metric = input.metric?.trim() || defaults.defaultMetric;
   const comparator =
@@ -164,7 +164,7 @@ export function buildChallengeSpecCandidate(
     "";
 
   return {
-    schema_version: 4,
+    schema_version: 5,
     id: input.id,
     title: input.title,
     domain: input.domain,

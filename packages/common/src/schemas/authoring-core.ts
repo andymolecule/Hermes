@@ -9,8 +9,8 @@ import {
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
 import {
-  challengeArtifactSchema,
-  challengeSpecSchema,
+  trustedChallengeArtifactSchema,
+  trustedChallengeSpecSchema,
 } from "./challenge-spec.js";
 import { challengeExecutionSchema } from "./execution-contract.js";
 import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
@@ -368,13 +368,13 @@ export const dryRunPreviewSchema = z.object({
 export const compilationResultSchema = z.object({
   challenge_type: z.string().trim().min(1),
   execution: challengeExecutionSchema,
-  resolved_artifacts: z.array(challengeArtifactSchema).min(1),
+  resolved_artifacts: z.array(trustedChallengeArtifactSchema).min(1),
   submission_contract: submissionContractSchema,
   dry_run: dryRunPreviewSchema,
   reason_codes: z.array(z.string().trim().min(1)).default([]),
   warnings: z.array(z.string().trim().min(1)).default([]),
   confirmation_contract: confirmationContractSchema,
-  challenge_spec: challengeSpecSchema,
+  challenge_spec: trustedChallengeSpecSchema,
 });
 
 export const submitAuthoringSessionRequestSchema = z

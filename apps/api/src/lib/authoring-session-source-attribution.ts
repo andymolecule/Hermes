@@ -1,4 +1,7 @@
-import type { ChallengeSpecOutput, ExternalSourceProviderOutput } from "@agora/common";
+import type {
+  ExternalSourceProviderOutput,
+  TrustedChallengeSpecOutput,
+} from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 
 export interface AuthoringSessionSourceAttribution {
@@ -47,9 +50,9 @@ export function getAuthoringSessionSourceAttribution(
 }
 
 export function withAuthoringSessionSourceAttribution(
-  spec: ChallengeSpecOutput,
+  spec: TrustedChallengeSpecOutput,
   attribution: AuthoringSessionSourceAttribution | null,
-): ChallengeSpecOutput {
+): TrustedChallengeSpecOutput {
   if (!attribution) {
     return spec;
   }

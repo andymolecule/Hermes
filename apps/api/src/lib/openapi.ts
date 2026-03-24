@@ -2211,6 +2211,12 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "string",
               pattern: "^0x[a-fA-F0-9]{64}$",
             },
+            trusted_spec: {
+              type: "object",
+              description:
+                "Trusted private challenge spec used to build the execution plan when registering a newly created private-evaluation challenge.",
+              additionalProperties: true,
+            },
           },
           required: ["txHash"],
         },

@@ -28,6 +28,7 @@ import {
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
   resolveChallengeExecution,
+  resolvePinnedChallengeExecution,
   resolveChallengeRuntimeConfig,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
@@ -579,12 +580,13 @@ export async function scoreLocal(input: {
 }) {
   return withScorerLock(async () => {
     const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
-    const { executionPlan, scoringSpecConfig } = apiUrl
+    const resolved = apiUrl
       ? await resolveLocalScoringConfigFromApi({
           challengeId: input.challengeId,
           apiUrl,
         })
       : await resolveLocalScoringConfigFromDb(input.challengeId);
+    const { executionPlan, scoringSpecConfig } = resolved;
 
     const run = await executeScoringPipeline(
       buildScoreLocalPipelineInput({
@@ -642,7 +644,7 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
 async function resolveLocalScoringConfigFromApi(input: {
   challengeId: string;
   apiUrl: string;
-}) {
+}): Promise<never> {
   const response = await getChallengeFromApi(input.challengeId, input.apiUrl);
   const challenge = response.data.challenge;
   const specCid =
@@ -656,26 +658,10 @@ async function resolveLocalScoringConfigFromApi(input: {
   const spec = challengeSpecSchema.parse(
     parseChallengeSpecDocument(await getText(specCid)),
   );
-  const executionPlan = resolveChallengeExecution(spec);
-  if (!executionPlan.evaluationBundleCid) {
-    throw cliWorkflowError(
-      "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
-    );
-  }
-  const evaluationBundleCid = executionPlan.evaluationBundleCid;
-
-  const scoringSpecConfig = await resolveScoringRuntimeConfig({
-    submissionContract: challenge.submission_contract ?? undefined,
-    specCid,
-  });
-
-  return {
-    executionPlan: {
-      ...executionPlan,
-      evaluationBundleCid,
-    },
-    scoringSpecConfig,
-  };
+  resolvePinnedChallengeExecution(spec);
+  throw cliWorkflowError(
+    "Local scoring from the public API is unavailable for private-evaluation challenges because the public pinned spec no longer exposes the hidden evaluation bundle. Next step: run score-local inside a trusted Agora environment with DB access, or use public verification after scoring begins.",
+  );
 }
 
 export async function verifySubmission(input: {

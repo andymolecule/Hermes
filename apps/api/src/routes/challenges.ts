@@ -1,6 +1,5 @@
 import {
   deriveChallengeFinalizeReadState,
-  fetchValidatedChallengeSpec,
   getChallengeClaimableByAddress,
   getChallengeContractVersion,
   getChallengeFinalizeState,
@@ -195,13 +194,14 @@ router.post(
     }
   }),
   async (c) => {
-    const { txHash } = c.req.valid("json");
+    const { txHash, trusted_spec } = c.req.valid("json");
 
     const db = createSupabaseClient(true);
     try {
       const registration = await registerChallengeFromTxHash({
         db,
         txHash: txHash as `0x${string}`,
+        expectedSpec: trusted_spec ?? undefined,
       });
       return c.json({
         data: {

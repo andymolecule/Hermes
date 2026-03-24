@@ -9,15 +9,15 @@ import {
   type AuthoringValidationFieldOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
-  type ChallengeSpecOutput,
   type CompilationResultOutput,
   type OfficialScorerTemplateIdOutput,
+  type TrustedChallengeSpecOutput,
   canonicalizeChallengeSpec,
-  challengeSpecSchemaForChain,
   deriveOfficialScorerComparator,
   resolvePinnedOfficialScorerImage,
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
+  trustedChallengeSpecSchemaForChain,
   validateOfficialScorerMetric,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
@@ -540,11 +540,11 @@ async function compileAuthoringSessionCandidate(
   const apiRuntime = readApiServerRuntimeConfig();
 
   const challengeSpecCandidate = {
-    schema_version: 4 as const,
+    schema_version: 5 as const,
     id: `challenge-${Date.now()}`,
     title: input.intent.title,
     description: input.intent.description,
-    domain: input.intent.domain as ChallengeSpecOutput["domain"],
+    domain: input.intent.domain as TrustedChallengeSpecOutput["domain"],
     type: "prediction" as const,
     execution: resolved.execution,
     artifacts: resolved.resolvedArtifacts,
@@ -561,7 +561,9 @@ async function compileAuthoringSessionCandidate(
     ...(minimumScore !== undefined ? { minimum_score: minimumScore } : {}),
   };
 
-  const parsedSpec = challengeSpecSchemaForChain(apiRuntime.chainId).parse(
+  const parsedSpec = trustedChallengeSpecSchemaForChain(
+    apiRuntime.chainId,
+  ).parse(
     challengeSpecCandidate,
   );
   const canonicalSpec = await canonicalizeChallengeSpec(parsedSpec);

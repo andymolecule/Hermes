@@ -2,8 +2,8 @@ import type {
   AuthoringConversationLogEntryOutput,
   ChallengeAuthoringIrOutput,
   ChallengeIntentOutput,
-  ChallengeSpecOutput,
   CompilationResultOutput,
+  TrustedChallengeSpecOutput,
 } from "@agora/common";
 import type { AuthoringArtifactOutput } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -27,7 +27,7 @@ export interface AuthoringSessionInsert {
   compilation_json?: CompilationResultOutput | null;
   conversation_log_json?: AuthoringConversationLogEntryOutput[];
   published_challenge_id?: string | null;
-  published_spec_json?: ChallengeSpecOutput | null;
+  published_spec_json?: TrustedChallengeSpecOutput | null;
   published_spec_cid?: string | null;
   published_at?: string | null;
   failure_message?: string | null;
@@ -46,7 +46,7 @@ export interface AuthoringSessionRow {
   compilation_json: CompilationResultOutput | null;
   conversation_log_json: AuthoringConversationLogEntryOutput[];
   published_challenge_id: string | null;
-  published_spec_json: ChallengeSpecOutput | null;
+  published_spec_json: TrustedChallengeSpecOutput | null;
   published_spec_cid: string | null;
   published_at: string | null;
   failure_message: string | null;
@@ -135,7 +135,7 @@ export async function updateAuthoringSession(
     compilation_json?: CompilationResultOutput | null;
     conversation_log_json?: AuthoringConversationLogEntryOutput[];
     published_challenge_id?: string | null;
-    published_spec_json?: ChallengeSpecOutput | null;
+    published_spec_json?: TrustedChallengeSpecOutput | null;
     published_spec_cid?: string | null;
     published_at?: string | null;
     failure_message?: string | null;

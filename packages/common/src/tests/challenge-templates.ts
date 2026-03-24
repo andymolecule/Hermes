@@ -16,11 +16,13 @@ const candidate = buildChallengeSpecCandidate({
   description: "Predict the held-out labels.",
   artifacts: [
     {
+      artifact_id: "artifact-train",
       role: "training_data",
       visibility: "public",
       uri: "ipfs://QmTrain",
     },
     {
+      artifact_id: "artifact-hidden",
       role: "hidden_labels",
       visibility: "private",
       uri: "ipfs://QmHiddenLabels",
@@ -40,6 +42,7 @@ const candidate = buildChallengeSpecCandidate({
 
 assert.equal(candidate.execution.template, "official_table_metric_v1");
 assert.equal(candidate.execution.metric, "r2");
+assert.equal(candidate.schema_version, 5);
 assert.equal(
   candidate.execution.evaluation_artifact_uri,
   "ipfs://QmHiddenLabels",

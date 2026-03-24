@@ -46,8 +46,7 @@ export function PostingModeSection({
           <p className="mt-1 max-w-xl text-sm leading-6 text-warm-600">
             Standard mode validates a structured session directly against the
             official table scorer contract. Expert Mode keeps the CLI-first path
-            for poster-authored specs, custom scorer images, and advanced
-            runtime setups.
+            for poster-authored specs and advanced runtime settings.
           </p>
         </div>
         <div className="inline-flex rounded-lg bg-[var(--surface-container-low)] p-1">
@@ -95,14 +94,13 @@ export function ExpertModePanel() {
                 Expert Mode
               </div>
               <h2 className="mt-1 font-display text-2xl font-bold tracking-tight text-warm-900">
-                Custom scorer paths stay CLI-first
+                YAML-first posting stays CLI-first
               </h2>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-warm-700">
               Use Expert Mode when the standard session compiler cannot express
-              your scorer contract, when you need a custom scorer image, or
-              when the bounty depends on a runtime outside the official table
-              scorer template.
+              your challenge definition cleanly or when you need poster-authored
+              YAML with explicit runtime settings.
             </p>
           </div>
         </div>

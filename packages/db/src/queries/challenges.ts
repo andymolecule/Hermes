@@ -2,12 +2,13 @@ import {
   CHALLENGE_STATUS,
   type ChallengeArtifact,
   type ChallengeExecutionPlanCacheRow,
-  type ChallengeSpecOutput,
+  type TrustedChallengeSpecOutput,
   type ChallengeStatus,
   buildChallengeExecutionPlanCache,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForExecution,
+  sanitizeChallengeSpecForPublish,
   validateChallengeScoreability,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
@@ -50,7 +51,7 @@ export interface BuildChallengeInsertInput {
   factoryAddress: string;
   posterAddress: string;
   specCid: string;
-  spec: ChallengeSpecOutput;
+  spec: TrustedChallengeSpecOutput;
   rewardAmountUsdc: number;
   disputeWindowHours: number;
   requirePinnedPresetDigests?: boolean;
@@ -70,41 +71,42 @@ export async function buildChallengeInsert(
     throw new Error(scoreability.errors[0] ?? "Challenge is not scoreable.");
   }
   const executionPlan = buildChallengeExecutionPlanCache(canonicalSpec);
+  const publicSpec = sanitizeChallengeSpecForPublish(canonicalSpec);
 
   return {
     chain_id: input.chainId,
     contract_version: input.contractVersion,
-    spec_schema_version: canonicalSpec.schema_version,
+    spec_schema_version: publicSpec.schema_version,
     factory_challenge_id: input.factoryChallengeId ?? null,
     contract_address: input.contractAddress.toLowerCase(),
     factory_address: input.factoryAddress.toLowerCase(),
     poster_address: input.posterAddress.toLowerCase(),
-    title: canonicalSpec.title,
-    description: canonicalSpec.description,
-    domain: canonicalSpec.domain,
-    challenge_type: canonicalSpec.type,
+    title: publicSpec.title,
+    description: publicSpec.description,
+    domain: publicSpec.domain,
+    challenge_type: publicSpec.type,
     spec_cid: input.specCid,
     execution_plan_json: executionPlan,
-    artifacts_json: canonicalSpec.artifacts,
+    artifacts_json: publicSpec.artifacts,
     minimum_score:
-      canonicalSpec.minimum_score ??
+      publicSpec.minimum_score ??
       defaultMinimumScoreForExecution(canonicalSpec.execution) ??
       null,
     max_submissions_total:
-      canonicalSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
+      publicSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
     max_submissions_per_solver:
-      canonicalSpec.max_submissions_per_solver ??
+      publicSpec.max_submissions_per_solver ??
       SUBMISSION_LIMITS.maxPerSolverPerChallenge,
     reward_amount: input.rewardAmountUsdc,
-    distribution_type: canonicalSpec.reward.distribution,
-    deadline: input.onChainDeadline ?? canonicalSpec.deadline,
+    distribution_type: publicSpec.reward.distribution,
+    deadline: input.onChainDeadline ?? publicSpec.deadline,
     dispute_window_hours: input.disputeWindowHours,
     status: CHALLENGE_STATUS.open,
     tx_hash: input.txHash,
-    source_provider: canonicalSpec.source?.provider ?? null,
-    source_external_id: canonicalSpec.source?.external_id ?? null,
-    source_external_url: canonicalSpec.source?.external_url ?? null,
-    source_agent_handle: canonicalSpec.source?.agent_handle ?? null,
+    source_provider: publicSpec.source?.provider ?? null,
+    source_external_id: publicSpec.source?.external_id ?? null,
+    source_external_url: publicSpec.source?.external_url ?? null,
+    source_agent_handle: publicSpec.source?.agent_handle ?? null,
   };
 }
 

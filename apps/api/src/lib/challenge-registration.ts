@@ -9,14 +9,17 @@ import {
 import {
   CHALLENGE_LIMITS,
   type ChallengeSpecOutput,
+  type TrustedChallengeSpecOutput,
   SUBMISSION_LIMITS,
   computeSpecHash,
   loadConfig,
+  sanitizeChallengeSpecForPublish,
   validateChallengeScoreability,
 } from "@agora/common";
 import {
   buildChallengeInsert,
   type AgoraDbClient,
+  getChallengeByTxHash,
   upsertChallenge,
 } from "@agora/db";
 import { parseUnits } from "viem";
@@ -169,14 +172,15 @@ export type RegisteredChallengeFromTx = {
   factoryChallengeId: number;
   posterAddress: `0x${string}`;
   specCid: string;
-  spec: ChallengeSpecOutput;
+  publicSpec: ChallengeSpecOutput;
+  trustedSpec: TrustedChallengeSpecOutput | null;
 };
 
 export async function registerChallengeFromTxHash(input: {
   db: AgoraDbClient;
   txHash: `0x${string}`;
   expectedPosterAddress?: `0x${string}`;
-  expectedSpec?: ChallengeSpecOutput;
+  expectedSpec?: TrustedChallengeSpecOutput;
 }) {
   const config = loadConfig();
   const publicClient = getPublicClient();
@@ -238,7 +242,7 @@ export async function registerChallengeFromTxHash(input: {
   }
 
   let specCid: string;
-  let spec: ChallengeSpecOutput;
+  let publicSpec: ChallengeSpecOutput;
   let contractVersion: number;
   let onChainDeadlineIso: string;
   try {
@@ -261,9 +265,9 @@ export async function registerChallengeFromTxHash(input: {
     }
 
     specCid = creation.specCid;
-    spec = await fetchValidatedChallengeSpec(specCid, config.AGORA_CHAIN_ID);
+    publicSpec = await fetchValidatedChallengeSpec(specCid, config.AGORA_CHAIN_ID);
     assertSpecMatchesFactoryCreation({
-      spec,
+      spec: publicSpec,
       reward,
       deadline: creation.deadline,
       disputeWindowHours: creation.disputeWindowHours,
@@ -275,7 +279,8 @@ export async function registerChallengeFromTxHash(input: {
 
     if (
       input.expectedSpec &&
-      computeSpecHash(input.expectedSpec) !== computeSpecHash(spec)
+      computeSpecHash(sanitizeChallengeSpecForPublish(input.expectedSpec)) !==
+        computeSpecHash(publicSpec)
     ) {
       throw new Error(
         "The on-chain challenge spec does not match the prepared session compilation. Next step: prepare publish again from this session and retry.",
@@ -297,17 +302,38 @@ export async function registerChallengeFromTxHash(input: {
     });
   }
 
-  const scoreability = validateChallengeScoreability(spec);
-  if (!scoreability.ok) {
-    throw new ChallengeRegistrationError({
-      status: 400,
-      code: "CHALLENGE_SCOREABILITY_INVALID",
-      message: scoreability.errors.join(" "),
-    });
+  const existingChallenge = await getChallengeByTxHash(input.db, input.txHash);
+  if (!input.expectedSpec) {
+    if (!existingChallenge) {
+      throw new ChallengeRegistrationError({
+        status: 400,
+        code: "TRUSTED_SPEC_REQUIRED",
+        message:
+          "Challenge registration now requires the trusted compiled spec to build the private execution plan. Next step: re-run publish from the canonical Agora authoring flow or retry /api/challenges with trusted_spec included.",
+      });
+    }
+
+    return {
+      challengeRow: existingChallenge,
+      challengeAddress,
+      factoryChallengeId: Number(factoryChallengeId),
+      posterAddress,
+      specCid,
+      publicSpec,
+      trustedSpec: null,
+    } satisfies RegisteredChallengeFromTx;
   }
 
   let challengeInsert;
   try {
+    const scoreability = validateChallengeScoreability(input.expectedSpec);
+    if (!scoreability.ok) {
+      throw new ChallengeRegistrationError({
+        status: 400,
+        code: "CHALLENGE_SCOREABILITY_INVALID",
+        message: scoreability.errors.join(" "),
+      });
+    }
     const factoryAddress =
       receiptFactoryAddress ?? config.AGORA_FACTORY_ADDRESS;
     challengeInsert = await buildChallengeInsert({
@@ -318,10 +344,10 @@ export async function registerChallengeFromTxHash(input: {
       factoryAddress,
       posterAddress,
       specCid,
-      spec,
+      spec: input.expectedSpec,
       rewardAmountUsdc: Number(reward) / 1_000_000,
       disputeWindowHours:
-        spec.dispute_window_hours ??
+        input.expectedSpec.dispute_window_hours ??
         CHALLENGE_LIMITS.defaultDisputeWindowHours,
       requirePinnedPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
       txHash: input.txHash,
@@ -344,6 +370,7 @@ export async function registerChallengeFromTxHash(input: {
     factoryChallengeId: Number(factoryChallengeId),
     posterAddress,
     specCid,
-    spec,
+    publicSpec,
+    trustedSpec: input.expectedSpec,
   } satisfies RegisteredChallengeFromTx;
 }

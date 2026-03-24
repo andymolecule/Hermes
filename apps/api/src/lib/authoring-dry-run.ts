@@ -1,6 +1,6 @@
 import {
   AgoraError,
-  type ChallengeSpecOutput,
+  type TrustedChallengeSpecOutput,
   type DryRunPreviewOutput,
   resolveChallengeExecution,
   resolveChallengeRunnerLimits,
@@ -68,7 +68,7 @@ function summarizeDryRunScore(input: {
 }
 
 async function buildSubmissionSource(input: {
-  challengeSpec: ChallengeSpecOutput;
+  challengeSpec: TrustedChallengeSpecOutput;
   getTextImpl: GetTextFn;
 }) {
   const execution = resolveChallengeExecution(input.challengeSpec);
@@ -160,7 +160,7 @@ async function buildSubmissionSource(input: {
 
 export async function executeAuthoringDryRun(
   input: {
-    challengeSpec: ChallengeSpecOutput;
+    challengeSpec: TrustedChallengeSpecOutput;
     timeoutMs: number;
   },
   dependencies: {

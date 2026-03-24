@@ -27,7 +27,10 @@ test("failed challenge registration status includes the next action", () => {
   assert.equal(message.postedOnChain, true);
   assert.match(message.message, /could not register it immediately/i);
   assert.match(message.message, /retry in a few seconds and refresh the challenge list/i);
-  assert.match(message.message, /retry \/api\/challenges with this tx hash/i);
+  assert.match(
+    message.message,
+    /re-run the trusted publish\/registration flow/i,
+  );
 });
 
 test("generic status defaults to non-terminal info", () => {

@@ -5,7 +5,7 @@ import {
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
   resolveChallengeExecution,
-  validateChallengeSpec,
+  validateTrustedChallengeSpec,
 } from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
 import { Command } from "commander";
@@ -79,7 +79,7 @@ export function buildValidateCommand() {
 
       // 1. Schema validation
       const schemaSpinner = createSpinner("Validating schema...");
-      const parsed = validateChallengeSpec(spec, DEFAULT_CHAIN_ID);
+      const parsed = validateTrustedChallengeSpec(spec, DEFAULT_CHAIN_ID);
       if (!parsed.success) {
         schemaSpinner.fail("Schema validation failed");
         for (const issue of parsed.error.issues) {

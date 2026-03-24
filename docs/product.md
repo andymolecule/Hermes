@@ -251,7 +251,7 @@ The web frontend lets humans:
 
 ## Challenge Types
 
-Today, **reproducibility**, **prediction**, and **docking** ship as turnkey end-to-end flows from this repo. The remaining categories are valid product surfaces, but they still depend on poster-supplied custom scorer images.
+Today, **reproducibility**, **prediction**, and **docking** ship as turnkey end-to-end flows from this repo. The remaining categories are valid product surfaces, but they still need more product/runtime work before they can ride the same official scorer path cleanly.
 
 | Type | What it measures | Example |
 |------|-----------------|---------|

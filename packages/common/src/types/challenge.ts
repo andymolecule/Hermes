@@ -1,5 +1,6 @@
 import type {
   ChallengeExecutionOutput,
+  PinnedChallengeExecutionOutput,
 } from "../schemas/execution-contract.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
@@ -68,13 +69,33 @@ export const CHALLENGE_ARTIFACT_VISIBILITIES = ["public", "private"] as const;
 export type ChallengeArtifactVisibility =
   (typeof CHALLENGE_ARTIFACT_VISIBILITIES)[number];
 
-export interface ChallengeArtifact {
+export interface ChallengeArtifactBase {
+  artifact_id: string;
   role: string;
   visibility: ChallengeArtifactVisibility;
-  uri: string;
   file_name?: string;
   mime_type?: string;
   description?: string;
+}
+
+export interface PublicChallengeArtifact
+  extends ChallengeArtifactBase {
+  visibility: "public";
+  uri: string;
+}
+
+export interface PrivateChallengeArtifact
+  extends ChallengeArtifactBase {
+  visibility: "private";
+  uri?: undefined;
+}
+
+export type ChallengeArtifact =
+  | PublicChallengeArtifact
+  | PrivateChallengeArtifact;
+
+export interface TrustedChallengeArtifact extends ChallengeArtifactBase {
+  uri: string;
 }
 
 export interface ChallengeReward {
@@ -90,14 +111,35 @@ export interface ChallengeSource {
 }
 
 export interface ChallengeSpec {
-  schema_version: 4;
+  schema_version: 5;
+  id: string;
+  title: string;
+  domain: ChallengeDomain;
+  type: ChallengeType;
+  description: string;
+  execution: PinnedChallengeExecutionOutput;
+  artifacts: ChallengeArtifact[];
+  submission_contract: SubmissionContractOutput;
+  reward: ChallengeReward;
+  deadline: string;
+  tags?: string[];
+  minimum_score?: number;
+  max_submissions_total?: number;
+  max_submissions_per_solver?: number;
+  dispute_window_hours?: number;
+  lab_tba?: string;
+  source?: ChallengeSource;
+}
+
+export interface TrustedChallengeSpec {
+  schema_version: 5;
   id: string;
   title: string;
   domain: ChallengeDomain;
   type: ChallengeType;
   description: string;
   execution: ChallengeExecutionOutput;
-  artifacts: ChallengeArtifact[];
+  artifacts: TrustedChallengeArtifact[];
   submission_contract: SubmissionContractOutput;
   reward: ChallengeReward;
   deadline: string;

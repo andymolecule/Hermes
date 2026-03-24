@@ -183,6 +183,9 @@ agora verify ch-001 --sub <submission_uuid> --format json
 ### `agora post [file]`
 
 Post a new challenge on-chain from a YAML spec file.
+The CLI treats the YAML as the trusted poster-side spec, pins a sanitized public
+spec, and registers the trusted execution plan with Agora after the transaction
+confirms.
 
 ```bash
 agora post challenge.yaml --format json

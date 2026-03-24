@@ -2,10 +2,7 @@ import yaml from "yaml";
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
-import {
-  hasPinnedDigest,
-  validateScorerImage,
-} from "../oci-image.js";
+import { hasPinnedDigest, validateScorerImage } from "../oci-image.js";
 import {
   isOfficialScorerImage,
   resolveOfficialScorerImage,
@@ -17,19 +14,20 @@ import {
   type OfficialScorerComparatorOutput,
   type OfficialScorerTemplateIdOutput,
 } from "../official-scorer-catalog.js";
-import {
-  CHALLENGE_ARTIFACT_VISIBILITIES,
-  CHALLENGE_DOMAINS,
-  CHALLENGE_TYPES,
-  type ChallengeArtifact,
+import type {
+  ChallengeArtifact,
+  TrustedChallengeArtifact,
 } from "../types/challenge.js";
+import { CHALLENGE_DOMAINS, CHALLENGE_TYPES } from "../types/challenge.js";
 import {
   externalSourceProviderSchema,
   safePublicHttpsUrlSchema,
 } from "./authoring-source.js";
 import {
   type ChallengeExecutionOutput,
+  type PinnedChallengeExecutionOutput,
   challengeExecutionSchema,
+  pinnedChallengeExecutionSchema,
 } from "./execution-contract.js";
 import {
   type CsvTableEvaluationContractOutput,
@@ -43,7 +41,7 @@ import {
 
 const domainEnum = z.enum(CHALLENGE_DOMAINS);
 const typeEnum = z.enum(CHALLENGE_TYPES);
-const artifactVisibilityEnum = z.enum(CHALLENGE_ARTIFACT_VISIBILITIES);
+const artifactVisibilityEnum = z.enum(["public", "private"]);
 const rewardDistributionEnum = z.enum([
   "winner_take_all",
   "top_3",
@@ -56,7 +54,8 @@ const ipfsOrHttpsUriSchema = z
   .min(1)
   .refine(
     (value) =>
-      value.startsWith("ipfs://") || safePublicHttpsUrlSchema.safeParse(value).success,
+      value.startsWith("ipfs://") ||
+      safePublicHttpsUrlSchema.safeParse(value).success,
     "value must start with ipfs:// or be a valid https:// URL",
   );
 
@@ -87,13 +86,27 @@ const rewardTotalSchema = z
     );
   }, `reward.total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc}`);
 
-export const challengeArtifactSchema = z.object({
+const artifactBaseSchema = z.object({
+  artifact_id: z.string().trim().min(1),
   role: z.string().trim().min(1),
   visibility: artifactVisibilityEnum,
-  uri: ipfsOrHttpsUriSchema,
   file_name: z.string().trim().min(1).optional(),
   mime_type: z.string().trim().min(1).optional(),
   description: z.string().trim().min(1).optional(),
+});
+
+export const challengeArtifactSchema = z.discriminatedUnion("visibility", [
+  artifactBaseSchema.extend({
+    visibility: z.literal("public"),
+    uri: ipfsOrHttpsUriSchema,
+  }),
+  artifactBaseSchema.extend({
+    visibility: z.literal("private"),
+  }),
+]);
+
+export const trustedChallengeArtifactSchema = artifactBaseSchema.extend({
+  uri: ipfsOrHttpsUriSchema,
 });
 
 export const challengeSourceSchema = z.object({
@@ -103,16 +116,46 @@ export const challengeSourceSchema = z.object({
   agent_handle: z.string().trim().min(1).nullable().optional(),
 });
 
-function hasDuplicateArtifacts(artifacts: ChallengeArtifact[]) {
+function findDuplicateArtifactId(
+  artifacts: Array<{ artifact_id: string }>,
+): string | null {
   const seen = new Set<string>();
   for (const artifact of artifacts) {
-    const key = `${artifact.role}|${artifact.visibility}|${artifact.uri}`;
+    if (seen.has(artifact.artifact_id)) {
+      return artifact.artifact_id;
+    }
+    seen.add(artifact.artifact_id);
+  }
+  return null;
+}
+
+function findDuplicateTrustedArtifactKey(
+  artifacts: TrustedChallengeArtifact[],
+): string | null {
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    const key = `${artifact.artifact_id}|${artifact.role}|${artifact.visibility}|${artifact.uri}`;
     if (seen.has(key)) {
-      return true;
+      return key;
     }
     seen.add(key);
   }
-  return false;
+  return null;
+}
+
+function findDuplicatePublicArtifactKey(artifacts: ChallengeArtifact[]): string | null {
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    const key =
+      artifact.visibility === "public"
+        ? `${artifact.artifact_id}|${artifact.role}|${artifact.visibility}|${artifact.uri}`
+        : `${artifact.artifact_id}|${artifact.role}|${artifact.visibility}`;
+    if (seen.has(key)) {
+      return key;
+    }
+    seen.add(key);
+  }
+  return null;
 }
 
 function requireCsvTableSubmissionContract(
@@ -150,7 +193,7 @@ function requireCsvTableSubmissionContract(
   return submissionContract as CsvTableSubmissionContract;
 }
 
-function validateChallengeExecution(
+function validateTrustedChallengeExecution(
   execution: ChallengeExecutionOutput,
   ctx: z.RefinementCtx,
 ) {
@@ -216,37 +259,107 @@ function validateChallengeExecution(
   }
 }
 
-const _baseSpecShape = z
+function validatePinnedChallengeExecution(
+  execution: PinnedChallengeExecutionOutput,
+  ctx: z.RefinementCtx,
+) {
+  const metricError = validateOfficialScorerMetric(
+    execution.template,
+    execution.metric,
+  );
+  if (metricError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "metric"],
+      message: `${metricError} Next step: choose a metric the official scorer can execute and retry.`,
+    });
+  }
+
+  const imageError = validateScorerImage(execution.scorer_image);
+  if (imageError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "scorer_image"],
+      message: imageError,
+    });
+    return;
+  }
+
+  if (!isOfficialScorerImage(execution.scorer_image)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "scorer_image"],
+      message:
+        "Challenge specs must use an official Agora scorer image. Next step: choose the official table scorer template and retry.",
+    });
+  }
+
+  const bindingError = validateOfficialScorerBinding(
+    execution.template,
+    execution.scorer_image,
+  );
+  if (bindingError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "scorer_image"],
+      message: bindingError,
+    });
+  }
+
+  if (!execution.evaluation_contract.columns.id?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "evaluation_contract", "columns", "id"],
+      message:
+        "execution.evaluation_contract.columns.id is required. Next step: define the hidden evaluation ID column and retry.",
+    });
+  }
+
+  if (!execution.evaluation_contract.columns.value?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["execution", "evaluation_contract", "columns", "value"],
+      message:
+        "execution.evaluation_contract.columns.value is required. Next step: define the hidden evaluation value column and retry.",
+    });
+  }
+}
+
+const baseSpecFields = {
+  schema_version: z.literal(5),
+  id: z.string().trim().min(1),
+  title: z.string().trim().min(1),
+  domain: domainEnum,
+  type: typeEnum,
+  description: z.string().trim().min(1),
+  submission_contract: submissionContractSchema,
+  reward: z.object({
+    total: rewardTotalSchema,
+    distribution: rewardDistributionEnum,
+  }),
+  deadline: z.string().datetime({ offset: true }),
+  tags: z.array(z.string().trim().min(1)).optional(),
+  minimum_score: z.number().optional(),
+  max_submissions_total: z.number().int().min(1).max(10000).optional(),
+  max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
+  dispute_window_hours: z
+    .number()
+    .int()
+    .min(0)
+    .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
+    .optional(),
+  lab_tba: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
+    .optional(),
+  source: challengeSourceSchema.optional(),
+} as const;
+
+const _trustedChallengeSpecShape = z
   .object({
-    schema_version: z.literal(4),
-    id: z.string().trim().min(1),
-    title: z.string().trim().min(1),
-    domain: domainEnum,
-    type: typeEnum,
-    description: z.string().trim().min(1),
+    ...baseSpecFields,
     execution: challengeExecutionSchema,
-    artifacts: z.array(challengeArtifactSchema).min(1),
-    submission_contract: submissionContractSchema,
-    reward: z.object({
-      total: rewardTotalSchema,
-      distribution: rewardDistributionEnum,
-    }),
-    deadline: z.string().datetime({ offset: true }),
-    tags: z.array(z.string().trim().min(1)).optional(),
-    minimum_score: z.number().optional(),
-    max_submissions_total: z.number().int().min(1).max(10000).optional(),
-    max_submissions_per_solver: z.number().int().min(1).max(1000).optional(),
-    dispute_window_hours: z
-      .number()
-      .int()
-      .min(0)
-      .max(CHALLENGE_LIMITS.disputeWindowMaxHours)
-      .optional(),
-    lab_tba: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/, "lab_tba must be a valid EVM address")
-      .optional(),
-    source: challengeSourceSchema.optional(),
+    artifacts: z.array(trustedChallengeArtifactSchema).min(1),
   })
   .superRefine((value, ctx) => {
     if (
@@ -262,12 +375,22 @@ const _baseSpecShape = z
       });
     }
 
-    if (hasDuplicateArtifacts(value.artifacts)) {
+    const duplicateArtifactId = findDuplicateArtifactId(value.artifacts);
+    if (duplicateArtifactId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["artifacts"],
         message:
-          "Duplicate artifacts are not allowed. Next step: remove duplicated role/visibility/uri entries and retry.",
+          `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
+      });
+    }
+
+    if (findDuplicateTrustedArtifactKey(value.artifacts)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          "Duplicate artifacts are not allowed. Next step: remove duplicated artifact entries and retry.",
       });
     }
 
@@ -275,7 +398,7 @@ const _baseSpecShape = z
       value.submission_contract,
       ctx,
     );
-    validateChallengeExecution(value.execution, ctx);
+    validateTrustedChallengeExecution(value.execution, ctx);
 
     const evaluationArtifact = value.artifacts.find(
       (artifact) => artifact.uri === value.execution.evaluation_artifact_uri,
@@ -325,14 +448,127 @@ const _baseSpecShape = z
     }
   });
 
-function withDisputeMin(minHours: number) {
-  if (minHours <= 0) {
-    return _baseSpecShape;
-  }
-  return _baseSpecShape.superRefine((value, ctx) => {
+const _pinnedChallengeSpecShape = z
+  .object({
+    ...baseSpecFields,
+    execution: pinnedChallengeExecutionSchema,
+    artifacts: z.array(challengeArtifactSchema).min(1),
+  })
+  .superRefine((value, ctx) => {
     if (
-      value.dispute_window_hours !== undefined &&
-      value.dispute_window_hours < minHours
+      typeof value.max_submissions_total === "number" &&
+      typeof value.max_submissions_per_solver === "number" &&
+      value.max_submissions_per_solver > value.max_submissions_total
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["max_submissions_per_solver"],
+        message:
+          "max_submissions_per_solver cannot exceed max_submissions_total",
+      });
+    }
+
+    const duplicateArtifactId = findDuplicateArtifactId(value.artifacts);
+    if (duplicateArtifactId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
+      });
+    }
+
+    if (findDuplicatePublicArtifactKey(value.artifacts)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          "Duplicate artifacts are not allowed. Next step: remove duplicated artifact entries and retry.",
+      });
+    }
+
+    const submissionContract = requireCsvTableSubmissionContract(
+      value.submission_contract,
+      ctx,
+    );
+    validatePinnedChallengeExecution(value.execution, ctx);
+
+    const evaluationArtifact = value.artifacts.find(
+      (artifact) =>
+        artifact.artifact_id === value.execution.evaluation_artifact_id,
+    );
+    if (!evaluationArtifact) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution", "evaluation_artifact_id"],
+        message:
+          "execution.evaluation_artifact_id must reference one private artifact. Next step: choose the hidden evaluation artifact ID and retry.",
+      });
+    } else if (evaluationArtifact.visibility !== "private") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["execution", "evaluation_artifact_id"],
+        message:
+          "The evaluation artifact must be private. Next step: mark the ground-truth artifact as private and retry.",
+      });
+    } else if ("uri" in evaluationArtifact) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifacts"],
+        message:
+          "Private artifacts in the public pinned spec must not expose uri. Next step: sanitize private artifact URIs before pinning.",
+      });
+    }
+
+    for (const artifact of value.artifacts) {
+      if (artifact.visibility === "public" && !artifact.uri.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["artifacts"],
+          message:
+            "Public artifacts must expose a dereferenceable uri. Next step: attach the public artifact URI and retry.",
+        });
+      }
+    }
+
+    if (
+      submissionContract &&
+      !submissionContract.columns.required.includes(
+        submissionContract.columns.id ?? "",
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submission_contract", "columns", "id"],
+        message:
+          "submission_contract.columns.id must appear in submission_contract.columns.required. Next step: include the solver ID column in required and retry.",
+      });
+    }
+
+    if (
+      submissionContract &&
+      !submissionContract.columns.required.includes(
+        submissionContract.columns.value ?? "",
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["submission_contract", "columns", "value"],
+        message:
+          "submission_contract.columns.value must appear in submission_contract.columns.required. Next step: include the solver value column in required and retry.",
+      });
+    }
+  });
+
+function withDisputeMin<T extends z.ZodTypeAny>(schema: T, minHours: number) {
+  if (minHours <= 0) {
+    return schema;
+  }
+  return schema.superRefine((value, ctx) => {
+    const record = value as { dispute_window_hours?: number };
+    if (
+      record.dispute_window_hours !== undefined &&
+      record.dispute_window_hours < minHours
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.too_small,
@@ -346,7 +582,11 @@ function withDisputeMin(minHours: number) {
   });
 }
 
-export const challengeSpecSchema = _baseSpecShape;
+export const trustedChallengeSpecSchema = _trustedChallengeSpecShape;
+export type TrustedChallengeSpecInput = z.input<typeof trustedChallengeSpecSchema>;
+export type TrustedChallengeSpecOutput = z.output<typeof trustedChallengeSpecSchema>;
+
+export const challengeSpecSchema = _pinnedChallengeSpecShape;
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
 export type ChallengeSpecOutput = z.output<typeof challengeSpecSchema>;
 
@@ -390,6 +630,18 @@ export interface ResolvedChallengeExecution {
   };
 }
 
+export interface ResolvedPinnedChallengeExecution {
+  template: OfficialScorerTemplateIdOutput;
+  image: string;
+  metric: string;
+  comparator: OfficialScorerComparatorOutput;
+  execution: PinnedChallengeExecutionOutput;
+  mount: {
+    evaluationBundleName?: string;
+    submissionFileName: string;
+  };
+}
+
 export interface ResolvedChallengeRuntimeConfig {
   submissionContract?: SubmissionContractOutput;
   evaluationContract?: CsvTableEvaluationContractOutput;
@@ -397,11 +649,22 @@ export interface ResolvedChallengeRuntimeConfig {
 }
 
 export function challengeSpecSchemaForChain(chainId: number) {
-  return withDisputeMin(getDisputeWindowMinHours(chainId));
+  return withDisputeMin(challengeSpecSchema, getDisputeWindowMinHours(chainId));
+}
+
+export function trustedChallengeSpecSchemaForChain(chainId: number) {
+  return withDisputeMin(
+    trustedChallengeSpecSchema,
+    getDisputeWindowMinHours(chainId),
+  );
 }
 
 export function validateChallengeSpec(raw: unknown, chainId: number) {
   return challengeSpecSchemaForChain(chainId).safeParse(raw);
+}
+
+export function validateTrustedChallengeSpec(raw: unknown, chainId: number) {
+  return trustedChallengeSpecSchemaForChain(chainId).safeParse(raw);
 }
 
 export function parseChallengeSpecDocument(raw: string): unknown {
@@ -440,7 +703,48 @@ function mountFromPlan(
   };
 }
 
-export function buildChallengeExecutionPlanCache(spec: ChallengeSpecOutput) {
+export function sanitizeChallengeSpecForPublish(
+  spec: TrustedChallengeSpecOutput,
+): ChallengeSpecOutput {
+  return challengeSpecSchema.parse({
+    ...spec,
+    execution: {
+      version: spec.execution.version,
+      template: spec.execution.template,
+      scorer_image: spec.execution.scorer_image,
+      metric: spec.execution.metric,
+      comparator: spec.execution.comparator,
+      evaluation_artifact_id:
+        spec.artifacts.find(
+          (artifact) => artifact.uri === spec.execution.evaluation_artifact_uri,
+        )?.artifact_id ?? "",
+      evaluation_contract: spec.execution.evaluation_contract,
+      policies: spec.execution.policies,
+    },
+    artifacts: spec.artifacts.map((artifact) =>
+      artifact.visibility === "public"
+        ? {
+            artifact_id: artifact.artifact_id,
+            role: artifact.role,
+            visibility: artifact.visibility,
+            uri: artifact.uri,
+            ...(artifact.file_name ? { file_name: artifact.file_name } : {}),
+            ...(artifact.mime_type ? { mime_type: artifact.mime_type } : {}),
+            ...(artifact.description ? { description: artifact.description } : {}),
+          }
+        : {
+            artifact_id: artifact.artifact_id,
+            role: artifact.role,
+            visibility: artifact.visibility,
+            ...(artifact.file_name ? { file_name: artifact.file_name } : {}),
+            ...(artifact.mime_type ? { mime_type: artifact.mime_type } : {}),
+            ...(artifact.description ? { description: artifact.description } : {}),
+          },
+    ),
+  });
+}
+
+export function buildChallengeExecutionPlanCache(spec: TrustedChallengeSpecOutput) {
   const mount = resolveOfficialScorerMount(spec.execution.template);
   if (!mount) {
     throw new Error(
@@ -479,13 +783,13 @@ export function buildChallengeExecutionPlanCache(spec: ChallengeSpecOutput) {
 }
 
 export async function canonicalizeChallengeSpec(
-  spec: ChallengeSpecOutput,
+  spec: TrustedChallengeSpecOutput,
   options: {
     env?: Record<string, string | undefined>;
     fetchImpl?: typeof fetch;
     resolveOfficialPresetDigests?: boolean;
   } = {},
-): Promise<ChallengeSpecOutput> {
+): Promise<TrustedChallengeSpecOutput> {
   let scorerImage = spec.execution.scorer_image.trim();
   if (!scorerImage) {
     const templateImage = resolveOfficialScorerImage(spec.execution.template);
@@ -520,7 +824,7 @@ export async function canonicalizeChallengeSpec(
 }
 
 export function resolveChallengeExecution(
-  spec: ChallengeSpecOutput | ChallengeExecutionRow,
+  spec: TrustedChallengeSpecOutput | ChallengeExecutionRow,
 ): ResolvedChallengeExecution {
   if ("execution" in spec) {
     const mount = resolveOfficialScorerMount(spec.execution.template);
@@ -583,6 +887,29 @@ export function resolveChallengeExecution(
   };
 }
 
+export function resolvePinnedChallengeExecution(
+  spec: ChallengeSpecOutput,
+): ResolvedPinnedChallengeExecution {
+  const mount = resolveOfficialScorerMount(spec.execution.template);
+  if (!mount) {
+    throw new Error(
+      `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
+    );
+  }
+
+  return {
+    template: spec.execution.template,
+    image: spec.execution.scorer_image,
+    metric: spec.execution.metric,
+    comparator: spec.execution.comparator,
+    execution: spec.execution,
+    mount: {
+      evaluationBundleName: mount.evaluationBundleName,
+      submissionFileName: mount.submissionFileName,
+    },
+  };
+}
+
 export function resolveChallengeRuntimeConfig(
   row: ChallengeExecutionRow,
 ): ResolvedChallengeRuntimeConfig {
@@ -601,7 +928,11 @@ export function resolveChallengeRuntimeConfig(
 }
 
 export function resolveScoringEnvironmentFromSpec(
-  _spec: ChallengeSpecOutput | null | undefined,
+  _spec:
+    | ChallengeSpecOutput
+    | TrustedChallengeSpecOutput
+    | null
+    | undefined,
 ): Record<string, string> | undefined {
   return undefined;
 }
@@ -612,7 +943,7 @@ export interface ChallengeScoreabilityValidation {
 }
 
 export function validateChallengeScoreability(
-  spec: ChallengeSpecOutput,
+  spec: TrustedChallengeSpecOutput,
 ): ChallengeScoreabilityValidation {
   const errors: string[] = [];
 
@@ -670,7 +1001,7 @@ export function resolveChallengeRunnerLimits(
 }
 
 export function resolveChallengeTemplate(
-  spec: ChallengeSpecOutput | ChallengeExecutionRow,
+  spec: TrustedChallengeSpecOutput | ChallengeExecutionRow,
 ): OfficialScorerTemplateIdOutput {
   if ("execution" in spec) {
     return spec.execution.template;
@@ -684,3 +1015,8 @@ export function resolveChallengeTemplate(
   }
   return executionPlan.template;
 }
+
+export type ChallengeSourceOutput = z.output<typeof challengeSourceSchema>;
+export type TrustedChallengeArtifactOutput = z.output<
+  typeof trustedChallengeArtifactSchema
+>;

@@ -189,9 +189,12 @@ function normalizeChallengeArtifacts(
     Boolean(
       artifact &&
         typeof artifact === "object" &&
+        typeof (artifact as ChallengeArtifact).artifact_id === "string" &&
         typeof (artifact as ChallengeArtifact).role === "string" &&
         typeof (artifact as ChallengeArtifact).visibility === "string" &&
-        typeof (artifact as ChallengeArtifact).uri === "string",
+        ((artifact as ChallengeArtifact).visibility === "public"
+          ? typeof (artifact as { uri?: unknown }).uri === "string"
+          : true),
     ),
   );
 }
@@ -399,6 +402,7 @@ function toChallengeDetailResponse(input: {
       private: artifacts
         .filter((artifact) => artifact.visibility === "private")
         .map((artifact) => ({
+          artifact_id: artifact.artifact_id,
           role: artifact.role,
           visibility: "private" as const,
           file_name: artifact.file_name ?? null,

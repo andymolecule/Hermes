@@ -36,8 +36,8 @@ export function PostClient() {
           Create a science bounty
         </h1>
         <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-warm-500">
-          Expert Mode keeps the fully custom YAML and scorer path available from
-          the CLI.
+          Expert Mode keeps the YAML-first CLI path available for poster-authored
+          specs and advanced challenge settings.
         </p>
       </header>
 
@@ -49,7 +49,7 @@ export function PostClient() {
       <ExpertModePanel />
 
       <div className="text-center text-xs text-warm-500">
-        Need a custom scorer?{" "}
+        Need the YAML-first path?{" "}
         <span className="font-mono text-warm-700">
           agora post ./challenge.yaml
         </span>{" "}

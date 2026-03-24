@@ -13,13 +13,14 @@ import {
 } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
-  type ChallengeSpecOutput,
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
   defaultMinimumScoreForExecution,
   loadConfig,
-  validateChallengeSpec,
+  sanitizeChallengeSpecForPublish,
+  type TrustedChallengeSpecOutput,
+  validateTrustedChallengeSpec,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
 import { Command } from "commander";
@@ -101,7 +102,7 @@ async function maybePinLocalRef(
   }
 }
 
-async function pinSpecFile(spec: ChallengeSpecOutput) {
+async function pinSpecFile(spec: ReturnType<typeof sanitizeChallengeSpecForPublish>) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-spec-"));
   const tempPath = path.join(tempDir, "challenge.yaml");
   try {
@@ -133,7 +134,7 @@ function decimalToWad(value: number): bigint {
   return parseUnits(decimal, 18);
 }
 
-function defaultMinimumScoreForSpec(spec: ChallengeSpecOutput) {
+function defaultMinimumScoreForSpec(spec: TrustedChallengeSpecOutput) {
   return defaultMinimumScoreForExecution(spec.execution);
 }
 
@@ -242,7 +243,7 @@ export function buildPostCommand() {
         }
 
         const chainId = config.chain_id ?? DEFAULT_CHAIN_ID;
-        const validation = validateChallengeSpec(parsed, chainId);
+        const validation = validateTrustedChallengeSpec(parsed, chainId);
         if (!validation.success) {
           throw new Error(
             `Invalid challenge spec:\n${formatZodError(validation.error)}`,
@@ -253,6 +254,7 @@ export function buildPostCommand() {
           resolveOfficialPresetDigests:
             runtimeConfig.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
         });
+        const publicSpec = sanitizeChallengeSpecForPublish(spec);
 
         if (!(spec.reward.distribution in distributionMap)) {
           throw new Error(
@@ -261,7 +263,7 @@ export function buildPostCommand() {
         }
 
         const specSpinner = createSpinner("Pinning challenge spec...");
-        const specCid = await pinSpecFile(spec);
+        const specCid = await pinSpecFile(publicSpec);
         specSpinner.succeed(`Pinned spec: ${specCid}`);
 
         if (opts.dryRun) {
@@ -351,7 +353,7 @@ export function buildPostCommand() {
         let registrationWarning: string | null = null;
         try {
           const registration = await registerChallengeWithApi(
-            { txHash },
+            { txHash, trustedSpec: spec },
             config.api_url,
           );
           registeredChallengeId = registration.challengeId;

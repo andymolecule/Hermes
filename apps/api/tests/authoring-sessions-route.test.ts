@@ -114,7 +114,7 @@ function createCompilation() {
     },
   });
   const challengeSpec = {
-    schema_version: 4 as const,
+    schema_version: 5 as const,
     id: "session-spec-1",
     title: "Docking challenge",
     description: "Rank ligands against KRAS.",
@@ -123,11 +123,13 @@ function createCompilation() {
     execution,
     artifacts: [
       {
+        artifact_id: "artifact-context",
         role: "supporting_context" as const,
         visibility: "public" as const,
         uri: "ipfs://artifact-1",
       },
       {
+        artifact_id: "artifact-hidden",
         role: "hidden_evaluation" as const,
         visibility: "private" as const,
         uri: "ipfs://bundle",

@@ -26,7 +26,7 @@ This doc exists to stop that loop before more implementation work happens.
 
 - The public API contract for the authoring session flow
 - Shared business behavior between web and agent callers
-- Which existing public concepts and routes must be deleted or compatibility-shimmed
+- Which existing public concepts and routes must be deleted on cutover
 - The exact scope of what Agora does vs what callers do
 
 ### 0.3 What This Doc Is NOT For
@@ -52,7 +52,7 @@ No new authoring/session refactors should land until:
 1. the unresolved decisions table is answered
 2. the candidate delete list is approved
 3. the detailed session contract is written
-4. the compatibility policy is explicit
+4. the cutover mode is explicit
 
 ### 0.6 Naming Note
 
@@ -621,9 +621,16 @@ Every session response includes:
 - `expires_at` — absolute time when the current session state times out
 - `validation` — exact missing fields, invalid fields, dry-run mismatch, and terminal unsupported reason
 - `checklist` — confirmation items (if `ready`)
-- `compilation` — dry-run outcome (if `ready`), exposing the full public scoring/submission contract while excluding hidden evaluation/reference data
+- `compilation` — dry-run outcome (if `ready`), exposing the private session-owner compilation preview that Agora resolved for publish
 - `artifacts` — current uploaded artifacts
 - all canonical fields, even when their current value is `null` or `[]`
+
+Cutover rule:
+
+- the `spec_cid` returned after publish refers to the sanitized public
+  `schema_version: 5` pinned spec
+- private evaluation artifact URIs remain in private runtime/session state, not
+  in the published public spec
 
 ---
 
@@ -667,7 +674,7 @@ If a hotspot does not have all three, the spec is not ready to guide implementat
 
 ### 3.1 Candidate Public-Contract Deletes
 
-These are the highest-risk sources of future drift unless they are explicitly deleted or compatibility-shimmed for a short period:
+These are the highest-risk sources of future drift unless they are explicitly deleted on cutover:
 
 - Public noun `draft`
 - `/drafts/submit` as the canonical create route
@@ -773,7 +780,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q58 | Should compilation expose scoring direction explicitly? | Prevents callers and solvers from inferring score direction from metric names | Prefer an explicit objective field | `LOCKED: compilation includes explicit objective alongside metric, using objective = "maximize" | "minimize"` |
 | Q59 | Should compilation expose the exact immutable scorer image? | Determines whether callers and solvers can inspect the concrete scoring runtime rather than relying on a high-level template label | Prefer explicit immutable image refs for transparency | `LOCKED: compilation includes scorer_image as an immutable image reference, e.g. ghcr.io/...@sha256:...` |
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
-| Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_contract, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data contents stay out of the public contract` |
+| Q61 | What is the bundled compilation preview contract? | Defines the exact compilation object callers receive inside a private authoring session so they do not have to guess what Agora resolved | Prefer one explicit preview object | `LOCKED: compilation is a private session-owner preview object and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_contract, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. It is not the public pinned challenge spec; published public specs must omit dereferenceable URIs for private artifacts.` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
 | Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, unsupported_task, or TX_REVERTED. Sponsor publish reverts use TX_REVERTED; specific diagnostics belong in error.details rather than a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/patch/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
@@ -964,6 +971,9 @@ const RewardSchema = z.object({
   protocol_fee_bps: z.number().int().nonnegative(),
 });
 
+// Compilation is a private session-owner preview. It is not the public pinned
+// challenge spec, so it may include the resolved private evaluation artifact
+// URI that Agora will bind into trusted runtime state at publish time.
 const CompilationSchema = z.object({
   template: z.literal("official_table_metric_v1"),
   metric: z.string().min(1),

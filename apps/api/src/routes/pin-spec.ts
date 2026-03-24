@@ -5,7 +5,8 @@ import {
   getPinSpecAuthorizationTypedData,
   loadConfig,
   readApiServerRuntimeConfig,
-  validateChallengeSpec,
+  sanitizeChallengeSpecForPublish,
+  validateTrustedChallengeSpec,
 } from "@agora/common";
 import { pinJSON } from "@agora/ipfs";
 import { Hono } from "hono";
@@ -155,7 +156,7 @@ router.post("/", async (c) => {
     }
 
     const { chainId } = readApiServerRuntimeConfig();
-    const parsed = validateChallengeSpec(body.spec, chainId);
+    const parsed = validateTrustedChallengeSpec(body.spec, chainId);
     if (!parsed.success) {
       return jsonError(c, {
         status: 400,
@@ -203,7 +204,8 @@ router.post("/", async (c) => {
     const canonicalSpec = await canonicalizeChallengeSpec(parsed.data, {
       resolveOfficialPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
     });
-    const specCid = await pinJSON(`challenge-${Date.now()}`, canonicalSpec);
+    const publicSpec = sanitizeChallengeSpecForPublish(canonicalSpec);
+    const specCid = await pinJSON(`challenge-${Date.now()}`, publicSpec);
     return c.json({ specCid });
   } catch (error) {
     return jsonError(c, {

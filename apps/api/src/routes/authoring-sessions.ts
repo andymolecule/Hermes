@@ -1784,7 +1784,9 @@ export function createAuthoringSessionRoutes(
           expected_updated_at: visible.session.updated_at,
           state: "published",
           published_challenge_id: registration.challengeRow.id,
-          published_spec_json: registration.spec,
+          published_spec_json:
+            registration.trustedSpec ??
+            visible.session.compilation_json.challenge_spec,
           published_spec_cid: registration.specCid,
           published_at: buildNowIso(),
           expires_at: buildExpiry(TERMINAL_TTL_MS),

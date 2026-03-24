@@ -39,6 +39,27 @@ export const challengeExecutionSchema = z
 
 export type ChallengeExecutionOutput = z.output<typeof challengeExecutionSchema>;
 
+export const pinnedChallengeExecutionSchema = z
+  .object({
+    version: z.literal("v1"),
+    template: officialScorerTemplateIdSchema,
+    scorer_image: z.string().trim().min(1),
+    metric: z.string().trim().min(1),
+    comparator: officialScorerComparatorSchema,
+    evaluation_artifact_id: z.string().trim().min(1),
+    evaluation_contract: csvTableEvaluationContractSchema,
+    policies: scorerRuntimePoliciesSchema.default({
+      coverage_policy: "ignore",
+      duplicate_id_policy: "ignore",
+      invalid_value_policy: "ignore",
+    }),
+  })
+  .strict();
+
+export type PinnedChallengeExecutionOutput = z.output<
+  typeof pinnedChallengeExecutionSchema
+>;
+
 export function createChallengeExecution(input: {
   template: z.input<typeof officialScorerTemplateIdSchema>;
   scorerImage: string;

@@ -21,11 +21,19 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
 ## Summary
 
 - The canonical sealed submission format is `sealed_submission_v2`.
+- Solver-facing submission surfaces use the same sealing contract. Web, CLI,
+  MCP, and agent surfaces that claim private-answer submission must use
+  `sealed_submission_v2` while a challenge is `Open`.
+- There is no active plaintext fallback for private-answer submission on open
+  challenges. If sealing is unavailable, the submission surface must block.
 - The browser fetches Agora's active submission sealing public key whenever sealing is configured, then seals locally and uploads only the sealed envelope to IPFS.
 - The on-chain contract stores only `keccak256(result CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
 - Once scoring begins, replay artifacts may be published for reproducibility. This is anti-copy privacy during the open phase, not permanent secrecy.
+- Hidden evaluation artifact privacy is a separate boundary from submission
+  sealing. Public challenge specs and public challenge APIs must not expose
+  dereferenceable URIs for private artifacts.
 
 ---
 
@@ -66,6 +74,22 @@ The current model does not try to provide:
 - Permanent confidentiality after scoring begins.
 - Operator-blind decryption. The worker still decrypts on Agora infrastructure.
 - Hidden filenames or MIME types once someone already has the sealed envelope CID.
+
+## Adjacent Boundary: Hidden Evaluation Artifacts
+
+This document is about solver-answer privacy only.
+
+It does not change the challenge-definition rule for hidden evaluation
+artifacts:
+
+- solver submissions stay sealed as `sealed_submission_v2`
+- public pinned challenge specs must not expose dereferenceable URIs for
+  private evaluation artifacts
+- trusted runtime surfaces may still hold the real private evaluation artifact
+  URI for scoring
+
+That challenge-definition boundary is locked in the protocol and authoring
+execution specs. It is not a second submission workflow.
 
 ---
 

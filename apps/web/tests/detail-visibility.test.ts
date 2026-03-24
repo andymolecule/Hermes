@@ -8,21 +8,47 @@ import {
 } from "../src/app/challenges/[id]/detail-visibility";
 import type { ChallengeDetails } from "../src/lib/types";
 
+const emptyArtifacts = {
+  public: [],
+  private: [],
+  spec_cid: null,
+  spec_url: null,
+};
+
+function buildChallengeDetail(status: ChallengeDetails["challenge"]["status"]) {
+  return {
+    challenge: {
+      id: "challenge-1",
+      title: "Challenge",
+      description: "desc",
+      domain: "other",
+      status,
+      reward_amount: 10,
+      deadline: "2026-04-01T00:00:00.000Z",
+      challenge_type: "prediction",
+      contract_address: "0x0000000000000000000000000000000000000001",
+    },
+    artifacts: emptyArtifacts,
+    submissions: [],
+    leaderboard: [],
+  } satisfies ChallengeDetails;
+}
+
 test("challenge detail keeps results hidden while open", () => {
-  const detail = {
-    challenge: { status: CHALLENGE_STATUS.open },
-    submissions: [{ id: "sub-1", scored: true, score: "10" }],
-    leaderboard: [{ id: "sub-1", scored: true, score: "10" }],
-  } as ChallengeDetails;
+  const detail: ChallengeDetails = {
+    ...buildChallengeDetail(CHALLENGE_STATUS.open),
+    submissions: [{ id: "sub-1", scored: true, score: "10" }] as never,
+    leaderboard: [{ id: "sub-1", scored: true, score: "10" }] as never,
+  };
 
   assert.equal(canShowChallengeResults(CHALLENGE_STATUS.open), false);
   assert.deepEqual(getChallengeLeaderboardEntries(detail), []);
 });
 
 test("challenge detail shows leaderboard and verification once scoring begins", () => {
-  const detail = {
-    challenge: { status: CHALLENGE_STATUS.scoring },
-    submissions: [{ id: "sub-1", scored: true, score: "10" }],
+  const detail: ChallengeDetails = {
+    ...buildChallengeDetail(CHALLENGE_STATUS.scoring),
+    submissions: [{ id: "sub-1", scored: true, score: "10" }] as never,
     leaderboard: [
       {
         id: "sub-2",
@@ -30,26 +56,26 @@ test("challenge detail shows leaderboard and verification once scoring begins", 
         score: "20",
         has_public_verification: true,
       },
-    ],
-  } as ChallengeDetails;
+    ] as never,
+  };
 
   assert.equal(canShowChallengeResults(CHALLENGE_STATUS.scoring), true);
   assert.deepEqual(getChallengeLeaderboardEntries(detail), detail.leaderboard);
 });
 
 test("challenge detail falls back to submissions when leaderboard is empty", () => {
-  const detail = {
-    challenge: { status: CHALLENGE_STATUS.disputed },
-    submissions: [{ id: "sub-3", scored: true, score: "15" }],
+  const detail: ChallengeDetails = {
+    ...buildChallengeDetail(CHALLENGE_STATUS.disputed),
+    submissions: [{ id: "sub-3", scored: true, score: "15" }] as never,
     leaderboard: [],
-  } as ChallengeDetails;
+  };
 
   assert.deepEqual(getChallengeLeaderboardEntries(detail), detail.submissions);
 });
 
 test("challenge detail prefers scored submissions with public verification artifacts", () => {
-  const detail = {
-    challenge: { status: CHALLENGE_STATUS.finalized },
+  const detail: ChallengeDetails = {
+    ...buildChallengeDetail(CHALLENGE_STATUS.finalized),
     submissions: [],
     leaderboard: [
       {
@@ -64,15 +90,15 @@ test("challenge detail prefers scored submissions with public verification artif
         score: "20",
         has_public_verification: true,
       },
-    ],
-  } as ChallengeDetails;
+    ] as never,
+  };
 
   assert.equal(getPublicVerificationTarget(detail)?.id, "sub-2");
 });
 
 test("challenge detail skips verification fetch when no public artifacts exist yet", () => {
-  const detail = {
-    challenge: { status: CHALLENGE_STATUS.scoring },
+  const detail: ChallengeDetails = {
+    ...buildChallengeDetail(CHALLENGE_STATUS.scoring),
     submissions: [],
     leaderboard: [
       {
@@ -81,8 +107,8 @@ test("challenge detail skips verification fetch when no public artifacts exist y
         score: "25",
         has_public_verification: false,
       },
-    ],
-  } as ChallengeDetails;
+    ] as never,
+  };
 
   assert.equal(getPublicVerificationTarget(detail)?.id, "sub-1");
   assert.equal(

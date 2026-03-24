@@ -44,6 +44,13 @@ type RetryEventState = {
 
 const retryEventState = new Map<string, RetryEventState>();
 
+export class RetryableIndexerEventError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetryableIndexerEventError";
+  }
+}
+
 export function retryKey(txHash: string, logIndex: number) {
   return `${txHash}:${logIndex}`;
 }
@@ -108,7 +115,10 @@ export function getDueReplayBlock(now: number): bigint | null {
 }
 
 export function isRetryableError(error: unknown): boolean {
-  return isRetryableChainRpcError(error);
+  return (
+    isRetryableChainRpcError(error) ||
+    error instanceof RetryableIndexerEventError
+  );
 }
 
 export async function chunkedGetLogs(

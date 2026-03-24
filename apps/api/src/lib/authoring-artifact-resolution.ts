@@ -93,6 +93,7 @@ export function resolveAuthoringArtifacts(input: {
   }
 
   const resolvedArtifacts = input.uploadedArtifacts.map((artifact, index) => ({
+    artifact_id: artifactId(artifact, index),
     ...artifact,
     role: index === evaluationArtifactIndex ? "hidden_evaluation" : "supporting_context",
     visibility: index === evaluationArtifactIndex ? ("private" as const) : ("public" as const),

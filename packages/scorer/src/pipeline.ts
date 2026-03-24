@@ -10,7 +10,7 @@ import {
   buildScorerRuntimeConfig,
   challengeSpecSchema,
   parseChallengeSpecDocument,
-  resolveChallengeExecution,
+  resolvePinnedChallengeExecution,
   resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
@@ -118,7 +118,7 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     const spec = challengeSpecSchema.parse(
       parseChallengeSpecDocument(await getText(specCid)),
     );
-    const evalPlan = resolveChallengeExecution(spec);
+    const evalPlan = resolvePinnedChallengeExecution(spec);
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,

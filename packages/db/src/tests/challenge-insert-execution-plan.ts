@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
-  challengeSpecSchema,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
   resolveOfficialScorerImage,
+  trustedChallengeSpecSchema,
 } from "@agora/common";
 import { buildChallengeInsert } from "../queries/challenges";
 
@@ -33,8 +33,8 @@ const baseInput = {
   txHash: `0x${"1".repeat(64)}`,
 };
 
-const tableSpec = challengeSpecSchema.parse({
-  schema_version: 4,
+const tableSpec = trustedChallengeSpecSchema.parse({
+  schema_version: 5,
   id: "ch-1",
   title: "Regression challenge",
   domain: "omics",
@@ -59,12 +59,14 @@ const tableSpec = challengeSpecSchema.parse({
   }),
   artifacts: [
     {
+      artifact_id: "artifact-train",
       role: "training_data",
       visibility: "public",
       uri: "ipfs://QmTrain",
       file_name: "train.csv",
     },
     {
+      artifact_id: "artifact-hidden",
       role: "hidden_labels",
       visibility: "private",
       uri: "ipfs://QmHiddenLabelsOnly",
@@ -108,7 +110,7 @@ const insertWithOnChainDeadline = await buildChallengeInsert({
 });
 assert.equal(insertWithOnChainDeadline.deadline, "2027-01-01T00:00:00Z");
 
-const customLimitsSpec = challengeSpecSchema.parse({
+const customLimitsSpec = trustedChallengeSpecSchema.parse({
   ...tableSpec,
   id: "ch-2",
   max_submissions_total: 25,
@@ -121,11 +123,11 @@ const customLimitsInsert = await buildChallengeInsert({
 assert.equal(customLimitsInsert.max_submissions_total, 25);
 assert.equal(customLimitsInsert.max_submissions_per_solver, 2);
 
-const missingHiddenArtifactSpec = challengeSpecSchema.safeParse({
+const missingHiddenArtifactSpec = trustedChallengeSpecSchema.safeParse({
   ...tableSpec,
   id: "ch-3",
   artifacts: tableSpec.artifacts.filter(
-    (artifact) => artifact.uri !== "ipfs://QmHiddenLabelsOnly",
+    (artifact) => artifact.artifact_id !== "artifact-hidden",
   ),
 });
 assert.equal(

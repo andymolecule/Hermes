@@ -1,10 +1,10 @@
 import {
   type ChallengeIntentOutput,
-  type ChallengeSpecOutput,
   type CompilationResultOutput,
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   type OfficialScorerTemplateIdOutput,
+  type TrustedChallengeSpecOutput,
   PROTOCOL_FEE_PERCENT,
   getOfficialScorerMetric,
   lookupOfficialScorer,
@@ -105,7 +105,7 @@ export function buildAuthoringChecklist(input: {
   template: OfficialScorerTemplateIdOutput;
   metric: string;
   comparator: "maximize" | "minimize";
-  challengeSpec: ChallengeSpecOutput;
+  challengeSpec: TrustedChallengeSpecOutput;
   submissionContract: CompilationResultOutput["submission_contract"];
   dryRun: DryRunPreviewOutput;
 }): ConfirmationContractOutput {

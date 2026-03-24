@@ -130,7 +130,7 @@ PY
 )"
 
 cat >"$TMP_DIR/challenge.yaml" <<YAML
-schema_version: 4
+schema_version: 5
 id: e2e-$(date +%s)
 title: "${E2E_TITLE}"
 domain: longevity
@@ -155,11 +155,13 @@ execution:
     duplicate_id_policy: reject
     invalid_value_policy: reject
 artifacts:
-  - role: source_data
+  - artifact_id: artifact-source
+    role: source_data
     visibility: public
     uri: "${TMP_DIR}/training_data.csv"
     file_name: training_data.csv
-  - role: reference_output
+  - artifact_id: artifact-hidden
+    role: reference_output
     visibility: private
     uri: "${TMP_DIR}/ground_truth.csv"
     file_name: ground_truth.csv

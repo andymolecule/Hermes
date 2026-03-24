@@ -350,7 +350,7 @@ export function SessionPostClient({
       </div>
 
       <div className="text-center text-xs text-warm-500">
-        Need a custom scorer?{" "}
+        Need the YAML-first path?{" "}
         <span className="font-mono text-warm-700">
           agora post ./challenge.yaml
         </span>{" "}
