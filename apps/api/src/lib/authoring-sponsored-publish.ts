@@ -221,7 +221,8 @@ export async function ensureSponsorFactoryAllowance(input: {
         abi: erc20Abi,
         functionName: "approve",
         args: [input.factoryAddress, maxUint256],
-      }),
+        chain: null,
+      } as never),
   });
   await input.publicClient.waitForTransactionReceipt({ hash: approveTxHash });
 
