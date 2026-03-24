@@ -139,7 +139,7 @@ assert.throws(
       AGORA_E2E_DISPUTE_WINDOW_HOURS: "24",
     }),
   /AGORA_E2E_DISPUTE_WINDOW_HOURS/,
-  "lifecycle E2E should reject dispute windows below the contract minimum",
+  "lifecycle E2E should reject dispute windows below the local contract minimum",
 );
 
 const originalEnv = { ...process.env };

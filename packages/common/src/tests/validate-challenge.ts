@@ -76,17 +76,18 @@ assert.equal(result.success, true, "sample spec should validate");
 const chainValidated = validateChallengeSpec(sample, 84532);
 assert.equal(chainValidated.success, true, "chain validation should succeed");
 
+// Testnet factory allows dispute_window_hours=0; test negative values instead
 const tooShortDisputeWindow = validateChallengeSpec(
   {
     ...sample,
-    dispute_window_hours: 24,
+    dispute_window_hours: -1,
   },
   84532,
 );
 assert.equal(
   tooShortDisputeWindow.success,
   false,
-  "chain validation should reject dispute windows below the on-chain minimum",
+  "chain validation should reject negative dispute windows",
 );
 
 if (!result.success) {

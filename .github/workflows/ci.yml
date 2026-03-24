@@ -43,3 +43,6 @@ jobs:
 
       - name: Run tests
         run: NO_PROXY='*' pnpm test
+
+      - name: Enforce contract coverage floor
+        run: pnpm contracts:coverage:check

@@ -305,22 +305,25 @@ Steady-state flow:
 ## Smoke Test
 
 ```bash
-./scripts/e2e-test.sh
+pnpm smoke:lifecycle:testnet
 ```
 
-Fast overrides for shorter sessions:
+Local deterministic smoke:
 
 ```bash
+pnpm smoke:lifecycle:local
+
+# or, with explicit local overrides
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
 AGORA_E2E_ENABLE_TIME_TRAVEL=1 \
-./scripts/e2e-test.sh
+pnpm smoke:lifecycle:local
 ```
 
 Expected flow: post -> indexer pickup -> list -> get -> score-local -> submit -> worker scoring -> verify-public -> finalize -> claim.
 
-Note: `agora finalize` and `agora claim` require the dispute window to elapse after deadline. The contracts now enforce a minimum 168 hour dispute window, so use a local Anvil RPC with `evm_increaseTime` for full lifecycle testing.
+Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Use a local Anvil RPC with `evm_increaseTime` for full lifecycle settlement testing.
 The E2E script now expects the scorer image to already be published and pullable. It no longer builds a local official scorer fallback.
 
 ---

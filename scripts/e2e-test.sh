@@ -5,7 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
-MIN_DISPUTE_WINDOW_HOURS=168
+## The deployed testnet factory (0x7a78…) was built with MIN_DISPUTE_WINDOW_HOURS=0.
+## Restore to 168 when a fresh factory with the 7-day Solidity minimum is deployed.
+MIN_DISPUTE_WINDOW_HOURS=0
 E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/andymolecule/gems-match-scorer:v1}"
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
@@ -108,6 +110,15 @@ id,value
 5,1.00
 CSV
 cp "$TMP_DIR/ground_truth.csv" "$TMP_DIR/submission.csv"
+# Training data (public) — must have different content so it gets a different IPFS CID
+cat >"$TMP_DIR/training_data.csv" <<'CSV'
+id,value
+1,0.19
+2,0.39
+3,0.59
+4,0.79
+5,0.99
+CSV
 
 E2E_TITLE="Agora E2E $(date +%s)"
 E2E_DEADLINE="$(date -u -v+"${E2E_DEADLINE_MINUTES}"M +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || python3 - "$E2E_DEADLINE_MINUTES" <<'PY'
@@ -146,10 +157,10 @@ execution:
 artifacts:
   - role: source_data
     visibility: public
-    uri: "${TMP_DIR}/ground_truth.csv"
-    file_name: ground_truth.csv
+    uri: "${TMP_DIR}/training_data.csv"
+    file_name: training_data.csv
   - role: reference_output
-    visibility: public
+    visibility: private
     uri: "${TMP_DIR}/ground_truth.csv"
     file_name: ground_truth.csv
 submission_contract:
@@ -263,31 +274,28 @@ echo "Step 9/12: Verifying public replay artifacts..."
 
 echo "Step 10/12: Waiting for finalization window..."
 challenge_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || fail "agora get before finalize"
-finalize_wait_seconds="$(printf "%s" "$challenge_json" | node --input-type=module -e '
+dispute_window_seconds="$(printf "%s" "$challenge_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
   const challenge = payload.challenge;
-  const deadlineMs = new Date(challenge.deadline).getTime();
   const disputeHours = Number(challenge.dispute_window_hours ?? 24);
-  const targetMs = deadlineMs + disputeHours * 3600 * 1000 + 5000;
-  const nowMs = Date.now();
-  const waitSec = Math.max(Math.ceil((targetMs - nowMs) / 1000), 0);
-  process.stdout.write(String(waitSec));
+  process.stdout.write(String(Math.max(disputeHours * 3600 + 5, 0)));
 });')"
 
-if [[ "$finalize_wait_seconds" -gt 0 ]]; then
-  if [[ "$E2E_ENABLE_TIME_TRAVEL" == "1" ]] && rpc_time_travel "$finalize_wait_seconds" "$AGORA_RPC_URL"; then
-    echo "Advanced chain time by ${finalize_wait_seconds}s via evm_increaseTime."
+if [[ "$dispute_window_seconds" -gt 0 ]] && [[ "$E2E_ENABLE_TIME_TRAVEL" == "1" ]]; then
+  if rpc_time_travel "$dispute_window_seconds" "$AGORA_RPC_URL"; then
+    echo "Advanced chain time by ${dispute_window_seconds}s via evm_increaseTime from scoring start."
   else
-    if [[ "$finalize_wait_seconds" -gt "$E2E_MAX_FINALIZE_WAIT_SECONDS" ]]; then
-      fail "finalize window requires ${finalize_wait_seconds}s wait (the contract minimum dispute window is ${MIN_DISPUTE_WINDOW_HOURS}h; run against Anvil with time-travel or raise AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS)"
-    fi
-    sleep "$finalize_wait_seconds"
+    echo "Time travel unavailable; falling back to finalize polling."
   fi
 fi
 
 echo "Step 11/12: Finalize challenge..."
-"${AGORA_CMD[@]}" finalize "$challenge_id" --format json >"$TMP_DIR/finalize.json" || fail "agora finalize"
+poll_finalize() {
+  "${AGORA_CMD[@]}" finalize "$challenge_id" --format json >"$TMP_DIR/finalize.json"
+}
+
+poll_until "$E2E_MAX_FINALIZE_WAIT_SECONDS" 10 poll_finalize || fail "challenge was not finalizable within ${E2E_MAX_FINALIZE_WAIT_SECONDS}s. Next step: use local Anvil with AGORA_E2E_ENABLE_TIME_TRAVEL=1 or wait for the dispute window measured from scoring start to elapse."
 
 echo "Step 12/12: Claim payout and verify winner balance increase..."
 claim_json="$("${AGORA_CMD[@]}" claim "$challenge_id" --format json)" || fail "agora claim"

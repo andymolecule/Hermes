@@ -12,5 +12,8 @@ remappings = [
   "openzeppelin-contracts/=lib/openzeppelin-contracts/"
 ]
 
+[rpc_endpoints]
+base_sepolia = "${AGORA_BASE_SEPOLIA_RPC_URL}"
+
 [fmt]
 line_length = 100

@@ -5,6 +5,9 @@ const lifecycleE2ERuntimeConfigSchema = z.object({
   AGORA_E2E_DISPUTE_WINDOW_HOURS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),
+      // Local lifecycle smoke always targets a fresh hardened contract flow on
+      // Anvil, so keep the 7-day minimum here even while external testnet
+      // tooling may still target the legacy 0-hour factory.
       z.number().int().min(168),
     )
     .default(168),

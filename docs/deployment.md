@@ -105,7 +105,7 @@ flowchart TB
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
     F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor, MCP)"]
     G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
-    H --> I["9. Smoke test<br/>(pnpm smoke:lifecycle)"]
+    H --> I["9. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
     I --> J{"All checks pass?"}
     J -->|Yes| K["✓ Live"]
     J -->|No| L["Rollback:<br/>restore DB snapshot,<br/>redeploy previous release"]
@@ -208,7 +208,8 @@ This section covers non-code work for deployment across hosted systems.
 - `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
-- `pnpm smoke:lifecycle` runs the authoring/post/submit/score/finalize lifecycle smoke flow against a prepared environment.
+- `pnpm smoke:lifecycle:local` runs the deterministic Anvil-backed lifecycle smoke.
+- `pnpm smoke:lifecycle:testnet` runs the external CLI smoke against the configured deployment.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 

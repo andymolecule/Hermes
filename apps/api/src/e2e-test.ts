@@ -187,7 +187,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       },
       {
         role: "reference_output",
-        visibility: "public" as const,
+        visibility: "private" as const,
         uri: input.expectedCid,
       },
     ],

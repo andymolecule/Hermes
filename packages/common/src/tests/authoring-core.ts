@@ -45,7 +45,7 @@ const tooShortDisputeWindow = submitAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",
   intent: {
     ...baseIntent,
-    dispute_window_hours: 24,
+    dispute_window_hours: -1,
   },
   uploaded_artifacts: baseArtifacts,
 });
@@ -53,7 +53,7 @@ const tooShortDisputeWindow = submitAuthoringSessionRequestSchema.safeParse({
 assert.equal(
   tooShortDisputeWindow.success,
   false,
-  "authoring core should reject dispute windows below the protocol minimum",
+  "authoring core should reject negative dispute windows",
 );
 
 const outOfRangeReward = submitAuthoringSessionRequestSchema.safeParse({

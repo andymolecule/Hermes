@@ -113,7 +113,7 @@ const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
   usdc_address: "0x0000000000000000000000000000000000000002",
   reward_units: "1000000",
   deadline_seconds: 1_900_000_000,
-  dispute_window_hours: 24,
+  dispute_window_hours: -1,
   minimum_score_wad: "0",
   distribution_type: 0,
   lab_tba: "0x0000000000000000000000000000000000000000",
@@ -123,7 +123,7 @@ const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
 assert.equal(
   invalidWalletPreparation.success,
   false,
-  "wallet publish preparation should reject dispute windows below the protocol minimum",
+  "wallet publish preparation should reject negative dispute windows",
 );
 
 console.log("authoring session API schemas passed");
