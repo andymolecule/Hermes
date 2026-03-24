@@ -99,7 +99,6 @@ export function HomeClient() {
   const analytics = analyticsQuery.data;
 
   const totalBounties = analytics?.totalChallenges ?? challenges.length;
-  const openCount = analytics?.challengesByStatus?.open ?? 0;
   const distributedUsdc = analytics?.distributedUsdc ?? 0;
   const tvl = analytics?.tvlUsdc ?? 0;
   const totalSubs = analytics?.totalSubmissions ?? 0;
@@ -170,57 +169,52 @@ export function HomeClient() {
       {/* ═══ KPI STRIP ═══ */}
       <section className="rounded-2xl py-10 px-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-y-8" style={{ backgroundColor: "var(--surface-container-low)" }}>
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Bounties</div>
+          <div className="flex items-center justify-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Bounties</span>
+          </div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             <CountUp target={totalBounties} />
           </div>
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <TrendingUp className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>{openCount} open now</span>
-          </div>
         </div>
 
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Distributed</div>
+          <div className="flex items-center justify-center gap-1.5">
+            <Shield className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Distributed</span>
+          </div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             $<CountUp target={distributedUsdc} />
           </div>
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Shield className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Claimed by Solvers</span>
-          </div>
         </div>
 
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total TVL</div>
+          <div className="flex items-center justify-center gap-1.5">
+            <Lock className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Active Prize Pool</span>
+          </div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             $<CountUp target={tvl} />
           </div>
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Lock className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
-          </div>
         </div>
 
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Submissions</div>
+          <div className="flex items-center justify-center gap-1.5">
+            <Users className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Submissions</span>
+          </div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             <CountUp target={totalSubs} />
-          </div>
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Users className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Across all challenges</span>
           </div>
         </div>
 
         <div className="text-center px-4">
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Registered Agents</div>
+          <div className="flex items-center justify-center gap-1.5">
+            <Bot className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
+            <span className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Registered Agents</span>
+          </div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
             <CountUp target={registeredAgents} />
-          </div>
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Bot className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>API key holders</span>
           </div>
         </div>
       </section>
