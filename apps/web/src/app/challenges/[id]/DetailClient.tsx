@@ -212,14 +212,14 @@ function getDistributionBreakdown(type: string | null | undefined, total: number
 
 function WarningCallout({ title, message }: { title: string; message: string }) {
   return (
-    <div className="rounded-xl bg-[#fff3e8] p-5">
+    <div className="rounded-xl bg-[var(--color-warning-bg)] p-5">
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#1E1B18]" strokeWidth={2} />
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--text-primary)]" strokeWidth={2} />
         <div className="space-y-1">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#1E1B18]/50">
+          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-primary)]/50">
             {title}
           </div>
-          <p className="text-sm leading-relaxed text-[#1E1B18]/75">{message}</p>
+          <p className="text-sm leading-relaxed text-[var(--text-primary)]/75">{message}</p>
         </div>
       </div>
     </div>
@@ -237,14 +237,14 @@ function SubmissionColumnsTable({
 }) {
   if (expectedColumns.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-lg border border-[#e5e2dc]">
+    <div className="overflow-hidden rounded-lg border border-[var(--surface-container)]">
       <table className="w-full border-collapse text-sm">
-        <thead className="bg-[#ebe8e2]">
+        <thead className="bg-[var(--surface-container-high)]">
           <tr>
-            <th className="border-b border-[#e5e2dc] px-4 py-2.5 text-left text-[10px] font-mono font-bold uppercase tracking-widest text-[#45474a]">
+            <th className="border-b border-[var(--surface-container)] px-4 py-2.5 text-left text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-secondary)]">
               Column
             </th>
-            <th className="border-b border-[#e5e2dc] px-4 py-2.5 text-left text-[10px] font-mono font-bold uppercase tracking-widest text-[#45474a]">
+            <th className="border-b border-[var(--surface-container)] px-4 py-2.5 text-left text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-secondary)]">
               Role
             </th>
           </tr>
@@ -255,9 +255,9 @@ function SubmissionColumnsTable({
             if (idColumn && column === idColumn) role = "Identifier";
             if (valueColumn && column === valueColumn) role = "Scored value";
             return (
-              <tr key={column} className="border-b last:border-b-0 border-[#e5e2dc]">
-                <td className="px-4 py-3 font-mono text-xs font-bold text-[#1c1c18]">{column}</td>
-                <td className="px-4 py-3 text-sm font-medium text-[#45474a]">{role}</td>
+              <tr key={column} className="border-b last:border-b-0 border-[var(--surface-container)]">
+                <td className="px-4 py-3 font-mono text-xs font-bold text-[var(--text-primary)]">{column}</td>
+                <td className="px-4 py-3 text-sm font-medium text-[var(--text-secondary)]">{role}</td>
               </tr>
             );
           })}
@@ -274,7 +274,7 @@ function LinkedValue({ href, value }: { href: string | null; value: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-2 underline decoration-[#1c1c18]/20 underline-offset-4 transition-colors hover:text-[#111519]"
+      className="inline-flex items-center gap-2 underline decoration-[var(--text-primary)]/20 underline-offset-4 transition-colors hover:text-[var(--text-primary)]"
     >
       <span>{value}</span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
@@ -339,7 +339,7 @@ export function DetailClient({ id }: { id: string }) {
   if (detailQuery.error || !detailQuery.data) {
     return (
       <div className="max-w-7xl mx-auto pt-32 pb-20 px-6 text-center">
-        <p className="text-sm font-medium text-[#8c9096]">Challenge not found.</p>
+        <p className="text-sm font-medium text-[var(--text-muted)]">Challenge not found.</p>
       </div>
     );
   }
@@ -382,12 +382,12 @@ export function DetailClient({ id }: { id: string }) {
   return (
     <div className="max-w-7xl mx-auto">
       {/* ─── Breadcrumb ─── */}
-      <div className="mb-10 flex items-center gap-2 font-mono text-xs text-[#8c9096]">
-        <Link href="/" className="hover:text-[#111519] transition-colors">BOUNTIES</Link>
+      <div className="mb-10 flex items-center gap-2 font-mono text-xs text-[var(--text-muted)]">
+        <Link href="/" className="hover:text-[var(--text-primary)] transition-colors">BOUNTIES</Link>
         <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.5} />
         <span className="uppercase">{challenge.domain.replace(/_/g, " ")}</span>
         <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.5} />
-        <span className="text-[#111519] font-bold uppercase">CASE_ID: {challenge.id.slice(0, 8).toUpperCase()}</span>
+        <span className="text-[var(--text-primary)] font-bold uppercase">CASE_ID: {challenge.id.slice(0, 8).toUpperCase()}</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
@@ -398,24 +398,24 @@ export function DetailClient({ id }: { id: string }) {
 
           {/* ─── Hero ─── */}
           <section>
-            <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight mb-6 leading-tight text-[#111519]">
+            <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight mb-6 leading-tight text-[var(--text-primary)]">
               {challenge.title}
             </h1>
             <div className="flex flex-wrap gap-4 items-center">
               <span className={`px-3 py-1 font-mono text-[10px] tracking-widest uppercase ${
                 challenge.status === CHALLENGE_STATUS.open
-                  ? "bg-[#111519] text-white"
-                  : "bg-[#ebe8e2] text-[#1c1c18]"
+                  ? "bg-[var(--text-primary)] text-white"
+                  : "bg-[var(--surface-container-high)] text-[var(--text-primary)]"
               }`}>
                 {getChallengeBadgeLabel(challenge.status)}
               </span>
-              <span className="px-3 py-1 bg-[#ebe8e2] text-[#1c1c18] font-mono text-[10px] tracking-widest uppercase">
+              <span className="px-3 py-1 bg-[var(--surface-container-high)] text-[var(--text-primary)] font-mono text-[10px] tracking-widest uppercase">
                 {challenge.domain.replace(/_/g, " ")}
               </span>
-              <span className="px-3 py-1 bg-[#ebe8e2] text-[#1c1c18] font-mono text-[10px] tracking-widest uppercase">
+              <span className="px-3 py-1 bg-[var(--surface-container-high)] text-[var(--text-primary)] font-mono text-[10px] tracking-widest uppercase">
                 {challengeTypeLabel}
               </span>
-              <span className="flex items-center gap-1.5 font-mono text-xs text-[#45474a]">
+              <span className="flex items-center gap-1.5 font-mono text-xs text-[var(--text-secondary)]">
                 <Clock className="w-3.5 h-3.5" strokeWidth={1.75} />
                 {countdown === "Closed" ? "Deadline passed" : countdown}
               </span>
@@ -423,29 +423,29 @@ export function DetailClient({ id }: { id: string }) {
           </section>
 
           {/* ─── Description Block ─── */}
-          <section className="bg-[#f6f3ed] p-8 sm:p-10 rounded-xl space-y-8">
+          <section className="bg-[var(--surface-container-low)] p-8 sm:p-10 rounded-xl space-y-8">
             <div>
-              <h3 className="font-display font-bold text-xl mb-4 flex items-center gap-2 text-[#111519]">
+              <h3 className="font-display font-bold text-xl mb-4 flex items-center gap-2 text-[var(--text-primary)]">
                 <FileText className="w-5 h-5" strokeWidth={2} />
                 The Challenge
               </h3>
-              <p className="text-[#45474a] leading-relaxed">{challenge.description}</p>
+              <p className="text-[var(--text-secondary)] leading-relaxed">{challenge.description}</p>
             </div>
 
             {/* Technical Requirements / What To Submit */}
             {!technicalSpecsLoading && submissionContract && (
               <div>
-                <h3 className="font-display font-bold text-xl mb-4 flex items-center gap-2 text-[#111519]">
+                <h3 className="font-display font-bold text-xl mb-4 flex items-center gap-2 text-[var(--text-primary)]">
                   <Target className="w-5 h-5" strokeWidth={2} />
                   What To Submit
                 </h3>
-                <p className="text-sm text-[#45474a] leading-relaxed mb-4">
-                  Submit <span className="font-semibold text-[#111519]">{submissionArtifact}</span>.{" "}
+                <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-4">
+                  Submit <span className="font-semibold text-[var(--text-primary)]">{submissionArtifact}</span>.{" "}
                   {evaluationCriteria}
                 </p>
                 {expectedColumns.length > 0 && (
                   <div className="space-y-3">
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">
                       Expected Columns
                     </div>
                     <SubmissionColumnsTable
@@ -474,47 +474,47 @@ export function DetailClient({ id }: { id: string }) {
 
           {/* ─── How You're Judged ─── */}
           {!technicalSpecsLoading && (
-            <section className="bg-[#f6f3ed] p-8 sm:p-10 rounded-xl space-y-6" id="how-you-are-judged">
-              <h3 className="font-display font-bold text-xl flex items-center gap-2 text-[#111519]">
+            <section className="bg-[var(--surface-container-low)] p-8 sm:p-10 rounded-xl space-y-6" id="how-you-are-judged">
+              <h3 className="font-display font-bold text-xl flex items-center gap-2 text-[var(--text-primary)]">
                 <ShieldCheck className="w-5 h-5" strokeWidth={2} />
                 How You're Judged
               </h3>
-              <p className="text-sm text-[#45474a] leading-relaxed">{successDefinition}</p>
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{successDefinition}</p>
               {spec?.execution?.metric === "tolerant_match" && (
-                <p className="text-sm font-medium text-[#45474a]">
-                  Matching mode: <span className="font-mono font-bold text-[#111519]">tolerant_match</span>
+                <p className="text-sm font-medium text-[var(--text-secondary)]">
+                  Matching mode: <span className="font-mono font-bold text-[var(--text-primary)]">tolerant_match</span>
                 </p>
               )}
 
               {/* Metric + Threshold cards */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="bg-white rounded-lg p-5">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Scoring metric</div>
-                  <div className="mt-2 text-2xl font-display font-bold text-[#111519]">{metricPresentation.label}</div>
-                  <p className="mt-2 text-sm leading-relaxed text-[#45474a]">{metricPresentation.helper}</p>
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Scoring metric</div>
+                  <div className="mt-2 text-2xl font-display font-bold text-[var(--text-primary)]">{metricPresentation.label}</div>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{metricPresentation.helper}</p>
                 </div>
                 <div className="bg-white rounded-lg p-5">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Eligibility threshold</div>
-                  <div className="mt-2 text-2xl font-display font-bold text-[#111519]">{eligibilityThreshold.value}</div>
-                  <p className="mt-2 text-sm leading-relaxed text-[#45474a]">{eligibilityThreshold.helper}</p>
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Eligibility threshold</div>
+                  <div className="mt-2 text-2xl font-display font-bold text-[var(--text-primary)]">{eligibilityThreshold.value}</div>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{eligibilityThreshold.helper}</p>
                 </div>
               </div>
 
               {/* Scorer Engine */}
               {scorerInfo && (
                 <div className="bg-white rounded-lg overflow-hidden">
-                  <div className="px-5 py-3 bg-[#ebe8e2]">
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Scorer engine</div>
+                  <div className="px-5 py-3 bg-[var(--surface-container-high)]">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Scorer engine</div>
                   </div>
                   <div className="px-5 py-5 space-y-4">
                     <div>
-                      <div className="text-base font-bold text-[#111519]">{scorerInfo.label}</div>
-                      <p className="mt-1 text-sm leading-relaxed text-[#45474a]">{scorerInfo.summary}</p>
+                      <div className="text-base font-bold text-[var(--text-primary)]">{scorerInfo.label}</div>
+                      <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">{scorerInfo.summary}</p>
                     </div>
-                    <ul className="space-y-2 text-sm leading-relaxed text-[#45474a]">
+                    <ul className="space-y-2 text-sm leading-relaxed text-[var(--text-secondary)]">
                       {scorerInfo.details.map((detail) => (
                         <li key={detail} className="flex items-start gap-2">
-                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#111519]" />
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--text-primary)]" />
                           <span>{detail}</span>
                         </li>
                       ))}
@@ -526,7 +526,7 @@ export function DetailClient({ id }: { id: string }) {
                           href={link.href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg bg-[#f6f3ed] px-3 py-2 text-sm font-medium text-[#111519] transition-colors hover:bg-[#ebe8e2]"
+                          className="inline-flex items-center gap-2 rounded-lg bg-[var(--surface-container-low)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-container-high)]"
                         >
                           <span>{link.label}</span>
                           <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
@@ -534,7 +534,7 @@ export function DetailClient({ id }: { id: string }) {
                       ))}
                       {scorerPackageUrl && (
                         <a href={scorerPackageUrl} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-lg bg-[#f6f3ed] px-3 py-2 text-sm font-medium text-[#111519] transition-colors hover:bg-[#ebe8e2]">
+                          className="inline-flex items-center gap-2 rounded-lg bg-[var(--surface-container-low)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-container-high)]">
                           <span>GHCR package</span>
                           <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
                         </a>
@@ -560,16 +560,16 @@ export function DetailClient({ id }: { id: string }) {
           {/* ─── Proposed Solutions / Leaderboard ─── */}
           <section>
             <div className="flex justify-between items-end mb-8">
-              <h3 className="font-display font-bold text-2xl text-[#111519]">
+              <h3 className="font-display font-bold text-2xl text-[var(--text-primary)]">
                 Proposed Solutions ({submissions.length})
               </h3>
             </div>
             {resultsVisible ? (
               <LeaderboardTable rows={leaderboardEntries} />
             ) : (
-              <div className="bg-[#f6f3ed] rounded-xl p-10 text-center">
-                <Trophy className="w-8 h-8 mx-auto mb-3 text-[#8c9096]" strokeWidth={1.5} />
-                <p className="text-sm text-[#8c9096] font-mono uppercase tracking-widest">
+              <div className="bg-[var(--surface-container-low)] rounded-xl p-10 text-center">
+                <Trophy className="w-8 h-8 mx-auto mb-3 text-[var(--text-muted)]" strokeWidth={1.5} />
+                <p className="text-sm text-[var(--text-muted)] font-mono uppercase tracking-widest">
                   Leaderboard unlocks when the challenge enters scoring.
                 </p>
               </div>
@@ -578,8 +578,8 @@ export function DetailClient({ id }: { id: string }) {
 
           {/* ─── Public Verification ─── */}
           {resultsVisible && verificationSubmission && (
-            <section className="bg-[#f6f3ed] p-8 sm:p-10 rounded-xl space-y-5" id="public-verification">
-              <h3 className="font-display font-bold text-xl flex items-center gap-2 text-[#111519]">
+            <section className="bg-[var(--surface-container-low)] p-8 sm:p-10 rounded-xl space-y-5" id="public-verification">
+              <h3 className="font-display font-bold text-xl flex items-center gap-2 text-[var(--text-primary)]">
                 <ShieldCheck className="w-5 h-5" strokeWidth={2} />
                 Public Verification
               </h3>
@@ -593,23 +593,23 @@ export function DetailClient({ id }: { id: string }) {
                 <WarningCallout title="Verification Unavailable" message={`Verification artifacts could not be loaded. ${verificationErrorMessage}`} />
               ) : verification && hasPublicVerificationArtifacts ? (
                 <div className="space-y-5">
-                  <p className="text-sm leading-relaxed text-[#45474a]">
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">
                     Agora currently operates scoring, but this submission exposes the public artifacts needed to replay the scorer and check the published result independently.
                   </p>
-                  <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">
                     Showing artifacts for submission #{verificationSubmission.on_chain_sub_id}
                   </p>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="bg-white rounded-lg p-5">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Proof Bundle</div>
-                      <div className="mt-2 break-all font-mono text-xs font-bold text-[#111519]">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Proof Bundle</div>
+                      <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--text-primary)]">
                         <LinkedValue href={cidHref(verification.proofBundleCid)} value={verification.proofBundleCid ?? "—"} />
                       </div>
                     </div>
                     <div className="bg-white rounded-lg p-5">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Replay Submission</div>
-                      <div className="mt-2 break-all font-mono text-xs font-bold text-[#111519]">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Replay Submission</div>
+                      <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--text-primary)]">
                         {verification.replaySubmissionCid ? (
                           <LinkedValue href={cidHref(verification.replaySubmissionCid)} value={verification.replaySubmissionCid} />
                         ) : (
@@ -618,18 +618,18 @@ export function DetailClient({ id }: { id: string }) {
                       </div>
                     </div>
                     <div className="bg-white rounded-lg p-5">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Evaluation Bundle</div>
-                      <div className="mt-2 break-all font-mono text-xs font-bold text-[#111519]">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Evaluation Bundle</div>
+                      <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--text-primary)]">
                         <LinkedValue href={cidHref(verification.evaluationBundleCid)} value={verification.evaluationBundleCid ?? "—"} />
                       </div>
                     </div>
                     <div className="bg-white rounded-lg p-5">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096]">Scorer Image</div>
-                      <div className="mt-2 break-all font-mono text-xs font-bold text-[#111519]">{verification.containerImageDigest ?? "—"}</div>
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)]">Scorer Image</div>
+                      <div className="mt-2 break-all font-mono text-xs font-bold text-[var(--text-primary)]">{verification.containerImageDigest ?? "—"}</div>
                       {getScorerPackageUrl(verification.containerImageDigest) && (
                         <div className="mt-3">
                           <a href={getScorerPackageUrl(verification.containerImageDigest) ?? undefined} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 rounded-lg bg-[#f6f3ed] px-3 py-2 text-sm font-medium text-[#111519] transition-colors hover:bg-[#ebe8e2]">
+                            className="inline-flex items-center gap-2 rounded-lg bg-[var(--surface-container-low)] px-3 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-container-high)]">
                             <span>GHCR package</span>
                             <ExternalLink className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
                           </a>
@@ -639,14 +639,14 @@ export function DetailClient({ id }: { id: string }) {
                   </div>
 
                   {verifyCommand && (
-                    <div className="rounded-xl bg-[#111519] p-5 text-white">
+                    <div className="rounded-xl bg-[var(--text-primary)] p-5 text-white">
                       <div className="text-[10px] font-mono font-bold uppercase tracking-widest opacity-60">One-command replay</div>
                       <pre className="mt-2 whitespace-pre-wrap break-all font-mono text-xs font-bold leading-relaxed text-white">{verifyCommand}</pre>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-sm leading-relaxed text-[#8c9096]">
+                <p className="text-sm leading-relaxed text-[var(--text-muted)]">
                   Public replay artifacts have not been published for any scored submission yet.
                 </p>
               )}
@@ -654,18 +654,18 @@ export function DetailClient({ id }: { id: string }) {
           )}
 
           {/* ─── Technical Details / Artifacts ─── */}
-          <section className="bg-[#f6f3ed] p-8 sm:p-10 rounded-xl">
-            <h3 className="font-display font-bold text-xl mb-6 flex items-center gap-2 text-[#111519]">
+          <section className="bg-[var(--surface-container-low)] p-8 sm:p-10 rounded-xl">
+            <h3 className="font-display font-bold text-xl mb-6 flex items-center gap-2 text-[var(--text-primary)]">
               <Container className="w-5 h-5" strokeWidth={2} />
               Public Challenge Artifacts
             </h3>
             <div className="space-y-4">
               {artifacts.spec_cid && (
                 <div className="flex items-start gap-4 bg-white rounded-lg p-4">
-                  <FileText className="w-4 h-4 mt-0.5 text-[#8c9096] shrink-0" strokeWidth={1.75} />
+                  <FileText className="w-4 h-4 mt-0.5 text-[var(--text-muted)] shrink-0" strokeWidth={1.75} />
                   <div className="min-w-0">
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096] mb-1">Challenge Spec</div>
-                    <div className="font-mono text-xs font-bold text-[#111519] break-all">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)] mb-1">Challenge Spec</div>
+                    <div className="font-mono text-xs font-bold text-[var(--text-primary)] break-all">
                       <LinkedValue href={artifacts.spec_url} value={artifacts.spec_cid} />
                     </div>
                   </div>
@@ -674,10 +674,10 @@ export function DetailClient({ id }: { id: string }) {
               {artifacts.public.length > 0 ? (
                 artifacts.public.map((artifact: PublicChallengeArtifact) => (
                   <div key={`${artifact.role}:${artifact.uri}`} className="flex items-start gap-4 bg-white rounded-lg p-4">
-                    <Database className="w-4 h-4 mt-0.5 text-[#8c9096] shrink-0" strokeWidth={1.75} />
+                    <Database className="w-4 h-4 mt-0.5 text-[var(--text-muted)] shrink-0" strokeWidth={1.75} />
                     <div className="min-w-0">
-                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096] mb-1">{formatArtifactRole(artifact.role)}</div>
-                      <div className="font-mono text-xs font-bold text-[#111519] break-all">
+                      <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)] mb-1">{formatArtifactRole(artifact.role)}</div>
+                      <div className="font-mono text-xs font-bold text-[var(--text-primary)] break-all">
                         <LinkedValue href={artifact.url} value={artifact.uri} />
                       </div>
                     </div>
@@ -685,10 +685,10 @@ export function DetailClient({ id }: { id: string }) {
                 ))
               ) : (
                 <div className="flex items-start gap-4 bg-white rounded-lg p-4">
-                  <Database className="w-4 h-4 mt-0.5 text-[#8c9096] shrink-0" strokeWidth={1.75} />
+                  <Database className="w-4 h-4 mt-0.5 text-[var(--text-muted)] shrink-0" strokeWidth={1.75} />
                   <div>
-                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#8c9096] mb-1">Public Artifacts</div>
-                    <div className="text-sm text-[#45474a]">—</div>
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--text-muted)] mb-1">Public Artifacts</div>
+                    <div className="text-sm text-[var(--text-secondary)]">—</div>
                   </div>
                 </div>
               )}
@@ -702,7 +702,7 @@ export function DetailClient({ id }: { id: string }) {
         <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-28 lg:self-start">
 
           {/* ─── Reward Card (dark) ─── */}
-          <div className="bg-[#111519] text-white p-8 rounded-xl shadow-[0_20px_40px_rgba(17,21,25,0.15)] relative overflow-hidden">
+          <div className="bg-[var(--text-primary)] text-white p-8 rounded-xl shadow-[0_20px_40px_rgba(17,21,25,0.15)] relative overflow-hidden">
             <div className="relative z-10">
               <span className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-60">Total Reward Pool</span>
               <div className="text-5xl font-display font-bold mt-2 mb-6">
@@ -727,7 +727,7 @@ export function DetailClient({ id }: { id: string }) {
               <a
                 href="#submit-solution"
                 className="block w-full bg-white py-4 rounded-lg font-display font-bold text-lg text-center hover:scale-[0.98] transition-all duration-200"
-                style={{ color: "#111519" }}
+                style={{ color: "var(--text-primary)" }}
               >
                 Submit Solution
               </a>
@@ -737,40 +737,40 @@ export function DetailClient({ id }: { id: string }) {
           </div>
 
           {/* ─── Bounty Specifications ─── */}
-          <div className="bg-[#f6f3ed] p-8 rounded-xl">
-            <h4 className="font-display font-bold uppercase tracking-widest text-xs mb-6 text-[#8c9096]">
+          <div className="bg-[var(--surface-container-low)] p-8 rounded-xl">
+            <h4 className="font-display font-bold uppercase tracking-widest text-xs mb-6 text-[var(--text-muted)]">
               Bounty Specifications
             </h4>
             <div className="space-y-6">
               <div className="flex items-center gap-4">
-                <CalendarClock className="w-5 h-5 text-[#25292e] shrink-0" strokeWidth={1.75} />
+                <CalendarClock className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
                 <div>
-                  <p className="text-[10px] font-mono uppercase text-[#8c9096] leading-none mb-1">Deadline</p>
-                  <p className="font-display font-bold text-[#111519]">{formatDateTime(challenge.deadline)}</p>
+                  <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Deadline</p>
+                  <p className="font-display font-bold text-[var(--text-primary)]">{formatDateTime(challenge.deadline)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <Trophy className="w-5 h-5 text-[#25292e] shrink-0" strokeWidth={1.75} />
+                <Trophy className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
                 <div>
-                  <p className="text-[10px] font-mono uppercase text-[#8c9096] leading-none mb-1">Distribution</p>
-                  <p className="font-display font-bold text-[#111519]">{rewardDistribution}</p>
+                  <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Distribution</p>
+                  <p className="font-display font-bold text-[var(--text-primary)]">{rewardDistribution}</p>
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <Clock className="w-5 h-5 text-[#25292e] shrink-0" strokeWidth={1.75} />
+                <Clock className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
                 <div>
-                  <p className="text-[10px] font-mono uppercase text-[#8c9096] leading-none mb-1">Review Window</p>
-                  <p className="font-display font-bold text-[#111519]">
+                  <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Review Window</p>
+                  <p className="font-display font-bold text-[var(--text-primary)]">
                     {challenge.dispute_window_hours != null ? `${challenge.dispute_window_hours} hours` : "—"}
                   </p>
                 </div>
               </div>
               {challenge.contract_address && (
                 <div className="flex items-center gap-4">
-                  <ExternalLink className="w-5 h-5 text-[#25292e] shrink-0" strokeWidth={1.75} />
+                  <ExternalLink className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
                   <div>
-                    <p className="text-[10px] font-mono uppercase text-[#8c9096] leading-none mb-1">Contract</p>
-                    <p className="font-mono font-bold text-xs text-[#111519]">{shortAddress(challenge.contract_address)}</p>
+                    <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Contract</p>
+                    <p className="font-mono font-bold text-xs text-[var(--text-primary)]">{shortAddress(challenge.contract_address)}</p>
                   </div>
                 </div>
               )}
@@ -778,10 +778,10 @@ export function DetailClient({ id }: { id: string }) {
 
             {/* Download artifacts link */}
             {artifacts.public.length > 0 && (
-              <div className="mt-8 pt-8 border-t border-[#c5c6cb]/15">
+              <div className="mt-8 pt-8 border-t border-[var(--outline-variant)]/15">
                 <button
                   type="button"
-                  className="flex items-center justify-between w-full font-mono text-xs text-[#45474a] hover:text-[#111519] transition-colors uppercase tracking-widest"
+                  className="flex items-center justify-between w-full font-mono text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors uppercase tracking-widest"
                 >
                   <span>View Challenge Artifacts</span>
                   <Download className="w-4 h-4" strokeWidth={1.75} />

@@ -16,12 +16,12 @@ export function PostNotice({
   return (
     <div
       className={cx(
-        "rounded-[2px] border px-4 py-3 text-sm",
-        tone === "info" && "border-accent-200 bg-accent-50 text-accent-700",
+        "rounded-lg px-4 py-3 text-sm",
+        tone === "info" && "bg-accent-50 text-accent-700",
         tone === "success" &&
-          "border-emerald-300 bg-emerald-50 text-emerald-800",
-        tone === "error" && "border-red-300 bg-red-50 text-red-800",
-        tone === "warning" && "border-amber-300 bg-amber-50 text-amber-900",
+          "bg-emerald-50 text-emerald-800",
+        tone === "error" && "bg-red-50 text-red-800",
+        tone === "warning" && "bg-amber-50 text-amber-900",
       )}
     >
       {children}
@@ -37,7 +37,7 @@ export function PostingModeSection({
   onSetPostingMode: (nextMode: PostingMode) => void;
 }) {
   return (
-    <section className="rounded-[2px] border border-warm-300 bg-white px-4 py-4">
+    <section className="rounded-lg bg-[var(--surface-container-lowest)] px-4 py-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
@@ -50,14 +50,14 @@ export function PostingModeSection({
             runtime setups.
           </p>
         </div>
-        <div className="inline-flex rounded-[2px] border border-warm-300 bg-warm-50 p-1">
+        <div className="inline-flex rounded-lg bg-[var(--surface-container-low)] p-1">
           <button
             type="button"
             onClick={() => onSetPostingMode("standard")}
             className={cx(
-              "rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
+              "rounded-md px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
               !expertMode
-                ? "bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                ? "bg-warm-900 text-white"
                 : "text-warm-700 hover:text-warm-900",
             )}
           >
@@ -67,9 +67,9 @@ export function PostingModeSection({
             type="button"
             onClick={() => onSetPostingMode("expert")}
             className={cx(
-              "rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
+              "rounded-md px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider transition motion-reduce:transition-none",
               expertMode
-                ? "bg-warm-900 text-white shadow-[2px_2px_0px_var(--color-warm-900)]"
+                ? "bg-warm-900 text-white"
                 : "text-warm-700 hover:text-warm-900",
             )}
           >
@@ -84,9 +84,9 @@ export function PostingModeSection({
 export function ExpertModePanel() {
   return (
     <section className="space-y-4">
-      <div className="rounded-[2px] border-2 border-warm-900 bg-white p-5 shadow-[4px_4px_0px_var(--color-warm-900)]">
+      <div className="rounded-lg bg-[var(--surface-container-lowest)] p-5 shadow-[0_20px_40px_rgba(28,28,24,0.06)]">
         <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[2px] bg-warm-900 text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-warm-900 text-white">
             <TerminalSquare className="h-5 w-5" />
           </div>
           <div className="space-y-3">
@@ -109,7 +109,7 @@ export function ExpertModePanel() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-[1.05fr_0.95fr]">
-        <div className="rounded-[2px] border border-warm-300 bg-white p-5">
+        <div className="rounded-lg bg-[var(--surface-container-lowest)] p-5">
           <div className="flex items-center gap-3">
             <Shield className="h-4 w-4 text-warm-700" />
             <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
@@ -128,14 +128,14 @@ export function ExpertModePanel() {
           </div>
         </div>
 
-        <div className="rounded-[2px] border border-warm-300 bg-warm-50 p-5">
+        <div className="rounded-lg bg-[var(--surface-container-low)] p-5">
           <div className="flex items-center gap-3">
             <Sparkles className="h-4 w-4 text-warm-700" />
             <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
               CLI Path
             </div>
           </div>
-          <div className="mt-3 rounded-[2px] border border-warm-300 bg-white px-4 py-3 font-mono text-[12px] text-warm-800">
+          <div className="mt-3 rounded-md bg-[var(--surface-container-lowest)] px-4 py-3 font-mono text-[12px] text-warm-800">
             agora post ./challenge.yaml --format json
           </div>
           <p className="mt-3 text-sm leading-6 text-warm-700">

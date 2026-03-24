@@ -69,7 +69,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className="w-full rounded-[2px] border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+      className="w-full rounded-md bg-[var(--surface-container-low)] px-3 py-2 text-sm text-warm-900 outline-none transition focus:bg-[var(--surface-container-lowest)] focus:ring-1 focus:ring-[var(--border-focus)] motion-reduce:transition-none"
     />
   );
 }
@@ -78,7 +78,7 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className="min-h-[120px] w-full rounded-[2px] border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+      className="min-h-[120px] w-full rounded-md bg-[var(--surface-container-low)] px-3 py-2 text-sm text-warm-900 outline-none transition focus:bg-[var(--surface-container-lowest)] focus:ring-1 focus:ring-[var(--border-focus)] motion-reduce:transition-none"
     />
   );
 }
@@ -89,7 +89,7 @@ function SelectInput(
   return (
     <select
       {...props}
-      className="w-full rounded-[2px] border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 outline-none transition focus:border-warm-900 focus:shadow-[2px_2px_0px_var(--color-warm-900)] motion-reduce:transition-none"
+      className="w-full rounded-md bg-[var(--surface-container-low)] px-3 py-2 text-sm text-warm-900 outline-none transition focus:bg-[var(--surface-container-lowest)] focus:ring-1 focus:ring-[var(--border-focus)] motion-reduce:transition-none"
     />
   );
 }
@@ -109,11 +109,11 @@ function ValidationSection({
 
   const toneClass =
     tone === "error"
-      ? "border-red-300 bg-red-50 text-red-800"
-      : "border-amber-300 bg-amber-50 text-amber-900";
+      ? "bg-red-50 text-red-800"
+      : "bg-amber-50 text-amber-900";
 
   return (
-    <div className={`rounded-[2px] border px-4 py-3 ${toneClass}`}>
+    <div className={`rounded-lg px-4 py-3 ${toneClass}`}>
       <div className="font-semibold">{title}</div>
       <div className="mt-3 space-y-3 text-sm">
         {issues.map((issue) => (
@@ -154,7 +154,7 @@ function ValidationPanel({
             Session <span className="font-mono text-xs text-warm-900">{session.id}</span>
           </div>
         </div>
-        <span className="rounded-[2px] border border-warm-300 bg-warm-50 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-700">
+        <span className="rounded-full bg-[var(--surface-container-high)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-700">
           {session.state.replace("_", " ")}
         </span>
       </div>
@@ -171,7 +171,7 @@ function ValidationPanel({
             <button
               type="button"
               onClick={onOpenReview}
-              className="inline-flex items-center gap-2 rounded-[2px] border border-emerald-400 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-emerald-800 transition hover:border-emerald-700 hover:text-emerald-900 motion-reduce:transition-none"
+              className="btn-secondary inline-flex items-center gap-2 rounded-md px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-emerald-800 transition hover:text-emerald-900 motion-reduce:transition-none"
             >
               Review & Publish
             </button>
@@ -191,7 +191,7 @@ function ValidationPanel({
       />
 
       {validation.dry_run_failure ? (
-        <div className="rounded-[2px] border border-red-300 bg-red-50 px-4 py-3 text-red-800">
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-red-800">
           <div className="font-semibold">Dry-run failure</div>
           <div className="mt-2 text-sm">{validation.dry_run_failure.message}</div>
           <div className="mt-1 text-xs">{validation.dry_run_failure.next_action}</div>
@@ -199,7 +199,7 @@ function ValidationPanel({
       ) : null}
 
       {validation.unsupported_reason ? (
-        <div className="rounded-[2px] border border-red-300 bg-red-50 px-4 py-3 text-red-800">
+        <div className="rounded-lg bg-red-50 px-4 py-3 text-red-800">
           <div className="font-semibold">Unsupported contract</div>
           <div className="mt-2 text-sm">{validation.unsupported_reason.message}</div>
           <div className="mt-1 text-xs">{validation.unsupported_reason.next_action}</div>
@@ -225,7 +225,7 @@ function UploadList({
       {uploads.map((upload) => (
         <div
           key={upload.local_id}
-          className="rounded-[2px] border border-warm-300 bg-warm-50 px-3 py-3"
+          className="rounded-lg bg-[var(--surface-container-low)] px-3 py-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ export function AuthoringWorkspace({
   );
 
   return (
-    <div className="space-y-6 rounded-[2px] border border-warm-300 bg-white p-6 shadow-[0_20px_40px_rgba(28,28,24,0.06)]">
+    <div className="space-y-6 rounded-lg bg-[var(--surface-container-lowest)] p-6 shadow-[0_20px_40px_rgba(28,28,24,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
@@ -312,7 +312,7 @@ export function AuthoringWorkspace({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {sessionId ? (
-            <span className="rounded-[2px] border border-warm-300 bg-warm-50 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-700">
+            <span className="rounded-full bg-[var(--surface-container-high)] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-700">
               Session {sessionId.slice(0, 8)}
             </span>
           ) : null}
@@ -320,7 +320,7 @@ export function AuthoringWorkspace({
             type="button"
             onClick={onRefresh}
             disabled={isLoadingSession || !sessionId}
-            className="inline-flex items-center gap-2 rounded-[2px] border border-warm-300 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-warm-700 transition hover:border-warm-900 hover:text-warm-900 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+            className="btn-secondary inline-flex items-center gap-2 rounded-md px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
           >
             {isLoadingSession ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -417,7 +417,7 @@ export function AuthoringWorkspace({
         <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
           Scoring contract
         </div>
-        <div className="rounded-[2px] border border-warm-300 bg-warm-50 px-4 py-3 text-sm text-warm-700">
+        <div className="rounded-lg bg-[var(--surface-container-low)] px-4 py-3 text-sm text-warm-700">
           Template is fixed to <span className="font-mono">official_table_metric_v1</span>.
         </div>
         <div className="grid gap-4 md:grid-cols-2">
@@ -448,7 +448,7 @@ export function AuthoringWorkspace({
           </FieldShell>
         </div>
         {selectedArtifact?.detected_columns?.length ? (
-          <div className="rounded-[2px] border border-warm-300 bg-warm-50 px-4 py-3 text-xs text-warm-700">
+          <div className="rounded-lg bg-[var(--surface-container-low)] px-4 py-3 text-xs text-warm-700">
             Detected columns: {selectedArtifact.detected_columns.join(", ")}
           </div>
         ) : null}
@@ -505,7 +505,7 @@ export function AuthoringWorkspace({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-[2px] border border-warm-300 bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider text-warm-700 transition hover:border-warm-900 hover:text-warm-900 motion-reduce:transition-none"
+            className="btn-secondary inline-flex items-center gap-2 rounded-md px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-wider motion-reduce:transition-none"
           >
             <Paperclip className="h-3.5 w-3.5" />
             Upload files
@@ -521,7 +521,7 @@ export function AuthoringWorkspace({
         <UploadList uploads={uploads} onRemoveUpload={onRemoveUpload} />
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-warm-200 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 pt-4">
         <div className="flex items-start gap-2 text-sm text-warm-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warm-500" />
           <div>
@@ -532,7 +532,7 @@ export function AuthoringWorkspace({
           type="button"
           onClick={onValidate}
           disabled={isSubmitting}
-          className="inline-flex items-center gap-2 rounded-[2px] border-2 border-warm-900 bg-warm-900 px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider text-white shadow-[3px_3px_0px_var(--color-warm-900)] transition hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-[2px_2px_0px_var(--color-warm-900)] disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transform-none motion-reduce:transition-none"
+          className="btn-primary inline-flex items-center gap-2 rounded-md px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
         >
           {isSubmitting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

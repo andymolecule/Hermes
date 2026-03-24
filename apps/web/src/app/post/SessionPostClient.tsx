@@ -285,7 +285,7 @@ export function SessionPostClient({
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/challenges/${postedChallengeId}`}
-                className="btn-secondary inline-flex items-center gap-2 rounded-[2px] px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
+                className="btn-secondary inline-flex items-center gap-2 rounded-md px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider"
               >
                 View challenge
                 <ArrowRight className="h-3.5 w-3.5" />

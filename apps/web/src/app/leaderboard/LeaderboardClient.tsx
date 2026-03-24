@@ -28,11 +28,11 @@ export function LeaderboardClient() {
   return (
     <div className="space-y-6">
       <section className="py-6 text-center">
-        <h1 className="text-[2.5rem] sm:text-[3rem] leading-none font-display font-bold text-warm-900 tracking-[-0.04em] flex items-center justify-center gap-3 uppercase">
+        <h1 className="text-[2.5rem] sm:text-[3rem] leading-none font-display font-bold text-[var(--text-primary)] tracking-[-0.04em] flex items-center justify-center gap-3 uppercase">
           <Trophy className="w-8 h-8" strokeWidth={2} />
           Global Leaderboard
         </h1>
-        <p className="text-xs font-mono font-bold uppercase tracking-wider text-warm-900/60 mt-3">
+        <p className="text-xs font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] mt-3">
           Finalized challenge results only
         </p>
       </section>
@@ -44,20 +44,20 @@ export function LeaderboardClient() {
           ))}
         </div>
       ) : leaderboardQuery.error ? (
-        <div className="border border-warm-900 p-8 text-center">
-          <div className="font-mono font-bold text-sm uppercase tracking-wider text-warm-900/60">
+        <div className="bg-[var(--surface-container-low)] rounded-xl p-8 text-center">
+          <div className="font-mono font-bold text-sm uppercase tracking-wider text-[var(--text-muted)]">
             Unable to connect to API.
           </div>
           <button
             type="button"
             onClick={() => leaderboardQuery.refetch()}
-            className="mt-4 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider border border-warm-900 bg-white text-warm-900 hover:bg-warm-900 hover:text-white transition-colors"
+            className="btn-secondary mt-4 px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider"
           >
             Retry
           </button>
         </div>
       ) : entries.length === 0 ? (
-        <div className="border border-warm-900 p-12 text-center font-mono text-sm text-warm-900/50">
+        <div className="bg-[var(--surface-container-low)] rounded-xl p-12 text-center font-mono text-sm text-[var(--text-muted)]">
           No finalized challenge results yet.
         </div>
       ) : (
@@ -68,16 +68,16 @@ export function LeaderboardClient() {
             return (
               <div
                 key={entry.address}
-                className="border border-warm-900 rounded-[2px] overflow-hidden"
+                className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden"
               >
                 <button
                   type="button"
                   onClick={() => toggle(entry.address)}
                   aria-expanded={isOpen}
-                  className="w-full flex items-stretch bg-warm-100 hover:bg-warm-200 transition-colors text-left"
+                  className="w-full flex items-stretch bg-[var(--surface-container-low)] hover:bg-[var(--surface-container)] transition-colors text-left rounded-lg"
                 >
                   <div className="flex items-center gap-3 px-4 py-3 flex-1 min-w-0">
-                    <span className="flex items-center justify-center w-8 h-8 bg-warm-900 text-white text-sm font-mono font-bold flex-shrink-0">
+                    <span className="flex items-center justify-center w-8 h-8 bg-[var(--primary)] text-[var(--on-primary)] text-sm font-mono font-bold flex-shrink-0 rounded-full">
                       {index + 1}
                     </span>
                     <div className="min-w-0">
@@ -97,7 +97,7 @@ export function LeaderboardClient() {
                         </span>
                         <ExternalLink className="w-3 h-3 opacity-40 flex-shrink-0" />
                       </a>
-                      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40 mt-0.5">
+                      <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] mt-0.5">
                         {entry.totalSubmissions} submission
                         {entry.totalSubmissions !== 1 ? "s" : ""} ·{" "}
                         {entry.challengesParticipated} challenge
@@ -106,66 +106,66 @@ export function LeaderboardClient() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-center justify-center px-5 py-3 border-l border-warm-900 w-28 flex-shrink-0">
-                    <span className="text-lg font-mono font-bold tabular-nums text-warm-900">
+                  <div className="flex flex-col items-center justify-center px-5 py-3 w-28 flex-shrink-0">
+                    <span className="text-lg font-mono font-bold tabular-nums text-[var(--text-primary)]">
                       {entry.winRate}%
                     </span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                       Win Rate
                     </span>
                   </div>
 
-                  <div className="flex flex-col items-center justify-center px-5 py-3 border-l border-warm-900 w-32 flex-shrink-0">
-                    <span className="text-lg font-mono font-bold tabular-nums text-green-700">
+                  <div className="flex flex-col items-center justify-center px-5 py-3 w-32 flex-shrink-0">
+                    <span className="text-lg font-mono font-bold tabular-nums text-[var(--color-success)]">
                       ${formatUsdc(entry.totalEarnedUsdc)}
                     </span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                       Earned
                     </span>
                   </div>
 
-                  <div className="flex items-center px-3 border-l border-warm-900">
+                  <div className="flex items-center px-3">
                     {isOpen ? (
-                      <ChevronDown className="w-4 h-4 text-warm-900/40" />
+                      <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
                     ) : (
-                      <ChevronRight className="w-4 h-4 text-warm-900/40" />
+                      <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                     )}
                   </div>
                 </button>
 
                 {isOpen && (
-                  <div className="bg-white">
+                  <div className="bg-[var(--surface-container-lowest)]">
                     {entry.challenges.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-sm font-mono text-warm-900/40">
+                      <div className="px-4 py-6 text-center text-sm font-mono text-[var(--text-muted)]">
                         No finalized challenge details available.
                       </div>
                     ) : (
                       entry.challenges.map((challenge) => (
                         <div
                           key={`${entry.address}-${challenge.challengeId}`}
-                          className="border-t border-warm-900"
+                          className="bg-[var(--surface-container-low)]"
                         >
                           <Link
                             href={`/challenges/${challenge.challengeId}`}
-                            className="flex items-center gap-3 px-4 py-2.5 bg-warm-900/[0.02] hover:bg-warm-900/[0.05] transition-colors no-underline"
+                            className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-container)] transition-colors no-underline"
                           >
-                            <FlaskConical className="w-3.5 h-3.5 text-warm-900/40 flex-shrink-0" />
-                            <span className="font-semibold text-sm text-warm-900 truncate">
+                            <FlaskConical className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                            <span className="font-semibold text-sm text-[var(--text-primary)] truncate">
                               {challenge.title}
                             </span>
-                            <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider bg-warm-900 text-white flex-shrink-0">
+                            <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider bg-[var(--primary)] text-[var(--on-primary)] rounded-full flex-shrink-0">
                               {challenge.domain}
                             </span>
-                            <span className="ml-auto font-mono text-xs font-bold text-warm-900/60 tabular-nums flex-shrink-0">
+                            <span className="ml-auto font-mono text-xs font-bold text-[var(--text-muted)] tabular-nums flex-shrink-0">
                               {formatUsdc(challenge.rewardAmount)} USDC
                             </span>
                           </Link>
-                          <div className="flex items-center gap-4 px-4 py-1.5 pl-11 text-xs border-t border-warm-900/10">
+                          <div className="flex items-center gap-4 px-4 py-1.5 pl-11 text-xs">
                             <span className="font-mono font-bold tabular-nums">
                               Best score:{" "}
                               {formatWadToScore(challenge.bestScore)}
                             </span>
-                            <span className="text-warm-900/40 font-mono">
+                            <span className="text-[var(--text-muted)] font-mono">
                               {new Date(
                                 challenge.submittedAt,
                               ).toLocaleDateString()}
