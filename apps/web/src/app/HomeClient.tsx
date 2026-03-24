@@ -338,24 +338,24 @@ export function HomeClient() {
               <div className="overflow-hidden" style={{ borderRadius: "12px" }}>
                 {/* Header */}
                 <div
-                  className="grid items-center px-8 py-4"
-                  style={{ gridTemplateColumns: "0.8fr 2.5fr 1fr 1fr 1.2fr 0.8fr 1fr", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
+                  className="grid items-center px-6 py-3"
+                  style={{ gridTemplateColumns: "minmax(0, 0.6fr) minmax(0, 3fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.9fr) minmax(0, 0.4fr) minmax(0, 0.6fr)", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
                 >
-                  {["Agent", "Bounty Title", "Prize Pool", "Category", "Time Remaining", "Participants", "Status"].map((col) => (
-                    <div key={col} className="flex items-center gap-1.5 text-white font-mono font-medium uppercase" style={{ fontSize: "11px", letterSpacing: "0.08em" }}>
+                  {["Agent", "Bounty Title", "Prize Pool", "Category", "Time Left", "Solvers", "Status"].map((col) => (
+                    <div key={col} className="flex items-center gap-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.85)" }}>
                       {col}
-                      <ChevronDown className="w-3 h-3 opacity-40" />
+                      <ChevronDown className="w-3 h-3 opacity-30" />
                     </div>
                   ))}
                 </div>
 
                 {/* Rows */}
                 {paged.length === 0 ? (
-                  <div className="px-8 py-16 text-center bg-white">
-                    <div className="font-mono text-sm" style={{ color: "var(--text-muted)" }}>No challenges found.</div>
+                  <div className="px-6 py-16 text-center" style={{ backgroundColor: "var(--surface-container-lowest)" }}>
+                    <div className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>No challenges found.</div>
                   </div>
                 ) : (
-                  paged.map((ch) => {
+                  paged.map((ch, i) => {
                     const dom = getDomainStyle(ch.domain);
                     const st = getTableStatus(ch.status, ch.deadline);
                     const dead = ch.status?.toLowerCase() === "cancelled";
@@ -365,34 +365,35 @@ export function HomeClient() {
                       <Link
                         key={ch.id}
                         href={`/challenges/${ch.id}`}
-                        className="grid items-center px-8 py-6 no-underline transition-colors duration-150 hover:!bg-[var(--surface-container-low)]"
+                        className="grid items-center px-6 py-4 no-underline transition-colors duration-200"
                         style={{
-                          gridTemplateColumns: "0.8fr 2.5fr 1fr 1fr 1.2fr 0.8fr 1fr",
-                          backgroundColor: "var(--on-primary)",
-                          borderTop: "1px solid #f0eee9",
+                          gridTemplateColumns: "minmax(0, 0.6fr) minmax(0, 3fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.9fr) minmax(0, 0.4fr) minmax(0, 0.6fr)",
+                          backgroundColor: i % 2 === 0 ? "var(--surface-container-lowest)" : "var(--surface-container-low)",
                         }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-container-high)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "var(--surface-container-lowest)" : "var(--surface-container-low)"; }}
                       >
-                        <div>
-                          <span className="font-mono text-xs" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-primary)" : "var(--text-muted)" }}>
+                        <div className="truncate">
+                          <span className="font-mono text-xs truncate" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-secondary)" : "var(--text-muted)" }}>
                             {ch.created_by_agent?.agent_name || "—"}
                           </span>
                         </div>
-                        <div>
-                          <div className="font-sans font-bold leading-snug" style={{ fontSize: "1.15rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.title}</div>
-                          <div className="font-sans text-sm mt-1.5 line-clamp-1" style={{ color: dead ? "var(--text-muted)" : "var(--text-muted)" }}>{ch.description?.slice(0, 80) || "No description."}</div>
+                        <div className="min-w-0 pr-4">
+                          <div className="font-sans font-semibold leading-snug truncate" style={{ fontSize: "0.9375rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.title}</div>
+                          <div className="font-sans text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>{ch.description?.slice(0, 90) || "No description."}</div>
                         </div>
-                        <div className="font-sans font-bold tabular-nums" style={{ fontSize: "1.5rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
+                        <div className="font-mono font-semibold tabular-nums" style={{ fontSize: "0.875rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
                         <div>
-                          <span className="inline-block px-3 py-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", backgroundColor: dead ? "#f8fafc" : dom.bg, color: dead ? "var(--text-muted)" : dom.text, borderRadius: "6px" }}>
+                          <span className="inline-block px-2.5 py-0.5 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", backgroundColor: dead ? "var(--surface-container-high)" : dom.bg, color: dead ? "var(--text-muted)" : dom.text, borderRadius: "var(--radius-full)" }}>
                             {dom.label}
                           </span>
                         </div>
-                        <div className="font-mono text-sm tabular-nums" style={{ color: st.timeColor, fontWeight: st.label === "ENDING SOON" ? 700 : 400 }}>{dead ? "--" : cd}</div>
-                        <div className="text-right">
-                          <span className="font-sans font-bold text-xl tabular-nums" style={{ color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.submissions_count ?? 0}</span>
+                        <div className="font-mono text-xs tabular-nums" style={{ color: st.timeColor, fontWeight: st.label === "ENDING SOON" ? 600 : 400 }}>{dead ? "--" : cd}</div>
+                        <div className="text-center">
+                          <span className="font-mono text-sm font-medium tabular-nums" style={{ color: dead ? "var(--text-muted)" : "var(--text-secondary)" }}>{ch.submissions_count ?? 0}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: st.dot, borderRadius: "50%" }} />
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: st.dot }} />
                           <span className="font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", color: st.text }}>{st.label}</span>
                         </div>
                       </Link>
