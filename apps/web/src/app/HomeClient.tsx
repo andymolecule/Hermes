@@ -1,6 +1,5 @@
 "use client";
 
-import { CHALLENGE_STATUS } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bot,
@@ -99,10 +98,11 @@ export function HomeClient() {
   const analyticsQuery = useQuery({ queryKey: ["analytics"], queryFn: () => getAnalytics() });
   const analytics = analyticsQuery.data;
 
-  const openCount = challenges.filter((c) => c.status?.toLowerCase() === CHALLENGE_STATUS.open).length;
-  const totalPool = challenges.reduce((s, c) => s + Number(c.reward_amount || 0), 0);
-  const totalSubs = challenges.reduce((s, c) => s + (c.submissions_count ?? 0), 0);
+  const totalBounties = analytics?.totalChallenges ?? challenges.length;
+  const openCount = analytics?.challengesByStatus?.open ?? 0;
+  const distributedUsdc = analytics?.distributedUsdc ?? 0;
   const tvl = analytics?.tvlUsdc ?? 0;
+  const totalSubs = analytics?.totalSubmissions ?? 0;
   const registeredAgents = analytics?.registeredAgents ?? 0;
 
   const rows = useMemo(() => {
@@ -172,7 +172,7 @@ export function HomeClient() {
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Bounties</div>
           <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
-            <CountUp target={challenges.length} />
+            <CountUp target={totalBounties} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
             <TrendingUp className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
@@ -181,26 +181,24 @@ export function HomeClient() {
         </div>
 
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
-          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Payout</div>
-          <div className="mt-3 flex items-baseline justify-center gap-1.5">
-            <span className="font-display font-bold tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>$<CountUp target={totalPool} /></span>
-            <span className="font-display font-medium text-lg" style={{ color: "var(--text-secondary)" }}>USDC</span>
+          <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total Distributed</div>
+          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
+            $<CountUp target={distributedUsdc} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Shield className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-secondary)", letterSpacing: "0.05em" }}>Secured in Escrow</span>
+            <Shield className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Claimed by Solvers</span>
           </div>
         </div>
 
         <div className="text-center px-4 border-r" style={{ borderColor: "var(--border-subtle)" }}>
           <div className="font-mono text-xs font-medium uppercase" style={{ letterSpacing: "0.2em", color: "var(--text-secondary)" }}>Total TVL</div>
-          <div className="mt-3 flex items-baseline justify-center gap-1.5">
-            <span className="font-display font-bold tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>$<CountUp target={tvl} /></span>
-            <span className="font-display font-medium text-lg" style={{ color: "var(--text-secondary)" }}>USDC</span>
+          <div className="font-display font-bold mt-3 tabular-nums" style={{ fontSize: "2.5rem", color: "var(--text-primary)" }}>
+            $<CountUp target={tvl} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Lock className="w-3.5 h-3.5" style={{ color: "var(--text-secondary)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-secondary)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
+            <Lock className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
           </div>
         </div>
 
@@ -347,9 +345,9 @@ export function HomeClient() {
                 {/* Header */}
                 <div
                   className="grid items-center px-8 py-4"
-                  style={{ gridTemplateColumns: "2.5fr 1fr 1fr 1fr 1.2fr 0.8fr", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
+                  style={{ gridTemplateColumns: "2.5fr 1fr 0.8fr 1fr 1fr 1.2fr 0.8fr", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
                 >
-                  {["Bounty Title", "Category", "Prize Pool", "Status", "Time Remaining", "Participants"].map((col) => (
+                  {["Bounty Title", "Category", "Agent", "Prize Pool", "Status", "Time Remaining", "Participants"].map((col) => (
                     <div key={col} className="flex items-center gap-1.5 text-white font-mono font-medium uppercase" style={{ fontSize: "11px", letterSpacing: "0.08em" }}>
                       {col}
                       <ChevronDown className="w-3 h-3 opacity-40" />
@@ -375,7 +373,7 @@ export function HomeClient() {
                         href={`/challenges/${ch.id}`}
                         className="grid items-center px-8 py-6 no-underline transition-colors duration-150 hover:!bg-[var(--surface-container-low)]"
                         style={{
-                          gridTemplateColumns: "2.5fr 1fr 1fr 1fr 1.2fr 0.8fr",
+                          gridTemplateColumns: "2.5fr 1fr 0.8fr 1fr 1fr 1.2fr 0.8fr",
                           backgroundColor: "var(--on-primary)",
                           borderTop: "1px solid #f0eee9",
                         }}
@@ -387,6 +385,11 @@ export function HomeClient() {
                         <div>
                           <span className="inline-block px-3 py-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", backgroundColor: dead ? "#f8fafc" : dom.bg, color: dead ? "var(--text-muted)" : dom.text, borderRadius: "6px" }}>
                             {dom.label}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-mono text-xs" style={{ color: ch.source_agent_handle ? "var(--text-primary)" : "var(--text-muted)" }}>
+                            {ch.source_agent_handle || "—"}
                           </span>
                         </div>
                         <div className="font-sans font-bold tabular-nums" style={{ fontSize: "1.5rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>

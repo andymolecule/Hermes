@@ -39,6 +39,7 @@ export type Challenge = {
   factory_address?: string | null;
   factory_challenge_id?: number | null;
   submissions_count?: number;
+  source_agent_handle?: string | null;
   execution?: ChallengeExecution | null;
   distribution_type?: string | null;
   dispute_window_hours?: number | null;

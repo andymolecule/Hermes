@@ -235,6 +235,11 @@ export function toChallengeSummary(row: ChallengeRow | ChallengeListRow) {
       (row as { winning_on_chain_sub_id?: unknown }).winning_on_chain_sub_id,
     ),
     created_at: row.created_at ?? null,
+    source_agent_handle:
+      "source_agent_handle" in row &&
+      typeof row.source_agent_handle === "string"
+        ? row.source_agent_handle
+        : null,
     refs: toChallengeRefs(row),
   };
 }
