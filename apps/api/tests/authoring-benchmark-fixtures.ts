@@ -127,7 +127,10 @@ function payoutConditionForBenchmark(benchmark: BenchmarkJson) {
   if (benchmark.compile_invariants.metric === "exact_match") {
     return "Exact match against the hidden reference output wins.";
   }
-  if (benchmark.compile_invariants.evaluator_archetype === "structured_record_score") {
+  if (
+    benchmark.compile_invariants.evaluator_archetype ===
+    "structured_record_score"
+  ) {
     return "Highest deterministic validation score wins.";
   }
   if (benchmark.compile_invariants.metric === "r2") {

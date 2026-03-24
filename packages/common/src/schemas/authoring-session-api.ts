@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHALLENGE_LIMITS } from "../constants.js";
 import { partialChallengeIntentSchema } from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
@@ -12,10 +13,7 @@ export const authoringSessionPublicStateSchema = z.enum([
 ]);
 
 export const authoringSessionFundingSchema = z.enum(["wallet", "sponsor"]);
-export const authoringSessionObjectiveSchema = z.enum([
-  "maximize",
-  "minimize",
-]);
+export const authoringSessionObjectiveSchema = z.enum(["maximize", "minimize"]);
 export const authoringSessionErrorCodeSchema = z.enum([
   "unauthorized",
   "not_found",
@@ -160,7 +158,10 @@ export const authoringSessionCompilationSchema = z
     resource_limits: authoringSessionResourceLimitsSchema,
     reward: authoringSessionRewardSchema,
     deadline: isoDatetimeSchema,
-    dispute_window_hours: z.number().int().nonnegative(),
+    dispute_window_hours: z
+      .number()
+      .int()
+      .min(CHALLENGE_LIMITS.disputeWindowMinHours),
     minimum_score: z.number().nullable(),
   })
   .strict();
@@ -200,12 +201,12 @@ export const authoringSessionValidationSchema = z
   .object({
     missing_fields: z.array(authoringSessionValidationIssueSchema).default([]),
     invalid_fields: z.array(authoringSessionValidationIssueSchema).default([]),
-    dry_run_failure: authoringSessionValidationIssueSchema.nullable().default(
-      null,
-    ),
-    unsupported_reason: authoringSessionValidationIssueSchema.nullable().default(
-      null,
-    ),
+    dry_run_failure: authoringSessionValidationIssueSchema
+      .nullable()
+      .default(null),
+    unsupported_reason: authoringSessionValidationIssueSchema
+      .nullable()
+      .default(null),
   })
   .strict();
 
@@ -294,8 +295,7 @@ export const createAuthoringSessionRequestSchema = z
     if (!hasIntent && !hasExecution && !hasFiles) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "Provide at least one of intent, execution, or files.",
+        message: "Provide at least one of intent, execution, or files.",
       });
     }
   });
@@ -342,7 +342,10 @@ export const walletPublishPreparationSchema = z
     usdc_address: z.string().trim().min(1),
     reward_units: z.string().trim().min(1),
     deadline_seconds: z.number().int().nonnegative(),
-    dispute_window_hours: z.number().int().nonnegative(),
+    dispute_window_hours: z
+      .number()
+      .int()
+      .min(CHALLENGE_LIMITS.disputeWindowMinHours),
     minimum_score_wad: z.string().trim().min(1),
     distribution_type: z.number().int().nonnegative(),
     lab_tba: z.string().trim().min(1),

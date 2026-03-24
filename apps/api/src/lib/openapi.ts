@@ -1,4 +1,4 @@
-import { getAgoraRuntimeVersion } from "@agora/common";
+import { CHALLENGE_LIMITS, getAgoraRuntimeVersion } from "@agora/common";
 
 function uuidSchema() {
   return { type: "string", format: "uuid" } as const;
@@ -1243,7 +1243,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             resource_limits: { type: "object" },
             reward: { type: "object" },
             deadline: isoDateTimeSchema(),
-            dispute_window_hours: { type: "integer", minimum: 0 },
+            dispute_window_hours: {
+              type: "integer",
+              minimum: CHALLENGE_LIMITS.disputeWindowMinHours,
+            },
             minimum_score: { type: "number", nullable: true },
           },
           required: [
@@ -1385,7 +1388,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               enum: ["winner_take_all", "top_3", "proportional"],
             },
             deadline: isoDateTimeSchema(),
-            dispute_window_hours: { type: "integer", minimum: 0 },
+            dispute_window_hours: {
+              type: "integer",
+              minimum: CHALLENGE_LIMITS.disputeWindowMinHours,
+            },
             domain: { type: "string" },
             tags: { type: "array", items: { type: "string" } },
             solver_instructions: { type: "string" },
@@ -1455,7 +1461,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             usdc_address: addressSchema(),
             reward_units: { type: "string" },
             deadline_seconds: { type: "integer", minimum: 0 },
-            dispute_window_hours: { type: "integer", minimum: 0 },
+            dispute_window_hours: {
+              type: "integer",
+              minimum: CHALLENGE_LIMITS.disputeWindowMinHours,
+            },
             minimum_score_wad: { type: "string" },
             distribution_type: { type: "integer", minimum: 0 },
             lab_tba: addressSchema(),

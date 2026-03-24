@@ -6,7 +6,7 @@ import {
   claimPayout,
   createChallenge,
   disputeChallenge,
-  getChallengePayoutByAddress,
+  getChallengeClaimableByAddress,
   getPublicClient,
   getWalletClient,
   parseChallengeCreatedReceipt,
@@ -903,7 +903,7 @@ async function runLifecycleScenario(input: {
     console.log("11. Public API projections aligned");
   }
 
-  const payoutBeforeClaim = await getChallengePayoutByAddress(
+  const payoutBeforeClaim = await getChallengeClaimableByAddress(
     challengeAddress,
     accountAddress,
   );
@@ -921,7 +921,7 @@ async function runLifecycleScenario(input: {
     txHash: claimTxHash,
   });
 
-  const payoutAfterClaim = await getChallengePayoutByAddress(
+  const payoutAfterClaim = await getChallengeClaimableByAddress(
     challengeAddress,
     accountAddress,
   );

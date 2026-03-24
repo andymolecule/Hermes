@@ -1,8 +1,9 @@
 import {
+  deriveChallengeFinalizeReadState,
   fetchValidatedChallengeSpec,
+  getChallengeClaimableByAddress,
   getChallengeContractVersion,
   getChallengeFinalizeState,
-  getChallengePayoutByAddress,
   getPublicClient,
 } from "@agora/chain";
 import {
@@ -49,7 +50,7 @@ function normalizeAddress(value: string | null | undefined) {
 
 async function readChallengeClaimableState(input: {
   contractAddress: `0x${string}`;
-  solverAddress?: `0x${string}`;
+  accountAddress?: `0x${string}`;
 }) {
   const publicClient = getPublicClient();
   const contractVersion = await getChallengeContractVersion(
@@ -75,22 +76,16 @@ async function readChallengeClaimableState(input: {
   const finalizeState = await getChallengeFinalizeState(input.contractAddress);
   const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
   const nowSeconds = latestBlock.timestamp;
-  const reviewEndsAtSeconds =
-    finalizeState.deadline + finalizeState.disputeWindowHours * 3600n;
-  const scoringGraceEndsAtSeconds =
-    finalizeState.deadline + finalizeState.scoringGracePeriod;
-  const allScored = finalizeState.scoredCount >= finalizeState.submissionCount;
-  const earliestFinalizeAtSeconds = allScored
-    ? reviewEndsAtSeconds
-    : reviewEndsAtSeconds > scoringGraceEndsAtSeconds
-      ? reviewEndsAtSeconds
-      : scoringGraceEndsAtSeconds;
+  const derivedState = deriveChallengeFinalizeReadState(
+    finalizeState,
+    nowSeconds,
+  );
 
   const timestamps = [
-    reviewEndsAtSeconds,
-    scoringGraceEndsAtSeconds,
-    earliestFinalizeAtSeconds,
-  ];
+    derivedState.reviewEndsAtSeconds,
+    derivedState.scoringGraceEndsAtSeconds,
+    derivedState.earliestFinalizeAtSeconds,
+  ].filter((value): value is bigint => value !== null);
   if (
     timestamps.some(
       (value) => value > BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1000)),
@@ -99,43 +94,15 @@ async function readChallengeClaimableState(input: {
     throw new Error("Finalization timestamp out of range.");
   }
 
-  const reviewEndsAt = new Date(
-    Number(reviewEndsAtSeconds) * 1000,
-  ).toISOString();
-  const scoringGraceEndsAt = new Date(
-    Number(scoringGraceEndsAtSeconds) * 1000,
-  ).toISOString();
-  const earliestFinalizeAt = new Date(
-    Number(earliestFinalizeAtSeconds) * 1000,
-  ).toISOString();
-
-  let canFinalize = false;
-  let finalizeBlockedReason: string | null = null;
-  if (finalizeState.status === CHALLENGE_STATUS.open) {
-    finalizeBlockedReason = "open";
-  } else if (finalizeState.status === CHALLENGE_STATUS.disputed) {
-    finalizeBlockedReason = "disputed";
-  } else if (finalizeState.status === CHALLENGE_STATUS.cancelled) {
-    finalizeBlockedReason = "cancelled";
-  } else if (finalizeState.status === CHALLENGE_STATUS.finalized) {
-    finalizeBlockedReason = "finalized";
-  } else if (nowSeconds <= reviewEndsAtSeconds) {
-    finalizeBlockedReason = "review_window_active";
-  } else if (!allScored && nowSeconds <= scoringGraceEndsAtSeconds) {
-    finalizeBlockedReason = "scoring_incomplete";
-  } else {
-    canFinalize = true;
-  }
+  const toIsoTimestamp = (value: bigint | null) =>
+    value === null ? null : new Date(Number(value) * 1000).toISOString();
 
   let claimable = "0";
-  if (
-    input.solverAddress &&
-    finalizeState.status === CHALLENGE_STATUS.finalized
-  ) {
+  if (input.accountAddress) {
     claimable = (
-      await getChallengePayoutByAddress(
+      await getChallengeClaimableByAddress(
         input.contractAddress,
-        input.solverAddress,
+        input.accountAddress,
       )
     ).toString();
   }
@@ -144,14 +111,16 @@ async function readChallengeClaimableState(input: {
     onChainStatus: finalizeState.status,
     contractVersion,
     supportedVersion,
-    reviewEndsAt,
-    scoringGraceEndsAt,
-    earliestFinalizeAt,
-    canFinalize,
-    finalizeBlockedReason,
+    reviewEndsAt: toIsoTimestamp(derivedState.reviewEndsAtSeconds),
+    scoringGraceEndsAt: toIsoTimestamp(derivedState.scoringGraceEndsAtSeconds),
+    earliestFinalizeAt: toIsoTimestamp(derivedState.earliestFinalizeAtSeconds),
+    canFinalize: derivedState.canFinalize,
+    finalizeBlockedReason: derivedState.finalizeBlockedReason,
     claimable,
     canClaim:
-      finalizeState.status === CHALLENGE_STATUS.finalized && claimable !== "0",
+      (finalizeState.status === CHALLENGE_STATUS.finalized ||
+        finalizeState.status === CHALLENGE_STATUS.cancelled) &&
+      claimable !== "0",
   };
 }
 
@@ -313,7 +282,7 @@ router.get("/by-address/:address/solver-status", async (c) => {
   try {
     claimableState = await readChallengeClaimableState({
       contractAddress: challenge.contract_address as `0x${string}`,
-      solverAddress,
+      accountAddress: solverAddress,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -475,7 +444,7 @@ router.get("/:id/solver-status", async (c) => {
   try {
     claimableState = await readChallengeClaimableState({
       contractAddress: challenge.contract_address as `0x${string}`,
-      solverAddress,
+      accountAddress: solverAddress,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -550,7 +519,7 @@ router.get("/:id/claimable", async (c) => {
   try {
     claimableState = await readChallengeClaimableState({
       contractAddress,
-      solverAddress: normalizeAddress(address),
+      accountAddress: normalizeAddress(address),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

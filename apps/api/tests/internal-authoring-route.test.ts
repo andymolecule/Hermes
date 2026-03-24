@@ -36,7 +36,7 @@ function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringS
     published_spec_cid: overrides.published_spec_cid ?? null,
     published_at: overrides.published_at ?? null,
     failure_message: overrides.failure_message ?? null,
-    expires_at: overrides.expires_at ?? "2026-03-24T00:00:00.000Z",
+    expires_at: overrides.expires_at ?? "2026-12-31T00:00:00.000Z",
     created_at: overrides.created_at ?? "2026-03-23T10:00:00.000Z",
     updated_at: overrides.updated_at ?? "2026-03-23T10:05:00.000Z",
   };

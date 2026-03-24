@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { authoringSourceSessionInputSchema } from "../schemas/authoring-source.js";
 import {
   challengeAuthoringIrSchema,
   submitAuthoringSessionRequestSchema,
 } from "../schemas/authoring-core.js";
+import { authoringSourceSessionInputSchema } from "../schemas/authoring-source.js";
 
 const baseIntent = {
   title: "Dock ligands against KRAS",
@@ -40,6 +40,21 @@ const validSubmitRequest = submitAuthoringSessionRequestSchema.parse({
 
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
 assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
+
+const tooShortDisputeWindow = submitAuthoringSessionRequestSchema.safeParse({
+  poster_address: "0x00000000000000000000000000000000000000aa",
+  intent: {
+    ...baseIntent,
+    dispute_window_hours: 24,
+  },
+  uploaded_artifacts: baseArtifacts,
+});
+
+assert.equal(
+  tooShortDisputeWindow.success,
+  false,
+  "authoring core should reject dispute windows below the protocol minimum",
+);
 
 const outOfRangeReward = submitAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",

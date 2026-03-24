@@ -6,7 +6,7 @@ import {
   assertSubmitChallengeResultAffordable,
   claimPayout,
   claimPayoutWithPrivateKey,
-  getChallengePayoutByAddress,
+  getChallengeClaimableByAddress,
   getOnChainSubmission,
   getPublicClient,
   getWalletClient,
@@ -498,7 +498,7 @@ export async function claimChallengePayout(input: {
     });
   }
 
-  const claimable = await getChallengePayoutByAddress(
+  const claimable = await getChallengeClaimableByAddress(
     target.challengeAddress,
     caller,
   );
@@ -506,7 +506,7 @@ export async function claimChallengePayout(input: {
     throw new AgoraError("No payout is currently claimable for this wallet.", {
       code: AGORA_ERROR_CODES.noClaimablePayout,
       nextAction:
-        "Confirm the challenge is finalized and that this solver placed in a paid position.",
+        "Confirm the challenge is finalized or cancelled and that this wallet has queued funds to claim.",
       details: {
         challengeAddress: target.challengeAddress,
         caller,

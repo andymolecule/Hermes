@@ -67,7 +67,7 @@ const sample = {
     distribution: "winner_take_all",
   },
   deadline: "2026-03-20T00:00:00Z",
-  dispute_window_hours: 0,
+  dispute_window_hours: 168,
 };
 
 const result = challengeSpecSchema.safeParse(sample);
@@ -75,6 +75,19 @@ assert.equal(result.success, true, "sample spec should validate");
 
 const chainValidated = validateChallengeSpec(sample, 84532);
 assert.equal(chainValidated.success, true, "chain validation should succeed");
+
+const tooShortDisputeWindow = validateChallengeSpec(
+  {
+    ...sample,
+    dispute_window_hours: 24,
+  },
+  84532,
+);
+assert.equal(
+  tooShortDisputeWindow.success,
+  false,
+  "chain validation should reject dispute windows below the on-chain minimum",
+);
 
 if (!result.success) {
   throw new Error("Expected sample spec to parse");

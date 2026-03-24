@@ -1,4 +1,4 @@
-import { CHAIN_IDS } from "./constants.js";
+import { CHAIN_IDS, CHALLENGE_LIMITS } from "./constants.js";
 
 /**
  * Dispute window validation policy.
@@ -8,7 +8,7 @@ import { CHAIN_IDS } from "./constants.js";
  */
 export function getDisputeWindowMinHours(chainId: number): number {
   void chainId;
-  return 0;
+  return CHALLENGE_LIMITS.disputeWindowMinHours;
 }
 
 export function isTestnetChain(chainId: number): boolean {

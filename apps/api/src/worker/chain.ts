@@ -1,4 +1,5 @@
 import {
+  deriveChallengeFinalizeReadState,
   finalizeChallenge,
   getChallengeFinalizeState,
   getChallengeLifecycleState,
@@ -60,27 +61,16 @@ export function resolveReconciledProofBundleCid(input: {
 
 export function shouldAttemptChallengeFinalize(
   lifecycle: {
-    deadline: bigint;
+    status: (typeof CHALLENGE_STATUS)[keyof typeof CHALLENGE_STATUS];
     disputeWindowHours: bigint;
+    scoringStartedAt: bigint;
     scoringGracePeriod: bigint;
     submissionCount: bigint;
     scoredCount: bigint;
   },
   nowSeconds: bigint,
 ) {
-  const disputeWindowEndsAt =
-    lifecycle.deadline + lifecycle.disputeWindowHours * 3600n;
-  if (nowSeconds <= disputeWindowEndsAt) {
-    return false;
-  }
-
-  const allScored = lifecycle.scoredCount >= lifecycle.submissionCount;
-  if (allScored) {
-    return true;
-  }
-
-  const scoringGraceEndsAt = lifecycle.deadline + lifecycle.scoringGracePeriod;
-  return nowSeconds > scoringGraceEndsAt;
+  return deriveChallengeFinalizeReadState(lifecycle, nowSeconds).canFinalize;
 }
 
 export async function reconcileScoredSubmission(

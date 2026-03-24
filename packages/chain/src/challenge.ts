@@ -353,6 +353,22 @@ export async function getChallengePayoutByAddress(
   });
 }
 
+export async function getChallengeClaimableByAddress(
+  challengeAddress: `0x${string}`,
+  accountAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<bigint> {
+  const publicClient = getPublicClient();
+  return readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "claimableByAddress",
+    args: [accountAddress],
+    blockNumber,
+  });
+}
+
 export async function getChallengePayoutsByAddress(
   challengeAddresses: readonly `0x${string}`[],
   solverAddress: `0x${string}`,
@@ -378,6 +394,35 @@ export async function getChallengePayoutsByAddress(
     challengeAddresses.map((challengeAddress, index) => [
       challengeAddress.toLowerCase(),
       payouts[index] as bigint,
+    ]),
+  );
+}
+
+export async function getChallengeClaimablesByAddress(
+  challengeAddresses: readonly `0x${string}`[],
+  accountAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<Record<string, bigint>> {
+  if (challengeAddresses.length === 0) {
+    return {};
+  }
+
+  const publicClient = getPublicClient();
+  const claimables = await publicClient.multicall({
+    allowFailure: false,
+    contracts: challengeAddresses.map((challengeAddress) => ({
+      address: challengeAddress,
+      abi: AgoraChallengeAbi,
+      functionName: "claimableByAddress",
+      args: [accountAddress],
+    })),
+    ...(blockNumber ? { blockNumber } : {}),
+  });
+
+  return Object.fromEntries(
+    challengeAddresses.map((challengeAddress, index) => [
+      challengeAddress.toLowerCase(),
+      claimables[index] as bigint,
     ]),
   );
 }
@@ -434,18 +479,30 @@ export async function getChallengeLifecycleState(
   };
 }
 
-export async function getChallengeFinalizeState(
-  challengeAddress: `0x${string}`,
-  blockNumber?: bigint,
-): Promise<{
+export type ChallengeFinalizeState = {
   contractVersion: number;
   status: ChallengeStatus;
   deadline: bigint;
   disputeWindowHours: bigint;
+  scoringStartedAt: bigint;
   scoringGracePeriod: bigint;
   submissionCount: bigint;
   scoredCount: bigint;
-}> {
+};
+
+export type ChallengeFinalizeReadState = {
+  reviewEndsAtSeconds: bigint | null;
+  scoringGraceEndsAtSeconds: bigint | null;
+  earliestFinalizeAtSeconds: bigint | null;
+  allScored: boolean;
+  canFinalize: boolean;
+  finalizeBlockedReason: string | null;
+};
+
+export async function getChallengeFinalizeState(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<ChallengeFinalizeState> {
   const publicClient = getPublicClient();
   const contractVersion = await getChallengeContractVersion(
     challengeAddress,
@@ -470,6 +527,13 @@ export async function getChallengeFinalizeState(
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "disputeWindowHours",
+    blockNumber,
+  });
+  const scoringStartedAt = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "scoringStartedAt",
     blockNumber,
   });
   const scoringGracePeriod = await readContractStrict<bigint>({
@@ -499,8 +563,120 @@ export async function getChallengeFinalizeState(
     status: decodeChallengeStatusValue(rawStatus),
     deadline,
     disputeWindowHours,
+    scoringStartedAt,
     scoringGracePeriod,
     submissionCount,
     scoredCount,
+  };
+}
+
+export function deriveChallengeFinalizeReadState(
+  finalizeState: Pick<
+    ChallengeFinalizeState,
+    | "status"
+    | "disputeWindowHours"
+    | "scoringStartedAt"
+    | "scoringGracePeriod"
+    | "submissionCount"
+    | "scoredCount"
+  >,
+  nowSeconds: bigint,
+): ChallengeFinalizeReadState {
+  const allScored = finalizeState.scoredCount >= finalizeState.submissionCount;
+  const scoringStartedAt =
+    finalizeState.scoringStartedAt > 0n ? finalizeState.scoringStartedAt : null;
+  const reviewEndsAtSeconds = scoringStartedAt
+    ? scoringStartedAt + finalizeState.disputeWindowHours * 3600n
+    : null;
+  const scoringGraceEndsAtSeconds = scoringStartedAt
+    ? scoringStartedAt + finalizeState.scoringGracePeriod
+    : null;
+  const earliestFinalizeAtSeconds =
+    reviewEndsAtSeconds == null || scoringGraceEndsAtSeconds == null
+      ? null
+      : allScored
+        ? reviewEndsAtSeconds
+        : reviewEndsAtSeconds > scoringGraceEndsAtSeconds
+          ? reviewEndsAtSeconds
+          : scoringGraceEndsAtSeconds;
+
+  if (finalizeState.status === CHALLENGE_STATUS.open) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "open",
+    };
+  }
+  if (finalizeState.status === CHALLENGE_STATUS.disputed) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "disputed",
+    };
+  }
+  if (finalizeState.status === CHALLENGE_STATUS.cancelled) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "cancelled",
+    };
+  }
+  if (finalizeState.status === CHALLENGE_STATUS.finalized) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "finalized",
+    };
+  }
+  if (reviewEndsAtSeconds == null || scoringGraceEndsAtSeconds == null) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "scoring_not_started",
+    };
+  }
+  if (nowSeconds <= reviewEndsAtSeconds) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "review_window_active",
+    };
+  }
+  if (!allScored && nowSeconds <= scoringGraceEndsAtSeconds) {
+    return {
+      reviewEndsAtSeconds,
+      scoringGraceEndsAtSeconds,
+      earliestFinalizeAtSeconds,
+      allScored,
+      canFinalize: false,
+      finalizeBlockedReason: "scoring_incomplete",
+    };
+  }
+
+  return {
+    reviewEndsAtSeconds,
+    scoringGraceEndsAtSeconds,
+    earliestFinalizeAtSeconds,
+    allScored,
+    canFinalize: true,
+    finalizeBlockedReason: null,
   };
 }

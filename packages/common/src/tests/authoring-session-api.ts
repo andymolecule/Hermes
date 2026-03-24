@@ -6,6 +6,7 @@ import {
   patchAuthoringSessionRequestSchema,
   registerAgentRequestSchema,
   registerAgentResponseSchema,
+  walletPublishPreparationSchema,
 } from "../index.js";
 
 const registerRequest = registerAgentRequestSchema.parse({
@@ -48,8 +49,8 @@ const session = authoringSessionSchema.parse({
   id: "session-123",
   state: "awaiting_input",
   creator: {
-      type: "agent",
-      agent_id: "agent-abc",
+    type: "agent",
+    agent_id: "agent-abc",
   },
   resolved: {
     intent: {
@@ -105,5 +106,24 @@ const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   },
 });
 assert.equal(errorEnvelope.error.code, "invalid_request");
+
+const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
+  spec_cid: "ipfs://bafybeiexample",
+  factory_address: "0x0000000000000000000000000000000000000001",
+  usdc_address: "0x0000000000000000000000000000000000000002",
+  reward_units: "1000000",
+  deadline_seconds: 1_900_000_000,
+  dispute_window_hours: 24,
+  minimum_score_wad: "0",
+  distribution_type: 0,
+  lab_tba: "0x0000000000000000000000000000000000000000",
+  max_submissions_total: 100,
+  max_submissions_per_solver: 3,
+});
+assert.equal(
+  invalidWalletPreparation.success,
+  false,
+  "wallet publish preparation should reject dispute windows below the protocol minimum",
+);
 
 console.log("authoring session API schemas passed");

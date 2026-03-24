@@ -1,4 +1,4 @@
-import { getChallengePayoutsByAddress } from "@agora/chain";
+import { getChallengeClaimablesByAddress } from "@agora/chain";
 import {
   createSupabaseClient,
   listChallengePayoutsBySolver,
@@ -12,7 +12,7 @@ import { normalizeSubmissionScore } from "./challenges-shared.js";
 
 type PortfolioRouteDeps = {
   createSupabaseClient: typeof createSupabaseClient;
-  getChallengePayoutsByAddress: typeof getChallengePayoutsByAddress;
+  getChallengeClaimablesByAddress: typeof getChallengeClaimablesByAddress;
   listChallengePayoutsBySolver: typeof listChallengePayoutsBySolver;
   listSubmissionsBySolver: typeof listSubmissionsBySolver;
   requireSiweSession: MiddlewareHandler<ApiEnv>;
@@ -71,7 +71,7 @@ function aggregatePayoutRowsByChallenge(payoutRows: SolverPayoutRow[]) {
 
 const defaultDeps: PortfolioRouteDeps = {
   createSupabaseClient,
-  getChallengePayoutsByAddress,
+  getChallengeClaimablesByAddress,
   listChallengePayoutsBySolver,
   listSubmissionsBySolver,
   requireSiweSession,
@@ -135,7 +135,7 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
       }
     }
 
-    const payoutByAddress = await deps.getChallengePayoutsByAddress(
+    const claimableByAddress = await deps.getChallengeClaimablesByAddress(
       Array.from(new Set(challengeContracts.values())),
       address as `0x${string}`,
     );
@@ -143,7 +143,7 @@ export function createPortfolioRouter(deps: PortfolioRouteDeps = defaultDeps) {
     for (const challengeId of new Set(submissions.map((s) => s.challenge_id))) {
       const contractAddress = challengeContracts.get(challengeId);
       claimableAmounts[challengeId] = contractAddress
-        ? (payoutByAddress[contractAddress.toLowerCase()] ?? 0n).toString()
+        ? (claimableByAddress[contractAddress.toLowerCase()] ?? 0n).toString()
         : "0";
     }
 

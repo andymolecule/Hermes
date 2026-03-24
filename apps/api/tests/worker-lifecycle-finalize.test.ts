@@ -9,13 +9,14 @@ import {
 test("does not finalize before scoring is complete or grace expires", () => {
   const shouldFinalize = shouldAttemptChallengeFinalize(
     {
-      deadline: 1_000n,
+      status: CHALLENGE_STATUS.scoring,
       disputeWindowHours: 1n,
+      scoringStartedAt: 5_000n,
       scoringGracePeriod: 7_200n,
       submissionCount: 2n,
       scoredCount: 1n,
     },
-    1_000n + 3_700n,
+    5_000n + 3_700n,
   );
 
   assert.equal(shouldFinalize, false);
@@ -24,13 +25,14 @@ test("does not finalize before scoring is complete or grace expires", () => {
 test("finalizes after dispute window when all submissions are scored", () => {
   const shouldFinalize = shouldAttemptChallengeFinalize(
     {
-      deadline: 1_000n,
+      status: CHALLENGE_STATUS.scoring,
       disputeWindowHours: 1n,
+      scoringStartedAt: 5_000n,
       scoringGracePeriod: 7_200n,
       submissionCount: 2n,
       scoredCount: 2n,
     },
-    1_000n + 3_700n,
+    5_000n + 3_700n,
   );
 
   assert.equal(shouldFinalize, true);
@@ -39,16 +41,33 @@ test("finalizes after dispute window when all submissions are scored", () => {
 test("finalizes after scoring grace even when some submissions remain unscored", () => {
   const shouldFinalize = shouldAttemptChallengeFinalize(
     {
-      deadline: 1_000n,
+      status: CHALLENGE_STATUS.scoring,
       disputeWindowHours: 1n,
+      scoringStartedAt: 5_000n,
       scoringGracePeriod: 7_200n,
       submissionCount: 2n,
       scoredCount: 1n,
     },
-    1_000n + 7_201n,
+    5_000n + 7_201n,
   );
 
   assert.equal(shouldFinalize, true);
+});
+
+test("does not finalize before the dispute window measured from scoring start", () => {
+  const shouldFinalize = shouldAttemptChallengeFinalize(
+    {
+      status: CHALLENGE_STATUS.scoring,
+      disputeWindowHours: 168n,
+      scoringStartedAt: 10_000n,
+      scoringGracePeriod: 7_200n,
+      submissionCount: 1n,
+      scoredCount: 1n,
+    },
+    10_000n + 168n * 3_600n,
+  );
+
+  assert.equal(shouldFinalize, false);
 });
 
 test("lifecycle sweep finalizes once protocol rules allow it", async () => {
@@ -90,8 +109,11 @@ test("lifecycle sweep finalizes once protocol rules allow it", async () => {
       disputeWindowHours: 1n,
     }),
     getChallengeFinalizeState: async () => ({
+      contractVersion: 2,
+      status: CHALLENGE_STATUS.scoring,
       deadline: 1_000n,
       disputeWindowHours: 1n,
+      scoringStartedAt: 1_000n,
       scoringGracePeriod: 7_200n,
       submissionCount: 2n,
       scoredCount: 1n,

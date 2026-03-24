@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
 import {
-  authoringSourceSessionFieldsSchema,
   authoringSourceRawContextSchema,
+  authoringSourceSessionFieldsSchema,
   externalSourceArtifactRefSchema,
   externalSourceMessageSchema,
   externalSourceProviderSchema,
@@ -198,7 +198,11 @@ export const challengeIntentSchema = z.object({
     }, `reward_total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
   distribution: distributionSchema.default("winner_take_all"),
   deadline: z.string().datetime({ offset: true }),
-  dispute_window_hours: z.number().int().nonnegative().optional(),
+  dispute_window_hours: z
+    .number()
+    .int()
+    .min(CHALLENGE_LIMITS.disputeWindowMinHours)
+    .optional(),
   domain: z
     .string()
     .trim()
