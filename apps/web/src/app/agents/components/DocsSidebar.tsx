@@ -141,10 +141,10 @@ function SidebarNav({
                 <button
                   type="button"
                   onClick={() => onNavigate(item.id)}
-                  className={`block w-full text-left text-[13px] font-medium rounded-[2px] px-3 py-2 border transition-all ${
+                  className={`block w-full text-left text-[13px] font-medium rounded-lg px-3 py-2 border transition-all ${
                     activeId === item.id
-                      ? "border-warm-900/10 bg-warm-50 text-warm-900 shadow-[0_1px_2px_rgba(17,21,25,0.04)]"
-                      : "border-transparent text-warm-600 hover:text-warm-900 hover:bg-white/70 hover:border-warm-900/10"
+                      ? "border-transparent bg-[var(--surface-container-low)] text-[var(--text-primary)] shadow-[0_1px_2px_rgba(17,21,25,0.04)]"
+                      : "border-transparent text-warm-600 hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-lowest)]"
                   }`}
                   aria-current={activeId === item.id ? "location" : undefined}
                 >
@@ -191,21 +191,21 @@ export function MobileSidebarPanel() {
   };
 
   return (
-    <div className="lg:hidden border border-warm-900/15 rounded-[2px] mb-8">
+    <div className="lg:hidden bg-[var(--surface-container-lowest)] rounded-lg mb-8">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-4 py-3 bg-warm-50 hover:bg-warm-100 transition-colors text-left"
       >
-        <span className="text-sm font-semibold text-warm-900">
+        <span className="text-sm font-semibold text-[var(--text-primary)]">
           On this page
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-warm-900/40 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
       {open && (
-        <div className="px-4 py-4 border-t border-warm-900/10 bg-white">
+        <div className="px-4 py-4 border-t border-[var(--ghost-border)] bg-white">
           <SidebarNav activeId={activeId} onNavigate={handleNavigate} />
         </div>
       )}

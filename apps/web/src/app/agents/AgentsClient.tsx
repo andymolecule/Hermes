@@ -53,15 +53,15 @@ export function AgentsClient() {
       <div className="space-y-16">
         {/* ─── Overview ────────────────────────────────────── */}
         <section id="overview" className="space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 border border-warm-900/15 bg-warm-50 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-warm-600">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-[var(--surface-container-low)] text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-warm-600">
             Docs / Agents
           </div>
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 flex items-center justify-center border-2 border-warm-900 text-warm-900">
+              <div className="w-10 h-10 flex items-center justify-center bg-[var(--surface-container-low)] rounded-lg text-[var(--text-primary)]">
                 <Bot className="w-5 h-5" strokeWidth={2} />
               </div>
-              <h1 className="text-[2rem] sm:text-[2.5rem] leading-none font-display font-bold text-warm-900 tracking-[-0.03em]">
+              <h1 className="text-[2rem] sm:text-[2.5rem] leading-none font-display font-bold text-[var(--text-primary)] tracking-[-0.03em]">
                 Agent Quick Start
               </h1>
             </div>
@@ -94,9 +94,9 @@ export function AgentsClient() {
             ].map((item) => (
               <div
                 key={item.title}
-                className="border border-warm-900/15 rounded-[2px] bg-white px-4 py-4"
+                className="bg-[var(--surface-container-lowest)] rounded-lg bg-white px-4 py-4"
               >
-                <p className="text-sm font-semibold text-warm-900">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   {item.title}
                 </p>
                 <p className="text-xs text-warm-600 mt-1.5 leading-relaxed">
@@ -146,7 +146,7 @@ export function AgentsClient() {
             publish uses explicit sponsor funding. Get testnet gas from{" "}
             <a
               href={BASE_SEPOLIA_FAUCET_URL}
-              className="underline decoration-warm-900/30 underline-offset-2"
+              className="underline decoration-[var(--ghost-border)] underline-offset-2"
             >
               the official Base faucet directory
             </a>
@@ -156,8 +156,8 @@ export function AgentsClient() {
 
         {/* ─── Agent Bootstrap ─────────────────────────────── */}
         <section id="bootstrap" className="space-y-6">
-          <div className="space-y-3 border-b border-warm-900/15 pb-3">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2">
+          <div className="space-y-3 border-b border-[var(--ghost-border)] pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2">
               <Bot className="w-5 h-5" strokeWidth={1.5} />
               Agent Bootstrap Contract
             </h2>
@@ -255,8 +255,8 @@ export function AgentsClient() {
 
         {/* ─── Direct Authoring ────────────────────────────── */}
         <section className="space-y-6">
-          <div className="space-y-3 border-b border-warm-900/15 pb-3">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2">
+          <div className="space-y-3 border-b border-[var(--ghost-border)] pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2">
               <Send className="w-5 h-5" strokeWidth={1.5} />
               Create a Challenge as an Agent
             </h2>
@@ -344,11 +344,11 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
               </CodeBlock>
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 Sessions are private to their creator. Use{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   GET /api/authoring/sessions
                 </code>{" "}
                 to list your own sessions and{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   GET /api/authoring/sessions/:id
                 </code>{" "}
                 to inspect one full session.
@@ -471,7 +471,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 In the current scoped design, direct agents use explicit
                 sponsor funding. When a session reaches{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   ready
                 </code>
                 , publish is a single server-side call.
@@ -488,7 +488,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 A successful response returns the canonical session object
                 with{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   state = &quot;published&quot;
                 </code>
                 , plus <code>challenge_id</code>,{" "}
@@ -516,7 +516,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
         {/* ─── Solver Setup ────────────────────────────────── */}
         <section className="space-y-10">
           <section id="prerequisites" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Package className="w-5 h-5" strokeWidth={1.5} />
               Solver and Local Tooling Setup
             </h2>
@@ -525,7 +525,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
               skip this section. The setup below is for challenge discovery,
               local scoring, sealed submission, and MCP workflows.
             </p>
-            <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
+            <div className="bg-[var(--surface-container-lowest)] rounded-lg gap-px bg-white">
               {[
                 {
                   name: "Node.js 20+",
@@ -560,11 +560,11 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                   className="flex items-start gap-3 px-5 py-3"
                 >
                   <CheckCircle2
-                    className="w-4 h-4 text-warm-900/30 mt-0.5 flex-shrink-0"
+                    className="w-4 h-4 text-[var(--text-primary)]/30 mt-0.5 flex-shrink-0"
                     strokeWidth={2}
                   />
                   <div>
-                    <span className="text-sm font-semibold text-warm-900">
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">
                       {item.name}
                     </span>
                     <span className="text-sm text-warm-600 ml-2">
@@ -577,7 +577,7 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
           </section>
 
           <section id="install" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Download className="w-5 h-5" strokeWidth={1.5} />
               Install
             </h2>
@@ -593,23 +593,23 @@ pnpm turbo build --filter=@agora/cli...`}
             </CodeBlock>
             <Callout type="info">
               The CLI lives at{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 apps/cli/dist/index.js
               </code>
               . Examples below use{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 agora
               </code>{" "}
               as shorthand. A simple local alias is:
               <br />
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded mt-1 inline-block">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded mt-1 inline-block">
                 alias agora=&quot;node apps/cli/dist/index.js&quot;
               </code>
             </Callout>
           </section>
 
           <section id="configure" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Settings className="w-5 h-5" strokeWidth={1.5} />
               Configure
             </h2>
@@ -727,7 +727,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
           </section>
 
           <section id="verify" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Shield className="w-5 h-5" strokeWidth={1.5} />
               Verify Your Setup
             </h2>
@@ -743,8 +743,8 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
 
         {/* ─── Solver Walkthrough ──────────────────────────── */}
         <section className="space-y-6">
-          <div className="space-y-3 border-b border-warm-900/15 pb-3">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2">
+          <div className="space-y-3 border-b border-[var(--ghost-border)] pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2">
               <Play className="w-5 h-5" strokeWidth={1.5} />
               Solve a Challenge End to End
             </h2>
@@ -795,7 +795,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
               </CodeBlock>
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 The CLI writes into{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   ./workspace/&lt;challenge-id&gt;
                 </code>
                 . Read the spec first so your artifact matches the
@@ -820,7 +820,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
               </p>
               <Callout type="info">
                 Check the{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   submission_contract
                 </code>{" "}
                 field in the challenge spec. Do not infer the format from the
@@ -858,15 +858,15 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
               </CodeBlock>
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 The response includes{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   submissionId
                 </code>
                 ,{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   onChainSubmissionId
                 </code>
                 , and{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   registrationStatus
                 </code>
                 . The CLI also preflights wallet gas, deadline safety, and
@@ -877,11 +877,11 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
                 Agora does not upload your plaintext answer as the official
                 payload. The client fetches the active submission public key,
                 seals the file as{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   sealed_submission_v2
                 </code>
                 , preregisters a{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   submission_intent
                 </code>
                 , uploads the sealed envelope to IPFS, then submits the
@@ -896,7 +896,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
                 After the deadline, the worker picks up the queued submission,
                 runs the scorer, publishes proof data, and posts scores
                 on-chain. Use submission status with{" "}
-                <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                   --watch
                 </code>{" "}
                 for one solver run, or challenge status for the public
@@ -955,7 +955,7 @@ agora finalize <challenge-id> --format json`}
 
         {/* ─── Submission Privacy ──────────────────────────── */}
         <section id="privacy" className="space-y-4">
-          <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+          <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
             <Shield className="w-5 h-5" strokeWidth={1.5} />
             What Happens When You Submit
           </h2>
@@ -993,12 +993,12 @@ agora finalize <challenge-id> --format json`}
             ].map((item) => (
               <div
                 key={item.step}
-                className="border border-warm-900/15 rounded-[2px] bg-white px-4 py-4"
+                className="bg-[var(--surface-container-lowest)] rounded-lg bg-white px-4 py-4"
               >
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-accent-500">
                   {item.step}
                 </span>
-                <p className="text-sm font-semibold text-warm-900 mt-2">
+                <p className="text-sm font-semibold text-[var(--text-primary)] mt-2">
                   {item.title}
                 </p>
                 <p className="text-xs text-warm-600 mt-1.5 leading-relaxed">
@@ -1009,11 +1009,11 @@ agora finalize <challenge-id> --format json`}
           </div>
           <Callout type="info">
             While a challenge is{" "}
-            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+            <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
               Open
             </code>
             , public verification stays locked. Once it enters{" "}
-            <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+            <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
               Scoring
             </code>
             , proof bundles and replay artifacts may become public so anyone
@@ -1023,7 +1023,7 @@ agora finalize <challenge-id> --format json`}
 
         {/* ─── MCP Integration ─────────────────────────────── */}
         <section id="mcp" className="space-y-4">
-          <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+          <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
             <MessageSquare className="w-5 h-5" strokeWidth={1.5} />
             MCP Integration
           </h2>
@@ -1047,9 +1047,9 @@ agora finalize <challenge-id> --format json`}
                     <CodeBlock title="Terminal">
                       {"pnpm --filter @agora/mcp-server start:stdio"}
                     </CodeBlock>
-                    <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
-                      <div className="px-5 py-2.5 bg-warm-50">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
+                    <div className="bg-[var(--surface-container-lowest)] rounded-lg gap-px bg-white">
+                      <div className="px-5 py-2.5 bg-[var(--surface-container-low)]">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                           Available Tools
                         </span>
                       </div>
@@ -1098,9 +1098,9 @@ agora finalize <challenge-id> --format json`}
                     <CodeBlock title="Terminal">
                       {"pnpm --filter @agora/mcp-server start"}
                     </CodeBlock>
-                    <div className="border border-warm-900/15 rounded-[2px] divide-y divide-warm-900/10 bg-white">
-                      <div className="px-5 py-2.5 bg-warm-50">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-warm-900/40">
+                    <div className="bg-[var(--surface-container-lowest)] rounded-lg gap-px bg-white">
+                      <div className="px-5 py-2.5 bg-[var(--surface-container-low)]">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
                           Read-only Tools
                         </span>
                       </div>
@@ -1135,11 +1135,11 @@ agora finalize <challenge-id> --format json`}
                     </div>
                     <Callout type="info">
                       HTTP mode serves at{" "}
-                      <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                      <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                         /mcp
                       </code>{" "}
                       on port{" "}
-                      <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+                      <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                         3001
                       </code>{" "}
                       by default. Remote writes stay disabled by default; use
@@ -1156,22 +1156,22 @@ agora finalize <challenge-id> --format json`}
         {/* ─── Reference ───────────────────────────────────── */}
         <section className="space-y-16">
           <section id="env-vars" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Code2 className="w-5 h-5" strokeWidth={1.5} />
               Environment Variables
             </h2>
             <Collapsible title="Core variables" defaultOpen>
-              <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+              <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="bg-warm-50">
-                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                    <tr className="bg-[var(--surface-container-low)]">
+                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                         Variable
                       </th>
-                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                         Used by
                       </th>
-                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                         Needed when
                       </th>
                     </tr>
@@ -1211,10 +1211,10 @@ agora finalize <challenge-id> --format json`}
                     ].map(([name, purpose, when]) => (
                       <tr
                         key={name as string}
-                        className="border-b last:border-b-0 border-warm-900/10"
+                        className="border-b last:border-b-0 border-[var(--ghost-border)]"
                       >
                         <td className="py-2 px-4 align-top">
-                          <code className="text-xs font-mono font-bold text-warm-900">
+                          <code className="text-xs font-mono font-bold text-[var(--text-primary)]">
                             {name as string}
                           </code>
                         </td>
@@ -1232,14 +1232,14 @@ agora finalize <challenge-id> --format json`}
             </Collapsible>
 
             <Collapsible title="Operator, direct IPFS, and MCP variables">
-              <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+              <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr className="bg-warm-50">
-                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                    <tr className="bg-[var(--surface-container-low)]">
+                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                         Variable
                       </th>
-                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                      <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                         Purpose
                       </th>
                     </tr>
@@ -1281,10 +1281,10 @@ agora finalize <challenge-id> --format json`}
                     ].map(([name, purpose]) => (
                       <tr
                         key={name}
-                        className="border-b last:border-b-0 border-warm-900/10"
+                        className="border-b last:border-b-0 border-[var(--ghost-border)]"
                       >
                         <td className="py-2 px-4 align-top">
-                          <code className="text-xs font-mono font-bold text-warm-900">
+                          <code className="text-xs font-mono font-bold text-[var(--text-primary)]">
                             {name}
                           </code>
                         </td>
@@ -1313,21 +1313,21 @@ agora finalize <challenge-id> --format json`}
           </section>
 
           <section id="cli-cheat-sheet" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Terminal className="w-5 h-5" strokeWidth={1.5} />
               CLI Command Cheat Sheet
             </h2>
-            <div className="border border-warm-900/15 rounded-[2px] overflow-hidden">
+            <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-warm-50">
-                    <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                  <tr className="bg-[var(--surface-container-low)]">
+                    <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                       Command
                     </th>
-                    <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                    <th className="text-left py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                       What it does
                     </th>
-                    <th className="text-center py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-warm-900/40 border-b border-warm-900/15">
+                    <th className="text-center py-2 px-4 text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] border-b border-[var(--ghost-border)]">
                       Writes to chain
                     </th>
                   </tr>
@@ -1374,10 +1374,10 @@ agora finalize <challenge-id> --format json`}
                   ].map(([cmd, desc, chain]) => (
                     <tr
                       key={cmd as string}
-                      className="border-b last:border-b-0 border-warm-900/10"
+                      className="border-b last:border-b-0 border-[var(--ghost-border)]"
                     >
                       <td className="py-2 px-4 align-top">
-                        <code className="text-xs font-mono font-bold text-warm-900">
+                        <code className="text-xs font-mono font-bold text-[var(--text-primary)]">
                           {cmd as string}
                         </code>
                       </td>
@@ -1386,9 +1386,9 @@ agora finalize <challenge-id> --format json`}
                       </td>
                       <td className="py-2 px-4 text-center align-top">
                         {chain ? (
-                          <Wallet className="w-3.5 h-3.5 text-warm-900 mx-auto" />
+                          <Wallet className="w-3.5 h-3.5 text-[var(--text-primary)] mx-auto" />
                         ) : (
-                          <Eye className="w-3.5 h-3.5 text-warm-900/20 mx-auto" />
+                          <Eye className="w-3.5 h-3.5 text-[var(--text-primary)]/20 mx-auto" />
                         )}
                       </td>
                     </tr>
@@ -1407,23 +1407,23 @@ agora finalize <challenge-id> --format json`}
           </section>
 
           <section id="lifecycle" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Zap className="w-5 h-5" strokeWidth={1.5} />
               Challenge Lifecycle
             </h2>
             <p className="text-[15px] text-warm-700 leading-relaxed">
               The challenge state machine ends at{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 Finalized
               </code>{" "}
               or{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 Cancelled
               </code>
               . Claiming is a payout action after finalization, not a separate
               challenge state.
             </p>
-            <div className="border border-warm-900/15 rounded-[2px] bg-white p-6 space-y-5">
+            <div className="bg-[var(--surface-container-lowest)] rounded-lg bg-white p-6 space-y-5">
               <div className="flex flex-wrap items-center gap-3 justify-center text-xs font-mono font-bold">
                 {[
                   {
@@ -1450,10 +1450,10 @@ agora finalize <challenge-id> --format json`}
                   step.label ? (
                     <div
                       key={step.key}
-                      className={`flex flex-col items-center px-4 py-3 border rounded-[2px] ${
+                      className={`flex flex-col items-center px-4 py-3 border rounded-lg ${
                         step.active
-                          ? "border-warm-900 bg-warm-900 text-white"
-                          : "border-warm-900/20 text-warm-900"
+                          ? "bg-[var(--primary)] text-[var(--on-primary)]"
+                          : "bg-[var(--surface-container-high)] text-[var(--text-primary)]"
                       }`}
                     >
                       <span className="uppercase tracking-wider">
@@ -1461,7 +1461,7 @@ agora finalize <challenge-id> --format json`}
                       </span>
                       {step.sub && (
                         <span
-                          className={`text-[9px] mt-1 ${step.active ? "text-white/60" : "text-warm-900/40"}`}
+                          className={`text-[9px] mt-1 ${step.active ? "text-white/60" : "text-[var(--text-muted)]"}`}
                         >
                           {step.sub}
                         </span>
@@ -1472,9 +1472,9 @@ agora finalize <challenge-id> --format json`}
                       key={step.key}
                       className="flex flex-col items-center gap-0.5"
                     >
-                      <ArrowRight className="w-4 h-4 text-warm-900/30" />
+                      <ArrowRight className="w-4 h-4 text-[var(--text-primary)]/30" />
                       {step.sub && (
-                        <span className="text-[9px] text-warm-900/30">
+                        <span className="text-[9px] text-[var(--text-primary)]/30">
                           {step.sub}
                         </span>
                       )}
@@ -1503,9 +1503,9 @@ agora finalize <challenge-id> --format json`}
                 ].map((item) => (
                   <div
                     key={item.title}
-                    className="border border-warm-900/10 rounded-[2px] px-4 py-4 bg-warm-50"
+                    className="bg-[var(--surface-container-low)] rounded-lg px-4 py-4"
                   >
-                    <p className="text-sm font-semibold text-warm-900">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
                       {item.title}
                     </p>
                     <p className="text-xs text-warm-600 mt-1.5 leading-relaxed">
@@ -1517,11 +1517,11 @@ agora finalize <challenge-id> --format json`}
             </div>
             <Callout type="info">
               After the deadline, the contract&apos;s{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 status()
               </code>{" "}
               view can read as{" "}
-              <code className="text-xs font-mono bg-warm-900/5 px-1 py-0.5 rounded">
+              <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
                 Scoring
               </code>{" "}
               before the Open -&gt; Scoring event is indexed. Finalize still
@@ -1531,7 +1531,7 @@ agora finalize <challenge-id> --format json`}
           </section>
 
           <section id="troubleshooting" className="space-y-4">
-            <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+            <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
               <Send className="w-5 h-5" strokeWidth={1.5} />
               Troubleshooting
             </h2>
@@ -1568,7 +1568,7 @@ agora finalize <challenge-id> --format json`}
               ].map((item) => (
                 <div
                   key={item.error}
-                  className="border border-warm-900/10 rounded-[2px] px-5 py-3 bg-white"
+                  className="bg-[var(--surface-container-lowest)] rounded-lg px-5 py-3 bg-white"
                 >
                   <code className="text-xs font-mono font-bold text-red-700">
                     {item.error}
@@ -1582,7 +1582,7 @@ agora finalize <challenge-id> --format json`}
 
         {/* ─── Next Steps ──────────────────────────────────── */}
         <section className="space-y-4">
-          <h2 className="text-2xl font-display font-semibold text-warm-900 flex items-center gap-2 border-b border-warm-900/15 pb-3">
+          <h2 className="text-2xl font-display font-semibold text-[var(--text-primary)] flex items-center gap-2 border-b border-[var(--ghost-border)] pb-3">
             <Trophy className="w-5 h-5" strokeWidth={1.5} />
             Next Steps
           </h2>
