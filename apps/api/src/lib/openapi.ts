@@ -1058,6 +1058,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                     "invalid_request",
                     "session_expired",
                     "unsupported_task",
+                    "TX_REVERTED",
                   ],
                 },
                 message: { type: "string" },
@@ -1072,6 +1073,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                     "expired",
                   ],
                   nullable: true,
+                },
+                details: {
+                  type: "object",
+                  additionalProperties: true,
                 },
               },
               required: ["code", "message", "next_action"],

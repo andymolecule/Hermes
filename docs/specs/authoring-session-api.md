@@ -275,7 +275,7 @@ Public names in this table are permanent. Internal names can change freely.
 26. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
 27. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
 28. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
-29. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` and should include decoded revert details such as `revertErrorName` and `revertReason` in the generic error `details` payload when the underlying viem error exposes them.
+29. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` in the canonical authoring error envelope and should include decoded revert details such as `revertErrorName` and `revertReason` in the optional `error.details` payload when the underlying viem error exposes them.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
@@ -607,7 +607,7 @@ Locked rule:
 | Caller tries to `GET`, `PATCH`, or `publish` another principal's session | Return `404 not_found`. Do not reveal whether the session exists. |
 | Dry-run fails after all required fields are supplied | State stays `awaiting_input` with a concrete `validation.dry_run_failure`. Caller may need to change a field, mapping, or artifact. |
 | Publish called when state is not `ready` | Reject with current state and what's still needed. |
-| Sponsor-funded publish passes `ready` but factory simulation or tx broadcast reverts | Return `TX_REVERTED` with a sponsor-create-specific `next_action` and decoded revert details in `details` when viem exposes them. |
+| Sponsor-funded publish passes `ready` but factory simulation or tx broadcast reverts | Return `TX_REVERTED` in the canonical authoring error envelope, with a sponsor-create-specific `next_action` and decoded revert details in optional `error.details` when viem exposes them. |
 
 ### 1.14 Response Transparency
 
@@ -742,7 +742,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q27 | What shape should `checklist` have when a session is ready? | Determines whether publish confirmation is typed/stable or a loose list | Prefer a structured object with named confirmation fields | `LOCKED: checklist is a structured object with named confirmation fields, not a generic array` |
 | Q28 | Should `compilation` always exist in the canonical session shape? | Determines whether the session object is structurally stable across states | Prefer always-present nullable fields | `LOCKED: compilation is always present in the canonical session shape and is null until there is a compile outcome to expose` |
 | Q29 | Should all canonical session fields always exist, even when not yet applicable? | Determines whether clients can rely on one flat stable type instead of conditional field presence | Prefer all fields always present | `LOCKED: all canonical session fields always exist; arrays default to []; objects/scalars default to null` |
-| Q30 | What shape should error responses have? | Determines whether failure handling is consistent and machine-readable across the contract | Prefer one structured error envelope | `LOCKED: one structured error envelope everywhere with code, message, next_action, and relevant context such as state when applicable` |
+| Q30 | What shape should error responses have? | Determines whether failure handling is consistent and machine-readable across the contract | Prefer one structured error envelope | `LOCKED: one structured error envelope everywhere with code, message, next_action, optional details, and relevant context such as state when applicable` |
 | Q31 | Should `created` remain in the public state enum? | Determines whether callers must handle a transient state they should almost never see | Prefer internal-only if create/patch are synchronous best-effort | `LOCKED: created is internal-only and not part of the public state enum` |
 | Q32 | What should each public validation issue contain? | Determines whether callers can remediate blockers without heuristically parsing prose | Prefer typed validation issues | `LOCKED: each validation issue includes field, code, message, next_action, blocking_layer, and candidate_values. The default contract has no public question objects` |
 | Q33 | What shape should updates use in `PATCH /sessions/:id`? | Determines whether Agora can validate updates immediately at the boundary instead of inferring which conversational turn was intended | Prefer typed structured patches | `LOCKED: patch includes intent?, execution?, and files?; at least one must be present. There is no answers collection in the default contract` |
@@ -775,7 +775,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
 | Q61 | What is the bundled public compilation contract? | Defines the full solver-facing compilation object boundary so callers do not have to guess what is public versus hidden | Prefer one explicit transparency object with hidden evaluation data excluded | `LOCKED: compilation is the full public scoring/submission contract and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_contract, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. Hidden evaluation/reference data contents stay out of the public contract` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
-| Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, or unsupported_task. Specific details belong in message and next_action, not in a larger enum` |
+| Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, unsupported_task, or TX_REVERTED. Sponsor publish reverts use TX_REVERTED; specific diagnostics belong in error.details rather than a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/patch/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
 | Q65 | What is the shared normalized artifact schema? | Prevents upload responses and session artifacts from drifting into different shapes and keeps artifact classification semantics explicit | Prefer one stable artifact object with nullable role until classified | `LOCKED: the normalized artifact object contains exactly artifact_id, uri, file_name, role, and source_url. role is null until Agora classifies the artifact during session processing, and the same object shape is used in upload responses and session responses` |
 | Q66 | What is the exact bundled agent registration contract? | Prevents agent onboarding and key rotation from drifting across partial auth decisions and removes ambiguity about optional metadata at the registration boundary | Prefer one minimal required field with optional profile metadata | `LOCKED: POST /api/agents/register accepts telegram_bot_id as the only required field and may also accept optional agent_name and description. It returns exactly agent_id, api_key, and status, where status is created or rotated. The response shape is the same whether optional metadata is provided or not` |
@@ -815,6 +815,7 @@ const ErrorCodeSchema = z.enum([
   "invalid_request",
   "session_expired",
   "unsupported_task",
+  "TX_REVERTED",
 ]);
 
 // Imported from the shared authoring core schema module.
@@ -1026,6 +1027,7 @@ const ErrorEnvelopeSchema = z.object({
     message: z.string().min(1),
     next_action: z.string().min(1),
     state: PublicSessionStateSchema.optional(),
+    details: z.record(z.unknown()).optional(),
   }),
 });
 ```

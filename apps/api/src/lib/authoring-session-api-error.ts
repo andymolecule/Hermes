@@ -13,6 +13,7 @@ export function jsonAuthoringSessionApiError<E extends Env>(
     message: string;
     nextAction: string;
     state?: AuthoringSessionPublicStateOutput;
+    details?: Record<string, unknown>;
   },
 ) {
   return c.json(
@@ -22,6 +23,7 @@ export function jsonAuthoringSessionApiError<E extends Env>(
         message: input.message,
         next_action: input.nextAction,
         ...(input.state ? { state: input.state } : {}),
+        ...(input.details ? { details: input.details } : {}),
       },
     },
     input.status,

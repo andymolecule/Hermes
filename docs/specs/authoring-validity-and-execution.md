@@ -247,7 +247,9 @@ Hard rules for recoverable execution issues:
   than authoring-state dependent
 - if that live sponsor publish simulation or the later broadcast reverts,
   Agora should preserve decoded revert diagnostics such as the contract error
-  name or revert reason when the underlying viem error exposes them
+  name or revert reason when the underlying viem error exposes them, and return
+  them in the canonical authoring error envelope's optional `error.details`
+  payload rather than leaking them only through a generic API error shape
 
 Examples that may become `rejected`:
 

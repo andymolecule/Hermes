@@ -128,12 +128,24 @@ assert.equal(session.creator.type, "agent");
 
 const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   error: {
-    code: "invalid_request",
-    message: "Provide at least one of intent, execution, or files.",
-    next_action: "Fix the request body and retry.",
+    code: "TX_REVERTED",
+    message:
+      "Authoring sponsor challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
+    next_action:
+      "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+    details: {
+      funding: "sponsor",
+      phase: "simulate",
+      operation: "createChallenge",
+      revertErrorName: "InvalidSubmissionLimits",
+    },
   },
 });
-assert.equal(errorEnvelope.error.code, "invalid_request");
+assert.equal(errorEnvelope.error.code, "TX_REVERTED");
+assert.equal(
+  errorEnvelope.error.details?.revertErrorName,
+  "InvalidSubmissionLimits",
+);
 
 const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
   spec_cid: "ipfs://bafybeiexample",

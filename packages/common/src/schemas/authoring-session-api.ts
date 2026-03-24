@@ -14,13 +14,20 @@ export const authoringSessionPublicStateSchema = z.enum([
 
 export const authoringSessionFundingSchema = z.enum(["wallet", "sponsor"]);
 export const authoringSessionObjectiveSchema = z.enum(["maximize", "minimize"]);
-export const authoringSessionErrorCodeSchema = z.enum([
+export const AUTHORING_SESSION_ERROR_CODE_VALUES = [
   "unauthorized",
   "not_found",
   "invalid_request",
   "session_expired",
   "unsupported_task",
-]);
+  "TX_REVERTED",
+] as const;
+
+export const authoringSessionErrorCodeSchema = z.enum(
+  AUTHORING_SESSION_ERROR_CODE_VALUES,
+);
+
+export const authoringSessionErrorDetailsSchema = z.record(z.unknown());
 
 export const authoringSessionArtifactRefSchema = z
   .object({
@@ -283,6 +290,7 @@ export const authoringSessionErrorEnvelopeSchema = z
         message: z.string().trim().min(1),
         next_action: z.string().trim().min(1),
         state: authoringSessionPublicStateSchema.optional(),
+        details: authoringSessionErrorDetailsSchema.optional(),
       })
       .strict(),
   })

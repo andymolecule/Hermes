@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createCsvTableSubmissionContract,
+  AgoraError,
+  authoringSessionErrorEnvelopeSchema,
   createChallengeExecution,
   createCsvTableEvaluationContract,
+  createCsvTableSubmissionContract,
   resolveOfficialScorerImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
-import { encodeAuthoringSessionArtifactId } from "../src/lib/authoring-session-artifacts.js";
 import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
+import { encodeAuthoringSessionArtifactId } from "../src/lib/authoring-session-artifacts.js";
 import { createAuthoringSessionRoutes } from "../src/routes/authoring-sessions.js";
 
 function withPrincipal(
@@ -25,7 +27,9 @@ function withPrincipal(
   return async (
     c: Parameters<
       NonNullable<
-        Parameters<typeof createAuthoringSessionRoutes>[0]["requireAuthoringPrincipalMiddleware"]
+        Parameters<
+          typeof createAuthoringSessionRoutes
+        >[0]["requireAuthoringPrincipalMiddleware"]
       >
     >[0],
     next: () => Promise<void>,
@@ -220,7 +224,8 @@ test("POST /sessions creates a new awaiting-input session", async () => {
         poster_address: payload.poster_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
-        uploaded_artifacts_json: (payload.uploaded_artifacts_json ?? []) as never,
+        uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
+          []) as never,
         intent_json: payload.intent_json ?? null,
         compilation_json: payload.compilation_json ?? null,
         conversation_log_json: payload.conversation_log_json ?? [],
@@ -325,7 +330,8 @@ test("POST /sessions accepts structured intent and execution", async () => {
         poster_address: payload.poster_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
-        uploaded_artifacts_json: (payload.uploaded_artifacts_json ?? []) as never,
+        uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
+          []) as never,
         intent_json: payload.intent_json ?? null,
         compilation_json: payload.compilation_json ?? null,
         conversation_log_json: payload.conversation_log_json ?? [],
@@ -435,7 +441,9 @@ test("GET /sessions/:id hides sessions owned by another principal", async () => 
       }),
   });
 
-  const response = await router.request("http://localhost/sessions/session-123");
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+  );
   assert.equal(response.status, 404);
   const payload = await response.json();
   assert.equal(payload.error.code, "not_found");
@@ -507,15 +515,18 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
     }),
   });
 
-  const response = await router.request("http://localhost/sessions/session-123", {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      intent: {
-        payout_condition: "Highest Spearman wins.",
-      },
-    }),
-  });
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: {
+          payout_condition: "Highest Spearman wins.",
+        },
+      }),
+    },
+  );
 
   assert.equal(response.status, 200);
   const payload = await response.json();
@@ -565,15 +576,18 @@ test("PATCH /sessions/:id returns invalid_request for invalid reward_total value
     },
   });
 
-  const response = await router.request("http://localhost/sessions/session-123", {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      intent: {
-        reward_total: "30 USDC",
-      },
-    }),
-  });
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: {
+          reward_total: "30 USDC",
+        },
+      }),
+    },
+  );
 
   assert.equal(response.status, 400);
   const payload = await response.json();
@@ -617,7 +631,9 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
       }),
   });
 
-  const response = await router.request("http://localhost/sessions/session-123");
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+  );
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.state, "rejected");
@@ -681,10 +697,15 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
       }),
   });
 
-  const response = await router.request("http://localhost/sessions/session-123");
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+  );
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.validation.missing_fields[0].field, "evaluation_artifact");
+  assert.equal(
+    payload.validation.missing_fields[0].field,
+    "evaluation_artifact",
+  );
   assert.deepEqual(payload.validation.missing_fields[0].candidate_values, [
     "candidates",
     "reference",
@@ -745,14 +766,16 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
       }),
   });
 
-  const response = await router.request("http://localhost/sessions/session-123");
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+  );
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.validation.invalid_fields[0].field, "execution.scorer_image");
   assert.equal(
-    payload.validation.invalid_fields[0].blocking_layer,
-    "platform",
+    payload.validation.invalid_fields[0].field,
+    "execution.scorer_image",
   );
+  assert.equal(payload.validation.invalid_fields[0].blocking_layer, "platform");
   assert.equal(payload.readiness.spec.status, "fail");
   assert.equal(payload.readiness.scorer.status, "fail");
   assert.equal(payload.readiness.dry_run.status, "pending");
@@ -787,4 +810,90 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
   const payload = await response.json();
   assert.equal(payload.uri, "ipfs://artifact-1");
   assert.equal(payload.source_url, "https://example.com/data.csv");
+});
+
+test("POST /sessions/:id/publish returns the canonical authoring error envelope on sponsor reverts", async () => {
+  const previousSponsorKey = process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY;
+  process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY = `0x${"11".repeat(32)}`;
+
+  let storedSession = createSession({
+    id: "session-publish",
+    creator_type: "agent",
+    creator_agent_id: "agent-abc",
+    poster_address: null,
+    state: "ready",
+    published_spec_cid: "ipfs://already-pinned",
+    compilation_json: createCompilation(),
+  });
+
+  try {
+    const router = createAuthoringSessionRoutes({
+      requireAuthoringPrincipalMiddleware: withPrincipal({
+        type: "agent",
+        agent_id: "agent-abc",
+      }),
+      requireWriteQuotaImpl: allowQuota(),
+      createSupabaseClient: () => ({}) as never,
+      getAuthoringSessionById: async () => storedSession,
+      updateAuthoringSession: async (_db, payload) => {
+        storedSession = createSession({
+          ...storedSession,
+          conversation_log_json:
+            payload.conversation_log_json ??
+            storedSession.conversation_log_json ??
+            [],
+          failure_message:
+            payload.failure_message ?? storedSession.failure_message ?? null,
+          updated_at: "2026-03-22T00:05:00.000Z",
+        });
+        return storedSession;
+      },
+      sponsorAndPublishAuthoringSession: async () => {
+        throw new AgoraError(
+          "Authoring sponsor challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
+          {
+            code: "TX_REVERTED",
+            retriable: false,
+            nextAction:
+              "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+            details: {
+              funding: "sponsor",
+              phase: "simulate",
+              operation: "createChallenge",
+              revertErrorName: "InvalidSubmissionLimits",
+              rawMessage: "execution reverted",
+            },
+          },
+        );
+      },
+    });
+
+    const response = await router.request(
+      "http://localhost/sessions/session-publish/publish",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          confirm_publish: true,
+          funding: "sponsor",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 500);
+    const payload = authoringSessionErrorEnvelopeSchema.parse(
+      await response.json(),
+    );
+    assert.equal(payload.error.code, "TX_REVERTED");
+    assert.equal(payload.error.state, "ready");
+    assert.equal(payload.error.details?.funding, "sponsor");
+    assert.equal(payload.error.details?.phase, "simulate");
+    assert.equal(payload.error.details?.operation, "createChallenge");
+    assert.equal(
+      payload.error.details?.revertErrorName,
+      "InvalidSubmissionLimits",
+    );
+  } finally {
+    process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY = previousSponsorKey;
+  }
 });
