@@ -73,6 +73,16 @@ export function shouldAttemptChallengeFinalize(
   return deriveChallengeFinalizeReadState(lifecycle, nowSeconds).canFinalize;
 }
 
+function isIgnorableLifecycleSweepError(message: string) {
+  const missingScoringStartedAt =
+    /scoringStartedAt/i.test(message)
+    && /returned no data|function does not exist|revert|0x/i.test(message);
+
+  return /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed|ScoringIncomplete|Unsupported challenge contract version/i.test(
+    message,
+  ) || missingScoringStartedAt;
+}
+
 export async function reconcileScoredSubmission(
   db: DbClient,
   submission: SubmissionRow,
@@ -342,11 +352,7 @@ export async function sweepChallengeLifecycle(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (
-        /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed|ScoringIncomplete/i.test(
-          message,
-        )
-      ) {
+      if (isIgnorableLifecycleSweepError(message)) {
         continue;
       }
       log("warn", "Lifecycle sweep failed", {
