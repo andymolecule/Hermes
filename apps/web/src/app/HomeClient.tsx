@@ -388,8 +388,8 @@ export function HomeClient() {
                           </span>
                         </div>
                         <div>
-                          <span className="font-mono text-xs" style={{ color: ch.source_agent_handle ? "var(--text-primary)" : "var(--text-muted)" }}>
-                            {ch.source_agent_handle || "—"}
+                          <span className="font-mono text-xs" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-primary)" : "var(--text-muted)" }}>
+                            {ch.created_by_agent?.agent_name || "—"}
                           </span>
                         </div>
                         <div className="font-sans font-bold tabular-nums" style={{ fontSize: "1.5rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
