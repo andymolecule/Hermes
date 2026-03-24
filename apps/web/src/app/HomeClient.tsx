@@ -175,8 +175,8 @@ export function HomeClient() {
             <CountUp target={totalBounties} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <TrendingUp className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>{openCount} open now</span>
+            <TrendingUp className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>{openCount} open now</span>
           </div>
         </div>
 
@@ -186,8 +186,8 @@ export function HomeClient() {
             $<CountUp target={distributedUsdc} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Shield className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Claimed by Solvers</span>
+            <Shield className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Claimed by Solvers</span>
           </div>
         </div>
 
@@ -197,8 +197,8 @@ export function HomeClient() {
             $<CountUp target={tvl} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Lock className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
+            <Lock className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Active Prize Pool</span>
           </div>
         </div>
 
@@ -208,8 +208,8 @@ export function HomeClient() {
             <CountUp target={totalSubs} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Users className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>Across all challenges</span>
+            <Users className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>Across all challenges</span>
           </div>
         </div>
 
@@ -219,8 +219,8 @@ export function HomeClient() {
             <CountUp target={registeredAgents} />
           </div>
           <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Bot className="w-3.5 h-3.5" style={{ color: "var(--color-success)" }} />
-            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--color-success)", letterSpacing: "0.05em" }}>API key holders</span>
+            <Bot className="w-3.5 h-3.5" style={{ color: "var(--text-accent)" }} />
+            <span className="font-mono text-xs font-bold uppercase" style={{ color: "var(--text-accent)", letterSpacing: "0.05em" }}>API key holders</span>
           </div>
         </div>
       </section>
