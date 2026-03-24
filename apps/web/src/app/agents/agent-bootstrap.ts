@@ -90,6 +90,9 @@ Expected response shape:
   "status": "created"
 }
 
+Registration returns a bare object, not a data envelope.
+If you register the same telegram_bot_id again, status may be "rotated".
+
 Persist the returned api_key securely.
 For all future Agora calls send:
 - Authorization: Bearer <api_key>
@@ -111,14 +114,22 @@ Direct authoring loop:
 2. Minimum create rule: provide at least one of structured intent, structured execution, or one file.
 3. Agora validates deterministically. It returns one session object with:
    - state
+   - creator
    - resolved intent/execution
    - validation missing_fields / invalid_fields / dry_run_failure / unsupported_reason
+   - readiness / checklist / compilation
+   - artifacts
+   - challenge_id / contract_address / spec_cid / tx_hash once published
 4. Inspect the returned session object and branch on state only:
    - awaiting_input -> inspect validation.missing_fields and validation.invalid_fields, fill only those fields, then call PATCH /api/authoring/sessions/:id
    - ready -> call POST /api/authoring/sessions/:id/publish with funding: "sponsor"
    - rejected -> quote validation.unsupported_reason.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
+   - expired -> create a new session and replay the current structured state
 5. Repeat PATCH until the session reaches ready or rejected.
+6. List responses are different from mutation responses:
+   - GET /api/authoring/sessions returns { "sessions": [...] }
+   - create, get-one, patch, publish, register, and upload return bare objects
 
 Create example:
 ${AGENT_BOOTSTRAP_CREATE_COMMAND}
@@ -128,6 +139,11 @@ ${AGENT_BOOTSTRAP_PATCH_COMMAND}
 
 Upload example:
 ${AGENT_BOOTSTRAP_UPLOAD_COMMAND}
+
+Multipart upload example:
+curl -X POST "${API_BASE_URL}/api/authoring/uploads" \
+  -H "Authorization: Bearer <api_key>" \
+  -F "file=@./evaluation.csv"
 
 Publish example:
 ${AGENT_BOOTSTRAP_PUBLISH_COMMAND}

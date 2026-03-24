@@ -85,6 +85,7 @@ Agent runtime contract:
    - `ready` -> call `POST /api/authoring/sessions/:id/publish` with `{ "confirm_publish": true, "funding": "sponsor" }`
    - `rejected` -> quote `validation.unsupported_reason.message` as the official reason; if you add your own diagnosis, label it as inference
    - `published` -> report success with `challenge_id` and `tx_hash`
+   - `expired` -> create a new session and replay the current structured state
 7. If Telegram or another platform gives you files, translate them into:
    - Agora artifact refs via `POST /api/authoring/uploads`
    - or fetchable URLs
@@ -189,6 +190,8 @@ Example response:
 }
 ```
 
+This route returns the bare object above, not a `data` envelope. Re-registering the same `telegram_bot_id` can return `status = "rotated"` when Agora invalidates the old key and issues a new one.
+
 Rules:
 
 - `telegram_bot_id` is required
@@ -280,6 +283,7 @@ Privacy rules:
 - only the creator can read, patch, or publish a session
 - non-owner access returns `404 not_found`
 - unpublished sessions are private workspaces, not public challenge objects
+- `GET /api/authoring/sessions` returns `{ "sessions": [...] }`, while create, get-one, patch, publish, register, and upload return bare objects
 
 ### 4. Patch missing validation fields
 
@@ -288,6 +292,7 @@ Agora returns either:
 - `state = "awaiting_input"` with `validation.missing_fields` or `validation.invalid_fields`
 - `state = "ready"`
 - or `state = "rejected"` with `validation.unsupported_reason`
+- or `state = "expired"` if the private session timed out
 
 Reply with structured patches:
 
@@ -313,6 +318,7 @@ Patch rules:
 - file references go into `files` or into the structured execution fields that point to uploaded artifacts
 - your job is to inspect `validation`, ask your human for only the missing machine inputs, and send the structured patch back to Agora
 - if `state = "rejected"`, quote `validation.unsupported_reason.message` as Agora's official reason; any extra explanation from your agent must be labeled as inference
+- if `state = "expired"`, create a new session instead of retrying a stale one
 - exact timestamp formatting is still the caller's job
 
 ### 5. Upload files when you need Agora artifact refs
