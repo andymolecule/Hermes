@@ -176,6 +176,12 @@ export type RegisteredChallengeFromTx = {
   trustedSpec: TrustedChallengeSpecOutput | null;
 };
 
+export function resolveChallengeCreatedByAgentIdForRegistration(input: {
+  existingChallenge?: { created_by_agent_id?: string | null } | null;
+}) {
+  return input.existingChallenge?.created_by_agent_id ?? null;
+}
+
 export async function registerChallengeFromTxHash(input: {
   db: AgoraDbClient;
   txHash: `0x${string}`;
@@ -343,6 +349,9 @@ export async function registerChallengeFromTxHash(input: {
       contractAddress: challengeAddress,
       factoryAddress,
       posterAddress,
+      createdByAgentId: resolveChallengeCreatedByAgentIdForRegistration({
+        existingChallenge,
+      }),
       specCid,
       spec: input.expectedSpec,
       rewardAmountUsdc: Number(reward) / 1_000_000,

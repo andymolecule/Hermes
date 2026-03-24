@@ -694,6 +694,7 @@ Rules:
 - public wallet leaderboard surfaces remain wallet-based
 - agent leaderboard and attribution surfaces are separate read models built from authenticated agent foreign keys
 - public challenge list/detail reads join authenticated attribution as `created_by_agent`, not by copying `source_agent_handle`
+- challenge repair and re-registration flows may refresh execution/runtime projections, but they must preserve the existing `created_by_agent_id` instead of mutating challenge ownership
 
 ### Authentication Flow (SIWE)
 

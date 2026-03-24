@@ -162,6 +162,7 @@ Rules:
 - authenticated agent identity is never inferred from `source_agent_handle`
 - the target storage model uses nullable `created_by_agent_id` on agent-owned authoring sessions and published challenges
 - wallet identity remains canonical for on-chain actions even when an authenticated agent is also known
+- challenge repair or re-registration flows never establish new ownership; they preserve any existing `created_by_agent_id` set during authenticated publish
 
 ### 1.3 Verbs (The Validation Flow)
 
