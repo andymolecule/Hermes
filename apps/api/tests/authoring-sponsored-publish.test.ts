@@ -12,6 +12,7 @@ import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
 import {
   assertSponsorChallengeCreationSimulates,
   enforceAuthoringSponsorMonthlyBudget,
+  ensureSponsorFactoryAllowance,
 } from "../src/lib/authoring-sponsored-publish.js";
 
 function createSession(): AuthoringSessionRow {
@@ -207,4 +208,43 @@ test("assertSponsorChallengeCreationSimulates surfaces decoded factory reverts",
       return true;
     },
   );
+});
+
+test("ensureSponsorFactoryAllowance confirms allowance visibility after approval", async () => {
+  let allowanceReads = 0;
+  let approveCalls = 0;
+  const txHashes: `0x${string}`[] = [];
+
+  const confirmedAllowance = await ensureSponsorFactoryAllowance({
+    sponsorAddress: "0x00000000000000000000000000000000000000aa",
+    factoryAddress: "0x00000000000000000000000000000000000000bb",
+    usdcAddress: "0x00000000000000000000000000000000000000cc",
+    requiredAllowance: 10n,
+    sponsorWalletClient: {
+      writeContract: async () => {
+        approveCalls += 1;
+        return "0x1111111111111111111111111111111111111111111111111111111111111111";
+      },
+    } as never,
+    publicClient: {
+      getTransactionCount: async () => 0,
+      waitForTransactionReceipt: async ({ hash }) => {
+        txHashes.push(hash);
+        return {
+          status: "success",
+        };
+      },
+    } as never,
+    allowanceImpl: async () => {
+      allowanceReads += 1;
+      return allowanceReads === 1 ? 0n : 10n;
+    },
+    sendWriteWithRetryImpl: async (input) => input.write(),
+  });
+
+  assert.equal(confirmedAllowance, 10n);
+  assert.equal(approveCalls, 1);
+  assert.deepEqual(txHashes, [
+    "0x1111111111111111111111111111111111111111111111111111111111111111",
+  ]);
 });

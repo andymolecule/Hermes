@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgoraError } from "@agora/common";
+import { AgoraError, erc20Abi } from "@agora/common";
+import { encodeErrorResult } from "viem";
 import {
   AmbiguousWriteResultError,
   classifyWriteError,
@@ -22,6 +23,22 @@ function createCustomRevertError(errorName: string) {
           errorName,
           args: [],
         },
+      });
+    },
+  });
+}
+
+function createRawSignatureRevertError(raw: `0x${string}`) {
+  const signature = raw.slice(0, 10) as `0x${string}`;
+  const error = new Error("execution reverted");
+  return Object.assign(error, {
+    shortMessage: `The contract function "createChallenge" reverted with the following signature:\n${signature}`,
+    walk(visitor: (candidate: unknown) => unknown) {
+      return visitor({
+        name: "ContractFunctionRevertedError",
+        shortMessage: `The contract function "createChallenge" reverted with the following signature:\n${signature}`,
+        raw,
+        signature,
       });
     },
   });
@@ -139,4 +156,35 @@ test("classifyWriteError surfaces decoded custom revert details", () => {
   assert.equal(error.details?.revertErrorName, "InvalidSubmissionLimits");
   assert.equal(error.details?.phase, "simulate");
   assert.equal(error.details?.operation, "createChallenge");
+});
+
+test("classifyWriteError decodes raw ERC20 custom errors", () => {
+  const raw = encodeErrorResult({
+    abi: erc20Abi,
+    errorName: "ERC20InsufficientAllowance",
+    args: ["0x00000000000000000000000000000000000000aa", 5n, 10n],
+  });
+  const error = classifyWriteError(createRawSignatureRevertError(raw), {
+    label: "Authoring sponsor challenge creation",
+    phase: "simulate",
+    details: {
+      funding: "sponsor",
+      phase: "simulate",
+      operation: "createChallenge",
+    },
+  });
+
+  assert.ok(error instanceof AgoraError);
+  assert.equal(error.code, "TX_REVERTED");
+  assert.match(error.message, /ERC20InsufficientAllowance/);
+  assert.equal(error.details?.revertErrorName, "ERC20InsufficientAllowance");
+  assert.equal(error.details?.revertSignature, raw.slice(0, 10));
+  assert.equal(
+    (error.details?.revertErrorArgs as unknown[] | undefined)?.[0],
+    "0x00000000000000000000000000000000000000AA",
+  );
+  assert.deepEqual(
+    (error.details?.revertErrorArgs as unknown[] | undefined)?.slice(1),
+    [5n, 10n],
+  );
 });

@@ -14,6 +14,7 @@ import {
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
   readAuthoringSponsorRuntimeConfig,
+  sanitizeChallengeSpecForPublish,
   uploadUrlRequestSchema,
   walletPublishPreparationSchema,
 } from "@agora/common";
@@ -94,6 +95,7 @@ type AuthoringSessionRouteDependencies = {
   sponsorAndPublishAuthoringSession?: typeof sponsorAndPublishAuthoringSession;
   createDirectAuthoringSessionArtifact?: typeof createDirectAuthoringSessionArtifact;
   normalizeAuthoringSessionFileInputs?: typeof normalizeAuthoringSessionFileInputs;
+  pinJsonImpl?: typeof pinJSON;
   registerChallengeFromTxHashImpl?: typeof registerChallengeFromTxHash;
 };
 
@@ -155,6 +157,23 @@ function buildWalletPublishPreparation(input: {
       challengeSpec.max_submissions_per_solver ??
       SUBMISSION_LIMITS.maxPerSolverPerChallenge,
   });
+}
+
+async function pinPublicChallengeSpecForSession(input: {
+  session: AuthoringSessionRow;
+  pinJsonImpl: typeof pinJSON;
+}) {
+  const challengeSpec = input.session.compilation_json?.challenge_spec;
+  if (!challengeSpec) {
+    throw new Error(
+      "This session is missing a compiled challenge spec. Next step: recompile the session before publishing.",
+    );
+  }
+
+  return input.pinJsonImpl(
+    `challenge-${input.session.id}`,
+    sanitizeChallengeSpecForPublish(challengeSpec),
+  );
 }
 
 function cleanText(value?: string | null) {
@@ -912,6 +931,7 @@ export function createAuthoringSessionRoutes(
       createDirectAuthoringSessionArtifactImpl = createDirectAuthoringSessionArtifact,
     normalizeAuthoringSessionFileInputs:
       normalizeAuthoringSessionFileInputsImpl = normalizeAuthoringSessionFileInputs,
+    pinJsonImpl = pinJSON,
     registerChallengeFromTxHashImpl = registerChallengeFromTxHash,
   } = dependencies;
 
@@ -1391,12 +1411,10 @@ export function createAuthoringSessionRoutes(
       }
 
       if (parsed.data.funding === "wallet") {
-        const specCid =
-          visible.session.published_spec_cid ??
-          (await pinJSON(
-            `challenge-${visible.session.id}`,
-            visible.session.compilation_json.challenge_spec,
-          ));
+        const specCid = await pinPublicChallengeSpecForSession({
+          session: visible.session,
+          pinJsonImpl,
+        });
         const requestEntry = createConversationLogEntry({
           request_id: getRequestId(c) ?? null,
           route: "publish",
@@ -1441,12 +1459,10 @@ export function createAuthoringSessionRoutes(
         return c.json(preparation);
       }
 
-      const specCid =
-        visible.session.published_spec_cid ??
-        (await pinJSON(
-          `challenge-${visible.session.id}`,
-          visible.session.compilation_json.challenge_spec,
-        ));
+      const specCid = await pinPublicChallengeSpecForSession({
+        session: visible.session,
+        pinJsonImpl,
+      });
       const sponsorRuntime = readAuthoringSponsorRuntimeConfig();
       if (!sponsorRuntime.privateKey) {
         await appendValidationFailureLog({

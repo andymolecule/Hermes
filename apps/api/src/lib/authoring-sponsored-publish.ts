@@ -12,10 +12,10 @@ import {
 import {
   CHALLENGE_LIMITS,
   SUBMISSION_LIMITS,
+  type TrustedChallengeSpecOutput,
   defaultMinimumScoreForExecution,
   erc20Abi,
   loadConfig,
-  type TrustedChallengeSpecOutput,
 } from "@agora/common";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
@@ -31,7 +31,7 @@ import {
   updateAuthoringSession,
   upsertChallenge,
 } from "@agora/db";
-import { type Abi, parseUnits } from "viem";
+import { type Abi, maxUint256, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getAuthoringSessionSourceAttribution } from "./authoring-session-source-attribution.js";
 
@@ -45,6 +45,8 @@ const DISTRIBUTION_TO_ENUM = {
 
 const SPONSOR_CREATE_REVERT_NEXT_ACTION =
   "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.";
+const SPONSOR_ALLOWANCE_CONFIRMATION_ATTEMPTS = 5;
+const SPONSOR_ALLOWANCE_CONFIRMATION_DELAY_MS = 500;
 
 type SponsorCreateChallengeArgs = readonly [
   string,
@@ -89,6 +91,10 @@ function resolveSponsorBudgetWindow(now = new Date()) {
     periodStart: periodStart.toISOString(),
     periodEnd: periodEnd.toISOString(),
   };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildSponsorCreateChallengeArgs(input: {
@@ -176,6 +182,69 @@ export async function enforceAuthoringSponsorMonthlyBudget(input: {
       `Agora's sponsor budget for ${sourceAttribution.provider} would be exceeded by this publish. Next step: lower the reward, wait for the next budget window, or raise the sponsor cap and retry.`,
     );
   }
+}
+
+export async function ensureSponsorFactoryAllowance(input: {
+  sponsorAddress: `0x${string}`;
+  factoryAddress: `0x${string}`;
+  usdcAddress: `0x${string}`;
+  requiredAllowance: bigint;
+  sponsorWalletClient: Pick<
+    ReturnType<typeof createAgoraWalletClientForPrivateKey>,
+    "writeContract"
+  >;
+  publicClient: Pick<
+    ReturnType<typeof getPublicClient>,
+    "getTransactionCount" | "waitForTransactionReceipt"
+  >;
+  allowanceImpl?: typeof allowance;
+  sendWriteWithRetryImpl?: typeof sendWriteWithRetry;
+}) {
+  const allowanceImpl = input.allowanceImpl ?? allowance;
+  const sendWriteWithRetryImpl =
+    input.sendWriteWithRetryImpl ?? sendWriteWithRetry;
+  let currentAllowance = await allowanceImpl(
+    input.sponsorAddress,
+    input.factoryAddress,
+  );
+  if (currentAllowance >= input.requiredAllowance) {
+    return currentAllowance;
+  }
+
+  const approveTxHash = await sendWriteWithRetryImpl({
+    accountAddress: input.sponsorAddress,
+    label: "Authoring sponsor USDC approval",
+    publicClient: input.publicClient,
+    write: () =>
+      input.sponsorWalletClient.writeContract({
+        address: input.usdcAddress,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [input.factoryAddress, maxUint256],
+      }),
+  });
+  await input.publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+
+  for (
+    let attempt = 1;
+    attempt <= SPONSOR_ALLOWANCE_CONFIRMATION_ATTEMPTS;
+    attempt += 1
+  ) {
+    currentAllowance = await allowanceImpl(
+      input.sponsorAddress,
+      input.factoryAddress,
+    );
+    if (currentAllowance >= input.requiredAllowance) {
+      return currentAllowance;
+    }
+    if (attempt < SPONSOR_ALLOWANCE_CONFIRMATION_ATTEMPTS) {
+      await sleep(SPONSOR_ALLOWANCE_CONFIRMATION_DELAY_MS);
+    }
+  }
+
+  throw new Error(
+    "Agora's sponsor USDC approval was confirmed, but the updated allowance is still not visible from RPC. Next step: retry publish once the RPC reflects the approval, or use a read/write RPC with read-after-write consistency.",
+  );
 }
 
 function assertCreationMatchesSpec(input: {
@@ -326,26 +395,14 @@ export async function sponsorAndPublishAuthoringSession(input: {
       );
     }
 
-    const currentAllowance = await allowance(
+    await ensureSponsorFactoryAllowance({
       sponsorAddress,
-      config.AGORA_FACTORY_ADDRESS,
-    );
-    if (currentAllowance < rewardUnits) {
-      const approveTxHash = await sendWriteWithRetry({
-        accountAddress: sponsorAddress,
-        label: "Authoring sponsor USDC approval",
-        publicClient,
-        write: () =>
-          sponsorWalletClient.writeContract({
-            address: config.AGORA_USDC_ADDRESS,
-            abi: erc20Abi,
-            functionName: "approve",
-            args: [config.AGORA_FACTORY_ADDRESS, rewardUnits],
-            chain: null,
-          } as never),
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-    }
+      factoryAddress: config.AGORA_FACTORY_ADDRESS,
+      usdcAddress: config.AGORA_USDC_ADDRESS,
+      requiredAllowance: rewardUnits,
+      sponsorWalletClient,
+      publicClient,
+    });
 
     const minimumScore = parseUnits(
       String(

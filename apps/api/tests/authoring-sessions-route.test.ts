@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AgoraError,
   authoringSessionErrorEnvelopeSchema,
+  challengeSpecSchema,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
@@ -809,6 +810,87 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
   assert.equal(payload.source_url, "https://example.com/data.csv");
 });
 
+test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish", async () => {
+  const previousRpcUrl = process.env.AGORA_RPC_URL;
+  const previousFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
+  const previousUsdcAddress = process.env.AGORA_USDC_ADDRESS;
+  process.env.AGORA_RPC_URL = "http://127.0.0.1:8545";
+  process.env.AGORA_FACTORY_ADDRESS =
+    "0x00000000000000000000000000000000000000bb";
+  process.env.AGORA_USDC_ADDRESS = "0x00000000000000000000000000000000000000cc";
+  let storedSession = createSession({
+    id: "session-wallet-publish",
+    created_by_agent_id: null,
+    poster_address: "0x00000000000000000000000000000000000000aa",
+    state: "ready",
+    published_spec_cid: "ipfs://stale-buggy-cid",
+    compilation_json: createCompilation(),
+  });
+  let pinnedName: string | null = null;
+  let pinnedSpec: Record<string, unknown> | null = null;
+
+  try {
+    const router = createAuthoringSessionRoutes({
+      requireAuthoringPrincipalMiddleware: withPrincipal({
+        type: "web",
+        address: "0x00000000000000000000000000000000000000aa",
+      }),
+      requireWriteQuotaImpl: allowQuota(),
+      createSupabaseClient: () => ({}) as never,
+      getAuthoringSessionById: async () => storedSession,
+      updateAuthoringSession: async (_db, payload) => {
+        storedSession = createSession({
+          ...storedSession,
+          conversation_log_json:
+            payload.conversation_log_json ??
+            storedSession.conversation_log_json ??
+            [],
+          updated_at: "2026-03-24T15:00:00.000Z",
+        });
+        return storedSession;
+      },
+      pinJsonImpl: async (name, payload) => {
+        pinnedName = name;
+        pinnedSpec = payload;
+        return "ipfs://sanitized-wallet-spec";
+      },
+    });
+
+    const response = await router.request(
+      "http://localhost/sessions/session-wallet-publish/publish",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          confirm_publish: true,
+          funding: "wallet",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.spec_cid, "ipfs://sanitized-wallet-spec");
+    assert.equal(pinnedName, "challenge-session-wallet-publish");
+    assert.ok(pinnedSpec);
+    const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
+    assert.equal(
+      parsedPinnedSpec.execution.evaluation_artifact_id,
+      "artifact-hidden",
+    );
+    const privateArtifact = parsedPinnedSpec.artifacts.find(
+      (artifact) => artifact.artifact_id === "artifact-hidden",
+    );
+    assert.ok(privateArtifact);
+    assert.equal(privateArtifact?.visibility, "private");
+    assert.ok(!("uri" in (privateArtifact as Record<string, unknown>)));
+  } finally {
+    process.env.AGORA_RPC_URL = previousRpcUrl;
+    process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
+    process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
+  }
+});
+
 test("POST /sessions/:id/publish returns the canonical authoring error envelope on sponsor reverts", async () => {
   const previousSponsorKey = process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY;
   process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY = `0x${"11".repeat(32)}`;
@@ -818,9 +900,10 @@ test("POST /sessions/:id/publish returns the canonical authoring error envelope 
     created_by_agent_id: "agent-abc",
     poster_address: null,
     state: "ready",
-    published_spec_cid: "ipfs://already-pinned",
+    published_spec_cid: "ipfs://stale-buggy-cid",
     compilation_json: createCompilation(),
   });
+  let pinnedSpec: Record<string, unknown> | null = null;
 
   try {
     const router = createAuthoringSessionRoutes({
@@ -844,7 +927,12 @@ test("POST /sessions/:id/publish returns the canonical authoring error envelope 
         });
         return storedSession;
       },
-      sponsorAndPublishAuthoringSession: async () => {
+      pinJsonImpl: async (_name, payload) => {
+        pinnedSpec = payload;
+        return "ipfs://sanitized-sponsor-spec";
+      },
+      sponsorAndPublishAuthoringSession: async ({ specCid }) => {
+        assert.equal(specCid, "ipfs://sanitized-sponsor-spec");
         throw new AgoraError(
           "Authoring sponsor challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
           {
@@ -879,6 +967,12 @@ test("POST /sessions/:id/publish returns the canonical authoring error envelope 
     assert.equal(response.status, 500);
     const payload = authoringSessionErrorEnvelopeSchema.parse(
       await response.json(),
+    );
+    assert.ok(pinnedSpec);
+    const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
+    assert.equal(
+      parsedPinnedSpec.execution.evaluation_artifact_id,
+      "artifact-hidden",
     );
     assert.equal(payload.error.code, "TX_REVERTED");
     assert.equal(payload.error.state, "ready");

@@ -1,4 +1,16 @@
-import { AGORA_ERROR_CODES, AgoraError, CHAIN_IDS } from "@agora/common";
+import {
+  AGORA_ERROR_CODES,
+  AgoraError,
+  CHAIN_IDS,
+  erc20Abi,
+} from "@agora/common";
+import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
+  type: "json",
+};
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
+  type: "json",
+};
+import { type Abi, type Hex, decodeErrorResult } from "viem";
 import { getPublicClient } from "./client.js";
 
 const WRITE_RETRYABLE_ERROR_PATTERNS = [
@@ -43,9 +55,21 @@ type RevertDiagnostics = {
   errorName?: string;
   errorArgs?: unknown[];
   reason?: string;
+  signature?: Hex;
+  rawData?: Hex;
   shortMessage?: string;
   rawMessage: string;
 };
+
+const sharedWriteRevertAbi = [
+  ...((AgoraChallengeAbiJson as Abi).filter(
+    (item) => item.type === "error",
+  ) as Abi),
+  ...((AgoraFactoryAbiJson as Abi).filter(
+    (item) => item.type === "error",
+  ) as Abi),
+  ...(erc20Abi.filter((item) => item.type === "error") as unknown as Abi),
+] as Abi;
 
 export class AmbiguousWriteResultError extends AgoraError {
   constructor(message: string, details?: Record<string, unknown>) {
@@ -134,6 +158,37 @@ function readArrayProperty(
   return Array.isArray(candidate) ? candidate : undefined;
 }
 
+function isHex(value: unknown): value is Hex {
+  return typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+}
+
+function readHexProperty(
+  value: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const candidate = value?.[key];
+  return isHex(candidate) ? candidate : undefined;
+}
+
+function decodeRawRevertData(rawData: Hex | undefined) {
+  if (!rawData || rawData === "0x") {
+    return null;
+  }
+
+  try {
+    const decoded = decodeErrorResult({
+      abi: sharedWriteRevertAbi,
+      data: rawData,
+    });
+    return {
+      errorName: decoded.errorName,
+      errorArgs: decoded.args as unknown[],
+    };
+  } catch {
+    return null;
+  }
+}
+
 function extractInlineRevertReason(message: string) {
   const patterns = [
     /execution reverted(?::|\s+with reason string\s+['"]?)(.+?)(?:['"])?$/i,
@@ -182,8 +237,20 @@ function extractRevertDiagnostics(error: unknown): RevertDiagnostics | null {
   const reason =
     readStringProperty(reverted, "reason") ??
     extractInlineRevertReason(rawMessage);
-  const errorName = readStringProperty(data, "errorName");
-  const errorArgs = readArrayProperty(data, "args");
+  const rawData =
+    readHexProperty(reverted, "raw") ??
+    readHexProperty(data, "raw") ??
+    readHexProperty(isRecord(error) ? error : null, "data");
+  const decodedRaw = decodeRawRevertData(rawData);
+  const errorName =
+    readStringProperty(data, "errorName") ?? decodedRaw?.errorName;
+  const errorArgs = readArrayProperty(data, "args") ?? decodedRaw?.errorArgs;
+  const signature =
+    readHexProperty(reverted, "signature") ??
+    readHexProperty(isRecord(error) ? error : null, "signature") ??
+    (rawData && rawData.length >= 10
+      ? (rawData.slice(0, 10) as Hex)
+      : undefined);
   const shortMessage =
     readStringProperty(reverted, "shortMessage") ??
     (isRecord(error) ? readStringProperty(error, "shortMessage") : undefined);
@@ -192,6 +259,8 @@ function extractRevertDiagnostics(error: unknown): RevertDiagnostics | null {
     errorName,
     errorArgs,
     reason,
+    signature,
+    rawData,
     shortMessage,
     rawMessage,
   };
@@ -203,6 +272,9 @@ function formatRevertSummary(diagnostics: RevertDiagnostics) {
   }
   if (diagnostics.errorName) {
     return `Contract error: ${diagnostics.errorName}`;
+  }
+  if (diagnostics.signature) {
+    return `Contract error signature: ${diagnostics.signature}`;
   }
   if (
     diagnostics.shortMessage &&
@@ -228,6 +300,10 @@ function toRevertDetails(
       ? { revertErrorArgs: diagnostics.errorArgs }
       : {}),
     ...(diagnostics.reason ? { revertReason: diagnostics.reason } : {}),
+    ...(diagnostics.signature
+      ? { revertSignature: diagnostics.signature }
+      : {}),
+    ...(diagnostics.rawData ? { revertRawData: diagnostics.rawData } : {}),
     ...(diagnostics.shortMessage
       ? { revertShortMessage: diagnostics.shortMessage }
       : {}),
