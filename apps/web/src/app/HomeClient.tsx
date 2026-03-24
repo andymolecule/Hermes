@@ -345,9 +345,9 @@ export function HomeClient() {
                 {/* Header */}
                 <div
                   className="grid items-center px-8 py-4"
-                  style={{ gridTemplateColumns: "2.5fr 1fr 0.8fr 1fr 1fr 1.2fr 0.8fr", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
+                  style={{ gridTemplateColumns: "0.8fr 2.5fr 1fr 1fr 1.2fr 0.8fr 1fr", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
                 >
-                  {["Bounty Title", "Category", "Agent", "Prize Pool", "Status", "Time Remaining", "Participants"].map((col) => (
+                  {["Agent", "Bounty Title", "Prize Pool", "Category", "Time Remaining", "Participants", "Status"].map((col) => (
                     <div key={col} className="flex items-center gap-1.5 text-white font-mono font-medium uppercase" style={{ fontSize: "11px", letterSpacing: "0.08em" }}>
                       {col}
                       <ChevronDown className="w-3 h-3 opacity-40" />
@@ -373,33 +373,33 @@ export function HomeClient() {
                         href={`/challenges/${ch.id}`}
                         className="grid items-center px-8 py-6 no-underline transition-colors duration-150 hover:!bg-[var(--surface-container-low)]"
                         style={{
-                          gridTemplateColumns: "2.5fr 1fr 0.8fr 1fr 1fr 1.2fr 0.8fr",
+                          gridTemplateColumns: "0.8fr 2.5fr 1fr 1fr 1.2fr 0.8fr 1fr",
                           backgroundColor: "var(--on-primary)",
                           borderTop: "1px solid #f0eee9",
                         }}
                       >
                         <div>
+                          <span className="font-mono text-xs" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-primary)" : "var(--text-muted)" }}>
+                            {ch.created_by_agent?.agent_name || "—"}
+                          </span>
+                        </div>
+                        <div>
                           <div className="font-sans font-bold leading-snug" style={{ fontSize: "1.15rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.title}</div>
                           <div className="font-sans text-sm mt-1.5 line-clamp-1" style={{ color: dead ? "var(--text-muted)" : "var(--text-muted)" }}>{ch.description?.slice(0, 80) || "No description."}</div>
                         </div>
+                        <div className="font-sans font-bold tabular-nums" style={{ fontSize: "1.5rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
                         <div>
                           <span className="inline-block px-3 py-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", backgroundColor: dead ? "#f8fafc" : dom.bg, color: dead ? "var(--text-muted)" : dom.text, borderRadius: "6px" }}>
                             {dom.label}
                           </span>
                         </div>
-                        <div>
-                          <span className="font-mono text-xs" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-primary)" : "var(--text-muted)" }}>
-                            {ch.created_by_agent?.agent_name || "—"}
-                          </span>
-                        </div>
-                        <div className="font-sans font-bold tabular-nums" style={{ fontSize: "1.5rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: st.dot, borderRadius: "50%" }} />
-                          <span className="font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", color: st.text }}>{st.label}</span>
-                        </div>
                         <div className="font-mono text-sm tabular-nums" style={{ color: st.timeColor, fontWeight: st.label === "ENDING SOON" ? 700 : 400 }}>{dead ? "--" : cd}</div>
                         <div className="text-right">
                           <span className="font-sans font-bold text-xl tabular-nums" style={{ color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.submissions_count ?? 0}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 flex-shrink-0" style={{ backgroundColor: st.dot, borderRadius: "50%" }} />
+                          <span className="font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", color: st.text }}>{st.label}</span>
                         </div>
                       </Link>
                     );
