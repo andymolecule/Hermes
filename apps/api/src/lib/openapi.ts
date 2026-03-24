@@ -14,6 +14,10 @@ function addressSchema() {
 
 export function buildOpenApiDocument(apiBaseUrl?: string) {
   const servers = apiBaseUrl ? [{ url: apiBaseUrl.replace(/\/$/, "") }] : [];
+  const authoringSecurity = [
+    { bearerAuth: [] },
+    { sessionCookieAuth: [] },
+  ] as const;
 
   return {
     openapi: "3.1.0",
@@ -775,6 +779,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           operationId: "uploadAuthoringArtifact",
           summary:
             "Upload a local file or ingest a source URL into a normalized Agora artifact",
+          security: authoringSecurity,
           requestBody: {
             required: true,
             content: {
@@ -822,6 +827,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         get: {
           operationId: "listAuthoringSessions",
           summary: "List the authenticated caller's private authoring sessions",
+          security: authoringSecurity,
           responses: {
             "200": {
               description: "Session list.",
@@ -838,6 +844,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "createAuthoringSession",
           summary: "Create a new deterministic authoring validation session",
+          security: authoringSecurity,
           requestBody: {
             required: true,
             content: {
@@ -874,6 +881,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         get: {
           operationId: "getAuthoringSession",
           summary: "Read one private authoring session owned by the caller",
+          security: authoringSecurity,
           parameters: [
             {
               in: "path",
@@ -906,6 +914,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         patch: {
           operationId: "patchAuthoringSession",
           summary: "Patch a private authoring session with structured fields",
+          security: authoringSecurity,
           parameters: [
             {
               in: "path",
@@ -941,6 +950,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           operationId: "publishAuthoringSession",
           summary:
             "Publish immediately for sponsor funding, or prepare wallet transaction inputs for wallet funding",
+          security: authoringSecurity,
           parameters: [
             {
               in: "path",
@@ -984,6 +994,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           operationId: "confirmAuthoringSessionPublish",
           summary:
             "Confirm a wallet-funded publish after the browser transaction succeeds",
+          security: authoringSecurity,
           parameters: [
             {
               in: "path",
@@ -1016,6 +1027,22 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       },
     },
     components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "API key",
+          description:
+            "Direct agent auth. Register first at POST /api/agents/register, then send Authorization: Bearer <api_key>.",
+        },
+        sessionCookieAuth: {
+          type: "apiKey",
+          in: "cookie",
+          name: "agora_session",
+          description:
+            "Browser poster auth via SIWE session cookie for web-owned authoring sessions.",
+        },
+      },
       schemas: {
         AuthoringSessionErrorEnvelope: {
           type: "object",
@@ -1064,7 +1091,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         AgentRegisterResponse: {
           type: "object",
           properties: {
-            agent_id: uuidSchema(),
+            agent_id: { type: "string" },
             api_key: { type: "string" },
             status: { type: "string", enum: ["created", "rotated"] },
           },
@@ -1096,7 +1123,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "object",
               properties: {
                 type: { type: "string", enum: ["agent"] },
-                agent_id: uuidSchema(),
+                agent_id: { type: "string" },
               },
               required: ["type", "agent_id"],
             },
@@ -1121,11 +1148,23 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["artifact_id", "uri", "file_name", "role", "source_url"],
         },
-        AuthoringSessionExecution: {
+        AuthoringSessionExecutionInput: {
+          type: "object",
+          properties: {
+            metric: { type: "string" },
+            evaluation_artifact_id: { type: "string" },
+            evaluation_id_column: { type: "string" },
+            evaluation_value_column: { type: "string" },
+            submission_id_column: { type: "string" },
+            submission_value_column: { type: "string" },
+          },
+        },
+        AuthoringSessionResolvedExecution: {
           type: "object",
           properties: {
             template: { type: "string", enum: ["official_table_metric_v1"] },
             metric: { type: "string" },
+            objective: { type: "string", enum: ["maximize", "minimize"] },
             evaluation_artifact_id: { type: "string" },
             evaluation_id_column: { type: "string" },
             evaluation_value_column: { type: "string" },
@@ -1140,7 +1179,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               $ref: "#/components/schemas/ChallengeIntentPatch",
             },
             execution: {
-              $ref: "#/components/schemas/AuthoringSessionExecution",
+              $ref: "#/components/schemas/AuthoringSessionResolvedExecution",
             },
           },
           required: ["intent", "execution"],
@@ -1405,7 +1444,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               $ref: "#/components/schemas/ChallengeIntentPatch",
             },
             execution: {
-              $ref: "#/components/schemas/AuthoringSessionExecution",
+              $ref: "#/components/schemas/AuthoringSessionExecutionInput",
             },
             files: {
               type: "array",
@@ -1415,6 +1454,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               $ref: "#/components/schemas/AuthoringSessionProvenance",
             },
           },
+          anyOf: [
+            { required: ["intent"] },
+            { required: ["execution"] },
+            { required: ["files"] },
+          ],
         },
         AuthoringSessionPatchRequest: {
           type: "object",
@@ -1423,13 +1467,18 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               $ref: "#/components/schemas/ChallengeIntentPatch",
             },
             execution: {
-              $ref: "#/components/schemas/AuthoringSessionExecution",
+              $ref: "#/components/schemas/AuthoringSessionExecutionInput",
             },
             files: {
               type: "array",
               items: { $ref: "#/components/schemas/AuthoringFileInput" },
             },
           },
+          anyOf: [
+            { required: ["intent"] },
+            { required: ["execution"] },
+            { required: ["files"] },
+          ],
         },
         AuthoringSessionPublishRequest: {
           type: "object",

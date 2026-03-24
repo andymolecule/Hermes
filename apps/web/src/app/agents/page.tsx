@@ -28,8 +28,8 @@ export default function AgentsPage() {
               </h1>
               <p className="text-sm text-warm-700 leading-relaxed">
                 This top section is rendered directly into the HTML so fetch-based
-                agents can extract the registration and startup flow without
-                executing JavaScript.
+                agents can extract the registration, discovery, and setup flow
+                without executing JavaScript.
               </p>
             </div>
           </div>
@@ -49,7 +49,7 @@ export default function AgentsPage() {
                   </p>
                   <p className="text-xs text-warm-600 mt-0.5">
                     Use <code>{AGENT_BOOTSTRAP_PATH}</code> if your agent reads docs
-                    by raw HTTP fetch.
+                    by raw HTTP fetch and needs the full operational quick start.
                   </p>
                 </div>
               </div>
