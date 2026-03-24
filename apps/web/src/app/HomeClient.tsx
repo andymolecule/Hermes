@@ -339,7 +339,7 @@ export function HomeClient() {
                 {/* Header */}
                 <div
                   className="grid items-center px-6 py-3"
-                  style={{ gridTemplateColumns: "minmax(0, 0.6fr) minmax(0, 3fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.9fr) minmax(0, 0.4fr) minmax(0, 0.6fr)", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
+                  style={{ gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 2.4fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 0.8fr)", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
                 >
                   {["Agent", "Bounty Title", "Prize Pool", "Category", "Time Left", "Solvers", "Status"].map((col) => (
                     <div key={col} className="flex items-center gap-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.85)" }}>
@@ -367,16 +367,28 @@ export function HomeClient() {
                         href={`/challenges/${ch.id}`}
                         className="grid items-center px-6 py-4 no-underline transition-colors duration-200"
                         style={{
-                          gridTemplateColumns: "minmax(0, 0.6fr) minmax(0, 3fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.9fr) minmax(0, 0.4fr) minmax(0, 0.6fr)",
+                          gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 2.4fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 0.8fr)",
                           backgroundColor: i % 2 === 0 ? "var(--surface-container-lowest)" : "var(--surface-container-low)",
                         }}
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--surface-container-high)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = i % 2 === 0 ? "var(--surface-container-lowest)" : "var(--surface-container-low)"; }}
                       >
                         <div className="truncate">
-                          <span className="font-mono text-xs truncate" style={{ color: ch.created_by_agent?.agent_name ? "var(--text-secondary)" : "var(--text-muted)" }}>
-                            {ch.created_by_agent?.agent_name || "—"}
-                          </span>
+                          {ch.created_by_agent?.agent_name ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 font-mono text-xs font-medium truncate px-2 py-0.5"
+                              style={{
+                                color: "var(--text-secondary)",
+                                backgroundColor: "var(--surface-container)",
+                                borderRadius: "var(--radius-full)",
+                              }}
+                            >
+                              <Bot className="w-3 h-3 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                              {ch.created_by_agent.agent_name}
+                            </span>
+                          ) : (
+                            <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>—</span>
+                          )}
                         </div>
                         <div className="min-w-0 pr-4">
                           <div className="font-sans font-semibold leading-snug truncate" style={{ fontSize: "0.9375rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.title}</div>

@@ -4,7 +4,6 @@ import { PROTOCOL_FEE_PERCENT } from "@agora/common";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
-  AlertTriangle,
   BarChart3,
   CheckCircle2,
   DollarSign,
@@ -120,7 +119,7 @@ function ProgressMetric({
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
 }) {
   return (
-    <div className="bg-[var(--surface-container-lowest)] rounded-lg p-4">
+    <div>
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
           <Icon className="w-4 h-4" strokeWidth={1.5} />
@@ -179,7 +178,7 @@ function RecentChallengesTable({
   challenges: AnalyticsData["recentChallenges"];
 }) {
   return (
-    <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
+    <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
       <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[var(--surface-container-low)]">
         <FlaskConical className="w-4 h-4" strokeWidth={2} />
         Recent Challenges
@@ -273,7 +272,7 @@ function RecentSubmissionsTable({
   submissions: AnalyticsData["recentSubmissions"];
 }) {
   return (
-    <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
+    <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
       <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[var(--surface-container-low)]">
         <FileText className="w-4 h-4" strokeWidth={2} />
         Recent Submissions
@@ -371,7 +370,7 @@ function AnalyticsSkeleton() {
   );
 }
 
-function ProjectionFreshnessBanner({
+function ProjectionFootnote({
   freshness,
 }: {
   freshness: AnalyticsData["freshness"];
@@ -379,62 +378,31 @@ function ProjectionFreshnessBanner({
   const lagLabel =
     typeof freshness.lagBlocks === "number"
       ? `${freshness.lagBlocks} blocks`
-      : "unknown lag";
-  const tone =
+      : "unknown";
+  const statusLabel =
     freshness.indexerStatus === "ok"
-      ? {
-          border: "#b5cdb6",
-          background: "#e8efe8",
-          text: "#2d6a2e",
-          label: "Projection Current",
-        }
+      ? "current"
       : freshness.indexerStatus === "warning"
-        ? {
-            border: "#f5d0a4",
-            background: "#fff7ed",
-            text: "#b45309",
-            label: "Projection Delayed",
-          }
-        : {
-            border: "#fca5a5",
-            background: "#fef2f2",
-            text: "#dc2626",
-            label: "Projection Stale",
-          };
+        ? "delayed"
+        : "stale";
 
   return (
-    <div
-      className="border p-4"
-      style={{
-        borderColor: tone.border,
-        backgroundColor: tone.background,
-        color: tone.text,
-      }}
-    >
-      <div className="flex items-start gap-3">
-        <AlertTriangle
-          className="w-4 h-4 mt-0.5 flex-shrink-0"
-          strokeWidth={2}
-        />
-        <div className="min-w-0">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider">
-              {tone.label}
-            </p>
-            <p className="text-[10px] font-mono uppercase tracking-wider opacity-80">
-              Source: indexed DB projection
-            </p>
-          </div>
-          <p className="mt-1 text-sm font-mono">
-            {freshness.warning ??
-              `Analytics are derived from indexed DB projections. Current lag: ${lagLabel}.`}
-          </p>
-          <p className="mt-1 text-[10px] font-mono uppercase tracking-wider opacity-80">
-            Generated {formatTimestamp(freshness.generatedAt)} · Checked{" "}
-            {formatTimestamp(freshness.checkedAt)}
-          </p>
-        </div>
-      </div>
+    <div className="flex items-center justify-center gap-2 py-4">
+      <div
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+        style={{
+          backgroundColor:
+            freshness.indexerStatus === "ok"
+              ? "var(--color-success)"
+              : freshness.indexerStatus === "warning"
+                ? "#d97706"
+                : "var(--color-error)",
+        }}
+      />
+      <p className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">
+        Projection {statusLabel} · Lag: {lagLabel} · Generated{" "}
+        {formatTimestamp(freshness.generatedAt)}
+      </p>
     </div>
   );
 }
@@ -465,7 +433,7 @@ function WorkerStatus() {
   const sealingConfigured = health?.sealing?.configured;
 
   return (
-    <div className="bg-[var(--surface-container-lowest)] rounded-lg overflow-hidden">
+    <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
       {/* Header bar */}
       <div className="flex items-center justify-between px-5 py-3 bg-[var(--surface-container-low)]">
         <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
@@ -601,20 +569,20 @@ export function AnalyticsClient() {
       {query.isLoading ? (
         <AnalyticsSkeleton />
       ) : query.error ? (
-        <div className="bg-[var(--surface-container-low)] rounded-lg p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-[var(--text-muted)]">
+        <div className="bg-[var(--surface-container-low)] rounded-2xl p-8 text-center font-mono font-bold text-sm uppercase tracking-wider text-[var(--text-muted)]">
           Unable to load analytics data. Try refreshing.
         </div>
       ) : d ? (
         <>
-          <ProjectionFreshnessBanner freshness={d.freshness} />
-
           {/* ── Section 1: Financial Overview ── */}
-          <div>
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2 flex items-center gap-1.5">
-              <DollarSign className="w-3 h-3" strokeWidth={1.5} />
-              Financial Overview
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[var(--surface-container-low)] rounded-lg overflow-hidden">
+          <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
+            <div className="px-6 pt-5 pb-4">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Financial Overview
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-px mx-px mb-px rounded-b-2xl overflow-hidden">
               <div className="p-5 text-center bg-[var(--surface-container-lowest)]">
                 <HeroMetric
                   label="Total Value Locked"
@@ -644,69 +612,100 @@ export function AnalyticsClient() {
                 />
               </div>
             </div>
-          </div>
+          </section>
 
           {/* ── Section 2: Activity Metrics ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-[var(--surface-container-low)] rounded-lg overflow-hidden">
-            <GaugeCard
-              icon={FlaskConical}
-              label="Challenges"
-              value={d.totalChallenges}
-              detail={`${formatUsdc(d.totalRewardUsdc)} USDC total`}
-            />
-            <GaugeCard
-              icon={FileText}
-              label="Submissions"
-              value={d.totalSubmissions}
-              detail={`${d.scoredSubmissions} scored`}
-            />
-            <GaugeCard
-              icon={Users}
-              label="Unique Solvers"
-              value={d.uniqueSolvers}
-            />
-            <GaugeCard
-              icon={TrendingUp}
-              label="Avg Submissions"
-              value={
-                d.totalChallenges > 0
-                  ? (d.totalSubmissions / d.totalChallenges).toFixed(1)
-                  : "0"
-              }
-              unit="per challenge"
-            />
-          </div>
+          <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
+            <div className="px-6 pt-5 pb-4">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+                <FlaskConical className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Activity Metrics
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-px mx-px mb-px rounded-b-2xl overflow-hidden">
+              <div className="bg-[var(--surface-container-lowest)]">
+                <GaugeCard
+                  icon={FlaskConical}
+                  label="Challenges"
+                  value={d.totalChallenges}
+                  detail={`${formatUsdc(d.totalRewardUsdc)} USDC total`}
+                />
+              </div>
+              <div className="bg-[var(--surface-container-lowest)]">
+                <GaugeCard
+                  icon={FileText}
+                  label="Submissions"
+                  value={d.totalSubmissions}
+                  detail={`${d.scoredSubmissions} scored`}
+                />
+              </div>
+              <div className="bg-[var(--surface-container-lowest)]">
+                <GaugeCard
+                  icon={Users}
+                  label="Unique Solvers"
+                  value={d.uniqueSolvers}
+                />
+              </div>
+              <div className="bg-[var(--surface-container-lowest)]">
+                <GaugeCard
+                  icon={TrendingUp}
+                  label="Avg Submissions"
+                  value={
+                    d.totalChallenges > 0
+                      ? (d.totalSubmissions / d.totalChallenges).toFixed(1)
+                      : "0"
+                  }
+                  unit="per challenge"
+                />
+              </div>
+            </div>
+          </section>
 
           {/* ── Section 3: Health Gauges ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <ProgressMetric
-              label="Completion Rate"
-              value={d.completionRate ?? 0}
-              icon={CheckCircle2}
-            />
-            <ProgressMetric
-              label="Scoring Success"
-              value={d.scoringSuccessRate ?? 0}
-              icon={Target}
-            />
-            <ProgressMetric
-              label="Scored Pipeline"
-              value={
-                d.totalSubmissions > 0
-                  ? Math.round((d.scoredSubmissions / d.totalSubmissions) * 100)
-                  : 0
-              }
-              icon={Zap}
-            />
-          </div>
+          <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
+            <div className="px-6 pt-5 pb-4">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5" strokeWidth={1.5} />
+                Pipeline Health
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-px mx-px mb-px rounded-b-2xl overflow-hidden">
+              <div className="bg-[var(--surface-container-lowest)] p-4">
+                <ProgressMetric
+                  label="Completion Rate"
+                  value={d.completionRate ?? 0}
+                  icon={CheckCircle2}
+                />
+              </div>
+              <div className="bg-[var(--surface-container-lowest)] p-4">
+                <ProgressMetric
+                  label="Scoring Success"
+                  value={d.scoringSuccessRate ?? 0}
+                  icon={Target}
+                />
+              </div>
+              <div className="bg-[var(--surface-container-lowest)] p-4">
+                <ProgressMetric
+                  label="Scored Pipeline"
+                  value={
+                    d.totalSubmissions > 0
+                      ? Math.round((d.scoredSubmissions / d.totalSubmissions) * 100)
+                      : 0
+                  }
+                  icon={Zap}
+                />
+              </div>
+            </div>
+          </section>
 
           {/* ── Section 4: Worker + Recent Tables ── */}
           <WorkerStatus />
 
-          <div className="space-y-4">
-            <RecentChallengesTable challenges={d.recentChallenges} />
-            <RecentSubmissionsTable submissions={d.recentSubmissions} />
-          </div>
+          <RecentChallengesTable challenges={d.recentChallenges} />
+          <RecentSubmissionsTable submissions={d.recentSubmissions} />
+
+          {/* ── Footnote: Projection freshness ── */}
+          <ProjectionFootnote freshness={d.freshness} />
         </>
       ) : null}
     </div>

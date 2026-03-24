@@ -23,7 +23,6 @@ function TopNav() {
   const navItems = [
     { href: "/", label: "Browse" },
     { href: "/leaderboard", label: "Leaderboard" },
-    { href: "/portfolio", label: "Portfolio" },
     { href: "/analytics", label: "Analytics" },
     { href: "/agents", label: "Agents Doc" },
   ];
