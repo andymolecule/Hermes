@@ -18,6 +18,7 @@ import {
 import {
   AGORA_ERROR_CODES,
   AgoraError,
+  type ResolvedChallengeExecution,
   SUBMISSION_LIMITS,
   SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
@@ -44,6 +45,8 @@ import {
 import { getJSON, getText } from "@agora/ipfs";
 import {
   executeScoringPipeline,
+  type ExecuteScoringPipelineInput,
+  type ScoringSpecRuntimeConfig,
   resolveScoringRuntimeConfig,
   resolveSubmissionSource,
   wadToScore,
@@ -85,6 +88,24 @@ function cliWorkflowError(message: string, nextAction?: string) {
     code: AGORA_ERROR_CODES.cliCommandFailed,
     nextAction,
   });
+}
+
+export function buildScoreLocalPipelineInput(input: {
+  executionPlan: ResolvedChallengeExecution & { evaluationBundleCid: string };
+  scoringSpecConfig: ScoringSpecRuntimeConfig;
+  filePath: string;
+}): ExecuteScoringPipelineInput {
+  return {
+    image: input.executionPlan.image,
+    evaluationBundle: { cid: input.executionPlan.evaluationBundleCid },
+    mount: input.executionPlan.mount,
+    submission: { localPath: input.filePath },
+    submissionContract: input.scoringSpecConfig.submissionContract,
+    evaluationContract: input.scoringSpecConfig.evaluationContract,
+    metric: input.executionPlan.metric,
+    policies: input.scoringSpecConfig.policies,
+    env: input.scoringSpecConfig.env,
+  };
 }
 
 function normalizeOptionalPrivateKey(
@@ -565,15 +586,13 @@ export async function scoreLocal(input: {
         })
       : await resolveLocalScoringConfigFromDb(input.challengeId);
 
-    const run = await executeScoringPipeline({
-      image: executionPlan.image,
-      evaluationBundle: { cid: executionPlan.evaluationBundleCid },
-      mount: executionPlan.mount,
-      submission: { localPath: input.filePath },
-      submissionContract: scoringSpecConfig.submissionContract,
-      metric: executionPlan.metric,
-      env: scoringSpecConfig.env,
-    });
+    const run = await executeScoringPipeline(
+      buildScoreLocalPipelineInput({
+        executionPlan,
+        scoringSpecConfig,
+        filePath: input.filePath,
+      }),
+    );
 
     try {
       if (!run.result.ok) {
@@ -604,13 +623,20 @@ async function resolveLocalScoringConfigFromDb(challengeId: string) {
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
     );
   }
+  const evaluationBundleCid = executionPlan.evaluationBundleCid;
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
     submissionContract: cachedRuntimeConfig.submissionContract,
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     policies: cachedRuntimeConfig.policies,
     specCid: (challenge as { spec_cid?: string | null }).spec_cid ?? null,
   });
-  return { executionPlan, scoringSpecConfig };
+  return {
+    executionPlan: {
+      ...executionPlan,
+      evaluationBundleCid,
+    },
+    scoringSpecConfig,
+  };
 }
 
 async function resolveLocalScoringConfigFromApi(input: {
@@ -636,13 +662,20 @@ async function resolveLocalScoringConfigFromApi(input: {
       "Challenge spec is missing an evaluation bundle CID. Next step: inspect the pinned spec and retry against a scoreable challenge.",
     );
   }
+  const evaluationBundleCid = executionPlan.evaluationBundleCid;
 
   const scoringSpecConfig = await resolveScoringRuntimeConfig({
     submissionContract: challenge.submission_contract ?? undefined,
     specCid,
   });
 
-  return { executionPlan, scoringSpecConfig };
+  return {
+    executionPlan: {
+      ...executionPlan,
+      evaluationBundleCid,
+    },
+    scoringSpecConfig,
+  };
 }
 
 export async function verifySubmission(input: {

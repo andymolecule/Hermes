@@ -87,7 +87,7 @@ async function getGhcrHeaders(
 ) {
   const headers: Record<string, string> = {
     Accept:
-      "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+      "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json",
   };
   const token = env.AGORA_GHCR_TOKEN ?? env.GHCR_TOKEN ?? env.GITHUB_TOKEN;
   if (typeof token === "string" && token.length > 0) {

@@ -55,9 +55,14 @@ assert.ok(
 );
 
 let ghcrFetchCount = 0;
+let lastGhcrAcceptHeader = "";
 const ghcrDigest = `sha256:${"a".repeat(64)}`;
-const ghcrFetch = async () => {
+const ghcrFetch = async (_input: unknown, init?: RequestInit) => {
   ghcrFetchCount += 1;
+  lastGhcrAcceptHeader =
+    typeof init?.headers === "object" && init.headers !== null
+      ? String((init.headers as Record<string, string>).Accept ?? "")
+      : "";
   return new Response("", {
     status: 200,
     headers: {
@@ -76,6 +81,10 @@ const resolvedWithAuth = await resolveOciImageToDigest(
 assert.equal(
   resolvedWithAuth,
   `ghcr.io/andymolecule/gems-tabular-scorer@${ghcrDigest}`,
+);
+assert.match(
+  lastGhcrAcceptHeader,
+  /application\/vnd\.oci\.image\.index\.v1\+json/,
 );
 await resolveOciImageToDigest(tableMetricImage, {
   env: { AGORA_GHCR_TOKEN: "secret-token" },
