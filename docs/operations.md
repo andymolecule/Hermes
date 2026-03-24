@@ -325,6 +325,9 @@ Expected flow: post -> indexer pickup -> list -> get -> score-local -> submit ->
 
 Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Use a local Anvil RPC with `evm_increaseTime` for full lifecycle settlement testing.
 The E2E script now expects the scorer image to already be published and pullable. It no longer builds a local official scorer fallback.
+For standard local verification, official scorer images are expected to be
+multi-arch (`linux/amd64` and `linux/arm64`). A published amd64-only official
+image is a release issue, not an expected Apple Silicon limitation.
 
 ---
 

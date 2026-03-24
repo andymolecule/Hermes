@@ -38,6 +38,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -50,7 +56,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.context }}/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ env.GHCR_NAMESPACE }}/${{ matrix.name }}:v1
@@ -78,12 +84,5 @@ jobs:
       - name: Build @agora/common
         run: pnpm --filter @agora/common build
 
-      - name: Verify official scorer digest resolution
+      - name: Verify official scorer digest resolution and multi-arch pullability
         run: pnpm scorers:verify
-
-      - name: Verify official scorer images are public and pullable
-        run: |
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-match-scorer:v1
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-tabular-scorer:v1
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-ranking-scorer:v1
-          docker pull ghcr.io/${{ env.GHCR_NAMESPACE }}/gems-generated-scorer:v1

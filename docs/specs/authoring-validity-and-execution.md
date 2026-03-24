@@ -665,6 +665,34 @@ Rules:
 - worker execution must refuse host-local builds that do not resolve to a
   registry-backed digest
 
+### 5.6.1 Official Scorer Release Platforms
+
+Official scorer release artifacts must be published as multi-arch OCI images.
+
+Required platforms:
+
+- `linux/amd64`
+- `linux/arm64`
+
+This is a release invariant, not a best-effort convenience.
+
+Rationale:
+
+- production executors commonly run on `linux/amd64`
+- local developer and operator machines commonly run on `arm64`, especially
+  Apple Silicon laptops
+- local score verification and lifecycle E2E should not depend on x86
+  emulation for the standard official scorer path
+
+Rules:
+
+- official scorer tags such as `:v1` must resolve to a manifest list that
+  includes both required platforms
+- CI scorer verification must fail if either platform is missing
+- official scorer Dockerfiles must not hard-pin `linux/amd64` unless a scorer
+  has a documented architecture-specific dependency that Agora has explicitly
+  accepted
+
 ### 5.7 V1 Comparison Semantics
 
 The V1 scorer contract is fixed and deterministic:

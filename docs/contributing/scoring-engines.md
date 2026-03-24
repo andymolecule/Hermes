@@ -72,6 +72,7 @@ Each catalog entry owns:
 - supported metrics
 - allowed policies
 - `mount`
+- official release-platform contract (`linux/amd64` and `linux/arm64`)
 
 This is the only official scoring config layer.
 
@@ -108,6 +109,8 @@ It owns:
 
 1. Add or update the catalog entry in `packages/common/src/official-scorer-catalog.ts`.
 2. Publish the scorer Docker image.
+   - official scorer tags must publish as a multi-arch manifest list for
+     `linux/amd64` and `linux/arm64`
 3. If the new method also needs a new authoring experience, add or update authoring defaults in `packages/common/src/challenges/templates.ts`.
 4. Add tests in:
    - `packages/common/src/tests/*`
@@ -167,6 +170,8 @@ If a new scoring method needs edits in those layers, the design is probably too 
 
 - Official runtime support must come from exactly one catalog. Do not add a
   second image whitelist or metric-routing table.
+- Official scorer release tags must stay multi-arch for `linux/amd64` and
+  `linux/arm64`.
 - `challenge_type` is an authoring/product concept. It must not route worker
   execution.
 - The canonical worker cache is `execution_plan_json`, not a hand-built mirror

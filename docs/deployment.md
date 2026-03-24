@@ -184,12 +184,14 @@ This section covers non-code work for deployment across hosted systems.
   - `gems-ranking-scorer`
   - `gems-generated-scorer`
 - Use the `Publish Scorers` GitHub Actions workflow to build and publish official scorer images from `containers/`.
-- The scorer publish workflow now verifies both digest resolution and unauthenticated `docker pull` after publishing. A release is not healthy until both pass.
+- The scorer publish workflow must publish a multi-arch manifest list for `linux/amd64` and `linux/arm64`.
+- The scorer publish workflow now verifies digest resolution plus unauthenticated `docker pull` for both `linux/amd64` and `linux/arm64` after publishing. A release is not healthy until all pass.
 - If the repo owner and GHCR namespace differ, provide `GHCR_PAT` (with `write:packages`) and, if needed, `GHCR_USERNAME` to the workflow so it can push into the org package namespace.
 - Make official scorer packages public in GHCR so solvers and verifiers can inspect and pull them without credentials.
 - If you cannot make the package public yet, provide `AGORA_GHCR_TOKEN` for any API or worker environment that resolves official image digests, and configure Docker auth on the worker host separately. Public packages are still the preferred steady state.
 - Publish stable release tags (for example `:v1`) and resolve them to pinned `@sha256:` digests before challenge persistence. Do not use `:latest`.
 - Verify tags/digests referenced by official execution templates are available.
+- Do not treat amd64-only official images as healthy for release. Local Apple Silicon operator/developer hosts are part of the supported verification surface.
 - Do not bake hidden labels, hidden test sets, or other evaluation-only data into the image. Put that material in the evaluation bundle or mounted dataset CIDs instead.
 - After the first publish, confirm package visibility in the GitHub Packages UI. The workflow pushes images, but package visibility is still an org-level/package-level setting.
 
