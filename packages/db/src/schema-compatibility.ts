@@ -32,6 +32,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
+    id: "unmatched_submissions_table",
+    table: "unmatched_submissions",
+    select:
+      "challenge_id,on_chain_sub_id,solver_address,result_hash,tx_hash,scored,first_seen_at,last_seen_at",
+    nextStep:
+      "Apply packages/db/supabase/migrations/002_unmatched_submissions.sql, then reload the PostgREST schema cache before restarting services.",
+  },
+  {
     id: "submissions_registration_columns",
     table: "submissions",
     select: "submission_intent_id,trace_id",

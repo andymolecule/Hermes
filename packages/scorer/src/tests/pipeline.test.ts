@@ -10,7 +10,9 @@ import {
 } from "@agora/common";
 import {
   executeScoringPipeline,
+  resolveLocalScoringRuntimeConfig,
   resolveScoringRuntimeConfig,
+  resolveTrustedScoringRuntimeConfig,
 } from "../pipeline.js";
 
 test("executeScoringPipeline rejects contract-invalid CSV before Docker runs", async () => {
@@ -48,8 +50,8 @@ test("executeScoringPipeline rejects contract-invalid CSV before Docker runs", a
   await run.cleanup();
 });
 
-test("resolveScoringRuntimeConfig prefers cached DB values", async () => {
-  const runtime = await resolveScoringRuntimeConfig({
+test("resolveTrustedScoringRuntimeConfig returns cached DB values without fallback", () => {
+  const runtime = resolveTrustedScoringRuntimeConfig({
     env: { AGORA_TOLERANCE: "0.01" },
     submissionContract: createCsvTableSubmissionContract({
       requiredColumns: ["id", "prediction"],
@@ -62,7 +64,7 @@ test("resolveScoringRuntimeConfig prefers cached DB values", async () => {
   assert.equal(runtime.submissionContract?.kind, "csv_table");
 });
 
-test("resolveScoringRuntimeConfig loads submission contract from pinned YAML specs", async () => {
+test("resolveLocalScoringRuntimeConfig loads submission contract from pinned YAML specs", async () => {
   const originalFetch = global.fetch;
   global.fetch = async (input) => {
     assert.equal(
@@ -124,7 +126,7 @@ deadline: 2026-03-20T00:00:00Z
   };
 
   try {
-    const runtime = await resolveScoringRuntimeConfig({
+    const runtime = await resolveLocalScoringRuntimeConfig({
       specCid: "ipfs://bafkreiabcdef",
     });
     assert.equal(runtime.submissionContract?.kind, "csv_table");
@@ -138,4 +140,12 @@ deadline: 2026-03-20T00:00:00Z
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test("resolveScoringRuntimeConfig remains a compatibility alias for local fallback resolution", async () => {
+  const runtime = await resolveScoringRuntimeConfig({
+    env: { AGORA_TOLERANCE: "0.01" },
+  });
+
+  assert.deepEqual(runtime.env, { AGORA_TOLERANCE: "0.01" });
 });

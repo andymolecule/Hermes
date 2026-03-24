@@ -103,15 +103,15 @@ function createFakeDb() {
                 const rows = [...challengeRows.values()];
                 const match =
                   column === "id"
-                    ? rows.find((row) => row.id === value) ?? null
+                    ? (rows.find((row) => row.id === value) ?? null)
                     : column === "tx_hash"
-                      ? rows.find((row) => row.tx_hash === value) ?? null
+                      ? (rows.find((row) => row.tx_hash === value) ?? null)
                       : column === "contract_address"
-                        ? rows.find(
+                        ? (rows.find(
                             (row) =>
                               row.contract_address?.toLowerCase() ===
                               value.toLowerCase(),
-                          ) ?? null
+                          ) ?? null)
                         : null;
                 return {
                   async maybeSingle() {
@@ -343,7 +343,7 @@ test("StatusChanged projects scoring status and marks the event indexed", async 
   });
 });
 
-test("Submitted flags targeted repair when the on-chain submission cannot be matched to a registered intent", async () => {
+test("Submitted indexes the event without targeted repair when the submission is tracked as unmatched", async () => {
   const db = createFakeDb();
   const txHash = `0x${"9".repeat(64)}` as `0x${string}`;
 
@@ -382,7 +382,7 @@ test("Submitted flags targeted repair when the on-chain submission cannot be mat
     projectOnChainSubmissionFromRegistrationImpl: async () => null,
   });
 
-  assert.equal(result.needsRepair, true);
+  assert.equal(result.needsRepair, false);
   assert.deepEqual(db.indexedEvents.get(`${txHash}:8`), {
     tx_hash: txHash,
     log_index: 8,

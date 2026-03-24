@@ -1,10 +1,12 @@
 import { type ChallengeStatus, SUBMISSION_RESULT_FORMAT } from "@agora/common";
 import {
   deleteSubmissionsFromOnChainSubId,
+  deleteUnmatchedSubmission,
   ensureScoreJobForRegisteredSubmission,
   findSubmissionIntentByMatch,
   getSubmissionByChainId,
   upsertSubmissionOnChain,
+  upsertUnmatchedSubmissionObservation,
 } from "@agora/db";
 import {
   getChallengeSubmissionCount,
@@ -40,6 +42,8 @@ export async function projectOnChainSubmissionFromRegistration(input: {
   findSubmissionIntentByMatchImpl?: typeof findSubmissionIntentByMatch;
   upsertSubmissionOnChainImpl?: typeof upsertSubmissionOnChain;
   ensureScoreJobForRegisteredSubmissionImpl?: typeof ensureScoreJobForRegisteredSubmission;
+  upsertUnmatchedSubmissionObservationImpl?: typeof upsertUnmatchedSubmissionObservation;
+  deleteUnmatchedSubmissionImpl?: typeof deleteUnmatchedSubmission;
 }) {
   const existingSubmission = input.existingSubmission;
   const findIntent =
@@ -48,6 +52,11 @@ export async function projectOnChainSubmissionFromRegistration(input: {
   const ensureScoreJob =
     input.ensureScoreJobForRegisteredSubmissionImpl ??
     ensureScoreJobForRegisteredSubmission;
+  const upsertUnmatched =
+    input.upsertUnmatchedSubmissionObservationImpl ??
+    upsertUnmatchedSubmissionObservation;
+  const deleteUnmatched =
+    input.deleteUnmatchedSubmissionImpl ?? deleteUnmatchedSubmission;
 
   let registration = null;
   if (
@@ -68,14 +77,22 @@ export async function projectOnChainSubmissionFromRegistration(input: {
       resultHash: input.onChainSubmission.resultHash,
     });
     if (!intent) {
+      await upsertUnmatched(input.db, {
+        challenge_id: input.challenge.id,
+        on_chain_sub_id: input.onChainSubmissionId,
+        solver_address: input.onChainSubmission.solver,
+        result_hash: input.onChainSubmission.resultHash,
+        tx_hash: input.txHash,
+        scored: input.onChainSubmission.scored,
+      });
       indexerLogger.warn(
         {
-          event: "indexer.submission.unregistered",
+          event: "indexer.submission.unmatched_tracked",
           challengeId: input.challenge.id,
           onChainSubmissionId: input.onChainSubmissionId,
           solver: input.onChainSubmission.solver,
         },
-        "Observed on-chain submission without a registered submission intent; skipping projection refresh",
+        "Observed on-chain submission without a registered submission intent; tracked for retry",
       );
       return null;
     }
@@ -122,6 +139,11 @@ export async function projectOnChainSubmissionFromRegistration(input: {
         : { scored_at: null }),
     tx_hash: input.txHash,
     trace_id: registration.trace_id,
+  });
+
+  await deleteUnmatched(input.db, {
+    challengeId: input.challenge.id,
+    onChainSubmissionId: input.onChainSubmissionId,
   });
 
   await ensureScoreJob(
@@ -190,8 +212,9 @@ export async function handleSubmittedEvent(input: {
   });
 
   return {
-    needsRepair: !projected,
+    needsRepair: false,
     onChainSubmissionId: Number(submissionId),
+    unmatchedTracked: !projected,
   };
 }
 
@@ -253,8 +276,9 @@ export async function handleScoredEvent(input: {
   });
 
   return {
-    needsRepair: !projected,
+    needsRepair: false,
     onChainSubmissionId: Number(submissionId),
+    unmatchedTracked: !projected,
   };
 }
 

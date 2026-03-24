@@ -1,11 +1,16 @@
 import {
   AgoraError,
   type AuthoringArtifactOutput,
+  type OfficialScorerComparatorOutput,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
-  type OfficialScorerComparatorOutput,
 } from "@agora/common";
+import {
+  type AuthoringStepResult,
+  stepFailure,
+  stepOk,
+} from "./authoring-step.js";
 
 export interface ResolvedAuthoringArtifacts {
   resolvedArtifacts: Array<
@@ -38,7 +43,7 @@ function resolveEvaluationArtifactIndex(input: {
   );
 }
 
-export function resolveAuthoringArtifacts(input: {
+export function resolveAuthoringArtifactsResult(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
   evaluationArtifactId: string;
   evaluationIdColumn: string;
@@ -49,7 +54,7 @@ export function resolveAuthoringArtifacts(input: {
   comparator: OfficialScorerComparatorOutput;
   template: "official_table_metric_v1";
   scorerImage: string;
-}): ResolvedAuthoringArtifacts {
+}): AuthoringStepResult<ResolvedAuthoringArtifacts> {
   const evaluationArtifactIndex = resolveEvaluationArtifactIndex({
     uploadedArtifacts: input.uploadedArtifacts,
     evaluationArtifactId: input.evaluationArtifactId,
@@ -59,44 +64,68 @@ export function resolveAuthoringArtifacts(input: {
     evaluationArtifactIndex < 0 ||
     evaluationArtifactIndex >= input.uploadedArtifacts.length
   ) {
-    throw new AgoraError(
-      "Agora could not identify the hidden evaluation table from the uploaded files. Next step: select the evaluation file and retry.",
-      {
-        code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
-        status: 422,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+      message:
+        "Agora could not identify the hidden evaluation table from the uploaded files. Next step: select the evaluation file and retry.",
+      nextAction: "select the evaluation file and retry.",
+      blockingLayer: "input",
+      field: "evaluation_artifact",
+      missingFields: ["evaluation_artifact"],
+      candidateValues: [],
+      reasonCodes: ["evaluation_artifact_missing"],
+      warnings: [],
+    });
   }
 
   const evaluationArtifact = input.uploadedArtifacts[evaluationArtifactIndex];
   if (!evaluationArtifact) {
-    throw new AgoraError(
-      "Agora could not load the selected evaluation file. Next step: choose a valid uploaded file and retry.",
-      {
-        code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
-        status: 422,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+      message:
+        "Agora could not load the selected evaluation file. Next step: choose a valid uploaded file and retry.",
+      nextAction: "choose a valid uploaded file and retry.",
+      blockingLayer: "input",
+      field: "evaluation_artifact",
+      missingFields: ["evaluation_artifact"],
+      candidateValues: [],
+      reasonCodes: ["evaluation_artifact_missing"],
+      warnings: [],
+    });
   }
   const detectedColumns = evaluationArtifact.detected_columns ?? [];
   if (
     !detectedColumns.includes(input.evaluationIdColumn) ||
     !detectedColumns.includes(input.evaluationValueColumn)
   ) {
-    throw new AgoraError(
-      "The selected evaluation file does not contain the chosen ID/value columns. Next step: pick columns that exist in the uploaded file and retry.",
-      {
-        code: "AUTHORING_EVALUATION_COLUMNS_INVALID",
-        status: 422,
-      },
-    );
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_EVALUATION_COLUMNS_INVALID",
+      message:
+        "The selected evaluation file does not contain the chosen ID/value columns. Next step: pick columns that exist in the uploaded file and retry.",
+      nextAction: "pick columns that exist in the uploaded file and retry.",
+      blockingLayer: "input",
+      field: "execution",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["evaluation_columns_invalid"],
+      warnings: [],
+    });
   }
 
   const resolvedArtifacts = input.uploadedArtifacts.map((artifact, index) => ({
     artifact_id: artifactId(artifact, index),
     ...artifact,
-    role: index === evaluationArtifactIndex ? "hidden_evaluation" : "supporting_context",
-    visibility: index === evaluationArtifactIndex ? ("private" as const) : ("public" as const),
+    role:
+      index === evaluationArtifactIndex
+        ? "hidden_evaluation"
+        : "supporting_context",
+    visibility:
+      index === evaluationArtifactIndex
+        ? ("private" as const)
+        : ("public" as const),
   }));
 
   const submissionContract = createCsvTableSubmissionContract({
@@ -125,9 +154,31 @@ export function resolveAuthoringArtifacts(input: {
     },
   });
 
-  return {
+  return stepOk({
     resolvedArtifacts,
     submissionContract,
     execution,
-  };
+  });
+}
+
+export function resolveAuthoringArtifacts(input: {
+  uploadedArtifacts: AuthoringArtifactOutput[];
+  evaluationArtifactId: string;
+  evaluationIdColumn: string;
+  evaluationValueColumn: string;
+  submissionIdColumn: string;
+  submissionValueColumn: string;
+  metric: string;
+  comparator: OfficialScorerComparatorOutput;
+  template: "official_table_metric_v1";
+  scorerImage: string;
+}): ResolvedAuthoringArtifacts {
+  const result = resolveAuthoringArtifactsResult(input);
+  if (result.ok) {
+    return result.value;
+  }
+  throw new AgoraError(result.failure.message, {
+    code: result.failure.code,
+    status: 422,
+  });
 }

@@ -6,7 +6,7 @@ import {
   loadConfig,
   readIndexerHealthRuntimeConfig,
 } from "@agora/common";
-import { createSupabaseClient } from "@agora/db";
+import { countUnmatchedSubmissions, createSupabaseClient } from "@agora/db";
 
 export type IndexerLagStatus =
   | "ok"
@@ -36,6 +36,11 @@ export interface IndexerHealthSnapshot {
   mismatch: {
     hasAlternateActiveFactory: boolean;
     message: string | null;
+  };
+  unmatchedSubmissions: {
+    total: number;
+    stale: number;
+    staleThresholdMinutes: number;
   };
   thresholds: {
     warning: number;
@@ -84,6 +89,11 @@ export function buildIndexerHealthSnapshot(input: {
   indexedHead: number | null;
   configuredCursorKey: string;
   factoryCursorRows: IndexerCursorRow[];
+  unmatchedSubmissions?: {
+    total: number;
+    stale: number;
+    staleThresholdMinutes: number;
+  };
   nowMs?: number;
 }): IndexerHealthSnapshot {
   const finalizedHead = Math.max(
@@ -117,7 +127,10 @@ export function buildIndexerHealthSnapshot(input: {
     ? "Configured factory cursor is not the only active factory cursor on this chain. Check deployment env alignment."
     : null;
   let status = toLagStatus(lagBlocks, input.indexedHead !== null);
-  if (status === "ok" && hasAlternateActiveFactory) {
+  if (
+    (status === "ok" || status === "empty") &&
+    (hasAlternateActiveFactory || (input.unmatchedSubmissions?.stale ?? 0) > 0)
+  ) {
     status = "warning";
   }
 
@@ -138,6 +151,11 @@ export function buildIndexerHealthSnapshot(input: {
     mismatch: {
       hasAlternateActiveFactory,
       message: mismatchMessage,
+    },
+    unmatchedSubmissions: input.unmatchedSubmissions ?? {
+      total: 0,
+      stale: 0,
+      staleThresholdMinutes: 5,
     },
     thresholds: {
       warning: input.healthConfig.warningLagBlocks,
@@ -162,11 +180,17 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
     factoryAddress,
   );
   const factoryCursorPrefix = `factory:${chainId}:`;
+  const staleThresholdMinutes = 5;
+  const staleOlderThanIso = new Date(
+    Date.now() - staleThresholdMinutes * 60_000,
+  ).toISOString();
 
   const [
     { data: cursorRow, error: cursorError },
     { data: highWaterCursorRow, error: highWaterCursorError },
     { data: factoryCursorRows, error: factoryCursorError },
+    unmatchedTotal,
+    unmatchedStale,
     chainHead,
   ] = await Promise.all([
     db
@@ -184,6 +208,10 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
       .select("cursor_key, block_number, updated_at")
       .like("cursor_key", `${factoryCursorPrefix}%`)
       .order("updated_at", { ascending: false }),
+    countUnmatchedSubmissions(db),
+    countUnmatchedSubmissions(db, {
+      olderThanIso: staleOlderThanIso,
+    }),
     publicClient.getBlockNumber(),
   ]);
 
@@ -218,5 +246,10 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
     }),
     configuredCursorKey: cursorKey,
     factoryCursorRows: (factoryCursorRows ?? []) as IndexerCursorRow[],
+    unmatchedSubmissions: {
+      total: unmatchedTotal,
+      stale: unmatchedStale,
+      staleThresholdMinutes,
+    },
   });
 }

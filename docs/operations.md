@@ -391,8 +391,9 @@ Per-challenge overrides can be set in the challenge spec:
 2. Check `score_jobs` transitions: once the submission has both on-chain state and the linked registered metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure retries may temporarily stay `queued` with a future `next_attempt_at`.
 3. Check `GET /api/worker-health`: it should show `status != "warning"` and `workers.healthyWorkersForActiveRuntimeVersion > 0` before you expect automatic scoring. `healthyWorkersNotOnActiveRuntimeVersion` is still useful diagnostically, but it is no longer a hard readiness requirement when an active healthy worker already exists.
 4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after the indexed `submissions` row exists with its linked `submission_intent_id`. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
-5. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
-6. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
+5. If the on-chain submission arrived before the intent became visible, check `GET /api/indexer-health`: `unmatchedSubmissions.total` should briefly rise and then drain. Operators can inspect the backlog at `GET /api/internal/submissions/challenges/:id/unmatched`.
+6. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
+7. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.
 
 ---
 
@@ -404,6 +405,7 @@ The indexer now separates:
 
 - **Replay cursor** for reorg/retry safety
 - **Factory high-water cursor** for health and lag reporting
+- **Unmatched submission backlog** for on-chain submissions that arrived before their intent
 - **Targeted repair** for challenge-local drift (`agora repair-challenge`)
 - **Internal modules by concern** — `indexer.ts` drives polling, `factory-events.ts` handles factory-side creation projection, `challenge-events.ts` dispatches per-challenge logs, `submissions.ts` owns submission projection/recovery, `settlement.ts` owns payout/finalization repair, and `cursors.ts` owns challenge cursor bootstrap/persist
 
@@ -411,8 +413,9 @@ If the indexer falls behind:
 
 1. Restart indexer.
 2. Check RPC health and `/api/indexer-health`.
-3. If one challenge projection drifted, run targeted repair.
-4. If transport/state replay is needed, run reindex.
+3. If `unmatchedSubmissions.stale > 0`, inspect `GET /api/internal/submissions/challenges/:id/unmatched` before reaching for repair.
+4. If one challenge projection drifted outside the unmatched-submission backlog, run targeted repair.
+5. If transport/state replay is needed, run reindex.
 
 Reindex procedures:
 
@@ -434,7 +437,7 @@ Notes:
 
 - Reindex rewinds factory + challenge cursors for the active chain.
 - Purging indexed events forces event handlers to run again from the specified block.
-- `repair-challenge` rebuilds one challenge projection at the current confirmed tip without rewinding the whole indexer.
+- `repair-challenge` rebuilds one challenge projection at the current confirmed tip without rewinding the whole indexer. It is no longer the first-line recovery path for late submission intents; unmatched submission backlog should drain automatically.
 
 ```mermaid
 sequenceDiagram
@@ -495,23 +498,30 @@ Rotation sequence:
 
 1. Restart indexer process.
 2. Verify RPC reachability.
-3. Check `GET /api/indexer-health`. It now reports lag from the factory high-water cursor, not the replay cursor.
-4. If the issue is challenge-local drift, repair that challenge first:
+3. Check `GET /api/indexer-health`. It now reports lag from the factory high-water cursor, not the replay cursor, and includes unmatched submission backlog counts.
+4. If `unmatchedSubmissions.stale > 0`, inspect the per-challenge backlog first:
+
+```bash
+curl -H "Authorization: Bearer $AGORA_AUTHORING_OPERATOR_TOKEN" \
+  "$AGORA_API_URL/api/internal/submissions/challenges/<challenge_id>/unmatched"
+```
+
+5. If the issue is challenge-local drift outside that backlog, repair that challenge:
 
 ```bash
 agora repair-challenge --id <challenge_id>
 ```
 
-5. Rewind cursors with CLI (dry-run first) only when transport replay is needed:
+6. Rewind cursors with CLI (dry-run first) only when transport replay is needed:
 
 ```bash
 agora reindex --from-block <block_number> --dry-run
 agora reindex --from-block <block_number>
 ```
 
-6. If a deep replay is required, include `--purge-indexed-events`.
-7. Ensure `AGORA_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
-8. If the factory address changed, align API/indexer/worker/web env first, restart all services, then reindex the fresh `v2` deployment from its deploy block.
+7. If a deep replay is required, include `--purge-indexed-events`.
+8. Ensure `AGORA_INDEXER_START_BLOCK` is set before restarting indexer when bootstrapping a new factory.
+9. If the factory address changed, align API/indexer/worker/web env first, restart all services, then reindex the fresh `v2` deployment from its deploy block.
 
 ### Worker Stalled
 

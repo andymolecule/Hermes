@@ -133,15 +133,21 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
   }
 }
 
-export async function resolveScoringRuntimeConfig(
-  input: ResolveScoringRuntimeConfigInput,
-): Promise<ScoringSpecRuntimeConfig> {
-  const resolved: ScoringSpecRuntimeConfig = {
+export function resolveTrustedScoringRuntimeConfig(
+  input: Omit<ResolveScoringRuntimeConfigInput, "specCid" | "onLegacyFallback">,
+): ScoringSpecRuntimeConfig {
+  return {
     env: input.env ?? undefined,
     submissionContract: input.submissionContract ?? undefined,
     evaluationContract: input.evaluationContract ?? undefined,
     policies: input.policies ?? undefined,
   };
+}
+
+export async function resolveLocalScoringRuntimeConfig(
+  input: ResolveScoringRuntimeConfigInput,
+): Promise<ScoringSpecRuntimeConfig> {
+  const resolved = resolveTrustedScoringRuntimeConfig(input);
 
   const needsEnv = resolved.env === undefined;
   const needsSubmissionContract = resolved.submissionContract === undefined;
@@ -169,6 +175,12 @@ export async function resolveScoringRuntimeConfig(
       resolved.evaluationContract ?? legacy.evaluationContract,
     policies: resolved.policies ?? legacy.policies,
   };
+}
+
+export async function resolveScoringRuntimeConfig(
+  input: ResolveScoringRuntimeConfigInput,
+): Promise<ScoringSpecRuntimeConfig> {
+  return resolveLocalScoringRuntimeConfig(input);
 }
 
 async function stageSourceToPath(
