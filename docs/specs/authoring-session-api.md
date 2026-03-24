@@ -147,6 +147,22 @@ Agora does NOT:
 - Assume answers the caller didn't provide
 - Auto-publish without explicit confirmation
 
+### 1.2A Identity Domains (Locked)
+
+Agora treats these identity domains as separate:
+
+| Domain | Meaning | Canonical storage |
+|-------|---------|-------------------|
+| Agora agent identity | Which authenticated Agora agent created a session or published through Agora | `auth_agents.id` joined through nullable `created_by_agent_id` foreign keys |
+| Wallet identity | Which wallet acts on-chain | `poster_address`, `solver_address`, `tx_hash`, `claim_tx_hash` |
+| Source provenance | Where a session or published challenge came from | read-only `provenance` / `source_*` metadata |
+
+Rules:
+- provenance is never used as session identity or ownership
+- authenticated agent identity is never inferred from `source_agent_handle`
+- the target storage model uses nullable `created_by_agent_id` on agent-owned authoring sessions and published challenges
+- wallet identity remains canonical for on-chain actions even when an authenticated agent is also known
+
 ### 1.3 Verbs (The Validation Flow)
 
 ```
@@ -265,17 +281,20 @@ Public names in this table are permanent. Internal names can change freely.
 16. **Every session has a creator.** The canonical session object includes a required `creator` field representing the authenticated principal that created the session.
 17. **Sessions are private before publish.** Only the authenticated principal that created the session may read it, patch it, or publish it.
 18. **Non-owner access is hidden, not explained.** If a caller attempts to access another principal's session, the API returns `404 not_found` rather than revealing that the session exists.
-19. **Agora stays platform-agnostic at the file boundary.** The session API accepts fetchable file URLs and Agora artifact refs. Platform-specific file handles such as Telegram file IDs are out of the public contract.
-20. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run deterministic validation first and must not automatically invoke Layer 2 inference.
-21. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
-22. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
-23. **Standard V1 authoring resolves the official template internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves `official_table_metric_v1` and the exact pinned scorer image during compilation and returns them in `resolved` and `compilation`.
-24. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
-25. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
-26. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
-27. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
-28. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
-29. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` in the canonical authoring error envelope and should include decoded revert details such as `revertErrorName` and `revertReason` in the optional `error.details` payload when the underlying viem error exposes them.
+19. **Provenance is metadata only.** `provenance` is never used as a relational identity key for sessions, challenges, or submissions.
+20. **Agent attribution uses Agora ids, not copied names.** The target data model stores nullable `created_by_agent_id` / `submitted_by_agent_id` foreign keys and joins `auth_agents.agent_name` at read time when needed.
+21. **Wallet identity remains canonical for chain actions.** Poster and solver wallets, transaction hashes, and claim records stay wallet-based even when an Agora agent is also known.
+22. **Agora stays platform-agnostic at the file boundary.** The session API accepts fetchable file URLs and Agora artifact refs. Platform-specific file handles such as Telegram file IDs are out of the public contract.
+23. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run deterministic validation first and must not automatically invoke Layer 2 inference.
+24. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
+25. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
+26. **Standard V1 authoring resolves the official template internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves `official_table_metric_v1` and the exact pinned scorer image during compilation and returns them in `resolved` and `compilation`.
+27. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
+28. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
+29. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
+30. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
+31. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
+32. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` in the canonical authoring error envelope and should include decoded revert details such as `revertErrorName` and `revertReason` in the optional `error.details` payload when the underlying viem error exposes them.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
@@ -625,6 +644,11 @@ Every session response includes:
 - `artifacts` — current uploaded artifacts
 - all canonical fields, even when their current value is `null` or `[]`
 
+Identity rule:
+- `creator` exposes the authenticated principal for the session
+- `provenance` exposes origin metadata only
+- the session contract does not imply that provenance and creator are the same actor
+
 Cutover rule:
 
 - the `spec_cid` returned after publish refers to the sanitized public
@@ -643,6 +667,7 @@ Cutover rule:
 | Public language not frozen | `posting session`, `draft`, and `session` coexisted | Docs, routes, tests, and UI optimized for different contracts |
 | Scope not frozen | A non-web integration concept expanded into a shared agent + web authoring contract mid-stream | Large refactors landed before the actual target was stable |
 | Identity not frozen | External thread/post IDs were treated as provenance in some places and as session identity in others | Refresh/reuse behavior was introduced and then contradicted |
+| Identity domains not separated | source handles, Agora agent auth, and wallet ownership were too easy to conflate | Challenge/submission attribution and leaderboard behavior drifted |
 | Input contract not frozen | Some flows assumed full intent up front, others allowed rough context | Adapters, validators, and tests encoded conflicting assumptions |
 | State machine not frozen | Implementation kept compiler-centric states while the spec moved toward business-centric states | Storage and response payloads diverged from the intended product model |
 | Delete boundary not frozen | Old `/drafts/*` surfaces stayed alive while new session language appeared | The codebase accumulated aliases instead of converging |
@@ -654,6 +679,7 @@ Cutover rule:
 - Primary route family: `/drafts/*` vs `/sessions/*`
 - Caller coverage: non-web-only vs shared agent + web
 - Identity model: `external_id` provenance vs session identity
+- Agora agent identity vs wallet identity vs provenance
 - Minimum create input: rough context vs full intent
 - Response model: legacy conversational payloads vs `resolved/validation/checklist/compilation`
 - State model: compiler states vs business states
@@ -756,6 +782,8 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q34 | Which published fields belong on the canonical session object? | Prevents publish outputs from drifting into ad hoc per-caller convenience fields | Prefer a minimal explicit published field set | `LOCKED: canonical published fields are challenge_id, contract_address, spec_cid, and tx_hash; derived data stays out of the core contract` |
 | Q35 | Should the canonical session object expose Agora's current resolved state? | Determines whether callers can see and correct what Agora currently accepts as the machine-readable challenge definition | Prefer explicit resolved state | `LOCKED: expose resolved.intent and resolved.execution on the session object; they reflect Agora's current accepted structured state, not a raw echo of caller input` |
 | Q36 | Should the canonical session object expose source provenance metadata? | Determines whether callers can correlate a session back to its origin without turning provenance into identity | Prefer read-only provenance metadata | `LOCKED: expose provenance as read-only metadata; when the source is Beach this may include source, thread/post ID, and source_url; it is never used for lookup/identity and is null when absent` |
+| Q36A | How should authenticated agent identity relate to provenance? | Prevents `source_agent_handle` from becoming a fake ownership key | Prefer explicit separation | `LOCKED: provenance is metadata only; authenticated agent identity is stored through nullable *_by_agent_id foreign keys and joined from auth_agents at read time` |
+| Q36B | What is the canonical ownership model for agent-created sessions/challenges? | Prevents ownership from drifting between copied strings and wallet-only views | Prefer explicit agent ids plus wallet addresses | `LOCKED: agent-created sessions and published challenges use nullable created_by_agent_id for Agora identity; wallet addresses remain canonical for on-chain actions` |
 | Q37 | Should the canonical session object expose expiration explicitly? | Determines whether callers can reason about expiry without reproducing TTL math client-side | Prefer absolute expiration timestamps | `LOCKED: expose expires_at as an absolute timestamp; it refreshes when the session enters a state with a new TTL window` |
 | Q38 | Should the canonical session object include an explicit schema version field? | Determines whether versioning is embedded in payloads or handled at the route/docs boundary | Prefer no payload-level version field for now | `LOCKED: do not include schema_version on the session object; versioning lives at the API path/docs level if needed later` |
 | Q39 | Should the canonical session object expose created/updated timestamps? | Determines whether callers get operational transparency about session recency and change timing | Prefer exposing both timestamps | `LOCKED: expose created_at and updated_at on the canonical session object` |

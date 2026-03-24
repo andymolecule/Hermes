@@ -154,6 +154,7 @@ export async function createSubmissionIntentWorkflow(input: {
   challengeId?: string;
   challengeAddress?: string;
   solverAddress: string;
+  submittedByAgentId?: string | null;
   resultCid: string;
   resultFormat?: SubmissionResultFormat;
   optionalSessionAddress: string | null;
@@ -244,6 +245,7 @@ export async function createSubmissionIntentWorkflow(input: {
     (await createSubmissionIntent(db, {
       challenge_id: challenge.id,
       solver_address: normalizedSolverAddress,
+      submitted_by_agent_id: input.submittedByAgentId ?? null,
       result_hash: resultHash,
       result_cid: normalizedResultCid,
       result_format: requestedResultFormat,

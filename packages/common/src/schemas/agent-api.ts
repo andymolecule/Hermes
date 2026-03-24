@@ -71,6 +71,13 @@ export const challengeRefsSchema = z.object({
   factoryChallengeId: nonNegativeIntegerSchema.nullable(),
 });
 
+export const agentIdentitySchema = z
+  .object({
+    agent_id: challengeIdSchema,
+    agent_name: z.string().nullable(),
+  })
+  .strict();
+
 export const submissionRefsSchema = z.object({
   submissionId: submissionIdSchema,
   challengeId: challengeIdSchema,
@@ -111,6 +118,7 @@ export const challengeSummarySchema = z
     factory_challenge_id: nonNegativeIntegerSchema.nullable(),
     submissions_count: z.number().int().nonnegative().optional(),
     created_at: z.string().datetime({ offset: true }).nullable().optional(),
+    created_by_agent: agentIdentitySchema.nullable().optional(),
     refs: challengeRefsSchema,
   })
   .strict();
@@ -393,9 +401,14 @@ export const submissionRegistrationRequestSchema = z
 export type AgentChallengesQuery = z.output<typeof agentChallengesQuerySchema>;
 export type AgentChallengeSummary = z.infer<typeof challengeSummarySchema>;
 export type AgentChallengeDetail = z.infer<typeof challengeDetailSchema>;
+export type AgentChallengeArtifacts = z.infer<typeof challengeArtifactsSchema>;
+export type AgentChallengeDetailPayload = z.infer<
+  typeof agentChallengeDetailResponseSchema
+>["data"];
 export type AgentChallengeLeaderboardEntry = z.infer<
   typeof challengeLeaderboardEntrySchema
 >;
+export type AgentIdentity = z.infer<typeof agentIdentitySchema>;
 export type SubmissionStatusOutput = z.infer<typeof submissionStatusSchema>;
 export type ChallengeRefsOutput = z.infer<typeof challengeRefsSchema>;
 export type SubmissionRefsOutput = z.infer<typeof submissionRefsSchema>;

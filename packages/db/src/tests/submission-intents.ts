@@ -33,6 +33,7 @@ async function testCreateSubmissionIntentNormalizesAndDefaults() {
   await createSubmissionIntent(db, {
     challenge_id: "challenge-1",
     solver_address: "0x00000000000000000000000000000000000000AA",
+    submitted_by_agent_id: "agent-abc",
     result_hash: "0xabc",
     result_cid: "ipfs://bafy-test",
     expires_at: "2026-03-11T00:00:00.000Z",
@@ -46,6 +47,7 @@ async function testCreateSubmissionIntentNormalizesAndDefaults() {
     capturedPayload?.result_format,
     SUBMISSION_RESULT_FORMAT.plainV0,
   );
+  assert.equal(capturedPayload?.submitted_by_agent_id, "agent-abc");
 }
 
 async function testFindActiveSubmissionIntentByMatchUsesCanonicalLookup() {
@@ -54,6 +56,7 @@ async function testFindActiveSubmissionIntentByMatchUsesCanonicalLookup() {
       id: "intent-1",
       challenge_id: "challenge-1",
       solver_address: "0xsolver",
+      submitted_by_agent_id: null,
       result_hash: "0xhash",
       result_cid: "ipfs://bafy-test",
       result_format: SUBMISSION_RESULT_FORMAT.plainV0,

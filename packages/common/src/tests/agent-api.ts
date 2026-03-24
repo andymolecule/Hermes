@@ -44,6 +44,10 @@ const listResponse = agentChallengesListResponseSchema.parse({
       contract_address: "0x0000000000000000000000000000000000000001",
       factory_address: "0x0000000000000000000000000000000000000002",
       factory_challenge_id: 7,
+      created_by_agent: {
+        agent_id: "22222222-2222-4222-8222-222222222222",
+        agent_name: "SolverBot",
+      },
       refs: {
         challengeId: "11111111-1111-4111-8111-111111111111",
         challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -60,6 +64,7 @@ const listResponse = agentChallengesListResponseSchema.parse({
 
 assert.equal(listResponse.data.length, 1);
 assert.equal(listResponse.meta?.next_cursor, "2026-03-12T00:00:00.000Z");
+assert.equal(listResponse.data[0]?.created_by_agent?.agent_name, "SolverBot");
 
 const detailResponse = agentChallengeDetailResponseSchema.parse({
   data: {
@@ -110,6 +115,7 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
     artifacts: {
       public: [
         {
+          artifact_id: "training_data_csv",
           role: "training_data",
           visibility: "public",
           uri: "ipfs://bafytrain",
@@ -120,6 +126,7 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
       ],
       private: [
         {
+          artifact_id: "hidden_labels_csv",
           role: "hidden_labels",
           visibility: "private",
           file_name: "hidden.csv",

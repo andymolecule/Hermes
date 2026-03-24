@@ -18,8 +18,7 @@ export type AuthoringSessionState =
 
 export interface AuthoringSessionInsert {
   poster_address?: string | null;
-  creator_type?: "web" | "agent" | null;
-  creator_agent_id?: string | null;
+  created_by_agent_id?: string | null;
   state: AuthoringSessionState;
   intent_json?: ChallengeIntentOutput | null;
   authoring_ir_json?: ChallengeAuthoringIrOutput | null;
@@ -37,8 +36,7 @@ export interface AuthoringSessionInsert {
 export interface AuthoringSessionRow {
   id: string;
   poster_address: string | null;
-  creator_type: "web" | "agent" | null;
-  creator_agent_id: string | null;
+  created_by_agent_id: string | null;
   state: AuthoringSessionState;
   intent_json: ChallengeIntentOutput | null;
   authoring_ir_json: ChallengeAuthoringIrOutput | null;
@@ -77,8 +75,7 @@ export async function createAuthoringSession(
     .from("authoring_sessions")
     .insert({
       poster_address: normalizeAddress(payload.poster_address),
-      creator_type: payload.creator_type ?? null,
-      creator_agent_id: payload.creator_agent_id ?? null,
+      created_by_agent_id: payload.created_by_agent_id ?? null,
       state: payload.state,
       intent_json: payload.intent_json ?? null,
       authoring_ir_json: payload.authoring_ir_json ?? null,
@@ -126,8 +123,7 @@ export async function updateAuthoringSession(
     id: string;
     expected_updated_at?: string;
     poster_address?: string | null;
-    creator_type?: "web" | "agent" | null;
-    creator_agent_id?: string | null;
+    created_by_agent_id?: string | null;
     state?: AuthoringSessionState;
     intent_json?: ChallengeIntentOutput | null;
     authoring_ir_json?: ChallengeAuthoringIrOutput | null;
@@ -149,11 +145,8 @@ export async function updateAuthoringSession(
   if (input.poster_address !== undefined) {
     patch.poster_address = normalizeAddress(input.poster_address);
   }
-  if (input.creator_type !== undefined) {
-    patch.creator_type = input.creator_type;
-  }
-  if (input.creator_agent_id !== undefined) {
-    patch.creator_agent_id = input.creator_agent_id;
+  if (input.created_by_agent_id !== undefined) {
+    patch.created_by_agent_id = input.created_by_agent_id;
   }
   if (input.state !== undefined) {
     patch.state = input.state;
@@ -270,13 +263,9 @@ export async function listAuthoringSessionsByCreator(
     .order("updated_at", { ascending: false });
 
   if (input.type === "web") {
-    query = query
-      .eq("creator_type", "web")
-      .eq("poster_address", normalizeAddress(input.address));
+    query = query.eq("poster_address", normalizeAddress(input.address));
   } else {
-    query = query
-      .eq("creator_type", "agent")
-      .eq("creator_agent_id", input.agentId);
+    query = query.eq("created_by_agent_id", input.agentId);
   }
 
   const { data, error } = await query;

@@ -29,6 +29,8 @@ type FakeIndexedEvent = {
 type FakeChallengeRow = {
   id: string;
   status: string;
+  tx_hash?: string | null;
+  contract_address?: string | null;
   winning_on_chain_sub_id?: number | null;
   winner_solver_address?: string | null;
 };
@@ -95,6 +97,39 @@ function createFakeDb() {
 
       if (table === "challenges") {
         return {
+          select() {
+            return {
+              eq(column: string, value: string) {
+                const rows = [...challengeRows.values()];
+                const match =
+                  column === "id"
+                    ? rows.find((row) => row.id === value) ?? null
+                    : column === "tx_hash"
+                      ? rows.find((row) => row.tx_hash === value) ?? null
+                      : column === "contract_address"
+                        ? rows.find(
+                            (row) =>
+                              row.contract_address?.toLowerCase() ===
+                              value.toLowerCase(),
+                          ) ?? null
+                        : null;
+                return {
+                  async maybeSingle() {
+                    return { data: match, error: null };
+                  },
+                  async single() {
+                    if (match) {
+                      return { data: match, error: null };
+                    }
+                    return {
+                      data: null,
+                      error: { message: "Row not found", code: "PGRST116" },
+                    };
+                  },
+                };
+              },
+            };
+          },
           update(payload: Record<string, unknown>) {
             return {
               eq(_column: string, challengeId: string) {

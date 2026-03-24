@@ -28,7 +28,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,trace_id",
+    select: "result_format,trace_id,submitted_by_agent_id",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
@@ -77,7 +77,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     id: "challenge_source_attribution_columns",
     table: "challenges",
     select:
-      "source_provider,source_external_id,source_external_url,source_agent_handle",
+      "created_by_agent_id,source_provider,source_external_id,source_external_url,source_agent_handle",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
@@ -97,7 +97,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     id: "authoring_sessions_table",
     table: "authoring_sessions",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,creator_type,creator_agent_id",
+      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {

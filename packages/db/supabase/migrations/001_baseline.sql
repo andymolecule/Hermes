@@ -12,6 +12,7 @@ create table challenges (
   contract_address text not null,
   factory_address text not null,
   poster_address text not null,
+  created_by_agent_id uuid,
   title text not null,
   description text not null,
   domain text not null,
@@ -95,6 +96,9 @@ create index idx_challenges_deadline
 create index idx_challenges_poster
   on challenges(poster_address);
 
+create index idx_challenges_created_by_agent_id
+  on challenges(created_by_agent_id);
+
 create index idx_challenges_source_provider_created_at
   on challenges(source_provider, created_at desc);
 
@@ -102,6 +106,7 @@ create table submission_intents (
   id uuid primary key default gen_random_uuid(),
   challenge_id uuid not null references challenges(id) on delete cascade,
   solver_address text not null,
+  submitted_by_agent_id uuid,
   result_hash text not null,
   result_cid text not null,
   result_format text not null default 'plain_v0',
@@ -123,6 +128,9 @@ create index idx_submission_intents_expires_created
 create index idx_submission_intents_trace_id
   on submission_intents(trace_id)
   where trace_id is not null;
+
+create index idx_submission_intents_submitted_by_agent_id
+  on submission_intents(submitted_by_agent_id);
 
 create table submissions (
   id uuid primary key default gen_random_uuid(),
@@ -346,11 +354,18 @@ create table auth_agents (
 create index idx_auth_agents_api_key_hash
   on auth_agents(api_key_hash);
 
+alter table challenges
+  add constraint challenges_created_by_agent_id_fkey
+  foreign key (created_by_agent_id) references auth_agents(id);
+
+alter table submission_intents
+  add constraint submission_intents_submitted_by_agent_id_fkey
+  foreign key (submitted_by_agent_id) references auth_agents(id);
+
 create table authoring_sessions (
   id uuid primary key default gen_random_uuid(),
   poster_address text,
-  creator_type text,
-  creator_agent_id uuid references auth_agents(id),
+  created_by_agent_id uuid references auth_agents(id),
   state text not null,
   intent_json jsonb,
   authoring_ir_json jsonb,
@@ -381,8 +396,11 @@ create table authoring_sessions (
       poster_address is null
       or poster_address = lower(poster_address)
     ),
-  constraint authoring_sessions_creator_type_check
-    check (creator_type is null or creator_type in ('web', 'agent'))
+  constraint authoring_sessions_creator_identity_check
+    check (
+      (poster_address is not null and created_by_agent_id is null)
+      or (poster_address is null and created_by_agent_id is not null)
+    )
 );
 
 create index idx_authoring_sessions_state
@@ -397,11 +415,8 @@ create index idx_authoring_sessions_poster
 create index idx_authoring_sessions_published_challenge
   on authoring_sessions(published_challenge_id);
 
-create index idx_authoring_sessions_creator_type
-  on authoring_sessions(creator_type);
-
-create index idx_authoring_sessions_creator_agent_id
-  on authoring_sessions(creator_agent_id);
+create index idx_authoring_sessions_created_by_agent_id
+  on authoring_sessions(created_by_agent_id);
 
 create or replace function append_authoring_session_conversation_log(
   p_session_id uuid,

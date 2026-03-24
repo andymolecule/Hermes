@@ -303,10 +303,7 @@ function principalOwnsSession(
   principal: AuthoringSessionCreatorOutput,
 ) {
   if (principal.type === "agent") {
-    return (
-      session.creator_type === "agent" &&
-      session.creator_agent_id === principal.agent_id
-    );
+    return session.created_by_agent_id === principal.agent_id;
   }
 
   return (
@@ -317,15 +314,13 @@ function principalOwnsSession(
 function creatorInsertFields(principal: AuthoringSessionCreatorOutput) {
   if (principal.type === "agent") {
     return {
-      creator_type: "agent" as const,
-      creator_agent_id: principal.agent_id,
+      created_by_agent_id: principal.agent_id,
       poster_address: null,
     };
   }
 
   return {
-    creator_type: "web" as const,
-    creator_agent_id: null,
+    created_by_agent_id: null,
     poster_address: principal.address,
   };
 }

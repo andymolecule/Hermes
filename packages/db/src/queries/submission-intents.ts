@@ -21,6 +21,7 @@ import {
 export interface SubmissionIntentInsert {
   challenge_id: string;
   solver_address: string;
+  submitted_by_agent_id?: string | null;
   result_hash: string;
   result_cid: string;
   result_format?: SubmissionResultFormat;
@@ -32,6 +33,7 @@ export interface SubmissionIntentRow {
   id: string;
   challenge_id: string;
   solver_address: string;
+  submitted_by_agent_id: string | null;
   result_hash: string;
   result_cid: string;
   result_format: SubmissionResultFormat;
@@ -62,6 +64,7 @@ export async function createSubmissionIntent(
     .insert({
       ...payload,
       solver_address: payload.solver_address.toLowerCase(),
+      submitted_by_agent_id: payload.submitted_by_agent_id ?? null,
       result_format: payload.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
     })
     .select("*")

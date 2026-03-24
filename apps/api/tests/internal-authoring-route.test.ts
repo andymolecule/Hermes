@@ -7,8 +7,7 @@ function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringS
   return {
     id: overrides.id ?? "session-123",
     poster_address: overrides.poster_address ?? null,
-    creator_type: overrides.creator_type ?? "agent",
-    creator_agent_id: overrides.creator_agent_id ?? "agent-abc",
+    created_by_agent_id: overrides.created_by_agent_id ?? "agent-abc",
     state: overrides.state ?? "awaiting_input",
     intent_json: overrides.intent_json ?? null,
     authoring_ir_json: overrides.authoring_ir_json ?? null,

@@ -178,8 +178,7 @@ function createSession(
     id: overrides.id ?? "session-123",
     poster_address:
       overrides.poster_address ?? "0x00000000000000000000000000000000000000aa",
-    creator_type: overrides.creator_type ?? "web",
-    creator_agent_id: overrides.creator_agent_id ?? null,
+    created_by_agent_id: overrides.created_by_agent_id ?? null,
     state: overrides.state ?? "awaiting_input",
     intent_json: intent,
     authoring_ir_json:
@@ -221,8 +220,7 @@ test("POST /sessions creates a new awaiting-input session", async () => {
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-new",
-        creator_type: payload.creator_type ?? null,
-        creator_agent_id: payload.creator_agent_id ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? null,
         poster_address: payload.poster_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
@@ -239,6 +237,10 @@ test("POST /sessions creates a new awaiting-input session", async () => {
     updateAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         ...(storedSession ?? createSession({ id: "session-new" })),
+        created_by_agent_id:
+          payload.created_by_agent_id ??
+          storedSession?.created_by_agent_id ??
+          null,
         state: payload.state ?? storedSession?.state ?? "awaiting_input",
         authoring_ir_json:
           payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
@@ -327,8 +329,7 @@ test("POST /sessions accepts structured intent and execution", async () => {
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-structured",
-        creator_type: payload.creator_type ?? null,
-        creator_agent_id: payload.creator_agent_id ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? null,
         poster_address: payload.poster_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
@@ -437,8 +438,7 @@ test("GET /sessions/:id hides sessions owned by another principal", async () => 
     createSupabaseClient: () => ({}) as never,
     getAuthoringSessionById: async () =>
       createSession({
-        creator_type: "agent",
-        creator_agent_id: "agent-abc",
+        created_by_agent_id: "agent-abc",
         poster_address: null,
       }),
   });
@@ -453,8 +453,7 @@ test("GET /sessions/:id hides sessions owned by another principal", async () => 
 
 test("PATCH /sessions/:id applies structured fields and returns ready", async () => {
   let storedSession = createSession({
-    creator_type: "agent",
-    creator_agent_id: "agent-abc",
+    created_by_agent_id: "agent-abc",
     poster_address: null,
     intent_json: null,
     authoring_ir_json: buildAuthoringIr({
@@ -539,8 +538,7 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
 
 test("PATCH /sessions/:id returns invalid_request for invalid reward_total values", async () => {
   let storedSession = createSession({
-    creator_type: "agent",
-    creator_agent_id: "agent-abc",
+    created_by_agent_id: "agent-abc",
     poster_address: null,
     intent_json: null,
     authoring_ir_json: buildAuthoringIr({
@@ -606,8 +604,7 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
     createSupabaseClient: () => ({}) as never,
     getAuthoringSessionById: async () =>
       createSession({
-        creator_type: "agent",
-        creator_agent_id: "agent-abc",
+        created_by_agent_id: "agent-abc",
         poster_address: null,
         state: "rejected",
         failure_message:
@@ -668,8 +665,7 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
     createSupabaseClient: () => ({}) as never,
     getAuthoringSessionById: async () =>
       createSession({
-        creator_type: "agent",
-        creator_agent_id: "agent-abc",
+        created_by_agent_id: "agent-abc",
         poster_address: null,
         uploaded_artifacts_json: uploadedArtifacts as never,
         authoring_ir_json: buildAuthoringIr({
@@ -736,8 +732,7 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
     createSupabaseClient: () => ({}) as never,
     getAuthoringSessionById: async () =>
       createSession({
-        creator_type: "agent",
-        creator_agent_id: "agent-abc",
+        created_by_agent_id: "agent-abc",
         poster_address: null,
         uploaded_artifacts_json: uploadedArtifacts as never,
         authoring_ir_json: buildAuthoringIr({
@@ -820,8 +815,7 @@ test("POST /sessions/:id/publish returns the canonical authoring error envelope 
 
   let storedSession = createSession({
     id: "session-publish",
-    creator_type: "agent",
-    creator_agent_id: "agent-abc",
+    created_by_agent_id: "agent-abc",
     poster_address: null,
     state: "ready",
     published_spec_cid: "ipfs://already-pinned",

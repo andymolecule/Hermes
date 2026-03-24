@@ -120,9 +120,14 @@ test("toChallengeSummary emits explicit protocol refs", () => {
     factory_challenge_id: "7",
     submissions_count: 0,
     created_at: "2026-03-10T00:00:00.000Z",
+    created_by_agent: {
+      id: "11111111-1111-4111-8111-111111111111",
+      agent_name: "SolverBot",
+    },
   } as never);
 
   assert.equal(summary.factory_challenge_id, 7);
+  assert.equal(summary.created_by_agent?.agent_name, "SolverBot");
   assert.equal(
     summary.refs.challengeAddress,
     "0x0000000000000000000000000000000000000001",

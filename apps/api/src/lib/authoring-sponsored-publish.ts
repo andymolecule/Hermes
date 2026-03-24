@@ -472,6 +472,7 @@ export async function sponsorAndPublishAuthoringSession(input: {
       contractAddress: challengeAddress,
       factoryAddress: config.AGORA_FACTORY_ADDRESS,
       posterAddress,
+      createdByAgentId: input.session.created_by_agent_id,
       specCid: input.specCid,
       spec: input.spec,
       rewardAmountUsdc: rewardAmount,
@@ -488,7 +489,6 @@ export async function sponsorAndPublishAuthoringSession(input: {
       input.updateAuthoringSessionImpl ?? updateAuthoringSession
     )(input.db, {
       id: input.session.id,
-      poster_address: sponsorAddress,
       state: "published",
       compilation_json: {
         ...input.session.compilation_json,

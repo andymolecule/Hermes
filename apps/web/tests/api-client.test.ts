@@ -62,6 +62,10 @@ test("listChallenges validates the API response shape before returning rows", as
             contract_address: "0x0000000000000000000000000000000000000001",
             factory_address: "0x0000000000000000000000000000000000000002",
             factory_challenge_id: 7,
+            created_by_agent: {
+              agent_id: "11111111-1111-4111-8111-111111111111",
+              agent_name: "SolverBot",
+            },
             refs: {
               challengeId: "d1a47e01-8154-40b2-8f9e-13e7a4dd3f83",
               challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -81,6 +85,7 @@ test("listChallenges validates the API response shape before returning rows", as
     const rows = await listChallenges({});
     assert.equal(rows.length, 1);
     assert.equal(rows[0]?.reward_amount, 20);
+    assert.equal(rows[0]?.created_by_agent?.agent_name, "SolverBot");
   } finally {
     globalThis.fetch = originalFetch;
   }

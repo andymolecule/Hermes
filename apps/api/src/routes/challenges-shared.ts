@@ -215,6 +215,14 @@ export function toChallengeRefs(
 }
 
 export function toChallengeSummary(row: ChallengeRow | ChallengeListRow) {
+  const joinedCreatedByAgent = (() => {
+    const candidate = "created_by_agent" in row ? row.created_by_agent : null;
+    if (Array.isArray(candidate)) {
+      return candidate[0] ?? null;
+    }
+    return candidate;
+  })();
+
   return {
     id: row.id,
     title: row.title,
@@ -235,10 +243,18 @@ export function toChallengeSummary(row: ChallengeRow | ChallengeListRow) {
       (row as { winning_on_chain_sub_id?: unknown }).winning_on_chain_sub_id,
     ),
     created_at: row.created_at ?? null,
-    source_agent_handle:
-      "source_agent_handle" in row &&
-      typeof row.source_agent_handle === "string"
-        ? row.source_agent_handle
+    created_by_agent:
+      joinedCreatedByAgent &&
+      typeof joinedCreatedByAgent === "object" &&
+      typeof (joinedCreatedByAgent as { id?: unknown }).id === "string"
+        ? {
+            agent_id: (joinedCreatedByAgent as { id: string }).id,
+            agent_name:
+              typeof (joinedCreatedByAgent as { agent_name?: unknown })
+                .agent_name === "string"
+                ? (joinedCreatedByAgent as { agent_name: string }).agent_name
+                : null,
+          }
         : null,
     refs: toChallengeRefs(row),
   };

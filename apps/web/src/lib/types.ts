@@ -1,82 +1,14 @@
-import type { ChallengeStatus } from "@agora/common";
+import type {
+  AgentChallengeDetailPayload,
+  AgentChallengeLeaderboardEntry,
+  AgentChallengeSummary,
+} from "@agora/common";
 
-export type ChallengeExecution = {
-  template: string;
-  metric: string;
-  comparator: "maximize" | "minimize";
-  scorer_image: string;
-};
-
-export type PublicChallengeArtifact = {
-  role: string;
-  visibility: "public";
-  uri: string;
-  file_name?: string | null;
-  mime_type?: string | null;
-  description?: string | null;
-  url: string | null;
-};
-
-export type PrivateChallengeArtifact = {
-  role: string;
-  visibility: "private";
-  file_name?: string | null;
-  mime_type?: string | null;
-  description?: string | null;
-};
-
-export type Challenge = {
-  id: string;
-  title: string;
-  description: string;
-  spec_cid?: string | null;
-  domain: string;
-  status: ChallengeStatus;
-  reward_amount: number | string;
-  deadline: string;
-  challenge_type: string;
-  contract_address: string;
-  factory_address?: string | null;
-  factory_challenge_id?: number | null;
-  submissions_count?: number;
-  source_agent_handle?: string | null;
-  execution?: ChallengeExecution | null;
-  distribution_type?: string | null;
-  dispute_window_hours?: number | null;
-  minimum_score?: number | string | null;
-  max_submissions_total?: number | null;
-  max_submissions_per_solver?: number | null;
-  submission_contract?: unknown | null;
-  created_at?: string;
-  refs?: {
-    challengeId: string;
-    challengeAddress: string;
-    factoryAddress: string | null;
-    factoryChallengeId: number | null;
-  };
-};
-
-export type Submission = {
-  id: string;
-  on_chain_sub_id: number;
-  solver_address: string;
-  score: string | null;
-  scored: boolean;
-  submitted_at: string;
-  has_public_verification?: boolean;
-};
-
-export type ChallengeDetails = {
-  challenge: Challenge;
-  artifacts: {
-    public: PublicChallengeArtifact[];
-    private: PrivateChallengeArtifact[];
-    spec_cid: string | null;
-    spec_url: string | null;
-  };
-  submissions: Submission[];
-  leaderboard: Submission[];
-};
+export type Challenge = AgentChallengeSummary;
+export type Submission = AgentChallengeLeaderboardEntry;
+export type ChallengeDetails = AgentChallengeDetailPayload;
+export type PublicChallengeArtifact = ChallengeDetails["artifacts"]["public"][number];
+export type PrivateChallengeArtifact = ChallengeDetails["artifacts"]["private"][number];
 
 export type Stats = {
   challengesTotal: number;

@@ -21,6 +21,7 @@ export interface ChallengeInsert {
   contract_address: string;
   factory_address: string;
   poster_address: string;
+  created_by_agent_id?: string | null;
   title: string;
   description: string;
   domain: string;
@@ -50,6 +51,7 @@ export interface BuildChallengeInsertInput {
   contractAddress: string;
   factoryAddress: string;
   posterAddress: string;
+  createdByAgentId?: string | null;
   specCid: string;
   spec: TrustedChallengeSpecOutput;
   rewardAmountUsdc: number;
@@ -81,6 +83,7 @@ export async function buildChallengeInsert(
     contract_address: input.contractAddress.toLowerCase(),
     factory_address: input.factoryAddress.toLowerCase(),
     poster_address: input.posterAddress.toLowerCase(),
+    created_by_agent_id: input.createdByAgentId ?? null,
     title: publicSpec.title,
     description: publicSpec.description,
     domain: publicSpec.domain,
@@ -135,7 +138,7 @@ export async function upsertChallenge(
 export async function getChallengeById(db: AgoraDbClient, id: string) {
   const { data, error } = await db
     .from("challenges")
-    .select("*")
+    .select("*, created_by_agent:auth_agents(id,agent_name)")
     .eq("id", id)
     .single();
   if (error) {
@@ -150,7 +153,7 @@ export async function getChallengeByContractAddress(
 ) {
   const { data, error } = await db
     .from("challenges")
-    .select("*")
+    .select("*, created_by_agent:auth_agents(id,agent_name)")
     .eq("contract_address", contractAddress.toLowerCase())
     .single();
   if (error) {
@@ -264,7 +267,7 @@ export async function listChallengesWithDetails(
 ) {
   let query = db
     .from("challenges")
-    .select("*, submissions(count)")
+    .select("*, created_by_agent:auth_agents(id,agent_name), submissions(count)")
     .order("created_at", { ascending: false });
 
   if (filters.status) {

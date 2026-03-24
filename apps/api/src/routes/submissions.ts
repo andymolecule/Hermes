@@ -25,7 +25,10 @@ import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { jsonError } from "../lib/api-error.js";
-import { getSession } from "../lib/auth-store.js";
+import {
+  getAgentFromAuthorizationHeader,
+  getSession,
+} from "../lib/auth-store.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import { getRequestId, getRequestLogger } from "../lib/observability.js";
 import {
@@ -93,6 +96,18 @@ async function getOptionalSessionAddress(c: Context<ApiEnv>) {
   const token = getCookie(c, "agora_session");
   const session = await getSession(token);
   return session?.address.toLowerCase() ?? null;
+}
+
+async function getOptionalSubmissionActor(c: Context<ApiEnv>) {
+  const [agent, sessionAddress] = await Promise.all([
+    getAgentFromAuthorizationHeader(c.req.header("authorization")),
+    getOptionalSessionAddress(c),
+  ]);
+
+  return {
+    optionalSessionAddress: sessionAddress,
+    submittedByAgentId: agent?.agentId ?? null,
+  };
 }
 
 async function readSubmissionUpload(c: Context<ApiEnv>) {
@@ -415,13 +430,15 @@ router.post(
   async (c) => {
     try {
       const payload = c.req.valid("json");
+      const actor = await getOptionalSubmissionActor(c);
       const data = await createSubmissionIntentWorkflow({
         challengeId: payload.challengeId,
         challengeAddress: payload.challengeAddress,
         solverAddress: payload.solverAddress,
+        submittedByAgentId: actor.submittedByAgentId,
         resultCid: payload.resultCid,
         resultFormat: payload.resultFormat,
-        optionalSessionAddress: await getOptionalSessionAddress(c),
+        optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),
         logger: getRequestLogger(c),
       });
@@ -453,6 +470,7 @@ router.post(
   async (c) => {
     try {
       const payload = c.req.valid("json");
+      const actor = await getOptionalSubmissionActor(c);
       const result = await registerSubmissionWorkflow({
         challengeId: payload.challengeId,
         challengeAddress: payload.challengeAddress,
@@ -460,7 +478,7 @@ router.post(
         resultCid: payload.resultCid,
         txHash: payload.txHash,
         resultFormat: payload.resultFormat,
-        optionalSessionAddress: await getOptionalSessionAddress(c),
+        optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),
         logger: getRequestLogger(c),
       });

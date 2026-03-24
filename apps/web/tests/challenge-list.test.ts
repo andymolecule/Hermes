@@ -17,7 +17,15 @@ function makeChallenge(
     deadline: "2026-03-20T00:00:00.000Z",
     challenge_type: "reproducibility",
     contract_address: "0x0000000000000000000000000000000000000001",
+    factory_address: "0x0000000000000000000000000000000000000002",
+    factory_challenge_id: 1,
     created_at: "2026-03-10T00:00:00.000Z",
+    refs: {
+      challengeId: id,
+      challengeAddress: "0x0000000000000000000000000000000000000001",
+      factoryAddress: "0x0000000000000000000000000000000000000002",
+      factoryChallengeId: 1,
+    },
     ...overrides,
   };
 }

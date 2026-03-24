@@ -11,9 +11,7 @@ import type {
   AnalyticsData,
   ApiHealth,
   AuthSession,
-  Challenge,
   ChallengeClaimableInfo,
-  ChallengeDetails,
   PublicLeaderboardEntry,
   SolverPortfolio,
   Stats,
@@ -132,7 +130,7 @@ export async function listChallenges(filters: {
     throw new Error(`API request failed (${response.status}): ${message}`);
   }
   const json = (await response.json()) as unknown;
-  return agentChallengesListResponseSchema.parse(json).data as Challenge[];
+  return agentChallengesListResponseSchema.parse(json).data;
 }
 
 export async function getChallenge(id: string) {
@@ -144,8 +142,7 @@ export async function getChallenge(id: string) {
     throw new Error(`API request failed (${response.status}): ${message}`);
   }
   const json = (await response.json()) as unknown;
-  return agentChallengeDetailResponseSchema.parse(json)
-    .data as ChallengeDetails;
+  return agentChallengeDetailResponseSchema.parse(json).data;
 }
 
 function isLegacySpecMissingSubmissionContract(raw: unknown): boolean {

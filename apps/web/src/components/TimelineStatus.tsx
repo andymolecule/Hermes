@@ -7,13 +7,16 @@ import {
 import { ArrowUpRight, Calendar, Clock, ExternalLink } from "lucide-react";
 import { getChallengeTimelineFlow } from "../lib/challenge-status-copy";
 import { formatDateTime, shortAddress } from "../lib/format";
-import type { Challenge, Submission } from "../lib/types";
+import type { ChallengeDetails, Submission } from "../lib/types";
 import { getExplorerAddressUrl } from "../lib/wallet/network";
 
 export function TimelineStatus({
   challenge,
   submissions = [],
-}: { challenge: Challenge; submissions?: Submission[] }) {
+}: {
+  challenge: ChallengeDetails["challenge"];
+  submissions?: Submission[];
+}) {
   const flow: Array<{ key: ChallengeStatus; label: string; detail: string }> =
     getChallengeTimelineFlow(challenge.status);
 

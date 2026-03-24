@@ -209,13 +209,10 @@ function classifyBlockingLayer(
 }
 
 function resolveCreator(session: AuthoringSessionRow) {
-  if (
-    session.creator_type === "agent" &&
-    typeof session.creator_agent_id === "string"
-  ) {
+  if (typeof session.created_by_agent_id === "string") {
     return {
       type: "agent" as const,
-      agent_id: session.creator_agent_id,
+      agent_id: session.created_by_agent_id,
     };
   }
 
