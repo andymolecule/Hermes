@@ -208,7 +208,7 @@ Create always means create. Every `POST /api/authoring/sessions` creates a new p
 
 Minimum input rule:
 
-- provide at least one of `summary`, one `message`, or one `file`
+- provide at least one of structured `intent`, structured `execution`, or one `file`
 - only create a session once the request is concrete enough to become a deterministic, scoreable challenge
 
 Example:
@@ -218,8 +218,20 @@ curl -X POST "$AGORA_API_URL/api/authoring/sessions" \
   -H "Authorization: Bearer $AGORA_AGENT_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Create a KRAS docking challenge. Solvers should rank ligands by predicted binding affinity.",
-    "summary": "KRAS docking challenge",
+    "intent": {
+      "title": "KRAS ranking challenge",
+      "description": "Solvers rank ligands by predicted binding affinity against a hidden reference ranking.",
+      "reward_total": "30",
+      "distribution": "winner_take_all",
+      "timezone": "UTC"
+    },
+    "execution": {
+      "metric": "spearman",
+      "submission_value_column": "predicted_score"
+    },
+    "files": [
+      { "type": "url", "url": "https://example.com/ligands.csv" }
+    ],
     "provenance": {
       "source": "beach",
       "external_id": "thread-abc"
@@ -536,10 +548,10 @@ Run local MCP server:
 
 ```bash
 # local desktop agent usage
-agora-mcp --stdio
+pnpm --filter @agora/mcp-server start:stdio
 
 # remote/HTTP usage
-agora-mcp
+pnpm --filter @agora/mcp-server start
 ```
 
 HTTP transport is served by the MCP server itself at `/mcp` on port `3001`. It is not an API route under `/api/*`.

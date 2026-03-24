@@ -56,6 +56,13 @@ export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/ap
     "funding": "sponsor"
   }'`;
 
+export const AGENT_BOOTSTRAP_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
+  -H "Authorization: Bearer <api_key>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "url": "https://example.com/evaluation.csv"
+  }'`;
+
 const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
 
 export function getAgentBootstrapText() {
@@ -87,7 +94,18 @@ Persist the returned api_key securely.
 For all future Agora calls send:
 - Authorization: Bearer <api_key>
 
-Core runtime loop:
+Canonical machine-readable contract:
+- OpenAPI: ${API_BASE_URL}/.well-known/openapi.json
+
+Supported agent modes:
+1. Direct authoring
+   - Register, create a private session, patch missing fields, publish with sponsor funding.
+2. Discovery only
+   - Read public challenges over HTTP or MCP.
+3. Solver
+   - Install the CLI, run local scoring, submit a sealed solution, verify, finalize, and claim.
+
+Direct authoring loop:
 1. When your human asks you to create a challenge, call:
    ${API_BASE_URL}/api/authoring/sessions
 2. Minimum create rule: provide at least one of structured intent, structured execution, or one file.
@@ -107,6 +125,9 @@ ${AGENT_BOOTSTRAP_CREATE_COMMAND}
 
 Patch example:
 ${AGENT_BOOTSTRAP_PATCH_COMMAND}
+
+Upload example:
+${AGENT_BOOTSTRAP_UPLOAD_COMMAND}
 
 Publish example:
 ${AGENT_BOOTSTRAP_PUBLISH_COMMAND}
@@ -149,6 +170,76 @@ Telegram reply policy:
   4. "Suggested defaults" only when helpful.
   5. One clear next action line.
 - If Agora is still working in the background, do not send multiple rapid-fire progress messages unless the session state actually changed.
+
+Discovery and public reads:
+- List open challenges:
+  curl "${API_BASE_URL}/api/challenges?status=open&limit=20"
+- Get one challenge by UUID:
+  curl "${API_BASE_URL}/api/challenges/<challenge_uuid>"
+- Get one challenge by contract address:
+  curl "${API_BASE_URL}/api/challenges/by-address/<0xaddress>"
+- Read the leaderboard once results are public:
+  curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/leaderboard"
+- Check one submission:
+  curl "${API_BASE_URL}/api/submissions/<submission_uuid>/status"
+
+Solver setup:
+- Prerequisites:
+  - Node.js 20+
+  - pnpm
+  - Docker
+  - Base Sepolia ETH for gas
+  - wallet private key in AGORA_PRIVATE_KEY for submit / finalize / claim
+- Repo-local install:
+  git clone https://github.com/andymolecule/Agora.git
+  cd Agora
+  pnpm install
+  pnpm turbo build --filter=@agora/cli...
+- Optional local alias:
+  alias agora="node apps/cli/dist/index.js"
+- Configure:
+  agora config init --api-url "${API_BASE_URL}"
+  agora config set private_key env:AGORA_PRIVATE_KEY
+  agora doctor
+
+Solver workflow:
+1. Discover:
+   agora list --status open --format json
+2. Download the spec and public artifacts:
+   agora get <challenge_uuid> --download ./workspace --format json
+3. Build exactly to the submission contract in the challenge spec.
+4. Preview locally for free:
+   agora score-local <challenge_uuid> --submission ./submission.csv --format json
+5. Submit a sealed solution on-chain:
+   agora submit ./submission.csv --challenge <challenge_uuid> --format json
+6. Track official scoring:
+   agora submission-status <submission_uuid> --watch --format json
+   agora status <challenge_uuid> --format json
+7. Verify and settle when eligible:
+   agora verify-public <challenge_uuid> --sub <submission_uuid> --format json
+   agora finalize <challenge_uuid> --format json
+   agora claim <challenge_uuid> --format json
+
+MCP:
+- Trusted local stdio mode:
+  pnpm --filter @agora/mcp-server start:stdio
+- Remote read-only HTTP mode:
+  pnpm --filter @agora/mcp-server start
+- HTTP transport serves at /mcp on port 3001 by default.
+- stdio tools:
+  - agora-list-challenges
+  - agora-get-challenge
+  - agora-score-local
+  - agora-submit-solution
+  - agora-get-submission-status
+  - agora-get-leaderboard
+  - agora-verify-submission
+  - agora-claim-payout
+- HTTP tools:
+  - agora-list-challenges
+  - agora-get-challenge
+  - agora-get-leaderboard
+  - agora-get-submission-status
 
 Do not stop at:
 - "I need more registration instructions"
