@@ -47,6 +47,18 @@ export const configSchema = z.object({
     .regex(/^0x[a-fA-F0-9]{64}$/, "must be a 32-byte hex private key")
     .transform((value) => value as `0x${string}`)
     .optional(),
+  AGORA_SOLVER_WALLET_BACKEND: z
+    .enum(["private_key", "cdp"])
+    .default("private_key"),
+  AGORA_CDP_API_KEY_ID: z.string().min(1).optional(),
+  AGORA_CDP_API_KEY_SECRET: z.string().min(1).optional(),
+  AGORA_CDP_WALLET_SECRET: z.string().min(1).optional(),
+  AGORA_CDP_ACCOUNT_NAME: z.string().min(1).optional(),
+  AGORA_CDP_ACCOUNT_ADDRESS: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, "must be a valid EVM address")
+    .transform((value) => value.toLowerCase() as `0x${string}`)
+    .optional(),
   AGORA_PINATA_JWT: z.string().min(1).optional(),
   AGORA_IPFS_GATEWAY: z.string().url().optional(),
   AGORA_SUBMISSION_SEAL_KEY_ID: z.string().min(1).optional(),
@@ -218,6 +230,15 @@ export const configSchema = z.object({
 });
 
 export type AgoraConfig = z.infer<typeof configSchema>;
+export type AgoraSolverWalletBackendConfig = Pick<
+  AgoraConfig,
+  | "AGORA_SOLVER_WALLET_BACKEND"
+  | "AGORA_CDP_API_KEY_ID"
+  | "AGORA_CDP_API_KEY_SECRET"
+  | "AGORA_CDP_WALLET_SECRET"
+  | "AGORA_CDP_ACCOUNT_NAME"
+  | "AGORA_CDP_ACCOUNT_ADDRESS"
+>;
 
 const submissionSealPrivateKeyringSchema = z.record(
   z.string().min(1),
@@ -314,6 +335,38 @@ export function unsetBlankStringValues(
     }
   }
   return normalized;
+}
+
+export function validateSolverWalletBackendConfig(
+  config: AgoraSolverWalletBackendConfig,
+) {
+  if (config.AGORA_SOLVER_WALLET_BACKEND !== "cdp") {
+    return;
+  }
+
+  const missingCdpEnv: string[] = [];
+  if (!config.AGORA_CDP_API_KEY_ID) {
+    missingCdpEnv.push("AGORA_CDP_API_KEY_ID");
+  }
+  if (!config.AGORA_CDP_API_KEY_SECRET) {
+    missingCdpEnv.push("AGORA_CDP_API_KEY_SECRET");
+  }
+  if (!config.AGORA_CDP_WALLET_SECRET) {
+    missingCdpEnv.push("AGORA_CDP_WALLET_SECRET");
+  }
+  if (missingCdpEnv.length > 0) {
+    throw new Error(
+      `CDP solver wallet backend requires ${missingCdpEnv.join(", ")}. Next step: set the missing CDP credentials or switch AGORA_SOLVER_WALLET_BACKEND back to private_key.`,
+    );
+  }
+
+  const hasCdpAccountName = Boolean(config.AGORA_CDP_ACCOUNT_NAME);
+  const hasCdpAccountAddress = Boolean(config.AGORA_CDP_ACCOUNT_ADDRESS);
+  if (hasCdpAccountName === hasCdpAccountAddress) {
+    throw new Error(
+      "CDP solver wallet backend requires exactly one of AGORA_CDP_ACCOUNT_NAME or AGORA_CDP_ACCOUNT_ADDRESS. Next step: set one stable CDP account identifier and retry.",
+    );
+  }
 }
 
 export function normalizePem(value: string) {
@@ -480,6 +533,8 @@ export function loadConfig(): AgoraConfig {
       "Remote scorer execution requires AGORA_SCORER_EXECUTOR_URL. Next step: set the executor base URL or switch AGORA_SCORER_EXECUTOR_BACKEND back to local_docker.",
     );
   }
+
+  validateSolverWalletBackendConfig(config);
 
   cachedConfig = config;
   return cachedConfig;

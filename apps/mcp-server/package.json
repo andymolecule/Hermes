@@ -18,6 +18,7 @@
     "@agora/db": "workspace:*",
     "@agora/ipfs": "workspace:*",
     "@agora/scorer": "workspace:*",
+    "@coinbase/cdp-sdk": "1.44.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "viem": "^2.21.0",
     "zod": "^3.23.8"

@@ -3,6 +3,7 @@ export * from "./factory.js";
 export * from "./challenge.js";
 export * from "./challenge-definition.js";
 export * from "./contract-read.js";
+export * from "./solver-signer.js";
 export * from "./tx-preflight.js";
 export * from "./tx-write.js";
 export * from "./usdc.js";

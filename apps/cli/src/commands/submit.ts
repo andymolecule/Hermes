@@ -1,4 +1,8 @@
 import { submitSolution } from "@agora/agent-runtime";
+import {
+  createAgoraWalletClientForPrivateKey,
+  createSolverSignerFromWalletClient,
+} from "@agora/chain";
 import { Command } from "commander";
 import {
   applyConfigToEnv,
@@ -34,13 +38,17 @@ export function buildSubmitCommand() {
           "factory_address",
           "usdc_address",
         ]);
-        ensurePrivateKey(opts.key);
+        const privateKey = ensurePrivateKey(opts.key);
+        const signer = createSolverSignerFromWalletClient({
+          walletClient: createAgoraWalletClientForPrivateKey(privateKey),
+        });
 
         const result = await submitSolution({
           challengeId: opts.challenge,
           filePath: file,
           apiUrl: config.api_url,
           dryRun: opts.dryRun,
+          signer,
         });
 
         if (opts.format === "json") {

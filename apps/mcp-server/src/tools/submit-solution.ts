@@ -1,3 +1,4 @@
+import type { SolverSigner } from "@agora/chain";
 import { submitSolution } from "./shared.js";
 
 export interface SubmitSolutionInput {
@@ -8,10 +9,14 @@ export interface SubmitSolutionInput {
 
 export async function agoraSubmitSolution(
   input: SubmitSolutionInput,
-  options?: { allowRemotePrivateKey?: boolean },
+  options?: {
+    allowRemotePrivateKey?: boolean;
+    configuredSigner?: SolverSigner | null;
+  },
 ) {
   return submitSolution({
     ...input,
     allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+    configuredSigner: options?.configuredSigner ?? null,
   });
 }

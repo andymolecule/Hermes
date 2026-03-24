@@ -92,7 +92,8 @@ export async function createChallenge(
           SUBMISSION_LIMITS.maxPerSolverPerChallenge,
       ),
     ],
-  });
+    chain: null,
+  } as never);
 }
 
 export function parseChallengeCreatedReceipt(

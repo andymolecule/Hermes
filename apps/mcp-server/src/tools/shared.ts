@@ -9,7 +9,9 @@ import {
   submitSolution as submitSolutionWorkflow,
   verifySubmission as verifySubmissionWorkflow,
 } from "@agora/agent-runtime";
+import type { SolverSigner } from "@agora/chain";
 import { readApiClientRuntimeConfig } from "@agora/common";
+import { resolveToolSolverSigner } from "../solver-signer.js";
 
 function apiUrlOrUndefined() {
   return readApiClientRuntimeConfig().apiUrl;
@@ -80,13 +82,18 @@ export async function submitSolution(input: {
   filePath: string;
   privateKey?: string;
   allowRemotePrivateKey?: boolean;
+  configuredSigner?: SolverSigner | null;
 }) {
+  const signer = await resolveToolSolverSigner({
+    privateKey: input.privateKey,
+    allowRemotePrivateKey: input.allowRemotePrivateKey ?? false,
+    configuredSigner: input.configuredSigner ?? null,
+  });
   return submitSolutionWorkflow({
     challengeId: input.challengeId,
     filePath: input.filePath,
-    privateKey: input.privateKey,
-    allowRawPrivateKey: input.allowRemotePrivateKey ?? false,
     apiUrl: apiUrlOrUndefined(),
+    signer,
   });
 }
 
@@ -94,12 +101,17 @@ export async function claimChallengePayout(input: {
   challengeId: string;
   privateKey?: string;
   allowRemotePrivateKey?: boolean;
+  configuredSigner?: SolverSigner | null;
 }) {
+  const signer = await resolveToolSolverSigner({
+    privateKey: input.privateKey,
+    allowRemotePrivateKey: input.allowRemotePrivateKey ?? false,
+    configuredSigner: input.configuredSigner ?? null,
+  });
   return claimChallengePayoutWorkflow({
     challengeId: input.challengeId,
-    privateKey: input.privateKey,
-    allowRawPrivateKey: input.allowRemotePrivateKey ?? false,
     apiUrl: apiUrlOrUndefined(),
+    signer,
   });
 }
 

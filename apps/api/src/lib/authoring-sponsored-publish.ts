@@ -341,7 +341,8 @@ export async function sponsorAndPublishAuthoringSession(input: {
             abi: erc20Abi,
             functionName: "approve",
             args: [config.AGORA_FACTORY_ADDRESS, rewardUnits],
-          }),
+            chain: null,
+          } as never),
       });
       await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
     }
@@ -403,7 +404,8 @@ export async function sponsorAndPublishAuthoringSession(input: {
           abi: AgoraFactoryAbi,
           functionName: "createChallenge",
           args: createArgs,
-        }),
+          chain: null,
+        } as never),
     });
     if (!createTxHash) {
       throw new Error(

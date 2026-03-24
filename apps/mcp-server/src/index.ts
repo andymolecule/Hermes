@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import type { SolverSigner } from "@agora/chain";
 import { readFeaturePolicy } from "@agora/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -16,6 +17,7 @@ import { agoraListChallenges } from "./tools/list-challenges.js";
 import { agoraScoreLocal } from "./tools/score-local.js";
 import { agoraSubmitSolution } from "./tools/submit-solution.js";
 import { agoraVerifySubmission } from "./tools/verify-submission.js";
+import { createConfiguredSolverSigner } from "./solver-signer.js";
 import { enforceMcpSessionPayment, getMcpX402Metadata } from "./x402.js";
 
 function asToolResult(payload: unknown) {
@@ -53,6 +55,7 @@ export function getServerToolNames(mode: McpServerMode) {
 function createServer(options?: {
   allowRemotePrivateKey?: boolean;
   mode?: McpServerMode;
+  solverSigner?: SolverSigner | null;
 }) {
   const server = new McpServer({
     name: "agora-mcp",
@@ -219,6 +222,7 @@ function createServer(options?: {
         asToolResult(
           await agoraSubmitSolution(input, {
             allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+            configuredSigner: options?.solverSigner ?? null,
           }),
         ),
     );
@@ -246,6 +250,7 @@ function createServer(options?: {
         asToolResult(
           await agoraClaimPayout(input, {
             allowRemotePrivateKey: options?.allowRemotePrivateKey ?? false,
+            configuredSigner: options?.solverSigner ?? null,
           }),
         ),
     );
@@ -320,9 +325,13 @@ async function createHttpMcpSession(
 }
 
 async function startStdioMode() {
+  const solverSigner = await createConfiguredSolverSigner({
+    allowUnconfiguredPrivateKey: true,
+  });
   const server = createServer({
     allowRemotePrivateKey: true,
     mode: "stdio",
+    solverSigner,
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);

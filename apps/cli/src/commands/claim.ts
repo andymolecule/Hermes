@@ -1,5 +1,9 @@
 import { claimChallengePayout } from "@agora/agent-runtime";
-import { balanceOf, getWalletClient } from "@agora/chain";
+import {
+  balanceOf,
+  createAgoraWalletClientForPrivateKey,
+  createSolverSignerFromWalletClient,
+} from "@agora/chain";
 import { Command } from "commander";
 import { formatUnits } from "viem";
 import {
@@ -31,20 +35,16 @@ export function buildClaimCommand() {
           "factory_address",
           "usdc_address",
         ]);
-        ensurePrivateKey(opts.key);
-
-        const walletClient = getWalletClient();
-        const caller = walletClient.account?.address;
-        if (!caller) {
-          throw new Error(
-            "Wallet client is missing an account address. Next step: configure AGORA_PRIVATE_KEY and retry.",
-          );
-        }
+        const privateKey = ensurePrivateKey(opts.key);
+        const walletClient = createAgoraWalletClientForPrivateKey(privateKey);
+        const signer = createSolverSignerFromWalletClient({ walletClient });
+        const caller = await signer.getAddress();
 
         const beforeBalance = await balanceOf(caller);
         const result = await claimChallengePayout({
           challengeId: id,
           apiUrl: config.api_url,
+          signer,
         });
         const afterBalance = await balanceOf(caller);
         const delta = afterBalance - beforeBalance;

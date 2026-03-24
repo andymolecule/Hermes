@@ -4,16 +4,14 @@ import {
   AmbiguousWriteResultError,
   assertClaimChallengePayoutAffordable,
   assertSubmitChallengeResultAffordable,
-  claimPayout,
-  claimPayoutWithPrivateKey,
+  claimPayoutWithSigner,
   getChallengeClaimableByAddress,
   getOnChainSubmission,
   getPublicClient,
-  getWalletClient,
   parseSubmittedReceipt,
   sendWriteWithRetry,
-  submitChallengeResult,
-  submitChallengeResultWithPrivateKey,
+  type SolverSigner,
+  submitChallengeResultWithSigner,
 } from "@agora/chain";
 import {
   AGORA_ERROR_CODES,
@@ -63,6 +61,11 @@ import {
   registerSubmissionWithApi,
   uploadSubmissionArtifactToApi,
 } from "./api-client.js";
+import {
+  assertSignerAddressStable,
+  resolveSignerAddress,
+  waitForSuccessfulWrite,
+} from "./solver-signer.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45_000;
@@ -107,33 +110,6 @@ export function buildScoreLocalPipelineInput(input: {
     policies: input.scoringSpecConfig.policies,
     env: input.scoringSpecConfig.env,
   };
-}
-
-function normalizeOptionalPrivateKey(
-  privateKey: string | undefined,
-  allowRawPrivateKey = false,
-) {
-  const normalizedPrivateKey = privateKey?.trim();
-  if (!normalizedPrivateKey) return undefined;
-  if (!/^0x[a-fA-F0-9]{64}$/.test(normalizedPrivateKey)) {
-    throw new AgoraError(
-      "Invalid privateKey: expected a 0x-prefixed 32-byte hex string.",
-      {
-        code: AGORA_ERROR_CODES.invalidPrivateKeyReference,
-        nextAction: "Provide a valid hex private key or remove the field.",
-      },
-    );
-  }
-  if (!allowRawPrivateKey) {
-    throw new AgoraError(
-      "Raw privateKey input is disabled for this workflow.",
-      {
-        code: AGORA_ERROR_CODES.invalidPrivateKeyReference,
-        nextAction: "Use the configured wallet-backed runtime instead.",
-      },
-    );
-  }
-  return normalizedPrivateKey as `0x${string}`;
 }
 
 type SubmitChallengeApiRecord = {
@@ -273,8 +249,7 @@ async function resolveSubmitTarget(input: {
 export async function submitSolution(input: {
   challengeId: string;
   filePath: string;
-  privateKey?: string;
-  allowRawPrivateKey?: boolean;
+  signer: SolverSigner;
   apiUrl?: string;
   dryRun?: boolean;
 }): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
@@ -284,10 +259,6 @@ export async function submitSolution(input: {
       challengeId: input.challengeId,
       apiUrl,
     },
-  );
-  const normalizedPrivateKey = normalizeOptionalPrivateKey(
-    input.privateKey,
-    input.allowRawPrivateKey ?? false,
   );
   const publicKeyPayload = await getSubmissionPublicKeyFromApi(apiUrl);
   const sourcePath = path.resolve(input.filePath);
@@ -306,16 +277,7 @@ export async function submitSolution(input: {
     );
   }
 
-  const solverAddress = normalizedPrivateKey
-    ? privateKeyToAccount(normalizedPrivateKey).address.toLowerCase()
-    : getWalletClient().account?.address?.toLowerCase();
-  if (!solverAddress) {
-    throw new AgoraError("No submitter wallet is configured.", {
-      code: AGORA_ERROR_CODES.missingPrivateKeyEnv,
-      nextAction:
-        "Set AGORA_PRIVATE_KEY or provide a trusted local private key reference.",
-    });
-  }
+  const solverAddress = await resolveSignerAddress(input.signer);
 
   if (!input.dryRun) {
     await assertSubmitDeadlineSafetyWindow(deadline);
@@ -405,20 +367,20 @@ export async function submitSolution(input: {
 
   let txHash: `0x${string}`;
   try {
+    await assertSignerAddressStable({
+      signer: input.signer,
+      expectedAddress: solverAddress,
+      operation: "submit",
+    });
     txHash = await sendWriteWithRetry({
-      accountAddress: solverAddress as `0x${string}`,
+      accountAddress: solverAddress,
       label: "Submission transaction",
       write: () =>
-        normalizedPrivateKey
-          ? submitChallengeResultWithPrivateKey(
-              challengeAddress,
-              submissionIntent.resultHash as `0x${string}`,
-              normalizedPrivateKey,
-            )
-          : submitChallengeResult(
-              challengeAddress,
-              submissionIntent.resultHash as `0x${string}`,
-            ),
+        submitChallengeResultWithSigner(
+          challengeAddress,
+          submissionIntent.resultHash as `0x${string}`,
+          input.signer,
+        ).then((result) => result.hash),
     });
   } catch (error) {
     if (!(error instanceof AmbiguousWriteResultError)) {
@@ -431,23 +393,20 @@ export async function submitSolution(input: {
     throw error;
   }
 
-  const publicClient = getPublicClient();
-  const receipt = await publicClient.waitForTransactionReceipt({
+  const receipt = await waitForSuccessfulWrite({
+    signer: input.signer,
     hash: txHash,
-  });
-  if (receipt.status !== "success") {
+    label: "Submission transaction",
+    nextAction:
+      "Confirm the challenge is still open, the deadline has not passed, and the solver has remaining submission slots.",
+  }).catch(async (error) => {
     await cleanupFailedSubmissionArtifact({
       apiUrl,
       resultCid,
       intentId: submissionIntent.intentId,
     });
-    throw new AgoraError(`Submission transaction reverted: ${txHash}.`, {
-      code: AGORA_ERROR_CODES.txReverted,
-      nextAction:
-        "Confirm the challenge is still open, the deadline has not passed, and the solver has remaining submission slots.",
-      details: { txHash },
-    });
-  }
+    throw error;
+  });
   const { submissionId: onChainSubmissionId } = parseSubmittedReceipt(
     receipt,
     challengeAddress,
@@ -492,8 +451,7 @@ export async function submitSolution(input: {
 
 export async function claimChallengePayout(input: {
   challengeId: string;
-  privateKey?: string;
-  allowRawPrivateKey?: boolean;
+  signer: SolverSigner;
   apiUrl?: string;
 }) {
   const target = isAddressRef(input.challengeId)
@@ -505,20 +463,7 @@ export async function claimChallengePayout(input: {
         challengeId: input.challengeId,
         apiUrl: input.apiUrl,
       });
-  const normalizedPrivateKey = normalizeOptionalPrivateKey(
-    input.privateKey,
-    input.allowRawPrivateKey ?? false,
-  );
-  const caller = normalizedPrivateKey
-    ? privateKeyToAccount(normalizedPrivateKey).address
-    : getWalletClient().account?.address;
-  if (!caller) {
-    throw new AgoraError("No caller wallet is configured.", {
-      code: AGORA_ERROR_CODES.missingPrivateKeyEnv,
-      nextAction:
-        "Set AGORA_PRIVATE_KEY or provide a trusted local private key reference.",
-    });
-  }
+  const caller = await resolveSignerAddress(input.signer);
 
   const claimable = await getChallengeClaimableByAddress(
     target.challengeAddress,
@@ -540,30 +485,27 @@ export async function claimChallengePayout(input: {
     challengeAddress: target.challengeAddress,
   });
 
+  await assertSignerAddressStable({
+    signer: input.signer,
+    expectedAddress: caller,
+    operation: "claim",
+  });
   const txHash = await sendWriteWithRetry({
     accountAddress: caller,
     label: "Claim transaction",
     write: () =>
-      normalizedPrivateKey
-        ? claimPayoutWithPrivateKey(
-            target.challengeAddress,
-            normalizedPrivateKey,
-          )
-        : claimPayout(target.challengeAddress),
+      claimPayoutWithSigner(target.challengeAddress, input.signer).then(
+        (result) => result.hash,
+      ),
   });
 
-  const publicClient = getPublicClient();
-  const receipt = await publicClient.waitForTransactionReceipt({
+  await waitForSuccessfulWrite({
+    signer: input.signer,
     hash: txHash,
+    label: "Claim transaction",
+    nextAction:
+      "Confirm the challenge is finalized and that the caller is eligible to claim.",
   });
-  if (receipt.status !== "success") {
-    throw new AgoraError(`Claim transaction reverted: ${txHash}.`, {
-      code: AGORA_ERROR_CODES.txReverted,
-      nextAction:
-        "Confirm the challenge is finalized and that the caller is eligible to claim.",
-      details: { txHash },
-    });
-  }
 
   return {
     txHash,

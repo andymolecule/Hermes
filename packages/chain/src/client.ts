@@ -1,6 +1,7 @@
 import { loadConfig, resolveRuntimePrivateKey } from "@agora/common";
 import {
   http,
+  type Account,
   type HttpTransport,
   createPublicClient,
   createWalletClient,
@@ -13,14 +14,17 @@ function resolveChain() {
   return resolveAgoraViemChain(config.AGORA_CHAIN_ID);
 }
 
-export function createAgoraPublicClient() {
+export type AgoraPublicClient = ReturnType<typeof createPublicClient>;
+export type AgoraWalletClient = ReturnType<typeof createWalletClient>;
+
+export function createAgoraPublicClient(): AgoraPublicClient {
   const config = loadConfig();
   const chain = resolveChain();
   const transport = http(config.AGORA_RPC_URL);
   return createPublicClient({ chain, transport });
 }
 
-export function createAgoraWalletClient() {
+export function createAgoraWalletClient(): AgoraWalletClient {
   const config = loadConfig();
   const privateKey = resolveRuntimePrivateKey(config);
   if (!privateKey) {
@@ -28,21 +32,22 @@ export function createAgoraWalletClient() {
       "AGORA_PRIVATE_KEY or AGORA_ORACLE_KEY is required for wallet operations.",
     );
   }
+  return createAgoraWalletClientForAccount(privateKeyToAccount(privateKey));
+}
+export type AgoraWalletAccount = Account;
+
+export function createAgoraWalletClientForAccount(
+  account: AgoraWalletAccount,
+): AgoraWalletClient {
   const chain = resolveChain();
-  const transport = http(config.AGORA_RPC_URL);
-  const account = privateKeyToAccount(privateKey);
+  const transport = http(loadConfig().AGORA_RPC_URL);
   return createWalletClient({ chain, transport, account });
 }
-
-export type AgoraWalletClient = ReturnType<typeof createAgoraWalletClient>;
 
 export function createAgoraWalletClientForPrivateKey(
   privateKey: `0x${string}`,
 ): AgoraWalletClient {
-  const chain = resolveChain();
-  const transport = http(loadConfig().AGORA_RPC_URL);
-  const account = privateKeyToAccount(privateKey);
-  return createWalletClient({ chain, transport, account });
+  return createAgoraWalletClientForAccount(privateKeyToAccount(privateKey));
 }
 
 let cachedPublicClient: ReturnType<typeof createAgoraPublicClient> | null =

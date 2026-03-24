@@ -7,3 +7,4 @@ export * from "./indexer.js";
 export * from "./worker.js";
 export * from "./executor.js";
 export * from "./observability.js";
+export * from "./solver-wallet.js";

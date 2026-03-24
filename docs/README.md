@@ -13,11 +13,12 @@ Documentation index and reading order for the Agora repository.
 | 5 | [Authoring Session API Spec](specs/authoring-session-api.md) | What is the locked session-first authoring contract? | Product, frontend, backend |
 | 6 | [Authoring Validity And Execution](specs/authoring-validity-and-execution.md) | What makes a challenge valid and executable before publish? | Product, backend, compiler/scoring |
 | 7 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
-| 8 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 9 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 10 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 11 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 12 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 8 | [Solver Wallet Compatibility Spec](specs/solver-wallet-compatibility.md) | How should Agora support agent-owned, smart-account, and delegated solver wallets? | Product, backend, chain, agent runtime |
+| 9 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 10 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 11 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 12 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 13 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -28,6 +29,7 @@ Documentation index and reading order for the Agora repository.
 - **Working on the new authoring flow?** Read [Authoring Session API Spec](specs/authoring-session-api.md).
 - **Working on what counts as a valid executable challenge?** Read [Authoring Validity And Execution](specs/authoring-validity-and-execution.md).
 - **Need to debug authoring conversations or Telegram/OpenClaw session failures?** Read [Authoring Observability Spec](specs/authoring-observability.md).
+- **Working on agent submission wallets or Telegram solver identity?** Read [Solver Wallet Compatibility Spec](specs/solver-wallet-compatibility.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
 - **Working on submission privacy or sealing?** Read [Submission Privacy](submission-privacy.md).
 - **Debugging data issues?** Read [Data and Indexing](data-and-indexing.md).
@@ -52,6 +54,7 @@ Documentation index and reading order for the Agora repository.
 | Locked authoring session API contract | [specs/authoring-session-api.md](specs/authoring-session-api.md) |
 | Locked authoring validity and execution model | [specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md) |
 | Internal authoring debug timeline and conversation logging | [specs/authoring-observability.md](specs/authoring-observability.md) |
+| Solver wallet compatibility and phased agent-wallet rollout | [specs/solver-wallet-compatibility.md](specs/solver-wallet-compatibility.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
 | Contract lifecycle, settlement, YAML schema | [protocol.md](protocol.md) |
 | DB schema, projections, indexer behavior | [data-and-indexing.md](data-and-indexing.md) |
@@ -74,6 +77,7 @@ Documentation index and reading order for the Agora repository.
 - **[specs/authoring-session-api.md](specs/authoring-session-api.md)** — Locked session-first authoring contract
 - **[specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md)** — Locked validity bar and execution-model redesign
 - **[specs/authoring-observability.md](specs/authoring-observability.md)** — Internal authoring conversation logging and operator debug timeline spec
+- **[specs/solver-wallet-compatibility.md](specs/solver-wallet-compatibility.md)** — Solver wallet compatibility model and phased agent-wallet rollout
 - **[specs/authoring-session-api-audit.md](specs/authoring-session-api-audit.md)** — Spec-vs-code audit and cutover matrix
 - **[specs/authoring-session-cutover-checklist.md](specs/authoring-session-cutover-checklist.md)** — Execution checklist for the session cutover
 

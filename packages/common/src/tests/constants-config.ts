@@ -24,6 +24,7 @@ import {
   readIndexerHealthRuntimeConfig,
   readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
+  readSolverWalletRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
@@ -167,6 +168,45 @@ try {
   assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
   assert.equal(config.AGORA_RUNTIME_VERSION, "dev");
   assert.equal(resolveRuntimePrivateKey(config), undefined);
+  assert.deepEqual(readSolverWalletRuntimeConfig(), {
+    backend: "private_key",
+    hasConfiguredPrivateKey: false,
+  });
+
+  process.env.AGORA_SOLVER_WALLET_BACKEND = "cdp";
+  process.env.AGORA_CDP_API_KEY_ID = "cdp-key-id";
+  process.env.AGORA_CDP_API_KEY_SECRET = "cdp-key-secret";
+  process.env.AGORA_CDP_WALLET_SECRET = "cdp-wallet-secret";
+  process.env.AGORA_CDP_ACCOUNT_NAME = "telegram-agent";
+  resetConfigCache();
+  assert.deepEqual(readSolverWalletRuntimeConfig(), {
+    backend: "cdp",
+    apiKeyId: "cdp-key-id",
+    apiKeySecret: "cdp-key-secret",
+    walletSecret: "cdp-wallet-secret",
+    accountName: "telegram-agent",
+    accountAddress: undefined,
+  });
+
+  process.env.AGORA_CDP_ACCOUNT_NAME = undefined;
+  resetConfigCache();
+  assert.throws(
+    () => loadConfig(),
+    /AGORA_CDP_ACCOUNT_NAME or AGORA_CDP_ACCOUNT_ADDRESS/,
+    "CDP backend should fail fast without a stable account identifier",
+  );
+  process.env.AGORA_CDP_ACCOUNT_NAME = "telegram-agent";
+  resetConfigCache();
+
+  process.env.AGORA_CDP_API_KEY_SECRET = undefined;
+  resetConfigCache();
+  assert.throws(
+    () => readSolverWalletRuntimeConfig(),
+    /AGORA_CDP_API_KEY_SECRET/,
+    "solver wallet runtime config should fail fast on incomplete CDP credentials",
+  );
+  process.env.AGORA_CDP_API_KEY_SECRET = "cdp-key-secret";
+  resetConfigCache();
 
   process.env.AGORA_RUNTIME_VERSION = undefined;
   process.env.VERCEL_GIT_COMMIT_SHA =

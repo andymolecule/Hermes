@@ -21,7 +21,8 @@ export async function approve(
     abi: erc20Abi,
     functionName: "approve",
     args: [spender, value],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function balanceOf(owner: `0x${string}`) {

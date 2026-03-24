@@ -17,6 +17,10 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient } from "./client.js";
 import { readContractStrict } from "./contract-read.js";
+import {
+  createSolverSignerFromWalletClient,
+  type SolverSigner,
+} from "./solver-signer.js";
 import { resolveAgoraViemChain } from "./viem-chain.js";
 
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
@@ -138,9 +142,20 @@ export async function submitChallengeResult(
   challengeAddress: `0x${string}`,
   resultHash: `0x${string}`,
 ) {
+  const signer = createSolverSignerFromWalletClient({
+    walletClient: getWalletClient(),
+  });
+  return (await submitChallengeResultWithSigner(challengeAddress, resultHash, signer))
+    .hash;
+}
+
+export async function submitChallengeResultWithSigner(
+  challengeAddress: `0x${string}`,
+  resultHash: `0x${string}`,
+  signer: SolverSigner,
+) {
   await assertSupportedChallengeVersion(challengeAddress);
-  const walletClient = getWalletClient();
-  return walletClient.writeContract({
+  return signer.writeContract({
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "submit",
@@ -165,7 +180,8 @@ export async function submitChallengeResultWithPrivateKey(
     abi: AgoraChallengeAbi,
     functionName: "submit",
     args: [resultHash],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function postScore(
@@ -181,7 +197,8 @@ export async function postScore(
     abi: AgoraChallengeAbi,
     functionName: "postScore",
     args: [submissionId, score, proofBundleHash],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function startChallengeScoring(challengeAddress: `0x${string}`) {
@@ -192,7 +209,8 @@ export async function startChallengeScoring(challengeAddress: `0x${string}`) {
     abi: AgoraChallengeAbi,
     functionName: "startScoring",
     args: [],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function finalizeChallenge(challengeAddress: `0x${string}`) {
@@ -203,7 +221,8 @@ export async function finalizeChallenge(challengeAddress: `0x${string}`) {
     abi: AgoraChallengeAbi,
     functionName: "finalize",
     args: [],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function disputeChallenge(
@@ -217,7 +236,8 @@ export async function disputeChallenge(
     abi: AgoraChallengeAbi,
     functionName: "dispute",
     args: [reason],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function resolveDispute(
@@ -231,13 +251,23 @@ export async function resolveDispute(
     abi: AgoraChallengeAbi,
     functionName: "resolveDispute",
     args: [winnerSubId],
-  });
+    chain: null,
+  } as never);
 }
 
 export async function claimPayout(challengeAddress: `0x${string}`) {
+  const signer = createSolverSignerFromWalletClient({
+    walletClient: getWalletClient(),
+  });
+  return (await claimPayoutWithSigner(challengeAddress, signer)).hash;
+}
+
+export async function claimPayoutWithSigner(
+  challengeAddress: `0x${string}`,
+  signer: SolverSigner,
+) {
   await assertSupportedChallengeVersion(challengeAddress);
-  const walletClient = getWalletClient();
-  return walletClient.writeContract({
+  return signer.writeContract({
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "claim",
@@ -261,7 +291,8 @@ export async function claimPayoutWithPrivateKey(
     abi: AgoraChallengeAbi,
     functionName: "claim",
     args: [],
-  });
+    chain: null,
+  } as never);
 }
 
 export type OnChainSubmission = {

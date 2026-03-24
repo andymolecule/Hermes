@@ -17,6 +17,7 @@ export interface ApiErrorResponse {
 
 export const AGORA_ERROR_CODES = {
   apiRequestFailed: "API_REQUEST_FAILED",
+  backendConfigInvalid: "BACKEND_CONFIG_INVALID",
   chainEstimateFailed: "CHAIN_ESTIMATE_FAILED",
   chainWriteAmbiguous: "CHAIN_WRITE_AMBIGUOUS",
   chainWriteRetryExhausted: "CHAIN_WRITE_RETRY_EXHAUSTED",
@@ -31,12 +32,16 @@ export const AGORA_ERROR_CODES = {
   missingPrivateKeyEnv: "MISSING_PRIVATE_KEY_ENV",
   noClaimablePayout: "NO_CLAIMABLE_PAYOUT",
   rateLimited: "RATE_LIMITED",
+  signerAddressMismatch: "SIGNER_ADDRESS_MISMATCH",
+  signerAddressUnavailable: "SIGNER_ADDRESS_UNAVAILABLE",
   submissionLimitReached: "SUBMISSION_LIMIT_REACHED",
   submissionTooLarge: "SUBMISSION_TOO_LARGE",
   submissionSealingUnavailable: "SUBMISSION_SEALING_UNAVAILABLE",
   txReverted: "TX_REVERTED",
   userRejected: "USER_REJECTED",
   waitTimedOut: "WAIT_TIMED_OUT",
+  writeBroadcastFailed: "WRITE_BROADCAST_FAILED",
+  writeNotConfirmed: "WRITE_NOT_CONFIRMED",
 } as const;
 
 const NEXT_ACTION_PREFIX = /(?:^|\s)Next step:\s*(.+)$/i;
