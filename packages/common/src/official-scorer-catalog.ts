@@ -104,7 +104,8 @@ export const OFFICIAL_SCORER_CATALOG = {
   official_table_metric_v1: {
     id: "official_table_metric_v1",
     label: "Official Table Metric V1",
-    scorerImageTag: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+    scorerImageTag:
+      "ghcr.io/andymolecule/gems-tabular-scorer:sha-d7f82f1065efa6e22db6a06c0621d59af738681f",
     scorerImage:
       "ghcr.io/andymolecule/gems-tabular-scorer@sha256:b5f15b2d056c024c08f2f8a17e521e6ae8837ff49deda2572476b7a649bd17b5",
     supportedMetrics: OFFICIAL_TABLE_METRICS,
@@ -122,7 +123,8 @@ export const OFFICIAL_SCORER_CATALOG = {
   official_exact_match_v1: {
     id: "official_exact_match_v1",
     label: "Official Exact Match V1",
-    scorerImageTag: "ghcr.io/andymolecule/gems-match-scorer:v1",
+    scorerImageTag:
+      "ghcr.io/andymolecule/gems-match-scorer:sha-d7f82f1065efa6e22db6a06c0621d59af738681f",
     scorerImage:
       "ghcr.io/andymolecule/gems-match-scorer@sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
     supportedMetrics: OFFICIAL_EXACT_MATCH_METRICS,
@@ -144,7 +146,8 @@ export const OFFICIAL_SCORER_CATALOG = {
   official_structured_record_v1: {
     id: "official_structured_record_v1",
     label: "Official Structured Record V1",
-    scorerImageTag: "ghcr.io/andymolecule/gems-match-scorer:v1",
+    scorerImageTag:
+      "ghcr.io/andymolecule/gems-match-scorer:sha-d7f82f1065efa6e22db6a06c0621d59af738681f",
     scorerImage:
       "ghcr.io/andymolecule/gems-match-scorer@sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
     supportedMetrics: OFFICIAL_STRUCTURED_RECORD_METRICS,

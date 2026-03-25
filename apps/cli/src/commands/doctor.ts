@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   listOfficialScorerImages,
+  listOfficialScorers,
   resolveOciImageToDigest,
 } from "@agora/common";
 import { verifyRuntimeDatabaseSchema } from "@agora/db";
@@ -66,6 +67,42 @@ function pullOfficialImageAnonymously(image: string) {
   } finally {
     fs.rmSync(dockerConfigDir, { recursive: true, force: true });
   }
+}
+
+export async function checkOfficialScorerRegistry(
+  fetchImpl: typeof fetch = fetch,
+) {
+  const registryRows = Array.from(
+    new Map(
+      listOfficialScorers().map((entry) => [
+        entry.scorerImageTag,
+        {
+          tag: entry.scorerImageTag,
+          pinned: entry.scorerImage,
+        },
+      ]),
+    ).values(),
+  );
+
+  const resolved = await Promise.all(
+    registryRows.map(async (row) => {
+      const digest = await resolveOciImageToDigest(row.tag, {
+        env: {},
+        fetchImpl,
+      });
+      if (digest !== row.pinned) {
+        throw new Error(
+          `Pinned digest drift detected for ${row.tag}. Next step: update the official scorer registry to the validated digest or restore the immutable tag.`,
+        );
+      }
+      return {
+        tag: row.tag,
+        digest,
+      };
+    }),
+  );
+
+  return resolved.map((row) => `${row.tag} -> ${row.digest}`).join(", ");
 }
 
 export async function checkApiHealth(
@@ -596,21 +633,10 @@ export function buildDoctorCommand() {
       }
 
       try {
-        const officialImages = Array.from(
-          new Set(listOfficialScorerImages()),
-        );
-        const resolved = await Promise.all(
-          officialImages.map((image) =>
-            resolveOciImageToDigest(image, { env: {} }).then((digest) => ({
-              image,
-              digest,
-            })),
-          ),
-        );
         checks.push({
           name: "Official scorer manifest access",
           status: "ok",
-          detail: resolved.map((row) => row.digest).join(", "),
+          detail: await checkOfficialScorerRegistry(),
         });
       } catch (error) {
         checks.push({

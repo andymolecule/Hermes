@@ -6,11 +6,11 @@ import {
   listOfficialScorerImages,
   listOfficialScorerTemplateIds,
   listSupportedMetricIds,
+  resolveOciImageToDigest,
   resolveOfficialScorerImage,
   resolveOfficialScorerImageTag,
   resolveOfficialScorerLimits,
   resolveOfficialScorerMount,
-  resolveOciImageToDigest,
   resolveTemplateForMetric,
   validateExpertScorerImage,
   validateOfficialScorerBinding,
@@ -24,7 +24,9 @@ if (!tableMetricImage) {
   throw new Error("expected at least one official scorer image");
 }
 
-const tableMetricTag = resolveOfficialScorerImageTag("official_table_metric_v1");
+const tableMetricTag = resolveOfficialScorerImageTag(
+  "official_table_metric_v1",
+);
 if (!tableMetricTag) {
   throw new Error("expected table metric scorer image tag");
 }
@@ -33,7 +35,10 @@ assert.equal(
   resolveOfficialScorerImage("official_table_metric_v1"),
   tableMetricImage,
 );
-assert.equal(tableMetricTag, "ghcr.io/andymolecule/gems-tabular-scorer:v1");
+assert.equal(
+  tableMetricTag,
+  "ghcr.io/andymolecule/gems-tabular-scorer:sha-d7f82f1065efa6e22db6a06c0621d59af738681f",
+);
 assert.ok(tableMetricImage.includes("@sha256:"));
 assert.deepEqual(resolveOfficialScorerMount("official_table_metric_v1"), {
   evaluationBundleName: "ground_truth.csv",
@@ -78,12 +83,12 @@ assert.deepEqual(listSupportedMetricIds(), [
   "exact_match",
   "validation_score",
 ]);
-assert.equal(validateOfficialScorerMetric("official_table_metric_v1", "r2"), null);
+assert.equal(
+  validateOfficialScorerMetric("official_table_metric_v1", "r2"),
+  null,
+);
 assert.deepEqual(
-  validateOfficialScorerMetricStructured(
-    "official_exact_match_v1",
-    "spearman",
-  ),
+  validateOfficialScorerMetricStructured("official_exact_match_v1", "spearman"),
   {
     valid: false,
     error:
@@ -126,14 +131,14 @@ assert.match(
 );
 
 assert.ok(
-  validateScorerImage("ghcr.io/andymolecule/gems-tabular-scorer:latest")?.includes(
-    "not allowed",
-  ),
+  validateScorerImage(
+    "ghcr.io/andymolecule/gems-tabular-scorer:latest",
+  )?.includes("not allowed"),
 );
 assert.ok(
-  validateExpertScorerImage("ghcr.io/andymolecule/gems-generated-scorer:v1")?.includes(
-    "pinned digest",
-  ),
+  validateExpertScorerImage(
+    "ghcr.io/andymolecule/gems-generated-scorer:v1",
+  )?.includes("pinned digest"),
 );
 
 let ghcrFetchCount = 0;

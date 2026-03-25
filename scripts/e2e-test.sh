@@ -8,7 +8,22 @@ AGORA_CMD=(node "apps/cli/dist/index.js")
 ## The deployed testnet factory (0x7a78…) was built with MIN_DISPUTE_WINDOW_HOURS=0.
 ## Restore to 168 when a fresh factory with the 7-day Solidity minimum is deployed.
 MIN_DISPUTE_WINDOW_HOURS=0
-E2E_SCORER_IMAGE="${AGORA_E2E_SCORER_IMAGE:-ghcr.io/andymolecule/gems-match-scorer:v1}"
+if [[ -n "${AGORA_E2E_SCORER_IMAGE:-}" ]]; then
+  E2E_SCORER_IMAGE="$AGORA_E2E_SCORER_IMAGE"
+else
+  E2E_SCORER_IMAGE="$(node --import tsx -e '
+import { resolveOfficialScorerImage } from "./packages/common/src/index.ts";
+
+const image = resolveOfficialScorerImage("official_table_metric_v1");
+if (!image) {
+  throw new Error(
+    "Missing pinned scorer image for official_table_metric_v1. Next step: fix the official scorer registry and retry.",
+  );
+}
+
+process.stdout.write(image);
+')"
+fi
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
