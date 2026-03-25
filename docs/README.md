@@ -38,7 +38,7 @@ Documentation index and reading order for the Agora repository.
 - **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
 - **Adding a new scoring method?** Read [Scoring Engine Extension Guide](contributing/scoring-engines.md).
 - **Running human end-to-end fixture flows?** Read [challenge test-data](../challenges/test-data/README.md).
-- **Working on the frontend?** Read [Design System](design/design-system/DESIGN-SYSTEM.md).
+- **Working on the frontend?** Read the [agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md).
 - **Looking up a CLI command?** Read [CLI Reference](cli-reference.md).
 - **Running or writing tests?** Read [Testing](testing.md).
 - **Looking up a term?** Read [Glossary](glossary.md).
@@ -62,7 +62,7 @@ Documentation index and reading order for the Agora repository.
 | Deployment, cutover, rollback | [deployment.md](deployment.md) |
 | New scoring methods and challenge templates | [contributing/scoring-engines.md](contributing/scoring-engines.md) |
 | Human challenge fixture kits | [../challenges/test-data/README.md](../challenges/test-data/README.md) |
-| Visual identity, CSS tokens, fonts | [design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md) |
+| Visual identity, CSS tokens, fonts | [agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md) |
 | Engineering rules, tech stack, commands | [CLAUDE.md](../CLAUDE.md) |
 | CLI commands and flags | [cli-reference.md](cli-reference.md) |
 | Test layers, verification scripts, E2E | [testing.md](testing.md) |
@@ -87,7 +87,7 @@ Documentation index and reading order for the Agora repository.
 - **[contributing/scoring-engines.md](contributing/scoring-engines.md)** — How new scoring methods and challenge templates plug into the repo
 - **[../challenges/test-data/README.md](../challenges/test-data/README.md)** — Human fixture kits for end-to-end posting and submission walkthroughs
 - **[submission-privacy.md](submission-privacy.md)** — Detailed sealed submission flow, trust boundary, and operator model
-- **[design/design-system/DESIGN-SYSTEM.md](design/design-system/DESIGN-SYSTEM.md)** — Agora visual identity and CSS tokens
+- **[agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md)** — Agora visual identity, CSS tokens, UI best practices
 
 ## Repo Navigation
 

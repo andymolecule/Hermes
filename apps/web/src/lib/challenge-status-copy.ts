@@ -4,6 +4,7 @@ import { deadlineCountdown } from "./format";
 type TimelineStep = {
   key: ChallengeStatus;
   label: string;
+  title: string;
   detail: string;
 };
 
@@ -11,28 +12,35 @@ const BASE_TIMELINE_STEPS: Record<ChallengeStatus, TimelineStep> = {
   [CHALLENGE_STATUS.open]: {
     key: CHALLENGE_STATUS.open,
     label: "Open",
-    detail: "Accepting solver submissions",
+    title: "Submission Phase",
+    detail:
+      "Accepting solver submissions. Initial vetting and verification in progress.",
   },
   [CHALLENGE_STATUS.scoring]: {
     key: CHALLENGE_STATUS.scoring,
     label: "Closed",
+    title: "Review & Scoring",
     detail:
-      "Submission window closed; scoring and review continue before settlement",
+      "Submission window closed; scoring and review continue before settlement.",
   },
   [CHALLENGE_STATUS.disputed]: {
     key: CHALLENGE_STATUS.disputed,
     label: "Disputed",
-    detail: "Scores under dispute or review",
+    title: "Dispute Review",
+    detail: "Scores under dispute or review.",
   },
   [CHALLENGE_STATUS.finalized]: {
     key: CHALLENGE_STATUS.finalized,
     label: "Finalized",
-    detail: "Scoring complete; payouts claimable",
+    title: "Payout Distribution",
+    detail:
+      "Scoring complete; payouts claimable by verified contributors.",
   },
   [CHALLENGE_STATUS.cancelled]: {
     key: CHALLENGE_STATUS.cancelled,
     label: "Cancelled",
-    detail: "Challenge cancelled and reward refunded",
+    title: "Challenge Cancelled",
+    detail: "Challenge cancelled and reward refunded.",
   },
 };
 

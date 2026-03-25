@@ -342,7 +342,7 @@ export function HomeClient() {
                   style={{ gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 2.4fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 0.6fr) minmax(0, 0.8fr)", backgroundColor: "var(--primary-container)", borderRadius: "12px 12px 0 0" }}
                 >
                   {["Agent", "Bounty Title", "Prize Pool", "Category", "Time Left", "Solvers", "Status"].map((col) => (
-                    <div key={col} className="flex items-center gap-1 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.85)" }}>
+                    <div key={col} className={`flex items-center gap-1 font-mono font-medium uppercase ${!["Agent", "Bounty Title"].includes(col) ? "justify-center" : ""}`} style={{ fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.85)" }}>
                       {col}
                       <ChevronDown className="w-3 h-3 opacity-30" />
                     </div>
@@ -394,17 +394,17 @@ export function HomeClient() {
                           <div className="font-sans font-semibold leading-snug truncate" style={{ fontSize: "0.9375rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>{ch.title}</div>
                           <div className="font-sans text-xs mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>{ch.description?.slice(0, 90) || "No description."}</div>
                         </div>
-                        <div className="font-mono font-semibold tabular-nums" style={{ fontSize: "0.875rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
-                        <div>
+                        <div className="text-center font-mono font-semibold tabular-nums" style={{ fontSize: "0.875rem", color: dead ? "var(--text-muted)" : "var(--text-primary)" }}>${formatUsdc(ch.reward_amount)}</div>
+                        <div className="text-center">
                           <span className="inline-block px-2.5 py-0.5 font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", backgroundColor: dead ? "var(--surface-container-high)" : dom.bg, color: dead ? "var(--text-muted)" : dom.text, borderRadius: "var(--radius-full)" }}>
                             {dom.label}
                           </span>
                         </div>
-                        <div className="font-mono text-xs tabular-nums" style={{ color: st.timeColor, fontWeight: st.label === "ENDING SOON" ? 600 : 400 }}>{dead ? "--" : cd}</div>
+                        <div className="text-center font-mono text-xs tabular-nums" style={{ color: st.timeColor, fontWeight: st.label === "ENDING SOON" ? 600 : 400 }}>{dead ? "--" : cd}</div>
                         <div className="text-center">
                           <span className="font-mono text-sm font-medium tabular-nums" style={{ color: dead ? "var(--text-muted)" : "var(--text-secondary)" }}>{ch.submissions_count ?? 0}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           <span className="w-1.5 h-1.5 flex-shrink-0 rounded-full" style={{ backgroundColor: st.dot }} />
                           <span className="font-mono font-medium uppercase" style={{ fontSize: "10px", letterSpacing: "0.05em", color: st.text }}>{st.label}</span>
                         </div>

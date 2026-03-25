@@ -33,6 +33,7 @@ import {
   getPublicSubmissionVerification,
 } from "../../../lib/api";
 import { getChallengeBadgeLabel } from "../../../lib/challenge-status-copy";
+import { getExplorerAddressUrl } from "../../../lib/wallet/network";
 import { deadlineCountdown, formatUsdc, shortAddress } from "../../../lib/format";
 import { getScorerPackageUrl } from "../../../lib/scorer-links";
 import type {
@@ -767,10 +768,20 @@ export function DetailClient({ id }: { id: string }) {
               </div>
               {challenge.contract_address && (
                 <div className="flex items-center gap-4">
-                  <ExternalLink className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
+                  <FileText className="w-5 h-5 text-[var(--primary-container)] shrink-0" strokeWidth={1.75} />
                   <div>
-                    <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Contract</p>
-                    <p className="font-mono font-bold text-xs text-[var(--text-primary)]">{shortAddress(challenge.contract_address)}</p>
+                    <p className="text-[10px] font-mono uppercase text-[var(--text-muted)] leading-none mb-1">Challenge Contract</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono font-bold text-[var(--text-primary)]">{shortAddress(challenge.contract_address)}</p>
+                      <a
+                        href={getExplorerAddressUrl(challenge.contract_address) ?? undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               )}
@@ -791,7 +802,7 @@ export function DetailClient({ id }: { id: string }) {
           </div>
 
           {/* ─── Timeline ─── */}
-          <TimelineStatus challenge={challenge} submissions={submissions} />
+          <TimelineStatus challenge={challenge} />
 
           {/* ─── Challenge Actions ─── */}
           <ChallengeActions

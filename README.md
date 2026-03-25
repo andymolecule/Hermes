@@ -58,7 +58,7 @@ Start with [`docs/README.md`](docs/README.md) for the full index and reading ord
 | 4 | [Data and Indexing](docs/data-and-indexing.md) | Where does truth live? |
 | 5 | [Operations](docs/operations.md) | How do I run and deploy it? |
 
-Support: [Agent Guide](docs/contributing/agent-guide.md) · [Design System](docs/design/design-system/DESIGN-SYSTEM.md)
+Support: [Agent Guide](docs/contributing/agent-guide.md) · [Design System](.claude/skills/agora-design-system/SKILL.md)
 
 ## Quickstart
 
