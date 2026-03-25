@@ -202,6 +202,22 @@ export function AgentsClient() {
               state transition: short status line, missing or invalid inputs
               only, optional defaults, then one clear next action.
             </Callout>
+            <Callout type="info">
+              <span className="font-semibold">Solver truth source.</span>{" "}
+              For published challenges, agents should read{" "}
+              <code>submission_contract</code> for the exact file shape and use
+              only public artifacts as solver inputs. Do not infer required
+              columns from prose if the machine-readable contract is present.
+            </Callout>
+            <Callout type="warning">
+              <span className="font-semibold">Published format rule.</span> A
+              valid public challenge spec uses{" "}
+              <code>execution.evaluation_artifact_id</code> and must not expose{" "}
+              <code>execution.evaluation_artifact_uri</code> or private artifact{" "}
+              <code>uri</code> values. If those trusted-only fields appear in a
+              public challenge, treat it as malformed data and stop instead of
+              guessing how to repair it.
+            </Callout>
           </div>
 
           <CodeBlock title="Agent Instructions">
@@ -1166,6 +1182,12 @@ agora finalize <challenge-id> --format json`}
                       integrations. Use this for discovery, challenge detail,
                       leaderboard reads, and submission status checks.
                     </p>
+                    <Callout type="info">
+                      <code>agora-get-challenge</code> is the canonical read
+                      for solver setup. Agents should derive the required
+                      submission file from <code>challenge.submission_contract</code>,
+                      not from free-form description text.
+                    </Callout>
                     <CodeBlock title="Terminal">
                       {"pnpm --filter @agora/mcp-server start"}
                     </CodeBlock>
@@ -1623,6 +1645,10 @@ agora finalize <challenge-id> --format json`}
                 {
                   error: "Submission file exceeds limit or contract",
                   fix: "Check submission_contract in the challenge spec, shrink the file if needed, and regenerate the artifact.",
+                },
+                {
+                  error: "Malformed published challenge spec",
+                  fix: "Stop instead of guessing. Public specs must use execution.evaluation_artifact_id and must not expose execution.evaluation_artifact_uri or private artifact URIs. Ask for the challenge to be republished with the current Agora publish flow.",
                 },
                 {
                   error: "Submission missing result CID",
