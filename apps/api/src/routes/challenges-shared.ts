@@ -5,7 +5,6 @@ import {
   type ChallengeExecutionOutput,
   type ChallengeStatus,
   DEFAULT_IPFS_GATEWAY,
-  SUBMISSION_RESULT_FORMAT,
   agentChallengesQuerySchema,
   getEffectiveChallengeStatus,
   isChallengeStatus,
@@ -113,7 +112,6 @@ export function toPrivateSubmission(row: SubmissionRow) {
     scored: row.scored,
     submitted_at: row.submitted_at,
     scored_at: row.scored_at ?? null,
-    result_format: row.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
   };
 }
 

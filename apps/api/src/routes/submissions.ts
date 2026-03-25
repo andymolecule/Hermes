@@ -8,6 +8,7 @@ import {
   SUBMISSION_SEAL_VERSION,
   hasSubmissionSealPublicConfig,
   loadConfig,
+  parseSealedSubmissionEnvelope,
   submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
@@ -139,6 +140,27 @@ function normalizeUploadFileName(fileName: string | null) {
   return normalized.length > 0 ? normalized : "sealed-submission.json";
 }
 
+export function validateSealedSubmissionUpload(bytes: Uint8Array) {
+  let text: string;
+  try {
+    text = new TextDecoder("utf8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(
+      "Submission upload must be a UTF-8 sealed_submission_v2 JSON envelope.",
+    );
+  }
+
+  try {
+    parseSealedSubmissionEnvelope(text);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? error.message
+        : "Submission upload must be a valid sealed_submission_v2 envelope.",
+    );
+  }
+}
+
 const router = new Hono<ApiEnv>();
 
 router.get("/public-key", async (c) => {
@@ -181,6 +203,15 @@ router.post(
         message: `Submission upload exceeds the ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB limit. Next step: shrink the file and retry.`,
       });
     }
+    try {
+      validateSealedSubmissionUpload(upload.bytes);
+    } catch (error) {
+      return jsonError(c, {
+        status: 400,
+        code: "SUBMISSION_UPLOAD_INVALID_ENVELOPE",
+        message: `Submission upload must contain a valid sealed_submission_v2 envelope. Next step: seal the payload locally and retry. Details: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
 
     const safeFileName = normalizeUploadFileName(upload.fileName);
     let tempDir: string | null = null;
@@ -190,10 +221,10 @@ router.post(
       tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-submission-"));
       tempFilePath = path.join(tempDir, `${randomUUID()}-${safeFileName}`);
       await fs.writeFile(tempFilePath, Buffer.from(upload.bytes));
-      const resultCid = await pinFile(tempFilePath, safeFileName);
+      const submissionCid = await pinFile(tempFilePath, safeFileName);
       return c.json({
         data: {
-          resultCid,
+          submissionCid,
         },
       });
     } catch (error) {
@@ -226,7 +257,7 @@ router.post(
         status: 400,
         code: "VALIDATION_ERROR",
         message:
-          "Invalid submission cleanup payload. Next step: provide the pinned resultCid and retry.",
+          "Invalid submission cleanup payload. Next step: provide the pinned submission CID and retry.",
         extras: { issues: result.error.issues },
       });
     }
@@ -436,8 +467,7 @@ router.post(
         challengeAddress: payload.challengeAddress,
         solverAddress: payload.solverAddress,
         submittedByAgentId: actor.submittedByAgentId,
-        resultCid: payload.resultCid,
-        resultFormat: payload.resultFormat,
+        submissionCid: payload.submissionCid,
         optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),
         logger: getRequestLogger(c),
@@ -475,9 +505,8 @@ router.post(
         challengeId: payload.challengeId,
         challengeAddress: payload.challengeAddress,
         intentId: payload.intentId,
-        resultCid: payload.resultCid,
+        submissionCid: payload.submissionCid,
         txHash: payload.txHash,
-        resultFormat: payload.resultFormat,
         optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),
         logger: getRequestLogger(c),

@@ -1,5 +1,4 @@
 import {
-  SUBMISSION_RESULT_FORMAT,
   importSubmissionOpenPrivateKey,
   openSubmission,
   parseSealedSubmissionEnvelope,
@@ -18,27 +17,12 @@ export class SealedSubmissionError extends Error {
 }
 
 export async function resolveSubmissionSource(input: {
-  resultCid: string;
-  resultFormat?: string | null;
+  submissionCid: string;
   challengeId: string;
   solverAddress: string;
   privateKeyPem?: string;
   privateKeyPemsByKid?: Record<string, string>;
 }): Promise<ScoringInputSource> {
-  if (
-    !input.resultFormat ||
-    input.resultFormat === SUBMISSION_RESULT_FORMAT.plainV0
-  ) {
-    return { cid: input.resultCid };
-  }
-
-  if (input.resultFormat !== SUBMISSION_RESULT_FORMAT.sealedSubmissionV2) {
-    throw new SealedSubmissionError(
-      "unsupported_result_format",
-      `Unsupported submission result_format: ${input.resultFormat}`,
-    );
-  }
-
   if (!input.privateKeyPem && !input.privateKeyPemsByKid) {
     throw new SealedSubmissionError(
       "missing_decryption_key",
@@ -46,7 +30,7 @@ export async function resolveSubmissionSource(input: {
     );
   }
 
-  const envelopeText = await getText(input.resultCid);
+  const envelopeText = await getText(input.submissionCid);
   const envelope = (() => {
     try {
       return parseSealedSubmissionEnvelope(envelopeText);

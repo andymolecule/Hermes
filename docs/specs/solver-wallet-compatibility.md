@@ -296,10 +296,9 @@ The canonical solver data for a submission should remain:
 
 - `solverAddress`
 - `resultHash`
-- `resultCid`
-- `resultFormat`
+- `submissionCid`
 
-No DB schema changes are required for V1 or V2.
+No DB schema changes are required for V1 or V2 beyond the sealed-only cleanup already in flight.
 
 Optional observability fields may be added later for:
 

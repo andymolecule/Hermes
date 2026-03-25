@@ -1,4 +1,4 @@
-import { type ChallengeStatus, SUBMISSION_RESULT_FORMAT } from "@agora/common";
+import { type ChallengeStatus } from "@agora/common";
 import {
   deleteSubmissionsFromOnChainSubId,
   deleteUnmatchedSubmission,
@@ -61,13 +61,11 @@ export async function projectOnChainSubmissionFromRegistration(input: {
   let registration = null;
   if (
     existingSubmission?.submission_intent_id &&
-    existingSubmission.result_cid
+    existingSubmission.submission_cid
   ) {
     registration = {
       submission_intent_id: existingSubmission.submission_intent_id,
-      result_cid: existingSubmission.result_cid,
-      result_format:
-        existingSubmission.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
+      submission_cid: existingSubmission.submission_cid,
       trace_id: existingSubmission.trace_id ?? null,
     };
   } else {
@@ -99,8 +97,7 @@ export async function projectOnChainSubmissionFromRegistration(input: {
 
     registration = {
       submission_intent_id: intent.id,
-      result_cid: intent.result_cid,
-      result_format: intent.result_format,
+      submission_cid: intent.submission_cid,
       trace_id: existingSubmission?.trace_id ?? intent.trace_id ?? null,
     };
 
@@ -122,8 +119,7 @@ export async function projectOnChainSubmissionFromRegistration(input: {
     on_chain_sub_id: input.onChainSubmissionId,
     solver_address: input.onChainSubmission.solver,
     result_hash: input.onChainSubmission.resultHash,
-    result_cid: registration.result_cid,
-    result_format: registration.result_format,
+    submission_cid: registration.submission_cid,
     proof_bundle_hash: input.onChainSubmission.proofBundleHash,
     score: input.onChainSubmission.scored
       ? input.onChainSubmission.score.toString()

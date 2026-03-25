@@ -20,8 +20,8 @@ system.
 | Authoring session | Private pre-publish workspace | `authoring_sessions.id` |
 | Challenge spec | Canonical posted challenge contract document | `spec_cid` |
 | Evaluation bundle | Hidden or reference scorer input | `evaluationBundleCid` |
-| Submission intent | Reserved `(challenge, solver, resultHash, resultCid)` registration | `submission_intents.id` |
-| Submission artifact | Solver-uploaded result payload on IPFS | `result_cid` |
+| Submission intent | Reserved `(challenge, solver, resultHash, submissionCid)` registration | `submission_intents.id` |
+| Submission artifact | Solver-uploaded submission payload on IPFS | `submission_cid` |
 | On-chain submission | Challenge contract submission slot | `on_chain_sub_id` |
 | Score job | Worker task to evaluate one submission | `score_jobs.id` |
 | Proof bundle | Reproducibility artifact for a scored run | `proof_bundles.cid` |
@@ -31,7 +31,7 @@ system.
 ```mermaid
 flowchart LR
     A["Authoring\nrough context -> session -> compile -> publish"]
-    B["Submission\nresult CID -> intent -> on-chain submit -> registration"]
+    B["Submission\nsubmission CID -> intent -> on-chain submit -> registration"]
     C["Scoring\nscore job -> pipeline -> proof bundle -> postScore"]
 
     A --> D["Challenge spec + on-chain challenge"]
@@ -141,8 +141,7 @@ Before a solver submits on-chain, Agora registers submission metadata off-chain:
 - challenge id
 - solver address
 - `result_hash`
-- `result_cid`
-- `result_format`
+- `submission_cid`
 
 That registration is what makes later worker scoring possible.
 

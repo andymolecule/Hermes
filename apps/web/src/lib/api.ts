@@ -209,9 +209,8 @@ export async function getPublicLeaderboard(): Promise<
 export async function createSubmissionRecord(input: {
   challengeId: string;
   intentId: string;
-  resultCid: string;
+  submissionCid: string;
   txHash: `0x${string}`;
-  resultFormat?: "plain_v0" | "sealed_submission_v2";
 }) {
   const response = await fetch(resolveApiRequestUrl("/api/submissions"), {
     method: "POST",
@@ -234,8 +233,7 @@ export async function createSubmissionRecord(input: {
 export async function createSubmissionIntent(input: {
   challengeId: string;
   solverAddress: `0x${string}`;
-  resultCid: string;
-  resultFormat?: "plain_v0" | "sealed_submission_v2";
+  submissionCid: string;
 }) {
   return requestWithCredentials<{
     intentId: string;

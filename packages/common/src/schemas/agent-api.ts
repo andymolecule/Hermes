@@ -2,7 +2,6 @@ import { z } from "zod";
 import { SUBMISSION_SEAL_VERSION } from "../submission-sealing.js";
 import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
 import { SCORE_JOB_STATUSES } from "../types/score-job.js";
-import { SUBMISSION_RESULT_FORMAT } from "../types/submission.js";
 import { trustedChallengeSpecSchema } from "./challenge-spec.js";
 import {
   officialScorerComparatorSchema,
@@ -332,7 +331,7 @@ export const submissionPublicKeyResponseSchema = z.object({
 
 export const submissionUploadResponseSchema = z.object({
   data: z.object({
-    resultCid: z.string().min(1),
+    submissionCid: z.string().min(1),
   }),
 });
 
@@ -359,7 +358,7 @@ export const submissionRegistrationResponseSchema = z.object({
 
 export const submissionCleanupRequestSchema = z.object({
   intentId: z.string().uuid().optional(),
-  resultCid: z.string().min(1),
+  submissionCid: z.string().min(1),
 });
 
 export const submissionCleanupResponseSchema = z.object({
@@ -373,13 +372,7 @@ export const submissionIntentRequestSchema = z
   .object({
     ...challengeTargetFields,
     solverAddress: addressSchema,
-    resultCid: z.string().min(1),
-    resultFormat: z
-      .enum([
-        SUBMISSION_RESULT_FORMAT.plainV0,
-        SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-      ])
-      .optional(),
+    submissionCid: z.string().min(1),
   })
   .superRefine(validateChallengeTarget);
 
@@ -387,14 +380,8 @@ export const submissionRegistrationRequestSchema = z
   .object({
     ...challengeTargetFields,
     intentId: z.string().uuid(),
-    resultCid: z.string().min(1),
+    submissionCid: z.string().min(1),
     txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-    resultFormat: z
-      .enum([
-        SUBMISSION_RESULT_FORMAT.plainV0,
-        SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
-      ])
-      .optional(),
   })
   .superRefine(validateChallengeTarget);
 

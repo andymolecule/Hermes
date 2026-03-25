@@ -21,8 +21,7 @@ const submission: SubmissionRow = {
   challenge_id: "challenge-1",
   on_chain_sub_id: 3,
   solver_address: "0x00000000000000000000000000000000000000aa",
-  result_cid: "ipfs://sealed",
-  result_format: "sealed_submission_v2",
+  submission_cid: "ipfs://sealed",
   proof_bundle_cid: null,
 };
 

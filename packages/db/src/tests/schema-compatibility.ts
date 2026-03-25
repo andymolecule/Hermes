@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  REQUIRED_RUNTIME_SCHEMA_CHECKS,
   type RuntimeSchemaCheck,
   assertRuntimeDatabaseSchema,
   verifyRuntimeDatabaseSchema,
@@ -40,13 +41,13 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,trace_id,submitted_by_agent_id",
+    select: "trace_id,submitted_by_agent_id,submission_cid",
     nextStep: "apply migration",
   },
   {
     id: "submissions_registration_columns",
     table: "submissions",
-    select: "submission_intent_id,trace_id",
+    select: "submission_intent_id,trace_id,submission_cid",
     nextStep: "apply migration",
   },
   {
@@ -115,6 +116,25 @@ const failingDb = createMockDb({
 const failures = await verifyRuntimeDatabaseSchema(failingDb as never, checks);
 assert.equal(failures.length, 1);
 assert.equal(failures[0]?.checkId, "worker_executor_ready_column");
+
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "submission_intents_columns" &&
+      check.select === "trace_id,submitted_by_agent_id,submission_cid",
+  ),
+  true,
+  "runtime schema checks should guard submission_intents.submission_cid",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "submissions_registration_columns" &&
+      check.select === "submission_intent_id,trace_id,submission_cid",
+  ),
+  true,
+  "runtime schema checks should guard submissions.submission_cid",
+);
 
 await assert.rejects(
   () => assertRuntimeDatabaseSchema(failingDb as never, checks),

@@ -616,7 +616,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       "/api/submissions/upload": {
         post: {
           operationId: "uploadSubmissionArtifact",
-          summary: "Upload a sealed submission artifact and return its CID",
+          summary:
+            "Upload a sealed_submission_v2 envelope and return its CID",
           requestBody: {
             required: true,
             content: {
@@ -696,9 +697,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "object",
                   properties: {
                     intentId: uuidSchema(),
-                    resultCid: { type: "string" },
+                    submissionCid: { type: "string" },
                   },
-                  required: ["resultCid"],
+                  required: ["submissionCid"],
                 },
               },
             },
@@ -2139,13 +2140,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             solverAddress: {
               ...addressSchema(),
             },
-            resultCid: { type: "string" },
-            resultFormat: {
-              type: "string",
-              enum: ["plain_v0", "sealed_submission_v2"],
-            },
+            submissionCid: { type: "string" },
           },
-          required: ["solverAddress", "resultCid"],
+          required: ["solverAddress", "submissionCid"],
           anyOf: [
             { required: ["challengeId"] },
             { required: ["challengeAddress"] },
@@ -2175,9 +2172,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             data: {
               type: "object",
               properties: {
-                resultCid: { type: "string" },
+                submissionCid: { type: "string" },
               },
-              required: ["resultCid"],
+              required: ["submissionCid"],
             },
           },
           required: ["data"],
@@ -2188,17 +2185,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             challengeId: uuidSchema(),
             challengeAddress: addressSchema(),
             intentId: uuidSchema(),
-            resultCid: { type: "string" },
+            submissionCid: { type: "string" },
             txHash: {
               type: "string",
               pattern: "^0x[a-fA-F0-9]{64}$",
             },
-            resultFormat: {
-              type: "string",
-              enum: ["plain_v0", "sealed_submission_v2"],
-            },
           },
-          required: ["intentId", "resultCid", "txHash"],
+          required: ["intentId", "submissionCid", "txHash"],
           anyOf: [
             { required: ["challengeId"] },
             { required: ["challengeAddress"] },

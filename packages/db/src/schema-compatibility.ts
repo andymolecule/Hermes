@@ -2,6 +2,8 @@ import type { AgoraDbClient } from "./index";
 
 const BASELINE_SCHEMA_NEXT_STEP =
   "Reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, then reload the PostgREST schema cache before restarting services.";
+const SUBMISSION_CID_RENAME_NEXT_STEP =
+  "Apply packages/db/supabase/migrations/004_rename_submission_result_cid.sql, then reload the PostgREST schema cache before restarting services.";
 
 export interface RuntimeSchemaCheck {
   id: string;
@@ -28,8 +30,8 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
-    select: "result_format,trace_id,submitted_by_agent_id",
-    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+    select: "trace_id,submitted_by_agent_id,submission_cid",
+    nextStep: SUBMISSION_CID_RENAME_NEXT_STEP,
   },
   {
     id: "unmatched_submissions_table",
@@ -42,8 +44,8 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
   {
     id: "submissions_registration_columns",
     table: "submissions",
-    select: "submission_intent_id,trace_id",
-    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+    select: "submission_intent_id,trace_id,submission_cid",
+    nextStep: SUBMISSION_CID_RENAME_NEXT_STEP,
   },
   {
     id: "score_jobs_trace_id_column",

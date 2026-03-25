@@ -1,7 +1,7 @@
 import {
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
-  SUBMISSION_RESULT_CID_MISSING_ERROR,
+  SUBMISSION_CID_MISSING_ERROR,
   type ScoreJobStatus,
   readWorkerTimingConfig,
 } from "@agora/common";
@@ -216,7 +216,7 @@ export async function reviveMetadataBlockedScoreJob(
     })
     .eq("submission_id", submissionId)
     .in("status", [SCORE_JOB_STATUS.failed, SCORE_JOB_STATUS.skipped])
-    .like("last_error", `${SUBMISSION_RESULT_CID_MISSING_ERROR}%`)
+    .like("last_error", `${SUBMISSION_CID_MISSING_ERROR}%`)
     .select("*")
     .maybeSingle();
 

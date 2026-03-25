@@ -2,7 +2,6 @@ import { getChallengeLifecycleState } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
-  SUBMISSION_RESULT_FORMAT,
   resolveChallengeExecution,
 } from "@agora/common";
 import {
@@ -379,10 +378,7 @@ export async function buildPublicSubmissionVerification(
   }
 
   const replaySubmissionCid =
-    proofPayload?.replaySubmissionCid ??
-    (submission.result_format === SUBMISSION_RESULT_FORMAT.plainV0
-      ? submission.result_cid
-      : null);
+    proofPayload?.replaySubmissionCid ?? null;
 
   const verification: PublicSubmissionVerification = {
     challengeId: challenge.id,

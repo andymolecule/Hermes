@@ -1,8 +1,6 @@
 import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
-  SUBMISSION_RESULT_FORMAT,
-  type SubmissionResultFormat,
   getSubmissionLimitViolation,
   resolveSubmissionLimits,
 } from "@agora/common";
@@ -23,8 +21,7 @@ export interface SubmissionIntentInsert {
   solver_address: string;
   submitted_by_agent_id?: string | null;
   result_hash: string;
-  result_cid: string;
-  result_format?: SubmissionResultFormat;
+  submission_cid: string;
   expires_at: string;
   trace_id?: string | null;
 }
@@ -35,8 +32,7 @@ export interface SubmissionIntentRow {
   solver_address: string;
   submitted_by_agent_id: string | null;
   result_hash: string;
-  result_cid: string;
-  result_format: SubmissionResultFormat;
+  submission_cid: string;
   trace_id: string | null;
   expires_at: string;
   created_at: string;
@@ -65,7 +61,6 @@ export async function createSubmissionIntent(
       ...payload,
       solver_address: payload.solver_address.toLowerCase(),
       submitted_by_agent_id: payload.submitted_by_agent_id ?? null,
-      result_format: payload.result_format ?? SUBMISSION_RESULT_FORMAT.plainV0,
     })
     .select("*")
     .single();
@@ -150,9 +145,9 @@ export async function getSubmissionIntentById(
   return (data as SubmissionIntentRow | null) ?? null;
 }
 
-export async function countSubmissionIntentsByResultCid(
+export async function countSubmissionIntentsBySubmissionCid(
   db: AgoraDbClient,
-  resultCid: string,
+  submissionCid: string,
   input?: {
     excludeIntentId?: string;
   },
@@ -160,7 +155,7 @@ export async function countSubmissionIntentsByResultCid(
   let query = db
     .from("submission_intents")
     .select("id", { count: "exact", head: true })
-    .eq("result_cid", resultCid);
+    .eq("submission_cid", submissionCid);
 
   if (input?.excludeIntentId) {
     query = query.neq("id", input.excludeIntentId);

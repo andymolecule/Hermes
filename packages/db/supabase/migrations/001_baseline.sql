@@ -108,13 +108,10 @@ create table submission_intents (
   solver_address text not null,
   submitted_by_agent_id uuid,
   result_hash text not null,
-  result_cid text not null,
-  result_format text not null default 'plain_v0',
+  submission_cid text not null,
   expires_at timestamptz not null,
   trace_id text,
   created_at timestamptz not null default now(),
-  constraint submission_intents_result_format_check
-    check (result_format in ('plain_v0', 'sealed_submission_v2')),
   constraint submission_intents_solver_address_lowercase_check
     check (solver_address = lower(solver_address))
 );
@@ -139,8 +136,7 @@ create table submissions (
   on_chain_sub_id bigint not null,
   solver_address text not null,
   result_hash text not null,
-  result_cid text not null,
-  result_format text not null default 'plain_v0',
+  submission_cid text not null,
   proof_bundle_cid text,
   proof_bundle_hash text not null,
   score numeric,
@@ -149,8 +145,6 @@ create table submissions (
   scored_at timestamptz,
   tx_hash text not null,
   trace_id text,
-  constraint submissions_result_format_check
-    check (result_format in ('plain_v0', 'sealed_submission_v2')),
   constraint submissions_solver_address_lowercase_check
     check (solver_address = lower(solver_address))
 );

@@ -31,7 +31,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **AgoraFactory** | Contract that deploys per-bounty AgoraChallenge contracts and manages oracle/treasury addresses. |
 | **AgoraChallenge** | Per-bounty contract that holds USDC in escrow, tracks submissions, scores, and payouts. |
 | **WAD** | Score precision format. Scores stored on-chain as `uint256` with 1e18 precision. |
-| **Result hash** | `keccak256` of the IPFS CID pointing to the submission file. Stored on-chain as tamper-proof record. |
+| **Result hash** | `keccak256` of the submission CID. Stored on-chain as tamper-proof record. |
 | **Proof bundle** | IPFS-pinned package of all inputs, outputs, and container metadata needed to reproduce a score. Hash stored on-chain. |
 | **Distribution type** | How rewards are split: `WinnerTakeAll` (100%), `TopThree` (60/25/15), or `Proportional` (score-weighted). |
 | **Dispute window** | Poster-configurable period after scoring during which disputes can be raised. 0–2160 hours on testnet; 168–2160 hours before mainnet. |
@@ -53,7 +53,7 @@ Quick reference for key terms used across Agora documentation and code.
 | Term | Definition |
 |------|-----------|
 | **Submission contract** | Machine-readable spec in the challenge YAML defining what solvers must upload (file format, required columns, size limits). Single source of truth for artifact shape. |
-| **Submission intent** | Pre-registered off-chain metadata (CID, format) stored before the on-chain submit transaction. Bridges IPFS payload to on-chain event for scoring. |
+| **Submission intent** | Pre-registered off-chain metadata (submission CID + result hash) stored before the on-chain submit transaction. Bridges the IPFS payload to the on-chain event for scoring. |
 | **Sealed submission** (`sealed_submission_v2`) | Encrypted submission envelope. Browser seals answer bytes locally with the API's RSA public key, uploads only the sealed envelope to IPFS. Worker decrypts after deadline. |
 | **`kid`** | Key identifier for the active sealing public/private key pair. Worker must hold the matching private key. |
 
@@ -82,7 +82,7 @@ Quick reference for key terms used across Agora documentation and code.
 | Term | Definition |
 |------|-----------|
 | **Spec CID** | IPFS content identifier for the challenge YAML specification. |
-| **Result CID** | IPFS content identifier for a submission file (or sealed envelope). |
+| **Submission CID** | IPFS content identifier for a submission file or sealed submission envelope. |
 | **Proof bundle CID** | IPFS content identifier for the scoring proof bundle. |
 | **Execution plan cache** | `execution_plan_json` JSONB column on the challenges table. Stores the canonical scorer image, bundle, mount, env, submission contract, evaluation contract, and runtime policies used during scoring. |
 | **`artifacts_json`** | Supabase cache of the canonical public and private challenge artifacts. Not the public API contract by itself — the pinned challenge spec is. |

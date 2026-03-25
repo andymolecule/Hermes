@@ -16,7 +16,6 @@ const baseSubmission = {
   scored: true,
   submitted_at: "2026-03-13T05:03:22+00:00",
   scored_at: "2026-03-13T05:03:45+00:00",
-  result_format: "plain_v0",
   proof_bundle_cid: "ipfs://bafyproofbundle",
 } as const;
 
@@ -31,7 +30,7 @@ test("toPrivateSubmission normalizes numeric scores to strings", () => {
   const result = toPrivateSubmission(baseSubmission as never);
 
   assert.equal(result.score, "1000000000000000000");
-  assert.equal(result.result_format, "plain_v0");
+  assert.equal(result.scored, true);
 });
 
 test("listChallengesFromQuery normalizes numeric reward fields for API consumers", async () => {

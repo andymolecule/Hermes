@@ -326,8 +326,8 @@ sequenceDiagram
     Docker-->>Agent: Preview score
 
     Agent->>API/CLI: agora-submit-solution
-    API/CLI->>IPFS: Pin result file → resultCid
-    API/CLI->>Chain: Challenge.submit(keccak256(resultCid))
+    API/CLI->>IPFS: Pin submission file → submissionCid
+    API/CLI->>Chain: Challenge.submit(keccak256(submissionCid))
     Chain-->>Chain: emit Submitted(subId)
 ```
 
@@ -576,8 +576,7 @@ erDiagram
         int on_chain_sub_id
         string solver_address
         string result_hash
-        string result_cid
-        string result_format
+        string submission_cid
         string proof_bundle_cid
         string proof_bundle_hash
         string score

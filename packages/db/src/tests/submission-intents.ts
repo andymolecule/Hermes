@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { CHALLENGE_STATUS, SUBMISSION_RESULT_FORMAT } from "@agora/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import {
   createSubmissionIntent,
   ensureScoreJobForRegisteredSubmission,
   findActiveSubmissionIntentByMatch,
 } from "../queries/submission-intents.js";
 
-async function testCreateSubmissionIntentNormalizesAndDefaults() {
+async function testCreateSubmissionIntentNormalizesPayload() {
   let capturedPayload: Record<string, unknown> | undefined;
 
   const db = {
@@ -35,17 +35,13 @@ async function testCreateSubmissionIntentNormalizesAndDefaults() {
     solver_address: "0x00000000000000000000000000000000000000AA",
     submitted_by_agent_id: "agent-abc",
     result_hash: "0xabc",
-    result_cid: "ipfs://bafy-test",
+    submission_cid: "ipfs://bafy-test",
     expires_at: "2026-03-11T00:00:00.000Z",
   });
 
   assert.equal(
     capturedPayload?.solver_address,
     "0x00000000000000000000000000000000000000aa",
-  );
-  assert.equal(
-    capturedPayload?.result_format,
-    SUBMISSION_RESULT_FORMAT.plainV0,
   );
   assert.equal(capturedPayload?.submitted_by_agent_id, "agent-abc");
 }
@@ -58,8 +54,7 @@ async function testFindActiveSubmissionIntentByMatchUsesCanonicalLookup() {
       solver_address: "0xsolver",
       submitted_by_agent_id: null,
       result_hash: "0xhash",
-      result_cid: "ipfs://bafy-test",
-      result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+      submission_cid: "ipfs://bafy-test",
       trace_id: "trace-1",
       expires_at: "2026-03-11T00:00:00.000Z",
       created_at: "2026-03-10T00:00:00.000Z",
@@ -294,7 +289,7 @@ async function testEnsureScoreJobSkipsLimitViolation() {
   assert.equal(state.skippedJobPayload?.submission_id, "sub-1");
 }
 
-await testCreateSubmissionIntentNormalizesAndDefaults();
+await testCreateSubmissionIntentNormalizesPayload();
 await testFindActiveSubmissionIntentByMatchUsesCanonicalLookup();
 await testEnsureScoreJobQueuesRegisteredSubmission();
 await testEnsureScoreJobSkipsLimitViolation();

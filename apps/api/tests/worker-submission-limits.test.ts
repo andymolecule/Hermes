@@ -46,7 +46,7 @@ test("worker scoring skips submissions that exceed configured limits", async () 
     challenge_id: challenge.id,
     on_chain_sub_id: 2,
     solver_address: "0x00000000000000000000000000000000000000aa",
-    result_cid: "bafybeifake",
+    submission_cid: "bafybeifake",
   };
   const log = () => {};
 

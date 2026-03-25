@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CHALLENGE_STATUS,
-  SUBMISSION_RESULT_CID_MISSING_ERROR,
+  SUBMISSION_CID_MISSING_ERROR,
 } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
 import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
@@ -24,8 +24,7 @@ const baseSubmission: SubmissionRow = {
   challenge_id: "challenge-1",
   on_chain_sub_id: 3,
   solver_address: "0x00000000000000000000000000000000000000aa",
-  result_cid: "ipfs://result",
-  result_format: "plain_v0",
+  submission_cid: "ipfs://result",
   proof_bundle_cid: null,
 };
 
@@ -40,7 +39,7 @@ const job: ScoreJobRow = {
 
 const log: WorkerLogFn = () => {};
 
-test("missing result CID is skipped instead of failed", async () => {
+test("missing submission CID is skipped instead of failed", async () => {
   let skipped:
     | {
         payload: {
@@ -56,7 +55,7 @@ test("missing result CID is skipped instead of failed", async () => {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => ({
       ...baseSubmission,
-      result_cid: null,
+      submission_cid: null,
     }),
     getChallengeLifecycleState: async () => ({
       status: CHALLENGE_STATUS.scoring,
@@ -71,7 +70,7 @@ test("missing result CID is skipped instead of failed", async () => {
       return null;
     },
     failJob: async () => {
-      throw new Error("failJob should not be called for missing result CID");
+      throw new Error("failJob should not be called for missing submission CID");
     },
   });
 
@@ -81,7 +80,7 @@ test("missing result CID is skipped instead of failed", async () => {
       challenge_id: challenge.id,
       trace_id: null,
     },
-    reason: SUBMISSION_RESULT_CID_MISSING_ERROR,
+    reason: SUBMISSION_CID_MISSING_ERROR,
   });
 });
 

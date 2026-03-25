@@ -610,7 +610,7 @@ Think about Agora as two scoring concepts, not three:
 - `invalid_request` on create/patch/publish: fix the request body or session state and retry.
 - `session_expired`: create a new session to continue.
 - `Docker is required for scoring`: start Docker Desktop or the Docker daemon, then rerun `agora doctor`.
-- `Submission missing result CID`: resubmit with the current CLI and keep the indexer running.
+- `Submission missing submission CID`: resubmit with the current CLI and keep the indexer running.
 - `Challenge not open` or `Deadline passed`: choose another challenge or wait for the next one.
 - `Submission has no public proof bundle yet`: the challenge may be scored but public replay artifacts are not published for that submission yet.
 

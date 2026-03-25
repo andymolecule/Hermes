@@ -22,7 +22,6 @@ import { reconcileChallengeProjection } from "@agora/chain/indexer/settlement";
 import type { ChallengeListRow } from "@agora/chain/indexer/shared";
 import {
   SCORE_JOB_STATUS,
-  SUBMISSION_RESULT_FORMAT,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
@@ -657,17 +656,9 @@ async function runLifecycleScenario(input: {
   publicClient: ReturnType<typeof getPublicClient>;
   app: ReturnType<typeof createApp>;
   accountAddress: `0x${string}`;
-  useSealedSubmission: boolean;
   prepared: LifecycleScenarioPrepared;
 }) {
-  const {
-    db,
-    publicClient,
-    app,
-    accountAddress,
-    useSealedSubmission,
-    prepared,
-  } = input;
+  const { db, publicClient, app, accountAddress, prepared } = input;
   const config = loadConfig();
   const lifecycleE2EConfig = readLifecycleE2ERuntimeConfig();
 
@@ -711,38 +702,28 @@ async function runLifecycleScenario(input: {
     }
   });
 
-  const submissionCid = useSealedSubmission
-    ? await (async () => {
-        const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
-        const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID;
-        if (!publicKeyPem || !keyId) {
-          throw new Error(
-            "Sealed lifecycle E2E requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM.",
-          );
-        }
-        const publicKey = await importSubmissionSealPublicKey(publicKeyPem);
-        const sourceBytes = await fs.readFile(prepared.submissionSourcePath);
-        const envelope = await sealSubmission({
-          challengeId: challenge.id,
-          solverAddress: accountAddress.toLowerCase(),
-          fileName: path.basename(prepared.submissionSourcePath),
-          mimeType: "text/csv",
-          bytes: new Uint8Array(sourceBytes),
-          keyId,
-          publicKey,
-        });
-        return pinJSON(
-          `e2e-${prepared.label}-sealed-submission.json`,
-          envelope,
-        );
-      })()
-    : await pinFile(
-        prepared.submissionSourcePath,
-        `e2e-${prepared.label}-sample-submission.csv`,
+  const submissionCid = await (async () => {
+    const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
+    const keyId = config.AGORA_SUBMISSION_SEAL_KEY_ID;
+    if (!publicKeyPem || !keyId) {
+      throw new Error(
+        "Lifecycle E2E requires AGORA_SUBMISSION_SEAL_KEY_ID and AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM.",
       );
-  console.log(
-    `3. Submission payload pinned${useSealedSubmission ? " (sealed path)" : ""}`,
-  );
+    }
+    const publicKey = await importSubmissionSealPublicKey(publicKeyPem);
+    const sourceBytes = await fs.readFile(prepared.submissionSourcePath);
+    const envelope = await sealSubmission({
+      challengeId: challenge.id,
+      solverAddress: accountAddress.toLowerCase(),
+      fileName: path.basename(prepared.submissionSourcePath),
+      mimeType: "text/csv",
+      bytes: new Uint8Array(sourceBytes),
+      keyId,
+      publicKey,
+    });
+    return pinJSON(`e2e-${prepared.label}-sealed-submission.json`, envelope);
+  })();
+  console.log("3. Submission payload pinned (sealed path)");
 
   const intentResponse = await app.request(
     new Request("http://localhost/api/submissions/intent", {
@@ -751,10 +732,7 @@ async function runLifecycleScenario(input: {
       body: JSON.stringify({
         challengeId: challenge.id,
         solverAddress: accountAddress.toLowerCase(),
-        resultCid: submissionCid,
-        resultFormat: useSealedSubmission
-          ? SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
-          : SUBMISSION_RESULT_FORMAT.plainV0,
+        submissionCid: submissionCid,
       }),
     }),
   );
@@ -789,11 +767,8 @@ async function runLifecycleScenario(input: {
       body: JSON.stringify({
         challengeId: challenge.id,
         intentId,
-        resultCid: submissionCid,
+        submissionCid: submissionCid,
         txHash: submitTxHash,
-        resultFormat: useSealedSubmission
-          ? SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
-          : SUBMISSION_RESULT_FORMAT.plainV0,
       }),
     }),
   );
@@ -990,7 +965,11 @@ export async function runLifecycleE2E() {
 
   const db = createSupabaseClient(true);
   const app = createApp();
-  const useSealedSubmission = hasSubmissionSealWorkerConfig(config);
+  if (!hasSubmissionSealWorkerConfig(config)) {
+    throw new Error(
+      "Lifecycle E2E now requires submission sealing config. Set the submission seal env vars and retry.",
+    );
+  }
   const scenarios = await Promise.all([
     prepareReproducibilityScenario(),
     preparePredictionScenario(),
@@ -1002,7 +981,6 @@ export async function runLifecycleE2E() {
       publicClient,
       app,
       accountAddress: account.address,
-      useSealedSubmission,
       prepared,
     });
   }

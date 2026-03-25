@@ -10,16 +10,14 @@ import {
 import { projectOnChainSubmissionFromRegistration } from "@agora/chain/indexer/submissions";
 import {
   CHALLENGE_STATUS,
-  SUBMISSION_RESULT_FORMAT,
-  type SubmissionResultFormat,
   computeSubmissionResultHash,
   isValidPinnedSpecCid,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   SubmissionOnChainWriteConflictError,
-  countSubmissionIntentsByResultCid,
-  countSubmissionsByResultCid,
+  countSubmissionIntentsBySubmissionCid,
+  countSubmissionsBySubmissionCid,
   createSubmissionIntent,
   createSupabaseClient,
   deleteUnmatchedSubmission,
@@ -60,12 +58,6 @@ export class SubmissionWorkflowError extends Error {
     super(message);
     this.name = "SubmissionWorkflowError";
   }
-}
-
-function resolveRequestedSubmissionResultFormat(
-  resultFormat?: SubmissionResultFormat,
-) {
-  return resultFormat ?? SUBMISSION_RESULT_FORMAT.plainV0;
 }
 
 export function getSubmissionIntentExpiry(input: {
@@ -237,18 +229,17 @@ export async function createSubmissionIntentWorkflow(input: {
   challengeAddress?: string;
   solverAddress: string;
   submittedByAgentId?: string | null;
-  resultCid: string;
-  resultFormat?: SubmissionResultFormat;
+  submissionCid: string;
   optionalSessionAddress: string | null;
   requestId: string;
   logger: AgoraLogger;
 }) {
-  const normalizedResultCid = input.resultCid.trim();
-  if (!isValidPinnedSpecCid(normalizedResultCid)) {
+  const normalizedSubmissionCid = input.submissionCid.trim();
+  if (!isValidPinnedSpecCid(normalizedSubmissionCid)) {
     throw new SubmissionWorkflowError(
       400,
-      "RESULT_CID_INVALID",
-      "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+      "SUBMISSION_CID_INVALID",
+      "`submissionCid` must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
     );
   }
 
@@ -303,20 +294,13 @@ export async function createSubmissionIntentWorkflow(input: {
 
   const normalizedSolverAddress =
     sessionAddress ?? input.solverAddress.toLowerCase();
-  const resultHash = computeSubmissionResultHash(normalizedResultCid);
-  const requestedResultFormat = resolveRequestedSubmissionResultFormat(
-    input.resultFormat,
-  );
+  const resultHash = computeSubmissionResultHash(normalizedSubmissionCid);
   const existingIntent = await findActiveSubmissionIntentByMatch(db, {
     challengeId: challenge.id,
     solverAddress: normalizedSolverAddress,
     resultHash,
   });
-  if (
-    existingIntent &&
-    (existingIntent.result_cid !== normalizedResultCid ||
-      existingIntent.result_format !== requestedResultFormat)
-  ) {
+  if (existingIntent && existingIntent.submission_cid !== normalizedSubmissionCid) {
     throw new SubmissionWorkflowError(
       409,
       "SUBMISSION_INTENT_CONFLICT",
@@ -331,8 +315,7 @@ export async function createSubmissionIntentWorkflow(input: {
       solver_address: normalizedSolverAddress,
       submitted_by_agent_id: input.submittedByAgentId ?? null,
       result_hash: resultHash,
-      result_cid: normalizedResultCid,
-      result_format: requestedResultFormat,
+      submission_cid: normalizedSubmissionCid,
       expires_at: getSubmissionIntentExpiry({
         deadlineMs: window.deadlineMs,
       }),
@@ -380,21 +363,21 @@ export async function createSubmissionIntentWorkflow(input: {
 
 export async function cleanupSubmissionArtifact(input: {
   intentId?: string;
-  resultCid: string;
+  submissionCid: string;
   createSupabaseClientImpl?: typeof createSupabaseClient;
   getSubmissionIntentByIdImpl?: typeof getSubmissionIntentById;
-  countSubmissionIntentsByResultCidImpl?: typeof countSubmissionIntentsByResultCid;
-  countSubmissionsByResultCidImpl?: typeof countSubmissionsByResultCid;
+  countSubmissionIntentsBySubmissionCidImpl?: typeof countSubmissionIntentsBySubmissionCid;
+  countSubmissionsBySubmissionCidImpl?: typeof countSubmissionsBySubmissionCid;
   unpinCidImpl?: typeof unpinCid;
 }) {
   const db = (input.createSupabaseClientImpl ?? createSupabaseClient)(true);
   const getIntent =
     input.getSubmissionIntentByIdImpl ?? getSubmissionIntentById;
   const countIntents =
-    input.countSubmissionIntentsByResultCidImpl ??
-    countSubmissionIntentsByResultCid;
+    input.countSubmissionIntentsBySubmissionCidImpl ??
+    countSubmissionIntentsBySubmissionCid;
   const countSubmissions =
-    input.countSubmissionsByResultCidImpl ?? countSubmissionsByResultCid;
+    input.countSubmissionsBySubmissionCidImpl ?? countSubmissionsBySubmissionCid;
   const unpin = input.unpinCidImpl ?? unpinCid;
 
   if (input.intentId) {
@@ -409,8 +392,8 @@ export async function cleanupSubmissionArtifact(input: {
   }
 
   const [remainingIntents, persistedSubmissions] = await Promise.all([
-    countIntents(db, input.resultCid),
-    countSubmissions(db, input.resultCid),
+    countIntents(db, input.submissionCid),
+    countSubmissions(db, input.submissionCid),
   ]);
 
   if (remainingIntents > 0 || persistedSubmissions > 0) {
@@ -420,7 +403,7 @@ export async function cleanupSubmissionArtifact(input: {
     };
   }
 
-  await unpin(input.resultCid);
+  await unpin(input.submissionCid);
   return {
     cleanedIntent: false,
     unpinned: true,
@@ -431,22 +414,18 @@ export async function registerSubmissionWorkflow(input: {
   challengeId?: string;
   challengeAddress?: string;
   intentId: string;
-  resultCid: string;
+  submissionCid: string;
   txHash: string;
-  resultFormat?: SubmissionResultFormat;
   optionalSessionAddress: string | null;
   requestId: string;
   logger: AgoraLogger;
 }) {
-  const normalizedResultCid = input.resultCid.trim();
-  const requestedResultFormat = resolveRequestedSubmissionResultFormat(
-    input.resultFormat,
-  );
-  if (!isValidPinnedSpecCid(normalizedResultCid)) {
+  const normalizedSubmissionCid = input.submissionCid.trim();
+  if (!isValidPinnedSpecCid(normalizedSubmissionCid)) {
     throw new SubmissionWorkflowError(
       400,
-      "RESULT_CID_INVALID",
-      "Submission resultCid must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+      "SUBMISSION_CID_INVALID",
+      "`submissionCid` must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
     );
   }
 
@@ -483,13 +462,12 @@ export async function registerSubmissionWorkflow(input: {
     );
   }
   if (
-    intent.result_cid !== normalizedResultCid ||
-    intent.result_format !== requestedResultFormat
+    intent.submission_cid !== normalizedSubmissionCid
   ) {
     throw new SubmissionWorkflowError(
       409,
       "SUBMISSION_INTENT_METADATA_CONFLICT",
-      "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload and result format from the reserved intent.",
+      "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload from the reserved intent.",
     );
   }
 
@@ -593,19 +571,19 @@ export async function registerSubmissionWorkflow(input: {
     throw error;
   }
 
-  const expectedHash = computeSubmissionResultHash(normalizedResultCid);
+  const expectedHash = computeSubmissionResultHash(normalizedSubmissionCid);
   if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new SubmissionWorkflowError(
       400,
       "RESULT_HASH_MISMATCH",
-      "Provided resultCid does not match the on-chain result hash. Next step: retry with the exact sealed payload that was submitted on-chain.",
+      "Provided `submissionCid` does not match the on-chain result hash. Next step: retry with the exact sealed payload that was submitted on-chain.",
     );
   }
   if (intent.result_hash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new SubmissionWorkflowError(
       409,
       "SUBMISSION_INTENT_HASH_MISMATCH",
-      "Submission intent does not match the provided result CID. Next step: retry with the exact sealed payload reserved by the intent.",
+      "Submission intent does not match the provided submission CID. Next step: retry with the exact sealed payload reserved by the intent.",
     );
   }
 
@@ -651,8 +629,7 @@ export async function registerSubmissionWorkflow(input: {
       on_chain_sub_id: Number(subId),
       solver_address: onChain.solver,
       result_hash: onChain.resultHash,
-      result_cid: intent.result_cid,
-      result_format: intent.result_format,
+      submission_cid: intent.submission_cid,
       proof_bundle_hash: onChain.proofBundleHash,
       score: onChain.scored ? onChain.score.toString() : null,
       scored: onChain.scored,

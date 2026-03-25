@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { SUBMISSION_RESULT_FORMAT } from "@agora/common";
 import {
   SubmissionOnChainWriteConflictError,
   upsertSubmissionOnChain,
@@ -51,8 +50,7 @@ async function testOnChainUpsertConflictPathDoesNotTouchRegisteredFields() {
                   solver_address: "0x00000000000000000000000000000000000000aa",
                   submission_intent_id: "intent-1",
                   result_hash: "0xabc",
-                  result_cid: "ipfs://bafy-test",
-                  result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                  submission_cid: "ipfs://bafy-test",
                   proof_bundle_hash: "0xproof",
                   score: null,
                   scored: false,
@@ -96,8 +94,7 @@ async function testOnChainUpsertConflictPathDoesNotTouchRegisteredFields() {
     on_chain_sub_id: 1,
     solver_address: "0x00000000000000000000000000000000000000AA",
     result_hash: "0xabc",
-    result_cid: "ipfs://bafy-test",
-    result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+    submission_cid: "ipfs://bafy-test",
     proof_bundle_hash: "0xdef",
     score: null,
     scored: false,
@@ -127,11 +124,7 @@ async function testOnChainUpsertConflictPathDoesNotTouchRegisteredFields() {
     false,
   );
   assert.equal(
-    Object.prototype.hasOwnProperty.call(calls.updatePayload, "result_cid"),
-    false,
-  );
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(calls.updatePayload, "result_format"),
+    Object.prototype.hasOwnProperty.call(calls.updatePayload, "submission_cid"),
     false,
   );
 }
@@ -169,8 +162,7 @@ async function testOnChainUpsertRejectsIntentMismatch() {
                   solver_address: "0xsolver",
                   submission_intent_id: "intent-2",
                   result_hash: "0xabc",
-                  result_cid: "ipfs://bafy-test",
-                  result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+                  submission_cid: "ipfs://bafy-test",
                   proof_bundle_hash: "0xproof",
                   score: null,
                   scored: false,
@@ -195,8 +187,7 @@ async function testOnChainUpsertRejectsIntentMismatch() {
         on_chain_sub_id: 1,
         solver_address: "0xsolver",
         result_hash: "0xabc",
-        result_cid: "ipfs://bafy-test",
-        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        submission_cid: "ipfs://bafy-test",
         proof_bundle_hash: "0xdef",
         score: null,
         scored: false,
@@ -240,8 +231,7 @@ async function testOnChainUpsertRejectsMetadataMismatch() {
                   solver_address: "0xsolver",
                   submission_intent_id: "intent-1",
                   result_hash: "0xabc",
-                  result_cid: "ipfs://bafy-other",
-                  result_format: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+                  submission_cid: "ipfs://bafy-other",
                   proof_bundle_hash: "0xproof",
                   score: null,
                   scored: false,
@@ -266,8 +256,7 @@ async function testOnChainUpsertRejectsMetadataMismatch() {
         on_chain_sub_id: 1,
         solver_address: "0xsolver",
         result_hash: "0xabc",
-        result_cid: "ipfs://bafy-test",
-        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        submission_cid: "ipfs://bafy-test",
         proof_bundle_hash: "0xdef",
         score: null,
         scored: false,

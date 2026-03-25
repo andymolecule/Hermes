@@ -26,8 +26,11 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
   `sealed_submission_v2` while a challenge is `Open`.
 - There is no active plaintext fallback for private-answer submission on open
   challenges. If sealing is unavailable, the submission surface must block.
+- Privacy is enforced at Agora's first controlled write boundary too. Any API
+  route that accepts solver submission bytes must reject plaintext payloads and
+  persist only a valid `sealed_submission_v2` envelope.
 - The browser fetches Agora's active submission sealing public key whenever sealing is configured, then seals locally and uploads only the sealed envelope to IPFS.
-- The on-chain contract stores only `keccak256(result CID)`, not the plaintext answer.
+- The on-chain contract stores only `keccak256(submission CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
 - Once scoring begins, replay artifacts may be published for reproducibility. This is anti-copy privacy during the open phase, not permanent secrecy.
@@ -65,6 +68,20 @@ Agora's submission privacy goal is narrow and explicit:
 - Preserve reproducibility after scoring begins.
 
 This model is designed to prevent copy/paste leakage during the live competition window. It is not designed to make submissions permanently secret from Agora, from the solver, or from the public after replay artifacts are intentionally published.
+
+## Enforcement Rules
+
+- Private-answer submission for an `Open` challenge is sealed-only.
+- There is no compatibility mode, migration window, or server-side plaintext
+  fallback for canonical solver submissions.
+- Solver surfaces may prepare the envelope locally, but Agora must enforce the
+  same rule again at the submission upload and registration boundary.
+- `/api/submissions/upload` accepts only a valid `sealed_submission_v2`
+  envelope.
+- `/api/submissions/intent` and `/api/submissions` accept only a sealed
+  submission CID; there is no format selector anymore.
+- Local scoring may use plaintext local files because nothing is being
+  persisted as a live submission yet. That is a separate workflow.
 
 ## Non-Goals
 
@@ -109,18 +126,18 @@ sequenceDiagram
     Solver->>Solver: validate input locally
     Solver->>Solver: seal bytes as sealed_submission_v2
     Solver->>IPFS: upload sealed-submission.json
-    IPFS-->>Solver: result CID
-    Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, resultCid, resultFormat }
+    IPFS-->>Solver: submission CID
+    Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, submissionCid }
     API->>API: compute resultHash
     API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
-    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (required confirmation)
+    Solver->>API: POST /api/submissions { challengeId, txHash, submissionCid } (required confirmation)
     API->>DB: upsert on-chain submission linked to registered intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.
 
     Worker->>DB: claim score job after Scoring starts
-    Worker->>IPFS: fetch sealed envelope by result_cid
+    Worker->>IPFS: fetch sealed envelope by submission_cid
     Worker->>Worker: resolve private key by kid
     Worker->>Worker: decrypt and validate challengeId / solverAddress
     Worker->>Worker: run Docker scorer on plaintext bytes
@@ -134,17 +151,16 @@ sequenceDiagram
 ### On chain
 
 - Solver wallet address as the transaction sender.
-- `result_hash = keccak256(result CID)`.
+- `result_hash = keccak256(submission CID)`.
 - Posted score and proof hash after scoring.
 
 The contract does not store the plaintext answer and does not store the IPFS CID directly.
 
 ### In Supabase
 
-- `submission_intents` stores the pre-registered `(challenge_id, solver_address, result_hash) -> (result_cid, result_format)` mapping before the on-chain submit is sent. This intent is the required registration record for a scoreable submission.
-- `submissions.result_cid` points to the IPFS object used for scoring.
-- `submissions.result_format` is either `plain_v0` or `sealed_submission_v2`.
-- For sealed submissions, `result_cid` points to the sealed envelope, not the replay artifact.
+- `submission_intents` stores the pre-registered `(challenge_id, solver_address, result_hash) -> submission_cid` mapping before the on-chain submit is sent. This intent is the required registration record for a scoreable submission.
+- `submissions.submission_cid` points to the IPFS object used for scoring.
+- `submission_cid` points to the sealed envelope, not the replay artifact.
 - `worker_runtime_state` tracks live scoring-worker heartbeats, Docker readiness, and sealing self-check state for the active `kid`.
 - `AGORA_WORKER_RUNTIME_ID` can override the worker heartbeat row id when multiple scoring workers share one host.
 
@@ -252,7 +268,7 @@ Important consequence:
 1. The worker claims score jobs only after the challenge enters `Scoring`.
 2. On startup, the worker writes a heartbeat row into `worker_runtime_state` only after sealing self-check and Docker checks pass.
 3. The worker refreshes that heartbeat periodically while it stays alive.
-4. The worker fetches the sealed envelope from IPFS using `submissions.result_cid`.
+4. The worker fetches the sealed envelope from IPFS using `submissions.submission_cid`.
 5. The worker parses the envelope and reads its `kid`.
 6. The worker resolves the matching private key from its configured key set.
 7. The worker decrypts the wrapped AES key and then decrypts the answer bytes.
