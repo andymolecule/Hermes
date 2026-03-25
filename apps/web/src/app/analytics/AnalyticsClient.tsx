@@ -129,15 +129,12 @@ function ProgressMetric({
           {value}%
         </span>
       </div>
-      <div className="w-full bg-[var(--surface-container-low)] rounded-lg h-[14px] p-[2px]">
+      <div className="w-full bg-[var(--surface-container-high)] rounded-full h-3">
         <div
-          className="h-full transition-all duration-700"
+          className="h-full rounded-full transition-all duration-700"
           style={{
-            width: `${Math.min(value, 100)}%`,
-            background:
-              "repeating-linear-gradient(45deg, var(--color-warm-900) 0, var(--color-warm-900) 2px, transparent 2px, transparent 6px)",
-            borderRight:
-              value > 0 && value < 100 ? "1px solid var(--color-warm-900)" : undefined,
+            width: `${Math.max(Math.min(value, 100), 2)}%`,
+            backgroundColor: "var(--color-warm-900)",
           }}
         />
       </div>
@@ -157,7 +154,7 @@ function StatCell({
   muted?: boolean;
 }) {
   return (
-    <div className="text-center py-3">
+    <div className="text-center py-3 bg-[var(--surface-container-lowest)]">
       <p
         className={`text-lg font-mono font-bold tabular-nums ${muted ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}`}
       >
@@ -179,7 +176,7 @@ function RecentChallengesTable({
 }) {
   return (
     <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[var(--surface-container-low)]">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))", color: "rgba(255,255,255,0.85)" }}>
         <FlaskConical className="w-4 h-4" strokeWidth={2} />
         Recent Challenges
       </h3>
@@ -273,7 +270,7 @@ function RecentSubmissionsTable({
 }) {
   return (
     <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
-      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3 bg-[var(--surface-container-low)]">
+      <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2 px-4 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))", color: "rgba(255,255,255,0.85)" }}>
         <FileText className="w-4 h-4" strokeWidth={2} />
         Recent Submissions
       </h3>
@@ -435,8 +432,8 @@ function WorkerStatus() {
   return (
     <div className="bg-[var(--surface-container-lowest)] rounded-2xl overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-5 py-3 bg-[var(--surface-container-low)]">
-        <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2">
+      <div className="flex items-center justify-between px-5 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))" }}>
+        <h3 className="text-sm font-bold font-mono tracking-wider uppercase flex items-center gap-2" style={{ color: "rgba(255,255,255,0.85)" }}>
           <Activity className="w-4 h-4" strokeWidth={2} />
           Scoring Worker
         </h3>
@@ -461,13 +458,13 @@ function WorkerStatus() {
       </div>
 
       {health?.jobs ? (
-        <div className="bg-white">
-          {/* Job Pipeline — consistent 4-column grid */}
-          <div className="px-5 pt-4 pb-3">
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3">
+        <div>
+          {/* Job Pipeline */}
+          <div className="px-5 py-4">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-[var(--text-muted)] mb-3">
               Job Pipeline
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-lg overflow-hidden bg-[var(--surface-container-low)]">
               <StatCell label="Eligible" value={health.jobs.eligibleQueued} />
               <StatCell label="Queued" value={health.jobs.queued} />
               <StatCell label="Running" value={health.jobs.running} />
@@ -475,14 +472,12 @@ function WorkerStatus() {
             </div>
           </div>
 
-          <div className="border-t border-[var(--ghost-border)] mx-5" />
-
-          {/* Health Indicators — consistent 4-column grid */}
-          <div className="px-5 pt-3 pb-4">
-            <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] mb-3">
+          {/* Health Indicators */}
+          <div className="px-5 pb-4">
+            <p className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-[var(--text-muted)] mb-3">
               Health Indicators
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-lg overflow-hidden bg-[var(--surface-container-low)]">
               <StatCell
                 label="Oldest Eligible"
                 value={formatRelativeAge(health.metrics?.oldestQueuedAgeMs)}
@@ -493,19 +488,18 @@ function WorkerStatus() {
                 label="Running Stale"
                 value={health.runningOverThresholdCount ?? 0}
               />
-              {/* Sealed submissions inline */}
-              <div className="text-center py-3">
+              <div className="text-center py-3 bg-[var(--surface-container-lowest)]">
                 <div className="flex items-center justify-center gap-1.5">
                   {sealingReady ? (
                     <ShieldCheck
-                      className="w-4 h-4 text-[#5A7D4F]"
+                      className="w-4 h-4 text-[var(--color-success)]"
                       strokeWidth={2}
                     />
                   ) : (
                     <Lock className="w-4 h-4 text-[var(--text-muted)]" strokeWidth={2} />
                   )}
                   <p
-                    className={`text-lg font-mono font-bold ${sealingReady ? "text-[#5A7D4F]" : "text-[var(--text-muted)]"}`}
+                    className={`text-lg font-mono font-bold ${sealingReady ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"}`}
                   >
                     {sealingReady
                       ? "Ready"
@@ -576,8 +570,8 @@ export function AnalyticsClient() {
         <>
           {/* ── Section 1: Financial Overview ── */}
           <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
-            <div className="px-6 pt-5 pb-4">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <div className="px-6 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))", borderRadius: "12px 12px 0 0" }}>
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.85)" }}>
                 <DollarSign className="w-3.5 h-3.5" strokeWidth={1.5} />
                 Financial Overview
               </p>
@@ -616,8 +610,8 @@ export function AnalyticsClient() {
 
           {/* ── Section 2: Activity Metrics ── */}
           <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
-            <div className="px-6 pt-5 pb-4">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <div className="px-6 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))", borderRadius: "12px 12px 0 0" }}>
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.85)" }}>
                 <FlaskConical className="w-3.5 h-3.5" strokeWidth={1.5} />
                 Activity Metrics
               </p>
@@ -663,8 +657,8 @@ export function AnalyticsClient() {
 
           {/* ── Section 3: Health Gauges ── */}
           <section className="rounded-2xl overflow-hidden" style={{ backgroundColor: "var(--surface-container-low)" }}>
-            <div className="px-6 pt-5 pb-4">
-              <p className="text-[10px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <div className="px-6 py-3" style={{ background: "linear-gradient(145deg, var(--primary), var(--primary-container))", borderRadius: "12px 12px 0 0" }}>
+              <p className="text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "rgba(255,255,255,0.85)" }}>
                 <Target className="w-3.5 h-3.5" strokeWidth={1.5} />
                 Pipeline Health
               </p>
@@ -698,9 +692,7 @@ export function AnalyticsClient() {
             </div>
           </section>
 
-          {/* ── Section 4: Worker + Recent Tables ── */}
-          <WorkerStatus />
-
+          {/* ── Section 4: Recent Tables ── */}
           <RecentChallengesTable challenges={d.recentChallenges} />
           <RecentSubmissionsTable submissions={d.recentSubmissions} />
 

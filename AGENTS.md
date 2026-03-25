@@ -25,9 +25,8 @@ These apply to every line of code and every design decision:
 - @docs/protocol.md — On-chain protocol, lifecycle, settlement (the "rules")
 - @docs/data-and-indexing.md — DB schema, projections, source-of-truth boundaries
 - @docs/operations.md — Running, deploying, monitoring, incident response
-- @docs/design/design-system/DESIGN-SYSTEM.md — Canonical frontend visual identity
 - @docs/contributing/agent-guide.md — Agent getting-started guide
-- @.agent/skills/frontend-design/SKILL.md — Frontend component skill
+- @.claude/skills/agora-design-system/SKILL.md — Frontend design system, UI best practices, and component guidelines (canonical visual identity)
 
 ## Tech Stack
 
