@@ -568,6 +568,9 @@ Policy:
 - HTTP mode is read-only by default
 - canonical remote discovery lives in the API and OpenAPI spec, not MCP
 - Agora does not reconstruct malformed historical challenge specs for agent clients
+- `challenge.submission_contract` is the only source of truth for what a solver must upload
+- valid public specs expose `execution.evaluation_artifact_id`, never `execution.evaluation_artifact_uri`
+- public specs must not expose private artifact URIs; treat that as malformed published data and stop
 
 Provided stdio tools:
 

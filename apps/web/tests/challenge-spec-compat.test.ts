@@ -101,3 +101,74 @@ test("hydrateChallengeSpec rejects malformed historical specs with a clear error
     /does not match the current Agora schema/,
   );
 });
+
+test("hydrateChallengeSpec rejects malformed v5 pinned specs that still expose trusted execution fields", () => {
+  assert.throws(
+    () =>
+      hydrateChallengeSpec({
+        schema_version: 5,
+        id: "broken-v5-1",
+        title: "Broken v5 spec",
+        domain: "other",
+        type: "prediction",
+        description: "Pinned with the trusted execution shape by mistake",
+        execution: {
+          version: "v1",
+          template: "official_table_metric_v1",
+          scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+          metric: "accuracy",
+          comparator: "maximize",
+          evaluation_artifact_uri: "ipfs://hidden",
+          evaluation_contract: {
+            kind: "csv_table",
+            columns: {
+              required: ["sample_id", "label"],
+              id: "sample_id",
+              value: "label",
+              allow_extra: false,
+            },
+          },
+          policies: {
+            coverage_policy: "ignore",
+            duplicate_id_policy: "ignore",
+            invalid_value_policy: "ignore",
+          },
+        },
+        artifacts: [
+          {
+            artifact_id: "artifact-public",
+            role: "source_data",
+            visibility: "public",
+            uri: "ipfs://train",
+          },
+          {
+            artifact_id: "artifact-hidden",
+            role: "hidden_evaluation",
+            visibility: "private",
+            uri: "ipfs://hidden",
+          },
+        ],
+        submission_contract: {
+          version: "v1",
+          kind: "csv_table",
+          file: {
+            extension: ".csv",
+            mime: "text/csv",
+            max_bytes: 25_000_000,
+          },
+          columns: {
+            required: ["sample_id", "predicted_label"],
+            id: "sample_id",
+            value: "predicted_label",
+            allow_extra: true,
+          },
+        },
+        reward: {
+          total: "18",
+          distribution: "top_3",
+        },
+        deadline: "2026-03-31T15:07:56.000Z",
+      }),
+    /evaluation_artifact_id|unrecognized_keys|artifacts/i,
+  );
+});

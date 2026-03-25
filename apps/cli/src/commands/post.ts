@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { registerChallengeWithApi } from "@agora/agent-runtime";
 import {
@@ -16,17 +15,19 @@ import {
   DEFAULT_CHAIN_ID,
   SUBMISSION_LIMITS,
   canonicalizeChallengeSpec,
+  computeSpecHash,
   defaultMinimumScoreForExecution,
+  getPinSpecAuthorizationTypedData,
   loadConfig,
-  sanitizeChallengeSpecForPublish,
   type TrustedChallengeSpecOutput,
+  apiErrorResponseSchema,
   validateTrustedChallengeSpec,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
 import { Command } from "commander";
 import { formatUnits, parseUnits } from "viem";
 import yaml from "yaml";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   applyConfigToEnv,
   loadCliConfig,
@@ -102,16 +103,89 @@ async function maybePinLocalRef(
   }
 }
 
-async function pinSpecFile(spec: ReturnType<typeof sanitizeChallengeSpecForPublish>) {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-spec-"));
-  const tempPath = path.join(tempDir, "challenge.yaml");
-  try {
-    const content = yaml.stringify(spec);
-    await fs.writeFile(tempPath, content, "utf8");
-    return await pinFile(tempPath, "challenge.yaml");
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
+const pinSpecNonceResponseSchema = z.object({
+  nonce: z.string().min(1),
+});
+
+const pinSpecResponseSchema = z.object({
+  specCid: z.string().trim().min(1),
+});
+
+async function getPinSpecNonce(apiUrl: string) {
+  const response = await fetch(`${apiUrl}/api/pin-spec`, {
+    method: "GET",
+    headers: { "content-type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw await toPinSpecApiError(response);
   }
+
+  return pinSpecNonceResponseSchema.parse(await response.json()).nonce;
+}
+
+async function toPinSpecApiError(response: Response) {
+  const rawBody = await response.text().catch(() => "");
+  let payload: unknown = null;
+  if (rawBody.trim().length > 0) {
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      payload = null;
+    }
+  }
+  const parsedError = apiErrorResponseSchema.safeParse(payload);
+  if (parsedError.success) {
+    const nextAction = parsedError.data.nextAction
+      ? ` Next step: ${parsedError.data.nextAction}`
+      : "";
+    return new Error(`${parsedError.data.error}${nextAction}`);
+  }
+
+  const detail = rawBody.trim().length > 0 ? ` ${rawBody.trim()}` : "";
+  return new Error(
+    `Spec pin request failed (${response.status}). Next step: inspect the API /api/pin-spec response and retry.${detail}`,
+  );
+}
+
+export async function pinChallengeSpecWithApi(input: {
+  apiUrl: string;
+  chainId: number;
+  walletClient: ReturnType<typeof getWalletClient>;
+  walletAddress: `0x${string}`;
+  spec: TrustedChallengeSpecOutput;
+}) {
+  const apiUrl = input.apiUrl.replace(/\/$/, "");
+  const nonce = await getPinSpecNonce(apiUrl);
+  const specHash = computeSpecHash(input.spec);
+  const signature = await input.walletClient.signTypedData(
+    getPinSpecAuthorizationTypedData({
+      chainId: input.chainId,
+      wallet: input.walletAddress,
+      specHash,
+      nonce,
+    }),
+  );
+
+  const response = await fetch(`${apiUrl}/api/pin-spec`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      spec: input.spec,
+      auth: {
+        address: input.walletAddress,
+        nonce,
+        signature,
+        specHash,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw await toPinSpecApiError(response);
+  }
+
+  return pinSpecResponseSchema.parse(await response.json()).specCid;
 }
 
 function parseDeadline(value: string) {
@@ -165,7 +239,13 @@ export function buildPostCommand() {
         requireConfigValues(
           config,
           opts.dryRun
-            ? ["rpc_url", "factory_address", "usdc_address", "pinata_jwt"]
+            ? [
+                "rpc_url",
+                "factory_address",
+                "usdc_address",
+                "pinata_jwt",
+                "api_url",
+              ]
             : [
                 "rpc_url",
                 "factory_address",
@@ -254,7 +334,6 @@ export function buildPostCommand() {
           resolveOfficialPresetDigests:
             runtimeConfig.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
         });
-        const publicSpec = sanitizeChallengeSpecForPublish(spec);
 
         if (!(spec.reward.distribution in distributionMap)) {
           throw new Error(
@@ -262,8 +341,20 @@ export function buildPostCommand() {
           );
         }
 
+        const walletClient = getWalletClient();
+        const walletAddress = walletClient.account?.address;
+        if (!walletAddress) {
+          throw new Error("Wallet client is missing an account address.");
+        }
+
         const specSpinner = createSpinner("Pinning challenge spec...");
-        const specCid = await pinSpecFile(publicSpec);
+        const specCid = await pinChallengeSpecWithApi({
+          apiUrl: String(config.api_url),
+          chainId,
+          walletClient,
+          walletAddress,
+          spec,
+        });
         specSpinner.succeed(`Pinned spec: ${specCid}`);
 
         if (opts.dryRun) {
@@ -282,12 +373,6 @@ export function buildPostCommand() {
             );
           }
           return;
-        }
-
-        const walletClient = getWalletClient();
-        const walletAddress = walletClient.account?.address;
-        if (!walletAddress) {
-          throw new Error("Wallet client is missing an account address.");
         }
 
         const rewardAmount = spec.reward.total;
