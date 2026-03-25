@@ -2,7 +2,7 @@ import {
   CHALLENGE_STATUS,
   isMetadataBlockedScoreJobError,
   isTerminalScoreJobError,
-  resolveChallengeExecution,
+  resolveChallengeExecutionFromPlanCache,
   validateScorerImage,
 } from "@agora/common";
 import { markScoreJobSkipped } from "@agora/db";
@@ -69,7 +69,7 @@ function classifyFailedJob(
   if (job.challenges?.execution_plan_json) {
     const scorerImage = (() => {
       try {
-        return resolveChallengeExecution({
+        return resolveChallengeExecutionFromPlanCache({
           execution_plan_json: job.challenges?.execution_plan_json,
         }).image;
       } catch {

@@ -48,7 +48,6 @@ flowchart TB
         Browser["Browser (Next.js app)"]
         CLI["CLI"]
         Agent["OpenClaw agent"]
-        MCP["MCP server"]
     end
 
     subgraph App["Agora application processes"]
@@ -74,7 +73,6 @@ flowchart TB
     CLI --> API
     CLI --> Base
     Agent --> API
-    MCP --> API
 
     API --> DB
     API --> Base

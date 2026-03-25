@@ -18,7 +18,7 @@ This doc is authoritative for: system topology, component responsibilities, pack
 
 ## Summary
 
-- Monorepo with 5 apps (CLI, API, Executor, MCP, Web) and 8 packages (common, contracts, chain, db, ipfs, scorer-runtime, scorer, agent-runtime)
+- Monorepo with 4 apps (CLI, API, Executor, Web) and 8 packages (common, contracts, chain, db, ipfs, scorer-runtime, scorer, agent-runtime)
 - On-chain: USDC escrow, status machine, submission hashes, scores, proof hashes, payouts
 - Off-chain: specs, artifacts, submissions, scoring compute, search indexes
 - `submission_contract` in the challenge spec is the single source of truth for solver artifact shape
@@ -27,7 +27,6 @@ This doc is authoritative for: system topology, component responsibilities, pack
 - One active contract generation at a time; @agora/chain owns ABI/event details
 - Docker scorer: no network, read-only, non-root; official scorer templates run with 5–20 min timeouts, base runner fallback is 30 min
 - API is the canonical remote agent surface; CLI is the canonical local execution surface
-- MCP is optional and remains a thin adapter: stdio for local agents, HTTP read-only for remote discovery/status
 - Historical malformed specs are intentionally unsupported and are not reconstructed at read time
 - Identity is split into three domains: `auth_agents` for Agora agent identity, wallet addresses for on-chain actions, and `source_*` metadata for provenance only
 
@@ -38,7 +37,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 ### Navigation By Layer
 
 - Frontend: Web UI (`apps/web`), wallet interactions, challenge posting UX
-- Backend: API (`apps/api`), executor (`apps/executor`), MCP server (`apps/mcp-server`), indexer (`packages/chain/src/indexer.ts`)
+- Backend: API (`apps/api`), executor (`apps/executor`), indexer (`packages/chain/src/indexer.ts`)
 - Chain: Factory/challenge contracts (`packages/contracts`)
 - Data: Supabase (`packages/db`) + IPFS/Pinata (`packages/ipfs`)
 - Ops: deployment scripts and runbook (`scripts/*`, `docs/operations.md`)
@@ -58,7 +57,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 - Agora runs one active contract generation at a time.
 - `AgoraFactory` and `AgoraChallenge` expose `contractVersion()` for diagnostics, projection traceability, and future cutovers.
 - `@agora/chain` is the only layer that understands raw ABI/event/status details for the active generation.
-- API, worker, CLI, MCP, and web should consume canonical domain reads instead of duplicating raw contract decoding.
+- API, worker, CLI, and web should consume canonical domain reads instead of duplicating raw contract decoding.
 
 ```mermaid
 flowchart TB
@@ -70,7 +69,6 @@ flowchart TB
 
     subgraph Interfaces["Interface Layer"]
         API["Hono API<br/>(:3000)"]
-        MCP["MCP Server<br/>(:3001)"]
     end
 
     subgraph Data["Data Layer"]
@@ -96,8 +94,6 @@ flowchart TB
     CLI --> Factory
     CLI --> IPFS
     Agent --> API
-    Agent --> MCP
-    MCP --> API
     API --> DB
     API --> IPFS
     Orchestrator --> DB
@@ -383,7 +379,7 @@ Manual fallback:
 - Security-sensitive web API route:
   - `apps/web/src/app/api/pin-spec/route.ts` uses signed authorization for pinning specs
 
-### Backend Layer (API + MCP + Indexer)
+### Backend Layer (API + Indexer)
 
 - API server:
   - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
@@ -391,10 +387,6 @@ Manual fallback:
   - `apps/api/src/routes/agents.ts` + `apps/api/src/routes/authoring-sessions.ts` (direct agent registration, private session authoring, sponsor publish, wallet prepare/confirm publish)
   - `apps/api/src/lib/authoring-compiler.ts` + `apps/api/src/lib/authoring-sponsored-publish.ts` (authoring compilation, dry-run scoring, and funded publish orchestration)
   - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
-- MCP server:
-  - `apps/mcp-server/src/index.ts` (stdio + HTTP transport, session handling)
-  - `apps/mcp-server/src/tools/*` (adapter tools)
-  - stdio mode is full local execution; HTTP mode is read-only by default and should mirror the API, not replace it
 - Indexer:
   - `packages/chain/src/indexer.ts` (poll loop and cursor coordination)
   - `packages/chain/src/indexer/factory-events.ts` (factory-side challenge creation projection)
@@ -412,7 +404,6 @@ flowchart TB
         cli["cli<br/>Commander CLI (agora)"]
         api["api<br/>Hono REST API"]
         executor["executor<br/>Docker execution service"]
-        mcp["mcp-server<br/>MCP SDK (stdio + HTTP)"]
         web["web<br/>Next.js frontend"]
     end
 
@@ -440,12 +431,6 @@ flowchart TB
     api --> scorer
     executor --> common
     executor --> scorerRuntime
-    mcp --> common
-    mcp --> agentRuntime
-    mcp --> chain
-    mcp --> db
-    mcp --> ipfs
-    mcp --> scorer
     web --> common
     web --> ipfs
     agentRuntime --> chain
@@ -456,40 +441,6 @@ flowchart TB
     chain --> common
     db --> common
 ```
-
-### MCP Server Architecture
-
-```mermaid
-flowchart TB
-    subgraph Transport["Transport Layer"]
-        STDIO["stdio mode<br/>(local agents)"]
-        HTTP["HTTP mode<br/>(remote agents)"]
-    end
-
-    subgraph Sessions["Session Management"]
-        SM["Session Map<br/>Map&lt;id, {server, transport}&gt;"]
-        GC["GC Timer<br/>(30 min TTL, 5 min sweep)"]
-    end
-
-    subgraph Guard["Security Guards"]
-        X402["x402 Payment Gate<br/>(session bootstrap only)"]
-        PKG["Private Key Guard<br/>(stdio=allow, HTTP=env flag)"]
-    end
-
-    subgraph Tools["MCP Tool Modes"]
-        R1["HTTP: read-only discovery/status"]
-        L1["stdio: local execution adapter"]
-    end
-
-    STDIO --> SM
-    HTTP --> X402
-    X402 --> SM
-    SM --> GC
-    SM --> Tools
-    L1 --> PKG
-```
-
-Remote MCP HTTP traffic terminates on the MCP server's `/mcp` route. It is not served by the Hono API under `/api/*`.
 
 Historical spec policy:
 - malformed old challenge specs are not reconstructed in the web or API read path
@@ -633,16 +584,16 @@ erDiagram
 | `POST` | `/api/auth/verify` | — | — | Create SIWE session |
 | `POST` | `/api/auth/logout` | — | — | Clear SIWE session |
 | `GET` | `/api/auth/session` | — | — | Read SIWE session |
-| `GET` | `/api/challenges` | — | — | List challenges (public) |
+| `GET` | `/api/challenges` | — | Paid | List challenges (public) |
 | `POST` | `/api/challenges` | Rate limit | — | Accelerate indexer sync |
-| `GET` | `/api/challenges/:id` | — | — | Challenge details; results unlock in `Scoring` |
+| `GET` | `/api/challenges/:id` | — | Paid | Challenge details; results unlock in `Scoring` |
 | `GET` | `/api/challenges/:id/solver-status` | — | — | Solver-specific submission/claim status |
-| `GET` | `/api/challenges/:id/leaderboard` | — | — | Per-challenge leaderboard (`403` while `Open`) |
+| `GET` | `/api/challenges/:id/leaderboard` | — | Paid | Per-challenge leaderboard (`403` while `Open`) |
 | `GET` | `/api/challenges/:id/claimable` | — | — | Claim/finalize state from on-chain view |
 | `POST` | `/api/challenges/:id/validate-submission` | — | — | Validate a candidate submission file against the challenge contract |
-| `GET` | `/api/challenges/by-address/:address` | — | — | Challenge details by contract address |
+| `GET` | `/api/challenges/by-address/:address` | — | Paid | Challenge details by contract address |
 | `GET` | `/api/challenges/by-address/:address/solver-status` | — | — | Solver-specific status by contract address |
-| `GET` | `/api/challenges/by-address/:address/leaderboard` | — | — | Leaderboard by contract address (`403` while `Open`) |
+| `GET` | `/api/challenges/by-address/:address/leaderboard` | — | Paid | Leaderboard by contract address (`403` while `Open`) |
 | `POST` | `/api/challenges/by-address/:address/validate-submission` | — | — | Validate a candidate submission file by contract address |
 | `GET` | `/api/leaderboard` | — | — | Finalized-only public wallet leaderboard |
 | `GET` | `/api/me/portfolio` | SIWE | — | Private solver portfolio |
@@ -658,12 +609,10 @@ erDiagram
 | `GET` | `/api/submissions/:id` | SIWE | — | Private submission payload for the solver who owns it |
 | `GET` | `/api/submissions/by-onchain/:challengeAddress/:subId/status` | — | — | Submission status lookup by contract address + on-chain id |
 | `GET` | `/api/submissions/by-onchain/:challengeAddress/:subId/public` | — | — | Public verification data by on-chain refs |
-| `GET` | `/api/agent/challenges` | Paid alias | Paid | x402-billed compatibility alias over `/api/challenges` |
-| `GET` | `/api/agent/challenges/:id` | Paid alias | Paid | x402-billed compatibility alias over `/api/challenges/:id` |
 | `GET` | `/api/stats` | — | — | Aggregate counts |
 | `GET` | `/api/indexer-health` | — | — | Indexer lag monitoring |
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
-| `POST` | `/api/agents/register` | — | — | Register or rotate a direct OpenClaw agent API key |
+| `POST` | `/api/agents/register` | — | — | Register a direct Agora agent and mint an API key |
 | `POST` | `/api/authoring/uploads` | Rate limit | — | Ingest a direct upload or source URL into a normalized Agora artifact |
 | `GET` | `/api/authoring/sessions` | SIWE or agent bearer | — | List the authenticated caller's own authoring sessions |
 | `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from structured intent, execution, and files |
@@ -675,10 +624,6 @@ erDiagram
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
 | `POST` | `/api/verify` | Rate limit | Paid | Re-run scorer verification |
-
-> **Note:** MCP sessions are handled by the separate MCP server on port 3001, not the API.
->
-> The legacy `/api/agent/challenges*` namespace remains mounted only as an x402-billed compatibility alias over the canonical `/api/challenges*` routes. It is not a separate API surface.
 
 ### Identity Domains
 
@@ -805,8 +750,6 @@ Projection rules:
 | **Scoring** | Resource exhaustion | Per-execution-template limits (512MB–4GB memory, 1–2 CPUs, 64 PIDs, 5–20 minute timeouts), 30-minute fallback when no execution-template override applies |
 | **API** | Spam / abuse | Rate limiting (per wallet + per IP) |
 | **API** | Oversized payloads | 1MB JSON body limit |
-| **MCP** | Private key over HTTP | Blocked by default; requires `AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS=true` |
-| **MCP** | Session flooding | 30-min TTL + GC sweep every 5 min |
 | **x402** | Free-riding on paid routes | Facilitator verification + settlement before serving |
 | **Auth** | Session hijacking | `httpOnly` + `sameSite=Lax` + `secure` cookies |
 
@@ -819,13 +762,12 @@ flowchart TB
     subgraph Users["Users & Agents"]
         Browser["Browser"]
         CLIUser["CLI (local)"]
-        AIAgent["AI Agent (MCP)"]
+        AIAgent["AI Agent"]
     end
 
     subgraph Edge["Edge / Hosting"]
         Vercel["Vercel<br/>(Next.js frontend)"]
         Fly1["Fly.io / Railway<br/>(Hono API)"]
-        Fly2["Fly.io / Railway<br/>(MCP Server)"]
     end
 
     subgraph Infra["Infrastructure"]

@@ -34,7 +34,6 @@ export interface AuthSessionRow {
 
 export interface AuthAgentInsert {
   telegramBotId: string;
-  apiKeyHash: string;
   agentName?: string | null;
   description?: string | null;
 }
@@ -44,10 +43,24 @@ export interface AuthAgentRow {
   telegram_bot_id: string;
   agent_name: string | null;
   description: string | null;
-  api_key_hash: string;
-  last_rotated_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AuthAgentKeyInsert {
+  agentId: string;
+  apiKeyHash: string;
+  keyLabel?: string | null;
+}
+
+export interface AuthAgentKeyRow {
+  id: string;
+  agent_id: string;
+  key_label: string | null;
+  api_key_hash: string;
+  revoked_at: string | null;
+  created_at: string;
+  last_used_at: string | null;
 }
 
 function normalizeOptionalText(value?: string | null) {
@@ -187,8 +200,6 @@ export async function createAuthAgent(
       telegram_bot_id: input.telegramBotId,
       agent_name: normalizeOptionalText(input.agentName),
       description: normalizeOptionalText(input.description),
-      api_key_hash: input.apiKeyHash,
-      last_rotated_at: now,
       updated_at: now,
     })
     .select("*")
@@ -196,6 +207,39 @@ export async function createAuthAgent(
 
   if (error) {
     throw new Error(`Failed to create auth agent: ${error.message}`);
+  }
+
+  return data as AuthAgentRow;
+}
+
+export async function updateAuthAgent(
+  db: AgoraDbClient,
+  input: {
+    id: string;
+    agentName?: string | null;
+    description?: string | null;
+  },
+): Promise<AuthAgentRow> {
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.agentName !== undefined) {
+    patch.agent_name = normalizeOptionalText(input.agentName);
+  }
+  if (input.description !== undefined) {
+    patch.description = normalizeOptionalText(input.description);
+  }
+
+  const { data, error } = await db
+    .from("auth_agents")
+    .update(patch)
+    .eq("id", input.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update auth agent: ${error.message}`);
   }
 
   return data as AuthAgentRow;
@@ -218,55 +262,120 @@ export async function getAuthAgentByTelegramBotId(
   return (data as AuthAgentRow | null) ?? null;
 }
 
-export async function getAuthAgentByApiKeyHash(
+export async function getAuthAgentById(
   db: AgoraDbClient,
-  apiKeyHash: string,
+  id: string,
 ): Promise<AuthAgentRow | null> {
   const { data, error } = await db
     .from("auth_agents")
     .select("*")
-    .eq("api_key_hash", apiKeyHash)
+    .eq("id", id)
     .maybeSingle();
 
   if (error && error.code !== "PGRST116") {
-    throw new Error(`Failed to read auth agent by API key: ${error.message}`);
+    throw new Error(`Failed to read auth agent by id: ${error.message}`);
   }
 
   return (data as AuthAgentRow | null) ?? null;
 }
 
-export async function rotateAuthAgentApiKey(
+export async function createAuthAgentKey(
   db: AgoraDbClient,
-  input: {
-    id: string;
-    apiKeyHash: string;
-    agentName?: string | null;
-    description?: string | null;
-  },
-): Promise<AuthAgentRow> {
-  const patch: Record<string, unknown> = {
-    api_key_hash: input.apiKeyHash,
-    last_rotated_at: new Date().toISOString(),
-  };
-  patch.updated_at = patch.last_rotated_at;
-
-  if (input.agentName !== undefined) {
-    patch.agent_name = normalizeOptionalText(input.agentName);
-  }
-  if (input.description !== undefined) {
-    patch.description = normalizeOptionalText(input.description);
-  }
-
+  input: AuthAgentKeyInsert,
+): Promise<AuthAgentKeyRow> {
   const { data, error } = await db
-    .from("auth_agents")
-    .update(patch)
-    .eq("id", input.id)
+    .from("auth_agent_keys")
+    .insert({
+      agent_id: input.agentId,
+      api_key_hash: input.apiKeyHash,
+      key_label: normalizeOptionalText(input.keyLabel),
+    })
     .select("*")
     .single();
 
   if (error) {
-    throw new Error(`Failed to rotate auth agent API key: ${error.message}`);
+    throw new Error(`Failed to create auth agent key: ${error.message}`);
   }
 
-  return data as AuthAgentRow;
+  return data as AuthAgentKeyRow;
+}
+
+export async function getAuthAgentKeyByApiKeyHash(
+  db: AgoraDbClient,
+  apiKeyHash: string,
+): Promise<AuthAgentKeyRow | null> {
+  const { data, error } = await db
+    .from("auth_agent_keys")
+    .select("*")
+    .eq("api_key_hash", apiKeyHash)
+    .is("revoked_at", null)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to read auth agent key by API key: ${error.message}`);
+  }
+
+  return (data as AuthAgentKeyRow | null) ?? null;
+}
+
+export async function getAuthAgentKeyById(
+  db: AgoraDbClient,
+  input: {
+    agentId: string;
+    keyId: string;
+  },
+): Promise<AuthAgentKeyRow | null> {
+  const { data, error } = await db
+    .from("auth_agent_keys")
+    .select("*")
+    .eq("agent_id", input.agentId)
+    .eq("id", input.keyId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to read auth agent key: ${error.message}`);
+  }
+
+  return (data as AuthAgentKeyRow | null) ?? null;
+}
+
+export async function revokeAuthAgentKey(
+  db: AgoraDbClient,
+  input: {
+    agentId: string;
+    keyId: string;
+  },
+): Promise<AuthAgentKeyRow | null> {
+  const { data, error } = await db
+    .from("auth_agent_keys")
+    .update({
+      revoked_at: new Date().toISOString(),
+    })
+    .eq("agent_id", input.agentId)
+    .eq("id", input.keyId)
+    .is("revoked_at", null)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to revoke auth agent key: ${error.message}`);
+  }
+
+  return (data as AuthAgentKeyRow | null) ?? null;
+}
+
+export async function touchAuthAgentKeyLastUsed(
+  db: AgoraDbClient,
+  keyId: string,
+) {
+  const { error } = await db
+    .from("auth_agent_keys")
+    .update({
+      last_used_at: new Date().toISOString(),
+    })
+    .eq("id", keyId);
+
+  if (error) {
+    throw new Error(`Failed to update auth agent key last_used_at: ${error.message}`);
+  }
 }

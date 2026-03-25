@@ -9,12 +9,26 @@ function allowQuota() {
     }) as never;
 }
 
-test("agent registration returns the bare registration object", async () => {
+const activeAgent = {
+  agentId: "11111111-1111-4111-8111-111111111111",
+  telegramBotId: "bot_123456",
+  agentName: "AUBRAI",
+  description: "Longevity research agent",
+  keyId: "22222222-2222-4222-8222-222222222222",
+  keyLabel: "ci-runner",
+  keyStatus: "active" as const,
+  keyCreatedAt: "2026-03-22T00:00:00.000Z",
+  keyLastUsedAt: "2026-03-22T00:05:00.000Z",
+  keyRevokedAt: null,
+};
+
+test("agent registration returns the data envelope with a new key id", async () => {
   const router = createAgentRoutes({
     registerAgent: async () => ({
-      agent_id: "agent-abc",
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      key_id: "22222222-2222-4222-8222-222222222222",
       api_key: "agora_xxxxxxxx",
-      status: "created",
+      status: "existing_key_issued",
     }),
     requireWriteQuota: allowQuota() as never,
   });
@@ -27,19 +41,23 @@ test("agent registration returns the bare registration object", async () => {
       },
       body: JSON.stringify({
         telegram_bot_id: "bot_123456",
+        key_label: "ci-runner",
       }),
     }),
   );
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    agent_id: "agent-abc",
-    api_key: "agora_xxxxxxxx",
-    status: "created",
+    data: {
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      key_id: "22222222-2222-4222-8222-222222222222",
+      api_key: "agora_xxxxxxxx",
+      status: "existing_key_issued",
+    },
   });
 });
 
-test("agent registration returns the session-contract invalid_request envelope on bad input", async () => {
+test("agent registration returns invalid_request on bad input", async () => {
   const router = createAgentRoutes({
     requireWriteQuota: allowQuota() as never,
   });
@@ -62,6 +80,83 @@ test("agent registration returns the session-contract invalid_request envelope o
       code: "invalid_request",
       message: "Invalid agent registration payload.",
       next_action: "Fix the request body and retry.",
+    },
+  });
+});
+
+test("agent me returns the current authenticated key metadata", async () => {
+  const router = createAgentRoutes({
+    getAgentFromAuthorizationHeader: async () => activeAgent,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/me", {
+      headers: {
+        authorization: "Bearer agora_xxxxxxxx",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    data: {
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      telegram_bot_id: "bot_123456",
+      agent_name: "AUBRAI",
+      description: "Longevity research agent",
+      current_key: {
+        key_id: "22222222-2222-4222-8222-222222222222",
+        key_label: "ci-runner",
+        status: "active",
+        created_at: "2026-03-22T00:00:00.000Z",
+        last_used_at: "2026-03-22T00:05:00.000Z",
+        revoked_at: null,
+      },
+    },
+  });
+});
+
+test("agent me returns generic unauthorized when the bearer key is invalid", async () => {
+  const router = createAgentRoutes();
+
+  const response = await router.request("http://localhost/me");
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "unauthorized",
+      message: "Invalid or missing authentication.",
+      next_action: "Register at POST /api/agents/register and retry.",
+    },
+  });
+});
+
+test("agent key revoke returns revoked without rotating other keys", async () => {
+  const router = createAgentRoutes({
+    getAgentFromAuthorizationHeader: async () => activeAgent,
+    revokeAgentKey: async () => ({
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      key_id: "33333333-3333-4333-8333-333333333333",
+      status: "revoked",
+    }),
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/keys/33333333-3333-4333-8333-333333333333/revoke", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer agora_xxxxxxxx",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    data: {
+      agent_id: "11111111-1111-4111-8111-111111111111",
+      key_id: "33333333-3333-4333-8333-333333333333",
+      status: "revoked",
     },
   });
 });

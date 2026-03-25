@@ -2,8 +2,7 @@ import {
   AgoraError,
   type DryRunPreviewOutput,
   type TrustedChallengeSpecOutput,
-  resolveChallengeExecution,
-  resolveChallengeRunnerLimits,
+  resolveChallengeExecutionFromTrustedSpec,
 } from "@agora/common";
 import { getText } from "@agora/ipfs";
 import { executeScoringPipeline } from "@agora/scorer";
@@ -76,7 +75,9 @@ async function buildSubmissionSourceResult(input: {
   challengeSpec: TrustedChallengeSpecOutput;
   getTextImpl: GetTextFn;
 }): Promise<AuthoringStepResult<{ content: string }>> {
-  const execution = resolveChallengeExecution(input.challengeSpec);
+  const execution = resolveChallengeExecutionFromTrustedSpec(
+    input.challengeSpec,
+  );
   const evaluationUri = execution.execution.evaluation_artifact_uri;
   if (!evaluationUri) {
     return stepFailure({
@@ -212,8 +213,9 @@ export async function executeAuthoringDryRunResult(
   const executeScoringPipelineImpl =
     dependencies.executeScoringPipelineImpl ?? executeScoringPipeline;
   const getTextImpl = dependencies.getTextImpl ?? getText;
-  const execution = resolveChallengeExecution(input.challengeSpec);
-  const runnerLimits = resolveChallengeRunnerLimits(execution.template);
+  const execution = resolveChallengeExecutionFromTrustedSpec(
+    input.challengeSpec,
+  );
   const submission = await buildSubmissionSourceResult({
     challengeSpec: input.challengeSpec,
     getTextImpl,
@@ -233,17 +235,12 @@ export async function executeAuthoringDryRunResult(
     evaluationContract: input.challengeSpec.execution.evaluation_contract,
     metric: execution.metric,
     policies: input.challengeSpec.execution.policies,
-    timeoutMs: Math.min(
-      input.timeoutMs,
-      runnerLimits?.timeoutMs ?? input.timeoutMs,
-    ),
-    limits: runnerLimits
-      ? {
-          memory: runnerLimits.memory,
-          cpus: runnerLimits.cpus,
-          pids: runnerLimits.pids,
-        }
-      : undefined,
+    timeoutMs: Math.min(input.timeoutMs, execution.limits.timeoutMs),
+    limits: {
+      memory: execution.limits.memory,
+      cpus: execution.limits.cpus,
+      pids: execution.limits.pids,
+    },
   });
 
   try {

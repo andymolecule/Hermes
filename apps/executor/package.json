@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node ../../scripts/run-node-with-root-env.mjs dist/index.js",
     "dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/index.ts",
-    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
+    "test": "node ../../scripts/run-ts-tests.mjs tests"
   },
   "dependencies": {
     "@agora/common": "workspace:*",

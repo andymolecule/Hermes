@@ -11,7 +11,7 @@ import {
   isOfficialScorerImage,
   loadConfig,
   readWorkerTimingConfig,
-  resolveChallengeExecution,
+  resolveChallengeExecutionFromPlanCache,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
   runSubmissionSealSelfCheck,
@@ -19,6 +19,7 @@ import {
 import {
   WORKER_RUNTIME_TYPE,
   assertRuntimeDatabaseSchema,
+  formatRuntimeSchemaNextSteps,
   claimNextJob,
   createSupabaseClient,
   getActiveWorkerRuntimeVersion,
@@ -26,6 +27,7 @@ import {
   heartbeatWorkerRuntimeState,
   pruneWorkerRuntimeStates,
   upsertWorkerRuntimeState,
+  verifyRuntimeDatabaseSchema,
 } from "@agora/db";
 import {
   ensureScoringBackendReady,
@@ -40,10 +42,6 @@ import {
 import { sweepChallengeLifecycle } from "./chain.js";
 import { processJob } from "./jobs.js";
 import { sleep } from "./policy.js";
-import {
-  type ResolvedRunnerPolicy,
-  resolveRunnerPolicyForChallenge,
-} from "./scoring.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
 
 const LOG_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
@@ -63,9 +61,6 @@ const structuredWorkerLogger = workerLogger.child({
 const log: WorkerLogFn = (level, message, meta) => {
   structuredWorkerLogger[level](meta ?? {}, message);
 };
-
-export { resolveRunnerPolicyForChallenge };
-export type { ResolvedRunnerPolicy };
 
 export function shouldExitForRuntimeMismatch(
   consecutiveMismatchChecks: number,
@@ -201,7 +196,7 @@ async function preflightOfficialScoringImagesForWorker(
       (data ?? [])
         .map((row) => {
           try {
-            return resolveChallengeExecution(
+            return resolveChallengeExecutionFromPlanCache(
               row as ChallengeExecutionRow,
             ).image;
           } catch {
@@ -354,6 +349,31 @@ async function refreshWorkerRuntimeReadiness(
   if (
     !(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))
   ) {
+    return 0;
+  }
+
+  const schemaFailures = await verifyRuntimeDatabaseSchema(db);
+  if (schemaFailures.length > 0) {
+    const nextAction =
+      formatRuntimeSchemaNextSteps(schemaFailures) ||
+      "Restore database schema compatibility and reload the PostgREST schema cache before restarting the worker.";
+    const message = `Worker runtime database schema is incompatible. Next step: ${nextAction}`;
+    const changed = await updateRuntimeStateAndPersist(
+      db,
+      runtimeWorkerId,
+      runtimeState,
+      {
+        ready: false,
+        executor_ready: runtimeState.executor_ready,
+        last_error: message,
+      },
+    );
+    if (changed) {
+      log("warn", "Worker runtime degraded", {
+        reason: "database_schema_incompatible",
+        failures: schemaFailures,
+      });
+    }
     return 0;
   }
 

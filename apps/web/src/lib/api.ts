@@ -1,6 +1,7 @@
 import {
   type ChallengeSpecOutput,
   DEFAULT_IPFS_GATEWAY,
+  type SubmissionResultFormat,
   agentChallengeDetailResponseSchema,
   agentChallengesListResponseSchema,
   challengeRegistrationResponseSchema,
@@ -31,9 +32,19 @@ export function resolveApiRequestUrl(path: string) {
 async function getApiErrorMessage(response: Response): Promise<string> {
   const text = await response.text();
   try {
-    const parsed = JSON.parse(text) as { error?: unknown };
+    const parsed = JSON.parse(text) as {
+      error?: { message?: unknown } | unknown;
+    };
     if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
       return parsed.error;
+    }
+    if (
+      parsed.error &&
+      typeof parsed.error === "object" &&
+      "message" in parsed.error &&
+      typeof (parsed.error as { message?: unknown }).message === "string"
+    ) {
+      return (parsed.error as { message: string }).message;
     }
   } catch {
     // Fall through to raw text.
@@ -209,31 +220,25 @@ export async function getPublicLeaderboard(): Promise<
 export async function createSubmissionRecord(input: {
   challengeId: string;
   intentId: string;
-  submissionCid: string;
+  resultCid: string;
+  resultFormat: SubmissionResultFormat;
   txHash: `0x${string}`;
 }) {
-  const response = await fetch(resolveApiRequestUrl("/api/submissions"), {
+  return requestWithCredentials<{
+    submission: { id: string };
+    phase: "registration_confirmed";
+    warning: { code: string; message: string } | null;
+  }>("/api/submissions", {
     method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-
-  if (!response.ok) {
-    const message = await getApiErrorMessage(response);
-    throw new Error(`API request failed (${response.status}): ${message}`);
-  }
-
-  return (await response.json()) as {
-    ok: boolean;
-    submission?: { id: string };
-  };
 }
 
 export async function createSubmissionIntent(input: {
   challengeId: string;
   solverAddress: `0x${string}`;
-  submissionCid: string;
+  resultCid: string;
+  resultFormat: SubmissionResultFormat;
 }) {
   return requestWithCredentials<{
     intentId: string;

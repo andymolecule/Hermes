@@ -136,10 +136,10 @@ async function toPinSpecApiError(response: Response) {
   }
   const parsedError = apiErrorResponseSchema.safeParse(payload);
   if (parsedError.success) {
-    const nextAction = parsedError.data.nextAction
-      ? ` Next step: ${parsedError.data.nextAction}`
+    const nextAction = parsedError.data.error.next_action
+      ? ` Next step: ${parsedError.data.error.next_action}`
       : "";
-    return new Error(`${parsedError.data.error}${nextAction}`);
+    return new Error(`${parsedError.data.error.message}${nextAction}`);
   }
 
   const detail = rawBody.trim().length > 0 ? ` ${rawBody.trim()}` : "";

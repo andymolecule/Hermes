@@ -88,7 +88,7 @@ test("public key route returns 503 when sealing config is missing", async () => 
 
     assert.equal(response.status, 503);
     const body = await response.json();
-    assert.match(String(body.error ?? ""), /not configured/i);
+    assert.match(String(body.error?.message ?? ""), /not configured/i);
   } finally {
     process.env.AGORA_SUBMISSION_SEAL_KEY_ID = originalKeyId;
     process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = originalPublicKey;

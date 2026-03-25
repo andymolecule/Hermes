@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildX402Metadata, matchPaidRoute } from "../src/middleware/x402.js";
 
-test("x402 metadata reports canonical routes plus legacy challenge aliases", () => {
+test("x402 metadata reports canonical paid routes and supported alternates", () => {
   const metadata = buildX402Metadata() as {
     routes: Array<{
       id: string;
@@ -20,7 +20,7 @@ test("x402 metadata reports canonical routes plus legacy challenge aliases", () 
   assert.equal(listRoute.method, "GET");
   assert.equal(listRoute.path, "/api/challenges");
   assert.equal(listRoute.canonicalPath, "/api/challenges");
-  assert.deepEqual(listRoute.aliasPaths, ["/api/agent/challenges"]);
+  assert.deepEqual(listRoute.aliasPaths, []);
 
   const detailRoute = metadata.routes.find(
     (route) => route.id === "challenge-detail",
@@ -29,7 +29,6 @@ test("x402 metadata reports canonical routes plus legacy challenge aliases", () 
   assert.equal(detailRoute.path, "/api/challenges/:id");
   assert.deepEqual(detailRoute.aliasPaths, [
     "/api/challenges/by-address/:address",
-    "/api/agent/challenges/:id",
   ]);
 
   const verifyRoute = metadata.routes.find(
@@ -41,9 +40,8 @@ test("x402 metadata reports canonical routes plus legacy challenge aliases", () 
   assert.deepEqual(verifyRoute.aliasPaths, []);
 });
 
-test("x402 matches canonical and alias challenge routes", () => {
+test("x402 matches canonical and by-address challenge routes", () => {
   assert.ok(matchPaidRoute("GET", "/api/challenges"));
-  assert.ok(matchPaidRoute("GET", "/api/agent/challenges"));
   assert.ok(
     matchPaidRoute(
       "GET",

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
-import { projectOnChainSubmissionFromRegistration } from "../indexer/submissions.js";
+import {
+  persistRegisteredSubmissionProjection,
+  projectOnChainSubmissionFromRegistration,
+} from "../indexer/submissions.js";
 
 test("projectOnChainSubmissionFromRegistration recovers missing submission rows from the reserved intent", async () => {
   const upserts: Array<Record<string, unknown>> = [];
@@ -129,5 +132,72 @@ test("projectOnChainSubmissionFromRegistration tracks unmatched on-chain submiss
         "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       scored: true,
     },
+  ]);
+});
+
+test("persistRegisteredSubmissionProjection still enqueues a score job when unmatched cleanup fails", async () => {
+  const ensured: Array<Record<string, unknown>> = [];
+  const warnings: string[] = [];
+
+  const result = await persistRegisteredSubmissionProjection({
+    db: {} as never,
+    challenge: {
+      id: "challenge-1",
+      status: CHALLENGE_STATUS.open,
+      max_submissions_total: 5,
+      max_submissions_per_solver: 2,
+    },
+    registration: {
+      submission_intent_id: "intent-1",
+      submission_cid: "ipfs://bafy-result",
+      trace_id: "trace-1",
+    },
+    onChainSubmissionId: 8,
+    onChainSubmission: {
+      solver: "0x2222222222222222222222222222222222222222",
+      resultHash: "0xhash",
+      proofBundleHash: "0xproof",
+      score: 0n,
+      scored: false,
+      submittedAt: 1_700_000_000n,
+    },
+    txHash:
+      "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    upsertSubmissionOnChainImpl: async () =>
+      ({
+        id: "submission-1",
+        challenge_id: "challenge-1",
+        on_chain_sub_id: 8,
+        solver_address: "0x2222222222222222222222222222222222222222",
+        submission_cid: "ipfs://bafy-result",
+        submission_intent_id: "intent-1",
+        scored: false,
+        trace_id: "trace-1",
+      }) as never,
+    ensureScoreJobForRegisteredSubmissionImpl: async (
+      _db,
+      challenge,
+      submission,
+    ) => {
+      ensured.push({
+        challenge,
+        submission,
+      });
+      return { action: "queued", warning: null };
+    },
+    deleteUnmatchedSubmissionImpl: async () => {
+      throw new Error("missing unmatched_submissions table");
+    },
+  });
+
+  if (result.cleanupWarning) {
+    warnings.push(result.cleanupWarning);
+  }
+
+  assert.equal(result.submissionRow.id, "submission-1");
+  assert.equal(result.scoreJob.action, "queued");
+  assert.equal(ensured.length, 1);
+  assert.deepEqual(warnings, [
+    "Submission registration succeeded, but unmatched cleanup failed. Details: missing unmatched_submissions table",
   ]);
 });

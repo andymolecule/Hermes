@@ -169,7 +169,7 @@ async function testRunningOverThresholdCountUsesRunStartedAt() {
       return {
         select(selection: string, options: Record<string, unknown>) {
           assert.equal(selection, "*");
-          assert.deepEqual(options, { count: "exact", head: true });
+          assert.deepEqual(options, { count: "exact" });
           return {
             eq(field: string, value: unknown) {
               filters.push([field, value]);
@@ -181,6 +181,10 @@ async function testRunningOverThresholdCountUsesRunStartedAt() {
             },
             lt(field: string, value: unknown) {
               filters.push([`${field}:lt`, value]);
+              return this;
+            },
+            limit(value: number) {
+              assert.equal(value, 1);
               return Promise.resolve({ count: 2, error: null });
             },
           };

@@ -554,6 +554,7 @@ export function DetailClient({ id }: { id: string }) {
             challengeAddress={challenge.contract_address}
             challengeStatus={challenge.status}
             deadline={challenge.deadline}
+            submissionPrivacyMode={challenge.submission_privacy_mode}
             submissionContract={submissionContract}
             submissionUnavailableReason={submissionUnavailableReason}
           />

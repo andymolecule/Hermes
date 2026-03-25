@@ -173,7 +173,6 @@ If a separate beneficiary is ever introduced, it must be fixed at submission tim
 x402, AP2, ACP, and similar protocols may matter later for:
 
 - paid APIs
-- paid MCP sessions
 - paid model access
 - paid solver tooling
 
@@ -444,7 +443,7 @@ runtime bootstrap / app config
 Locked implication:
 
 - adding a new provider should require a new adapter and runtime selection wiring, not a redesign of Agora core workflow packages
-- in the current repo, app-layer adapter construction belongs in entrypoints such as `apps/cli` and `apps/mcp-server`
+- in the current repo, app-layer adapter construction belongs in entrypoints such as `apps/cli`
 - there is no dedicated hosted Telegram agent app yet; if one is added later, that new app should own its provider adapter construction
 - CDP SDK imports should be isolated to the specific app-layer adapter module that builds a `SolverSigner`
 - no other package in the repo should import the CDP SDK directly

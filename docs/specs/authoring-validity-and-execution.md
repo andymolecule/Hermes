@@ -155,21 +155,19 @@ Agora should widen execution capability, not lower the definition of validity.
 
 Only official Agora scorer images are allowed for the standard authoring flow.
 
-The target direction is one broad official scorer template image that can adapt
-to poster-defined contracts, instead of forcing most tasks through a small set
-of rigid family-specific presets.
+The target direction is a single official scorer registry with pinned images per
+template. Callers never choose image refs directly; Agora resolves them from the
+registry during compilation.
 
-Current V1 candidate:
+Current V1 registry direction:
 
-- `gems-tabular-scorer:v1`
+- each official template owns its pinned image digest
+- authoring resolves templates from metric, not from caller-supplied image refs
+- new scoring surface should land as new registry entries, not ad hoc image maps
 
 `gems-generated-scorer:v1` is the generated-scorer runner and should remain
-outside the primary V1 table-authoring path.
-
-This does not yet require the repository to delete all other official images
-immediately. It does lock the design direction: public authoring should converge
-on broad official execution templates rather than a growing list of narrow hard
-coded scorer families.
+outside the primary standard-authoring path unless it becomes a real registry
+entry.
 
 ### 4.3 Explicit Mappings Always
 
@@ -336,7 +334,7 @@ Rationale:
 Visible supporting artifacts may still exist, but they do not count as hidden
 evaluation inputs.
 
-### 4.9 One Broad Official Table Scorer Template
+### 4.9 Registry-Backed Official Scoring Contract
 
 The public execution model should stop depending on user-facing concepts such as
 `ranking`, `docking`, or `tabular_regression`.
@@ -344,19 +342,19 @@ The public execution model should stop depending on user-facing concepts such as
 Those may remain internal migration or compatibility concepts, but the target
 public execution model is:
 
-- one broad official table scorer template
+- one registry-backed official scorer contract surface
 - one hidden evaluation artifact
 - one submission table contract
 - one metric
 - explicit column mappings
 
-This broad official scorer template should be able to adapt to poster-defined
-column names instead of forcing most challenges through a small set of rigid
-predefined families.
+The authoring contract should adapt to poster-defined column names without
+forcing agents to choose runtime mechanics directly.
 
 Current direction:
 
-- `gems-tabular-scorer:v1`
+- registry-backed official templates derive their scorer image and limits
+  internally
 
 ### 4.10 Visible Artifacts Are Solver Context, Not Scorer Inputs
 
@@ -485,8 +483,8 @@ These are internal historical concepts, not the target public execution model.
 
 The new path should converge on:
 
-- one broad official table scorer template
-- one execution contract
+- one official scorer registry
+- one execution contract surface per official template
 - one dry-run validation rule
 
 There is no data-preservation or backward-compatibility requirement forcing the
@@ -528,17 +526,19 @@ Hard-cut rule:
 
 Standard authoring in V1 means:
 
-- one broad official table scorer template
+- one registry-backed official scorer template selected from the metric
 - one hidden evaluation table artifact
 - one solver submission table contract
 - one metric
 - one derived comparator
 - explicit column mappings
 
-Current standard-authoring runtime:
+Current standard-authoring examples:
 
-- template id: `official_table_metric_v1`
-- scorer image family: `ghcr.io/andymolecule/gems-tabular-scorer`
+- template id: resolved from the official scorer registry
+- scorer image: exact pinned digest from the same registry
+- the examples below continue to use `official_table_metric_v1` because the
+  active authoring surface is still the csv-table contract
 
 Other scorer containers may still exist in the repository as experiments or
 future work, but they are not part of the active official authoring/runtime
@@ -608,7 +608,7 @@ type PublicChallengeSpecV5 = {
   description: string;
   execution: {
     version: "v1";
-    template: "official_table_metric_v1";
+    template: OfficialScorerTemplateId;
     scorer_image: string; // pinned digest
     metric: string;
     comparator: "maximize" | "minimize";
@@ -689,7 +689,7 @@ Target shape:
 ```ts
 type ExecutionPlanCacheV1 = {
   version: "v1";
-  template: "official_table_metric_v1";
+  template: OfficialScorerTemplateId;
   scorer_image: string; // pinned digest
   metric: string;
   comparator: "maximize" | "minimize";
@@ -865,7 +865,7 @@ compatibility wrapper that preserves the split-registry model underneath.
 
 ### 7.1 File-Level Plan
 
-#### `packages/common/src/scorer-images.ts`
+#### Historical split: scorer image whitelist module
 
 Delete this file.
 
@@ -880,7 +880,7 @@ Reason:
 - the official runtime set should come from the official scorer catalog, not a
   second whitelist
 
-#### `packages/common/src/schemas/execution-template.ts`
+#### Historical split: execution-template schema module
 
 Replace this file with a single official scorer catalog module, ideally named:
 
@@ -898,22 +898,17 @@ Responsibilities:
 
 V1 catalog target:
 
-- exactly one standard-authoring entry: `official_table_metric_v1`
+- standard-authoring entries are explicit registry rows, not hardcoded literals
+- callers must not assume there is only one authoring-capable official template
 
-#### `packages/common/src/schemas/evaluator-contract.ts`
+#### Executable-template routing
 
-Remove active-path template-to-image routing from this file.
+Completed cleanup:
 
-Rules:
-
-- no separate semi-custom execution-template image map
-- no second metric-to-template routing table for the active path
-- if non-table runtimes return later, they must register through the same
-  official scorer catalog instead of creating another registry
-
-If the entire semi-custom execution path is not part of the active V1 authoring
-surface, retire it from the active path rather than preserving it as hidden
-infrastructure.
+- there is no exported `evaluator-contract` executable-template module anymore
+- the official scorer catalog is the only executable-template registry
+- new scorer families must register through that catalog instead of creating a
+  second routing surface
 
 #### `packages/common/src/schemas/execution-contract.ts`
 

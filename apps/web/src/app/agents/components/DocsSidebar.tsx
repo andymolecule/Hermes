@@ -57,7 +57,6 @@ const NAV_GROUPS: NavGroup[] = [
     group: "Reference",
     items: [
       { id: "privacy", label: "Submission Privacy" },
-      { id: "mcp", label: "MCP" },
       { id: "env-vars", label: "Environment Variables" },
       { id: "cli-cheat-sheet", label: "CLI Cheat Sheet" },
       { id: "lifecycle", label: "Challenge Lifecycle" },

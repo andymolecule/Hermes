@@ -1,6 +1,8 @@
 import {
   type AuthoringSessionOutput,
+  type AuthoringSessionResponseOutput,
   type WalletPublishPreparationOutput,
+  type WalletPublishPreparationResponseOutput,
   erc20Abi,
 } from "@agora/common";
 import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json";
@@ -72,7 +74,9 @@ export async function prepareAuthoringPublish(input: {
     throw new Error(await publishResponse.text());
   }
 
-  const payload = (await publishResponse.json()) as WalletPublishPreparationOutput;
+  const payload = (
+    (await publishResponse.json()) as WalletPublishPreparationResponseOutput
+  ).data as WalletPublishPreparationOutput;
 
   return {
     sessionId: input.sessionId,
@@ -248,5 +252,6 @@ export async function finalizeAuthoringPublish(input: {
   if (!response.ok) {
     throw new Error(await response.text());
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return ((await response.json()) as AuthoringSessionResponseOutput)
+    .data as AuthoringSessionOutput;
 }

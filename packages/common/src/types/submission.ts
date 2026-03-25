@@ -1,7 +1,7 @@
 export interface SubmissionMetadata {
   challengeId: string;
   solverAddress: string;
-  submissionCid: string;
+  resultCid: string;
   resultHash: string;
   submittedAt: string;
 }

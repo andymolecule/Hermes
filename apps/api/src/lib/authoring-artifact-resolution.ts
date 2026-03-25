@@ -2,6 +2,7 @@ import {
   AgoraError,
   type AuthoringArtifactOutput,
   type OfficialScorerComparatorOutput,
+  type OfficialScorerTemplateIdOutput,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
@@ -52,7 +53,7 @@ export function resolveAuthoringArtifactsResult(input: {
   submissionValueColumn: string;
   metric: string;
   comparator: OfficialScorerComparatorOutput;
-  template: "official_table_metric_v1";
+  template: OfficialScorerTemplateIdOutput;
   scorerImage: string;
 }): AuthoringStepResult<ResolvedAuthoringArtifacts> {
   const evaluationArtifactIndex = resolveEvaluationArtifactIndex({
@@ -170,7 +171,7 @@ export function resolveAuthoringArtifacts(input: {
   submissionValueColumn: string;
   metric: string;
   comparator: OfficialScorerComparatorOutput;
-  template: "official_table_metric_v1";
+  template: OfficialScorerTemplateIdOutput;
   scorerImage: string;
 }): ResolvedAuthoringArtifacts {
   const result = resolveAuthoringArtifactsResult(input);

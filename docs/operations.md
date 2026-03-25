@@ -22,10 +22,9 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 
 ## Summary
 
-- Five processes in production: API, Indexer, Worker Orchestrator, Executor, MCP
+- Four processes in production: API, Indexer, Worker Orchestrator, Executor
 - Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Railway, executor on a Docker-capable host or service
 - The API is the canonical remote agent surface
-- MCP HTTP is read-only by default; stdio remains the full local tool surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
@@ -41,7 +40,6 @@ flowchart TB
     subgraph Local["Local Development Stack"]
         Web["Next.js Dev Server<br/>pnpm --filter @agora/web dev -- --port 3100<br/>:3100 (frontend)"]
         API["Hono API<br/>pnpm --filter @agora/api start<br/>:3000 (backend)"]
-        MCP["MCP Server<br/>pnpm --filter @agora/mcp-server start<br/>:3001"]
         Indexer["Chain Indexer<br/>pnpm --filter @agora/chain indexer"]
         Worker["Worker Orchestrator<br/>pnpm --filter @agora/api worker"]
         Executor["Executor Service<br/>pnpm --filter @agora/executor dev<br/>:3200 (optional when remote_http)"]
@@ -58,8 +56,6 @@ flowchart TB
     API --> RPC
     Indexer --> RPC
     Indexer --> Supa
-    MCP --> Supa
-    MCP --> RPC
     Worker --> Supa
     Worker --> Pin
     Worker --> RPC
@@ -78,7 +74,6 @@ Run services:
 ```bash
 pnpm --filter @agora/api start        # API on :3000
 pnpm --filter @agora/api worker       # Worker orchestrator
-pnpm --filter @agora/mcp-server start # MCP on :3001
 pnpm --filter @agora/chain indexer    # Chain indexer
 ```
 
@@ -102,12 +97,11 @@ pnpm --filter @agora/web dev -- --port 3100
 
 ```mermaid
 flowchart LR
-    subgraph Processes["5 Production Processes"]
+    subgraph Processes["4 Production Processes"]
         API["agora-api<br/>REST API + web backend<br/>:3000"]
         Idx["agora-indexer<br/>Chain → Supabase<br/>poll every 30s"]
         Worker["agora-worker-orchestrator<br/>Polls score_jobs<br/>Posts scores on-chain"]
         Executor["agora-executor<br/>Runs scorer containers"]
-        MCP["agora-mcp<br/>MCP server<br/>:3001"]
     end
 
     subgraph Shared["Shared State"]
@@ -117,7 +111,6 @@ flowchart LR
     API -->|"creates score_jobs"| DB
     Idx -->|"creates score_jobs"| DB
     Worker -->|"claims + updates"| DB
-    MCP -->|"reads"| DB
 
     Worker -->|"execute scorer"| Executor
     Worker -->|"postScore()"| Chain["Base"]
@@ -130,7 +123,6 @@ flowchart LR
 | `agora-indexer` | `packages/chain/dist/indexer.js` | Chain event poller -> Supabase |
 | `agora-worker` | `apps/api/dist/worker.js` | Orchestrates score jobs, persists proof data, posts scores on-chain |
 | `agora-executor` | `apps/executor/dist/index.js` | Docker-only scorer execution service |
-| `agora-mcp` | `apps/mcp-server/dist/index.js` | MCP server for AI agents |
 
 Architecture boundary:
 
@@ -233,7 +225,7 @@ pnpm --filter @agora/executor start  # only when AGORA_SCORER_EXECUTOR_BACKEND=r
 ```bash
 pm2 start scripts/ops/ecosystem.config.cjs
 pm2 save
-pm2 status   # should show 4 processes: agora-api, agora-indexer, agora-worker, agora-mcp (executor is separately managed)
+pm2 status   # should show 3 processes: agora-api, agora-indexer, agora-worker (executor is separately managed)
 ```
 
 ### Split Hosted Production

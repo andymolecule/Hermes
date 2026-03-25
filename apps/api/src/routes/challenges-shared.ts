@@ -8,8 +8,8 @@ import {
   agentChallengesQuerySchema,
   getEffectiveChallengeStatus,
   isChallengeStatus,
-  resolveChallengeExecution,
-  resolveChallengeRuntimeConfig,
+  resolveChallengeExecutionFromPlanCache,
+  resolveChallengeRuntimeConfigFromPlanCache,
 } from "@agora/common";
 import {
   countSubmissionsForChallenge,
@@ -161,7 +161,7 @@ function toChallengeExecution(
   ChallengeExecutionOutput,
   "template" | "metric" | "comparator" | "scorer_image"
 > {
-  const execution = resolveChallengeExecution(
+  const execution = resolveChallengeExecutionFromPlanCache(
     row as ChallengeRow & {
       execution_plan_json?: unknown;
     },
@@ -259,6 +259,13 @@ export function toChallengeSummary(row: ChallengeRow | ChallengeListRow) {
 }
 
 export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
+  const runtimeConfig =
+    "execution_plan_json" in row
+      ? resolveChallengeRuntimeConfigFromPlanCache(
+          row as ChallengeRow & ChallengeListRow,
+        )
+      : null;
+
   return {
     ...toChallengeSummary(row),
     description: row.description,
@@ -286,12 +293,8 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
       "max_submissions_per_solver" in row
         ? toOptionalInteger(row.max_submissions_per_solver)
         : null,
-    submission_contract:
-      "execution_plan_json" in row
-        ? (resolveChallengeRuntimeConfig(
-            row as ChallengeRow & ChallengeListRow,
-          ).submissionContract ?? null)
-        : null,
+    submission_contract: runtimeConfig?.submissionContract ?? null,
+    submission_privacy_mode: runtimeConfig?.submissionPrivacyMode ?? "sealed",
   };
 }
 

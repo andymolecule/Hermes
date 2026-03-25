@@ -33,10 +33,6 @@ const API_PAID_ROUTES: PaidRoute[] = [
         path: "/api/challenges",
         pattern: /^\/api\/challenges$/,
       },
-      {
-        path: "/api/agent/challenges",
-        pattern: /^\/api\/agent\/challenges$/,
-      },
     ],
     priceUsd: 0.001,
     description: "Challenge discovery list",
@@ -53,10 +49,6 @@ const API_PAID_ROUTES: PaidRoute[] = [
       {
         path: "/api/challenges/by-address/:address",
         pattern: /^\/api\/challenges\/by-address\/0x[a-fA-F0-9]{40}$/,
-      },
-      {
-        path: "/api/agent/challenges/:id",
-        pattern: /^\/api\/agent\/challenges\/[^/]+$/,
       },
     ],
     priceUsd: 0.002,
@@ -75,10 +67,6 @@ const API_PAID_ROUTES: PaidRoute[] = [
         path: "/api/challenges/by-address/:address/leaderboard",
         pattern:
           /^\/api\/challenges\/by-address\/0x[a-fA-F0-9]{40}\/leaderboard$/,
-      },
-      {
-        path: "/api/agent/challenges/:id/leaderboard",
-        pattern: /^\/api\/agent\/challenges\/[^/]+\/leaderboard$/,
       },
     ],
     priceUsd: 0.002,

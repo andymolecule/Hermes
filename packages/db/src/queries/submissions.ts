@@ -1,4 +1,5 @@
 import type { AgoraDbClient } from "../index";
+import { executeExactCount } from "../query-helpers.js";
 
 export class SubmissionOnChainWriteConflictError extends Error {
   constructor(message: string) {
@@ -215,14 +216,14 @@ export async function countSubmissionsForChallenge(
   db: AgoraDbClient,
   challengeId: string,
 ) {
-  const { count, error } = await db
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("challenge_id", challengeId);
-  if (error) {
-    throw new Error(`Failed to count submissions: ${error.message}`);
-  }
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .eq("challenge_id", challengeId)
+      .limit(1),
+    "Failed to count submissions",
+  );
 }
 
 export async function countSubmissionsBySolverForChallenge(
@@ -230,31 +231,29 @@ export async function countSubmissionsBySolverForChallenge(
   challengeId: string,
   solverAddress: string,
 ) {
-  const { count, error } = await db
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("challenge_id", challengeId)
-    .eq("solver_address", solverAddress.toLowerCase());
-  if (error) {
-    throw new Error(`Failed to count submissions for solver: ${error.message}`);
-  }
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .eq("challenge_id", challengeId)
+      .eq("solver_address", solverAddress.toLowerCase())
+      .limit(1),
+    "Failed to count submissions for solver",
+  );
 }
 
 export async function countSubmissionsBySubmissionCid(
   db: AgoraDbClient,
   submissionCid: string,
 ) {
-  const { count, error } = await db
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("submission_cid", submissionCid);
-  if (error) {
-    throw new Error(
-      `Failed to count submissions by submission CID: ${error.message}`,
-    );
-  }
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .eq("submission_cid", submissionCid)
+      .limit(1),
+    "Failed to count submissions by submission CID",
+  );
 }
 
 export async function countSubmissionsForChallengeUpToOnChainSubId(
@@ -262,17 +261,15 @@ export async function countSubmissionsForChallengeUpToOnChainSubId(
   challengeId: string,
   onChainSubId: number,
 ) {
-  const { count, error } = await db
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("challenge_id", challengeId)
-    .lte("on_chain_sub_id", onChainSubId);
-  if (error) {
-    throw new Error(
-      `Failed to count submissions up to on-chain id: ${error.message}`,
-    );
-  }
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .eq("challenge_id", challengeId)
+      .lte("on_chain_sub_id", onChainSubId)
+      .limit(1),
+    "Failed to count submissions up to on-chain id",
+  );
 }
 
 export async function countSubmissionsBySolverForChallengeUpToOnChainSubId(
@@ -281,18 +278,16 @@ export async function countSubmissionsBySolverForChallengeUpToOnChainSubId(
   solverAddress: string,
   onChainSubId: number,
 ) {
-  const { count, error } = await db
-    .from("submissions")
-    .select("id", { count: "exact", head: true })
-    .eq("challenge_id", challengeId)
-    .eq("solver_address", solverAddress.toLowerCase())
-    .lte("on_chain_sub_id", onChainSubId);
-  if (error) {
-    throw new Error(
-      `Failed to count submissions for solver up to on-chain id: ${error.message}`,
-    );
-  }
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .eq("challenge_id", challengeId)
+      .eq("solver_address", solverAddress.toLowerCase())
+      .lte("on_chain_sub_id", onChainSubId)
+      .limit(1),
+    "Failed to count submissions for solver up to on-chain id",
+  );
 }
 
 export async function listSubmissionsBySolver(

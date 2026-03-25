@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   type CsvTableEvaluationContractOutput,
-  DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   type ScorerRuntimePoliciesOutput,
   type ScoringMountConfig,
@@ -10,7 +9,7 @@ import {
   buildScorerRuntimeConfig,
   challengeSpecSchema,
   parseChallengeSpecDocument,
-  resolvePinnedChallengeExecution,
+  resolvePinnedChallengeExecutionFromSpec,
   resolveScoringEnvironmentFromSpec,
   validateSubmissionBytesAgainstContract,
 } from "@agora/common";
@@ -46,7 +45,7 @@ export interface ExecuteScoringPipelineInput {
   template?: string;
   evaluationBundle?: ScoringInputSource;
   submission: ScoringInputSource;
-  mount?: ScoringMountConfig;
+  mount: ScoringMountConfig;
   submissionContract?: SubmissionContractOutput;
   evaluationContract?: CsvTableEvaluationContractOutput;
   metric?: string;
@@ -84,7 +83,6 @@ export interface ResolveScoringRuntimeConfigInput {
   evaluationContract?: CsvTableEvaluationContractOutput | null;
   policies?: Partial<ScorerRuntimePoliciesOutput> | null;
   specCid?: string | null;
-  onLegacyFallback?: (specCid: string) => void | Promise<void>;
 }
 
 interface ScoringMountPlan {
@@ -118,7 +116,7 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
     const spec = challengeSpecSchema.parse(
       parseChallengeSpecDocument(await getText(specCid)),
     );
-    const evalPlan = resolvePinnedChallengeExecution(spec);
+    const evalPlan = resolvePinnedChallengeExecutionFromSpec(spec);
     return {
       env: resolveScoringEnvironmentFromSpec(spec),
       submissionContract: spec.submission_contract,
@@ -134,7 +132,7 @@ export async function resolveScoringSpecRuntimeConfigFromSpecCid(
 }
 
 export function resolveTrustedScoringRuntimeConfig(
-  input: Omit<ResolveScoringRuntimeConfigInput, "specCid" | "onLegacyFallback">,
+  input: Omit<ResolveScoringRuntimeConfigInput, "specCid">,
 ): ScoringSpecRuntimeConfig {
   return {
     env: input.env ?? undefined,
@@ -163,7 +161,6 @@ export async function resolveLocalScoringRuntimeConfig(
     return resolved;
   }
 
-  await input.onLegacyFallback?.(input.specCid);
   const legacy = await resolveScoringSpecRuntimeConfigFromSpecCid(
     input.specCid,
   );
@@ -175,12 +172,6 @@ export async function resolveLocalScoringRuntimeConfig(
       resolved.evaluationContract ?? legacy.evaluationContract,
     policies: resolved.policies ?? legacy.policies,
   };
-}
-
-export async function resolveScoringRuntimeConfig(
-  input: ResolveScoringRuntimeConfigInput,
-): Promise<ScoringSpecRuntimeConfig> {
-  return resolveLocalScoringRuntimeConfig(input);
 }
 
 async function stageSourceToPath(
@@ -256,7 +247,7 @@ export async function executeScoringPipeline(
     const { evaluationBundlePath, submissionPath, runtimeConfigPath } =
       await runObservedPhase(input.phaseObserver, "fetch_inputs", async () => {
         const stagingPlan = buildScoringMountPlan(
-          input.mount ?? DEFAULT_SCORER_MOUNT,
+          input.mount,
           workspace.inputDir,
         );
         const evaluationBundlePath = input.evaluationBundle
@@ -270,7 +261,7 @@ export async function executeScoringPipeline(
         const runtimeConfig = buildScorerRuntimeConfig({
           template: input.template,
           metric: input.metric,
-          mount: input.mount ?? DEFAULT_SCORER_MOUNT,
+          mount: input.mount,
           submissionContract: input.submissionContract,
           evaluationContract: input.evaluationContract,
           policies: input.policies,

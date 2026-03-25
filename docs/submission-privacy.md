@@ -22,14 +22,19 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
 
 - The canonical sealed submission format is `sealed_submission_v2`.
 - Solver-facing submission surfaces use the same sealing contract. Web, CLI,
-  MCP, and agent surfaces that claim private-answer submission must use
+  and agent surfaces that claim private-answer submission must use
   `sealed_submission_v2` while a challenge is `Open`.
-- There is no active plaintext fallback for private-answer submission on open
-  challenges. If sealing is unavailable, the submission surface must block.
+- `sealed` is the default challenge privacy mode when sealing is configured.
+  `public` is explicit opt-in.
+- There is no active plaintext fallback for `sealed` challenges. If sealing is
+  unavailable, the submission surface must block instead of silently switching
+  formats.
 - Privacy is enforced at Agora's first controlled write boundary too. Any API
-  route that accepts solver submission bytes must reject plaintext payloads and
-  persist only a valid `sealed_submission_v2` envelope.
-- The browser fetches Agora's active submission sealing public key whenever sealing is configured, then seals locally and uploads only the sealed envelope to IPFS.
+  route that accepts solver submission bytes must require an explicit
+  `resultFormat` and reject mismatches against the challenge privacy mode.
+- The browser fetches Agora's active submission sealing public key only for
+  `sealed` challenges, then seals locally and uploads the sealed envelope to
+  IPFS.
 - The on-chain contract stores only `keccak256(submission CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
@@ -73,13 +78,15 @@ This model is designed to prevent copy/paste leakage during the live competition
 
 - Private-answer submission for an `Open` challenge is sealed-only.
 - There is no compatibility mode, migration window, or server-side plaintext
-  fallback for canonical solver submissions.
+  fallback for `sealed` submissions.
 - Solver surfaces may prepare the envelope locally, but Agora must enforce the
   same rule again at the submission upload and registration boundary.
-- `/api/submissions/upload` accepts only a valid `sealed_submission_v2`
-  envelope.
-- `/api/submissions/intent` and `/api/submissions` accept only a sealed
-  submission CID; there is no format selector anymore.
+- `/api/submissions/upload` requires explicit `x-agora-result-format`.
+- `sealed_submission_v2` uploads must contain a valid sealed envelope.
+- `plain_v0` uploads are allowed only for challenges that explicitly opt into
+  `public` mode.
+- `/api/submissions/intent` and `/api/submissions` require explicit
+  `resultCid` and `resultFormat`.
 - Local scoring may use plaintext local files because nothing is being
   persisted as a live submission yet. That is a separate workflow.
 
@@ -127,11 +134,11 @@ sequenceDiagram
     Solver->>Solver: seal bytes as sealed_submission_v2
     Solver->>IPFS: upload sealed-submission.json
     IPFS-->>Solver: submission CID
-    Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, submissionCid }
+    Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, resultCid, resultFormat }
     API->>API: compute resultHash
     API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
-    Solver->>API: POST /api/submissions { challengeId, txHash, submissionCid } (required confirmation)
+    Solver->>API: POST /api/submissions { challengeId, txHash, resultCid, resultFormat } (required confirmation)
     API->>DB: upsert on-chain submission linked to registered intent
 
     Note over Solver,Worker: While challenge is Open, public verification stays locked.

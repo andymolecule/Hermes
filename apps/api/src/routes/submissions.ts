@@ -12,6 +12,7 @@ import {
   submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
+  submissionResultFormatSchema,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -40,6 +41,7 @@ import {
   getPublicSubmissionVerificationUnavailableMessage,
   getSubmissionReadRetryMessage,
   getSubmissionStatusData,
+  getSubmissionStatusDataByIntentId,
   getSubmissionStatusDataByProtocolRefs,
   isInvalidOnChainSubmissionReadError,
   toPrivateSubmissionPayload,
@@ -77,10 +79,7 @@ function parseOnChainSubmissionId(value: string) {
   return null;
 }
 
-function toSubmissionWorkflowJsonError(
-  c: Context<ApiEnv>,
-  error: unknown,
-) {
+function toSubmissionWorkflowJsonError(c: Context<ApiEnv>, error: unknown) {
   if (!(error instanceof SubmissionWorkflowError)) {
     return null;
   }
@@ -140,6 +139,15 @@ function normalizeUploadFileName(fileName: string | null) {
   return normalized.length > 0 ? normalized : "sealed-submission.json";
 }
 
+function readUploadResultFormat(c: Context<ApiEnv>) {
+  const format = c.req.header("x-agora-result-format");
+  const parsed = submissionResultFormatSchema.safeParse(format);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  return null;
+}
+
 export function validateSealedSubmissionUpload(bytes: Uint8Array) {
   let text: string;
   try {
@@ -169,7 +177,8 @@ router.get("/public-key", async (c) => {
     return jsonError(c, {
       status: 503,
       code: "SUBMISSION_SEALING_UNAVAILABLE",
-      message: "Submission sealing is not configured.",
+      message:
+        "Submission sealing is not configured. Next step: retry after the API submission sealing public key is configured, or submit only to challenges that explicitly allow plain_v0 payloads.",
     });
   }
 
@@ -196,6 +205,15 @@ router.post(
           "Submission upload requires a non-empty file body. Next step: attach the sealed submission payload and retry.",
       });
     }
+    const resultFormat = readUploadResultFormat(c);
+    if (!resultFormat) {
+      return jsonError(c, {
+        status: 400,
+        code: "SUBMISSION_UPLOAD_FORMAT_REQUIRED",
+        message:
+          "Submission upload requires x-agora-result-format. Next step: set it to sealed_submission_v2 or plain_v0 and retry.",
+      });
+    }
     if (upload.bytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
       return jsonError(c, {
         status: 413,
@@ -203,14 +221,16 @@ router.post(
         message: `Submission upload exceeds the ${SUBMISSION_LIMITS.maxUploadBytes / 1024 / 1024}MB limit. Next step: shrink the file and retry.`,
       });
     }
-    try {
-      validateSealedSubmissionUpload(upload.bytes);
-    } catch (error) {
-      return jsonError(c, {
-        status: 400,
-        code: "SUBMISSION_UPLOAD_INVALID_ENVELOPE",
-        message: `Submission upload must contain a valid sealed_submission_v2 envelope. Next step: seal the payload locally and retry. Details: ${error instanceof Error ? error.message : String(error)}`,
-      });
+    if (resultFormat === SUBMISSION_SEAL_VERSION) {
+      try {
+        validateSealedSubmissionUpload(upload.bytes);
+      } catch (error) {
+        return jsonError(c, {
+          status: 400,
+          code: "SUBMISSION_UPLOAD_INVALID_ENVELOPE",
+          message: `Submission upload must contain a valid sealed_submission_v2 envelope. Next step: seal the payload locally and retry. Details: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
     }
 
     const safeFileName = normalizeUploadFileName(upload.fileName);
@@ -221,10 +241,10 @@ router.post(
       tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-submission-"));
       tempFilePath = path.join(tempDir, `${randomUUID()}-${safeFileName}`);
       await fs.writeFile(tempFilePath, Buffer.from(upload.bytes));
-      const submissionCid = await pinFile(tempFilePath, safeFileName);
+      const resultCid = await pinFile(tempFilePath, safeFileName);
       return c.json({
         data: {
-          submissionCid,
+          resultCid,
         },
       });
     } catch (error) {
@@ -304,6 +324,19 @@ router.get("/by-onchain/:challengeAddress/:subId/status", async (c) => {
       code: "SUBMISSION_NOT_FOUND",
       message:
         "Submission not found for the provided challengeAddress and onChainSubmissionId. Next step: confirm the contract address and submission id, then retry.",
+    });
+  }
+  return jsonWithEtag(c, { data });
+});
+
+router.get("/by-intent/:intentId/status", async (c) => {
+  const data = await getSubmissionStatusDataByIntentId(c.req.param("intentId"));
+  if (!data) {
+    return jsonError(c, {
+      status: 404,
+      code: "SUBMISSION_NOT_FOUND",
+      message:
+        "Submission intent not found. Next step: confirm the intent id and retry.",
     });
   }
   return jsonWithEtag(c, { data });
@@ -432,7 +465,8 @@ router.get("/:id", requireSiweSession, async (c) => {
     return jsonError(c, {
       status: 403,
       code: "FORBIDDEN",
-      message: "Forbidden.",
+      message:
+        "Submission belongs to a different solver. Next step: sign in with the solver wallet that created this submission and retry.",
     });
   }
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
@@ -467,7 +501,8 @@ router.post(
         challengeAddress: payload.challengeAddress,
         solverAddress: payload.solverAddress,
         submittedByAgentId: actor.submittedByAgentId,
-        submissionCid: payload.submissionCid,
+        resultCid: payload.resultCid,
+        resultFormat: payload.resultFormat,
         optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),
         logger: getRequestLogger(c),
@@ -505,7 +540,8 @@ router.post(
         challengeId: payload.challengeId,
         challengeAddress: payload.challengeAddress,
         intentId: payload.intentId,
-        submissionCid: payload.submissionCid,
+        resultCid: payload.resultCid,
+        resultFormat: payload.resultFormat,
         txHash: payload.txHash,
         optionalSessionAddress: actor.optionalSessionAddress,
         requestId: getRequestId(c),

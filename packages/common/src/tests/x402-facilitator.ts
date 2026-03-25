@@ -41,7 +41,7 @@ const success = await verifyAndSettleX402Payment({
   network: "eip155:84532",
   resource: {
     method: "POST",
-    path: "/mcp",
+    path: "/api/verify",
     payTo: "0x0000000000000000000000000000000000000001",
     priceUsd: 0.01,
   },
@@ -56,7 +56,7 @@ const verifyFail = await verifyAndSettleX402Payment({
   network: "eip155:84532",
   resource: {
     method: "POST",
-    path: "/mcp",
+    path: "/api/verify",
     payTo: "0x0000000000000000000000000000000000000001",
     priceUsd: 0.01,
   },
@@ -71,7 +71,7 @@ const settleFail = await verifyAndSettleX402Payment({
   network: "eip155:84532",
   resource: {
     method: "POST",
-    path: "/mcp",
+    path: "/api/verify",
     payTo: "0x0000000000000000000000000000000000000001",
     priceUsd: 0.01,
   },

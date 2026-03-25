@@ -19,14 +19,17 @@ import {
   type ResolvedChallengeExecution,
   SUBMISSION_LIMITS,
   type SubmissionContractOutput,
+  type SubmissionPrivacyMode,
+  type SubmissionResultFormat,
   challengeSpecSchema,
+  getRequiredSubmissionResultFormat,
   importSubmissionSealPublicKey,
   loadConfig,
   parseChallengeSpecDocument,
   readApiClientRuntimeConfig,
-  resolveChallengeExecution,
-  resolveChallengeRuntimeConfig,
-  resolvePinnedChallengeExecution,
+  resolveChallengeExecutionFromPlanCache,
+  resolveChallengeRuntimeConfigFromPlanCache,
+  resolvePinnedChallengeExecutionFromSpec,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeys,
   sealSubmission,
@@ -116,6 +119,7 @@ type SubmitChallengeApiRecord = {
   contract_address?: string;
   deadline?: string;
   status?: string;
+  submission_privacy_mode?: SubmissionPrivacyMode;
 };
 
 function isAddressRef(value: string): value is `0x${string}` {
@@ -165,7 +169,7 @@ async function cleanupFailedSubmissionArtifact(input: {
   try {
     await cleanupSubmissionArtifactWithApi(
       {
-        submissionCid: input.submissionCid,
+        resultCid: input.submissionCid,
         intentId: input.intentId,
       },
       input.apiUrl,
@@ -196,6 +200,13 @@ export interface SubmitSolutionResult {
   warning: string | null;
 }
 
+interface SubmissionUploadPlan {
+  bytes: Uint8Array;
+  fileName: string;
+  contentType: string;
+  resultFormat: SubmissionResultFormat;
+}
+
 async function resolveChallengeTargetFromApi(input: {
   challengeId: string;
   apiUrl?: string;
@@ -218,6 +229,7 @@ async function resolveChallengeTargetFromApi(input: {
     challengeAddress: challenge.contract_address as `0x${string}`,
     deadline: challenge.deadline,
     status: challenge.status,
+    submissionPrivacyMode: challenge.submission_privacy_mode ?? "sealed",
   };
 }
 
@@ -245,6 +257,53 @@ async function resolveSubmitTarget(input: {
   return challenge;
 }
 
+async function buildSubmissionUploadPlan(input: {
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+  submissionPrivacyMode: SubmissionPrivacyMode;
+  sourcePath: string;
+  sourceBytes: Uint8Array;
+  solverAddress: string;
+  apiUrl?: string;
+}): Promise<SubmissionUploadPlan> {
+  const resultFormat = getRequiredSubmissionResultFormat(
+    input.submissionPrivacyMode,
+  );
+
+  if (input.submissionPrivacyMode === "public") {
+    return {
+      bytes: input.sourceBytes,
+      fileName: path.basename(input.sourcePath),
+      contentType: "application/octet-stream",
+      resultFormat,
+    };
+  }
+
+  const publicKeyPayload = await getSubmissionPublicKeyFromApi(input.apiUrl);
+  const publicKey = await importSubmissionSealPublicKey(
+    publicKeyPayload.data.publicKeyPem,
+  );
+  const challengeSealRef = input.challengeId ?? input.challengeAddress;
+  const sealedEnvelope = await sealSubmission({
+    challengeId: challengeSealRef,
+    solverAddress: input.solverAddress,
+    fileName: path.basename(input.sourcePath),
+    mimeType: "application/octet-stream",
+    bytes: input.sourceBytes,
+    keyId: publicKeyPayload.data.kid,
+    publicKey,
+  });
+
+  return {
+    bytes: new TextEncoder().encode(
+      serializeSealedSubmissionEnvelope(sealedEnvelope),
+    ),
+    fileName: `sealed-submission-${challengeSealRef}.json`,
+    contentType: "application/json",
+    resultFormat,
+  };
+}
+
 export async function submitSolution(input: {
   challengeId: string;
   filePath: string;
@@ -253,13 +312,11 @@ export async function submitSolution(input: {
   dryRun?: boolean;
 }): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
   const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
-  const { challengeId, challengeAddress, deadline } = await resolveSubmitTarget(
-    {
+  const { challengeId, challengeAddress, deadline, submissionPrivacyMode } =
+    await resolveSubmitTarget({
       challengeId: input.challengeId,
       apiUrl,
-    },
-  );
-  const publicKeyPayload = await getSubmissionPublicKeyFromApi(apiUrl);
+    });
   const sourcePath = path.resolve(input.filePath);
   const sourceBytes = await fs.readFile(sourcePath);
   if (sourceBytes.byteLength > SUBMISSION_LIMITS.maxUploadBytes) {
@@ -277,6 +334,15 @@ export async function submitSolution(input: {
   }
 
   const solverAddress = await resolveSignerAddress(input.signer);
+  const uploadPlan = await buildSubmissionUploadPlan({
+    challengeId,
+    challengeAddress,
+    submissionPrivacyMode,
+    sourcePath,
+    sourceBytes: new Uint8Array(sourceBytes),
+    solverAddress,
+    apiUrl,
+  });
 
   if (!input.dryRun) {
     await assertSubmitDeadlineSafetyWindow(deadline);
@@ -305,31 +371,16 @@ export async function submitSolution(input: {
     });
   }
 
-  const publicKey = await importSubmissionSealPublicKey(
-    publicKeyPayload.data.publicKeyPem,
-  );
   const challengeTarget = toChallengeTargetPayload({
     challengeId,
     challengeAddress,
   });
-  const challengeSealRef = challengeId ?? challengeAddress;
-  const sealedEnvelope = await sealSubmission({
-    challengeId: challengeSealRef,
-    solverAddress,
-    fileName: path.basename(sourcePath),
-    mimeType: "application/octet-stream",
-    bytes: new Uint8Array(sourceBytes),
-    keyId: publicKeyPayload.data.kid,
-    publicKey,
-  });
-  const sealedEnvelopeBytes = new TextEncoder().encode(
-    serializeSealedSubmissionEnvelope(sealedEnvelope),
-  );
-  const { submissionCid } = await uploadSubmissionArtifactToApi(
+  const { resultCid } = await uploadSubmissionArtifactToApi(
     {
-      bytes: sealedEnvelopeBytes,
-      fileName: `sealed-submission-${challengeSealRef}.json`,
-      contentType: "application/json",
+      bytes: uploadPlan.bytes,
+      fileName: uploadPlan.fileName,
+      contentType: uploadPlan.contentType,
+      resultFormat: uploadPlan.resultFormat,
     },
     apiUrl,
   );
@@ -338,7 +389,7 @@ export async function submitSolution(input: {
     return {
       challengeId,
       challengeAddress,
-      submissionCid,
+      submissionCid: resultCid,
       dryRun: true,
     };
   }
@@ -351,14 +402,15 @@ export async function submitSolution(input: {
       {
         ...challengeTarget,
         solverAddress: solverAddress as `0x${string}`,
-        submissionCid,
+        resultCid,
+        resultFormat: uploadPlan.resultFormat,
       },
       apiUrl,
     );
   } catch (error) {
     await cleanupFailedSubmissionArtifact({
       apiUrl,
-      submissionCid,
+      submissionCid: resultCid,
     });
     throw error;
   }
@@ -384,7 +436,7 @@ export async function submitSolution(input: {
     if (!(error instanceof AmbiguousWriteResultError)) {
       await cleanupFailedSubmissionArtifact({
         apiUrl,
-        submissionCid,
+        submissionCid: resultCid,
         intentId: submissionIntent.intentId,
       });
     }
@@ -400,7 +452,7 @@ export async function submitSolution(input: {
   }).catch(async (error) => {
     await cleanupFailedSubmissionArtifact({
       apiUrl,
-      submissionCid,
+      submissionCid: resultCid,
       intentId: submissionIntent.intentId,
     });
     throw error;
@@ -417,12 +469,13 @@ export async function submitSolution(input: {
       {
         ...challengeTarget,
         intentId: submissionIntent.intentId,
-        submissionCid,
+        resultCid,
+        resultFormat: uploadPlan.resultFormat,
         txHash,
       },
       apiUrl,
     );
-    registrationWarning = registration.warning ?? null;
+    registrationWarning = registration.warning?.message ?? null;
     registeredSubmission = registration.submission;
   } catch (error) {
     registrationWarning =
@@ -435,7 +488,7 @@ export async function submitSolution(input: {
     challengeId,
     challengeAddress,
     txHash,
-    submissionCid,
+    submissionCid: resultCid,
     submissionId: registeredSubmission?.id ?? null,
     onChainSubmissionId: Number(onChainSubmissionId),
     submission: registeredSubmission,
@@ -557,8 +610,9 @@ export async function scoreLocal(input: {
 async function resolveLocalScoringConfigFromDb(challengeId: string) {
   const db = createSupabaseClient(false);
   const challenge = await getChallengeById(db, challengeId);
-  const executionPlan = resolveChallengeExecution(challenge);
-  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
+  const executionPlan = resolveChallengeExecutionFromPlanCache(challenge);
+  const cachedRuntimeConfig =
+    resolveChallengeRuntimeConfigFromPlanCache(challenge);
   if (!executionPlan.evaluationBundleCid) {
     throw cliWorkflowError(
       "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",
@@ -597,7 +651,7 @@ async function resolveLocalScoringConfigFromApi(input: {
   const spec = challengeSpecSchema.parse(
     parseChallengeSpecDocument(await getText(specCid)),
   );
-  resolvePinnedChallengeExecution(spec);
+  resolvePinnedChallengeExecutionFromSpec(spec);
   throw cliWorkflowError(
     "Local scoring from the public API is unavailable for private-evaluation challenges because the public pinned spec no longer exposes the hidden evaluation bundle. Next step: run score-local inside a trusted Agora environment with DB access, or use public verification after scoring begins.",
   );
@@ -674,8 +728,9 @@ export async function verifySubmission(input: {
       );
     }
 
-    const executionPlan = resolveChallengeExecution(challenge);
-    const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
+    const executionPlan = resolveChallengeExecutionFromPlanCache(challenge);
+    const cachedRuntimeConfig =
+      resolveChallengeRuntimeConfigFromPlanCache(challenge);
     if (!executionPlan.evaluationBundleCid) {
       throw cliWorkflowError(
         "Challenge missing evaluation bundle CID. Next step: inspect the challenge spec and evaluation bundle configuration.",

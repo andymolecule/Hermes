@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "node --import tsx src/index.ts",
-    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
+    "test": "node ../../scripts/run-ts-tests.mjs tests"
   },
   "dependencies": {
     "@agora/agent-runtime": "workspace:*",

@@ -49,7 +49,6 @@ export const authoringSessionExecutionInputSchema = z
 
 export const authoringSessionResolvedExecutionSchema = z
   .object({
-    template: z.literal("official_table_metric_v1").optional(),
     metric: z.string().trim().min(1).optional(),
     objective: authoringSessionObjectiveSchema.optional(),
     evaluation_artifact_id: z.string().trim().min(1).optional(),
@@ -135,15 +134,6 @@ export const authoringSessionEvaluationContractSchema = z
   })
   .strict();
 
-export const authoringSessionResourceLimitsSchema = z
-  .object({
-    memory_mb: z.number().int().positive(),
-    cpus: z.number().int().positive(),
-    timeout_minutes: z.number().int().positive(),
-    pids_limit: z.number().int().positive(),
-  })
-  .strict();
-
 export const authoringSessionRewardSchema = z
   .object({
     total: z.string().trim().min(1),
@@ -155,14 +145,10 @@ export const authoringSessionRewardSchema = z
 
 export const authoringSessionCompilationSchema = z
   .object({
-    template: z.literal("official_table_metric_v1"),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
-    scorer_image: z.string().trim().min(1),
-    evaluation_artifact_uri: z.string().trim().min(1),
     evaluation_contract: authoringSessionEvaluationContractSchema,
     submission_contract: authoringSessionSubmissionContractSchema,
-    resource_limits: authoringSessionResourceLimitsSchema,
     reward: authoringSessionRewardSchema,
     deadline: isoDatetimeSchema,
     dispute_window_hours: z
@@ -181,7 +167,6 @@ export const authoringSessionChecklistSchema = z
     reward: z.string().trim().min(1),
     distribution: z.string().trim().min(1),
     deadline: isoDatetimeSchema,
-    template: z.string().trim().min(1),
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
     artifacts_count: z.number().int().nonnegative(),
@@ -296,25 +281,21 @@ export const authoringSessionErrorEnvelopeSchema = z
   })
   .strict();
 
-export const registerAgentRequestSchema = z
+export const authoringSessionResponseSchema = z
   .object({
-    telegram_bot_id: z.string().trim().min(1),
-    agent_name: z.string().trim().min(1).optional(),
-    description: z.string().trim().min(1).optional(),
-  })
-  .strict();
-
-export const registerAgentResponseSchema = z
-  .object({
-    agent_id: z.string().trim().min(1),
-    api_key: z.string().trim().min(1),
-    status: z.enum(["created", "rotated"]),
+    data: authoringSessionSchema,
   })
   .strict();
 
 export const listAuthoringSessionsResponseSchema = z
   .object({
-    sessions: z.array(authoringSessionListItemSchema),
+    data: z.array(authoringSessionListItemSchema),
+  })
+  .strict();
+
+export const authoringArtifactResponseSchema = z
+  .object({
+    data: authoringSessionArtifactSchema,
   })
   .strict();
 
@@ -395,6 +376,12 @@ export const walletPublishPreparationSchema = z
   })
   .strict();
 
+export const walletPublishPreparationResponseSchema = z
+  .object({
+    data: walletPublishPreparationSchema,
+  })
+  .strict();
+
 export const uploadUrlRequestSchema = z
   .object({
     url: z.string().url(),
@@ -447,6 +434,9 @@ export type AuthoringSessionListItemOutput = z.output<
   typeof authoringSessionListItemSchema
 >;
 export type AuthoringSessionOutput = z.output<typeof authoringSessionSchema>;
+export type AuthoringSessionResponseOutput = z.output<
+  typeof authoringSessionResponseSchema
+>;
 export type AuthoringSessionCreatorOutput = z.output<
   typeof authoringSessionCreatorSchema
 >;
@@ -465,12 +455,12 @@ export type PublishAuthoringSessionRequestInput = z.input<
 export type ConfirmPublishAuthoringSessionRequestInput = z.input<
   typeof confirmPublishAuthoringSessionRequestSchema
 >;
+export type AuthoringArtifactResponseOutput = z.output<
+  typeof authoringArtifactResponseSchema
+>;
+export type WalletPublishPreparationResponseOutput = z.output<
+  typeof walletPublishPreparationResponseSchema
+>;
 export type WalletPublishPreparationOutput = z.output<
   typeof walletPublishPreparationSchema
->;
-export type RegisterAgentRequestInput = z.input<
-  typeof registerAgentRequestSchema
->;
-export type RegisterAgentResponseOutput = z.output<
-  typeof registerAgentResponseSchema
 >;

@@ -942,7 +942,7 @@ export function createAuthoringSessionRoutes(
       creatorListFilter(c.get("authoringPrincipal")),
     );
     return c.json({
-      sessions: sessions.map((session) =>
+      data: sessions.map((session) =>
         buildAuthoringSessionListItemPayload(session),
       ),
     });
@@ -971,9 +971,9 @@ export function createAuthoringSessionRoutes(
         db,
         visible.session,
       );
-      return c.json(
-        buildAuthoringSessionPayload(visible.session, { challenge }),
-      );
+      return c.json({
+        data: buildAuthoringSessionPayload(visible.session, { challenge }),
+      });
     },
   );
 
@@ -1052,7 +1052,9 @@ export function createAuthoringSessionRoutes(
           entries: result.logEntries,
         });
 
-        return c.json(buildAuthoringSessionPayload(result.session));
+        return c.json({
+          data: buildAuthoringSessionPayload(result.session),
+        });
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1252,7 +1254,9 @@ export function createAuthoringSessionRoutes(
           entries: result.logEntries,
         });
 
-        return c.json(buildAuthoringSessionPayload(result.session));
+        return c.json({
+          data: buildAuthoringSessionPayload(result.session),
+        });
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1456,7 +1460,7 @@ export function createAuthoringSessionRoutes(
           sessionId: preparedSession.id,
           entries: [requestEntry, preparedEntry],
         });
-        return c.json(preparation);
+        return c.json({ data: preparation });
       }
 
       const specCid = await pinPublicChallengeSpecForSession({
@@ -1630,9 +1634,9 @@ export function createAuthoringSessionRoutes(
         db,
         resultSessionWithLog,
       );
-      return c.json(
-        buildAuthoringSessionPayload(resultSessionWithLog, { challenge }),
-      );
+      return c.json({
+        data: buildAuthoringSessionPayload(resultSessionWithLog, { challenge }),
+      });
     },
   );
 
@@ -1816,15 +1820,15 @@ export function createAuthoringSessionRoutes(
           entries: [publishCompletedEntry],
         });
 
-        return c.json(
-          buildAuthoringSessionPayload(publishedWithLog, {
+        return c.json({
+          data: buildAuthoringSessionPayload(publishedWithLog, {
             challenge: {
               id: registration.challengeRow.id,
               contract_address: registration.challengeAddress,
               tx_hash: parsed.data.tx_hash,
             },
           }),
-        );
+        });
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1850,7 +1854,9 @@ export function createAuthoringSessionRoutes(
           bytes: directUpload.bytes,
           fileName: normalizeFileName(directUpload.fileName),
         });
-        return c.json(toAuthoringSessionArtifactPayload(artifact));
+        return c.json({
+          data: toAuthoringSessionArtifactPayload(artifact),
+        });
       }
 
       const parsed = await parseJsonBody(c, uploadUrlRequestSchema);
@@ -1869,7 +1875,9 @@ export function createAuthoringSessionRoutes(
           nextAction: "Provide a valid file upload or URL and retry.",
         });
       }
-      return c.json(toAuthoringSessionArtifactPayload(artifact));
+      return c.json({
+        data: toAuthoringSessionArtifactPayload(artifact),
+      });
     },
   );
 

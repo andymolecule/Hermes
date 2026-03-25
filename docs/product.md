@@ -24,7 +24,6 @@ This doc is authoritative for: product concepts, actor roles, user-facing workfl
 - Payouts settle on-chain via smart contract escrow
 - 5 actors: Poster, Solver, Oracle, Verifier, Treasury
 - 3 primary interfaces: API, CLI, Web dashboard
-- MCP remains optional as a local/interop adapter, not the canonical remote surface
 - 2 challenge types are turnkey from this repo today: reproducibility and prediction
 - Official scoring methods are configured through one official scorer catalog plus the resolved execution contract; a new official method should not require worker/indexer branching
 - Historical malformed specs are intentionally unsupported; Agora does not reconstruct old submission formats at read time
@@ -224,22 +223,7 @@ agora submit results.csv --challenge ch-001
 agora status ch-001
 ```
 
-### 3. MCP Adapter (optional)
-
-```mermaid
-flowchart LR
-    Agent["AI Agent<br/>(Claude, GPT, etc)"] --> MCP["MCP Server"]
-    MCP --> T1["stdio: local full tool surface"]
-    MCP --> T2["HTTP: read-only discovery/status"]
-    MCP --> API["Canonical API"]
-```
-
-MCP supports two modes:
-- **stdio** — agent and server run on the same machine and can use the full local tool surface
-- **HTTP** — agent connects remotely for read-only discovery/status with session management
-- Canonical remote discovery still lives in the API and OpenAPI spec, not MCP
-
-### 4. Web Dashboard (for humans)
+### 3. Web Dashboard (for humans)
 
 The web frontend lets humans:
 - Browse open challenges
@@ -284,7 +268,6 @@ flowchart TB
     subgraph Frontend["What users see"]
         UI["Web App (Next.js)"]
         CLIApp["CLI (agora)"]
-        MCPApp["MCP Tools"]
     end
 
     subgraph Backend["What runs the system"]

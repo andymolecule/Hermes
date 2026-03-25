@@ -1,27 +1,14 @@
 import assert from "node:assert/strict";
 import {
+  authoringArtifactResponseSchema,
   authoringSessionErrorEnvelopeSchema,
+  authoringSessionResponseSchema,
   authoringSessionSchema,
   createAuthoringSessionRequestSchema,
   patchAuthoringSessionRequestSchema,
-  registerAgentRequestSchema,
-  registerAgentResponseSchema,
+  walletPublishPreparationResponseSchema,
   walletPublishPreparationSchema,
 } from "../index.js";
-
-const registerRequest = registerAgentRequestSchema.parse({
-  telegram_bot_id: "bot_123456",
-  agent_name: "AUBRAI",
-  description: "Longevity research agent",
-});
-assert.equal(registerRequest.telegram_bot_id, "bot_123456");
-
-const registerResponse = registerAgentResponseSchema.parse({
-  agent_id: "agent-abc",
-  api_key: "agora_xxxxxxxx",
-  status: "created",
-});
-assert.equal(registerResponse.status, "created");
 
 const createRequest = createAuthoringSessionRequestSchema.parse({
   intent: {
@@ -57,6 +44,8 @@ const session = authoringSessionSchema.parse({
       title: "Docking challenge against KRAS",
     },
     execution: {
+      metric: "spearman",
+      objective: "maximize",
       evaluation_artifact_id: "art-123",
     },
   },
@@ -126,6 +115,11 @@ const session = authoringSessionSchema.parse({
 });
 assert.equal(session.creator.type, "agent");
 
+const sessionResponse = authoringSessionResponseSchema.parse({
+  data: session,
+});
+assert.equal(sessionResponse.data.id, "session-123");
+
 const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   error: {
     code: "TX_REVERTED",
@@ -147,6 +141,17 @@ assert.equal(
   "InvalidSubmissionLimits",
 );
 
+const artifactResponse = authoringArtifactResponseSchema.parse({
+  data: {
+    artifact_id: "art-123",
+    uri: "ipfs://QmXyz",
+    file_name: "ligands.csv",
+    role: null,
+    source_url: "https://example.com/ligands.csv",
+  },
+});
+assert.equal(artifactResponse.data.artifact_id, "art-123");
+
 const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
   spec_cid: "ipfs://bafybeiexample",
   factory_address: "0x0000000000000000000000000000000000000001",
@@ -165,5 +170,22 @@ assert.equal(
   false,
   "wallet publish preparation should reject negative dispute windows",
 );
+
+const walletPreparation = walletPublishPreparationResponseSchema.parse({
+  data: {
+    spec_cid: "ipfs://bafybeiexample",
+    factory_address: "0x0000000000000000000000000000000000000001",
+    usdc_address: "0x0000000000000000000000000000000000000002",
+    reward_units: "1000000",
+    deadline_seconds: 1_900_000_000,
+    dispute_window_hours: 168,
+    minimum_score_wad: "0",
+    distribution_type: 0,
+    lab_tba: "0x0000000000000000000000000000000000000000",
+    max_submissions_total: 100,
+    max_submissions_per_solver: 3,
+  },
+});
+assert.equal(walletPreparation.data.reward_units, "1000000");
 
 console.log("authoring session API schemas passed");

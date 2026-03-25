@@ -6,6 +6,14 @@ import {
 } from "../src/routes/submissions.js";
 
 const basePayload = {
+  refs: {
+    intentId: "33333333-3333-4333-8333-333333333333",
+    submissionId: "22222222-2222-4222-8222-222222222222",
+    challengeId: "11111111-1111-4111-8111-111111111111",
+    challengeAddress: "0x0000000000000000000000000000000000000001",
+    onChainSubmissionId: 0,
+  },
+  phase: "scoring_queued" as const,
   submission: {
     id: "22222222-2222-4222-8222-222222222222",
     challenge_id: "11111111-1111-4111-8111-111111111111",
@@ -32,6 +40,8 @@ const basePayload = {
     nextAttemptAt: null,
     lockedAt: null,
   },
+  lastError: null,
+  lastErrorPhase: null,
   scoringStatus: "pending" as const,
   terminal: false,
   recommendedPollSeconds: 15,
@@ -78,6 +88,7 @@ test("wait helper returns immediately for terminal submissions", async () => {
     timeoutSeconds: 30,
     readStatus: async () => ({
       ...basePayload,
+      phase: "scored",
       submission: {
         ...basePayload.submission,
         score: "100",
@@ -115,6 +126,7 @@ test("wait helper returns when the submission changes before timing out", async 
       }
       return {
         ...basePayload,
+        phase: "scoring_running",
         job: {
           ...basePayload.job,
           status: "running",
@@ -135,6 +147,7 @@ test("submission status event stream emits a terminal event immediately", async 
     submissionId: "22222222-2222-4222-8222-222222222222",
     readStatus: async () => ({
       ...basePayload,
+      phase: "scored",
       submission: {
         ...basePayload.submission,
         score: "100",
@@ -171,12 +184,14 @@ test("submission status event stream emits keepalive updates before completion",
       if (waits === 1) {
         return {
           ...basePayload,
+          phase: "scoring_running",
           waitedMs: 20_000,
           timedOut: true,
         };
       }
       return {
         ...basePayload,
+        phase: "scored",
         submission: {
           ...basePayload.submission,
           score: "100",

@@ -7,6 +7,7 @@ import {
 } from "@agora/common";
 import { CHALLENGE_STATUS } from "@agora/common";
 import type { AgoraDbClient } from "../index";
+import { executeExactCount } from "../query-helpers.js";
 
 export interface ScoreJobInsert {
   submission_id: string;
@@ -375,15 +376,14 @@ export async function getScoreJobCounts(
   };
 
   for (const status of SCORE_JOB_STATUSES) {
-    const { count, error } = await db
-      .from("score_jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("status", status);
-
-    if (error) {
-      throw new Error(`Failed to count score jobs: ${error.message}`);
-    }
-    counts[status] = count ?? 0;
+    counts[status] = await executeExactCount(
+      db
+        .from("score_jobs")
+        .select("*", { count: "exact" })
+        .eq("status", status)
+        .limit(1),
+      "Failed to count score jobs",
+    );
   }
 
   return counts;
@@ -402,18 +402,15 @@ export async function getChallengeScoreJobCounts(
   };
 
   for (const status of SCORE_JOB_STATUSES) {
-    const { count, error } = await db
-      .from("score_jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("challenge_id", challengeId)
-      .eq("status", status);
-
-    if (error) {
-      throw new Error(
-        `Failed to count score jobs for challenge ${challengeId}: ${error.message}`,
-      );
-    }
-    counts[status] = count ?? 0;
+    counts[status] = await executeExactCount(
+      db
+        .from("score_jobs")
+        .select("*", { count: "exact" })
+        .eq("challenge_id", challengeId)
+        .eq("status", status)
+        .limit(1),
+      `Failed to count score jobs for challenge ${challengeId}`,
+    );
   }
 
   return counts;
@@ -450,18 +447,16 @@ export async function getEligibleQueuedJobCount(
   db: AgoraDbClient,
 ): Promise<number> {
   const nowIso = new Date().toISOString();
-  const { count, error } = await db
-    .from("score_jobs")
-    .select("id, challenges!inner(id, status)", { count: "exact", head: true })
-    .eq("status", SCORE_JOB_STATUS.queued)
-    .eq("challenges.status", CHALLENGE_STATUS.scoring)
-    .lte("next_attempt_at", nowIso);
-
-  if (error) {
-    throw new Error(`Failed to count eligible queued jobs: ${error.message}`);
-  }
-
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("score_jobs")
+      .select("id, challenges!inner(id, status)", { count: "exact" })
+      .eq("status", SCORE_JOB_STATUS.queued)
+      .eq("challenges.status", CHALLENGE_STATUS.scoring)
+      .lte("next_attempt_at", nowIso)
+      .limit(1),
+    "Failed to count eligible queued jobs",
+  );
 }
 
 /**
@@ -510,20 +505,16 @@ export async function runningOverThresholdCount(
   thresholdMs: number,
 ): Promise<number> {
   const cutoffIso = new Date(Date.now() - thresholdMs).toISOString();
-  const { count, error } = await db
-    .from("score_jobs")
-    .select("*", { count: "exact", head: true })
-    .eq("status", SCORE_JOB_STATUS.running)
-    .not("run_started_at", "is", null)
-    .lt("run_started_at", cutoffIso);
-
-  if (error) {
-    throw new Error(
-      `Failed to count running score jobs over threshold: ${error.message}`,
-    );
-  }
-
-  return count ?? 0;
+  return executeExactCount(
+    db
+      .from("score_jobs")
+      .select("*", { count: "exact" })
+      .eq("status", SCORE_JOB_STATUS.running)
+      .not("run_started_at", "is", null)
+      .lt("run_started_at", cutoffIso)
+      .limit(1),
+    "Failed to count running score jobs over threshold",
+  );
 }
 
 /**

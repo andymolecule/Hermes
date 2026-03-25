@@ -5,6 +5,7 @@ import {
   isChallengeStatus,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
+import { executeExactCount } from "../query-helpers.js";
 
 export interface PlatformAnalytics {
   totalChallenges: number;
@@ -281,15 +282,14 @@ export async function getPlatformAnalytics(
       ),
 
     // 2. Total submission count
-    db
-      .from("submissions")
-      .select("id", { count: "exact", head: true }),
+    db.from("submissions").select("id", { count: "exact" }).limit(1),
 
     // 3. Scored submission count
     db
       .from("submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("scored", true),
+      .select("id", { count: "exact" })
+      .eq("scored", true)
+      .limit(1),
 
     // 4. All solver addresses — needed for unique count + top-solver grouping
     db
@@ -320,22 +320,12 @@ export async function getPlatformAnalytics(
     db.from("score_jobs").select("status"),
 
     // 10. Registered agent count
-    db.from("auth_agents").select("id", { count: "exact", head: true }),
+    db.from("auth_agents").select("id", { count: "exact" }).limit(1),
   ]);
 
   if (challengesResult.error) {
     throw new Error(
       `Analytics: failed to fetch challenges: ${challengesResult.error.message}`,
-    );
-  }
-  if (totalSubsResult.error) {
-    throw new Error(
-      `Analytics: failed to count submissions: ${totalSubsResult.error.message}`,
-    );
-  }
-  if (scoredSubsResult.error) {
-    throw new Error(
-      `Analytics: failed to count scored submissions: ${scoredSubsResult.error.message}`,
     );
   }
   if (solverAddressesResult.error) {
@@ -368,22 +358,29 @@ export async function getPlatformAnalytics(
       `Analytics: failed to fetch score jobs: ${scoreJobsResult.error.message}`,
     );
   }
-  if (agentCountResult.error) {
-    throw new Error(
-      `Analytics: failed to count registered agents: ${agentCountResult.error.message}`,
-    );
-  }
+  const totalSubmissions = await executeExactCount(
+    Promise.resolve(totalSubsResult),
+    "Analytics: failed to count submissions",
+  );
+  const scoredSubmissions = await executeExactCount(
+    Promise.resolve(scoredSubsResult),
+    "Analytics: failed to count scored submissions",
+  );
+  const registeredAgents = await executeExactCount(
+    Promise.resolve(agentCountResult),
+    "Analytics: failed to count registered agents",
+  );
 
   return buildPlatformAnalyticsSnapshot({
     challenges: challengesResult.data ?? [],
-    totalSubmissions: totalSubsResult.count ?? 0,
-    scoredSubmissions: scoredSubsResult.count ?? 0,
+    totalSubmissions,
+    scoredSubmissions,
     solverRows: solverAddressesResult.data ?? [],
     finalizedSolverRows: finalizedSolverAddressesResult.data ?? [],
     recentChallenges: recentChallengesResult.data ?? [],
     recentSubmissions: recentSubmissionsResult.data ?? [],
     payoutRows: payoutRowsResult.data ?? [],
     scoreJobRows: scoreJobsResult.data ?? [],
-    registeredAgents: agentCountResult.count ?? 0,
+    registeredAgents,
   });
 }

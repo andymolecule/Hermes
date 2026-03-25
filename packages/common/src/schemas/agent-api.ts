@@ -1,13 +1,17 @@
 import { z } from "zod";
-import { SUBMISSION_SEAL_VERSION } from "../submission-sealing.js";
-import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
-import { SCORE_JOB_STATUSES } from "../types/score-job.js";
-import { trustedChallengeSpecSchema } from "./challenge-spec.js";
 import {
   officialScorerComparatorSchema,
   officialScorerTemplateIdSchema,
 } from "../official-scorer-catalog.js";
+import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
+import { SCORE_JOB_STATUSES } from "../types/score-job.js";
+import { trustedChallengeSpecSchema } from "./challenge-spec.js";
 import { submissionContractSchema } from "./submission-contract.js";
+import {
+  SEALED_SUBMISSION_RESULT_FORMAT,
+  submissionPrivacyModeSchema,
+  submissionResultFormatSchema,
+} from "./submission.js";
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
 const normalizedAddressSchema = z
@@ -119,6 +123,7 @@ export const challengeSummarySchema = z
     created_at: z.string().datetime({ offset: true }).nullable().optional(),
     created_by_agent: agentIdentitySchema.nullable().optional(),
     refs: challengeRefsSchema,
+    submission_privacy_mode: submissionPrivacyModeSchema.optional(),
   })
   .strict();
 
@@ -184,6 +189,7 @@ export const challengeDetailSchema = challengeSummarySchema
     max_submissions_total: positiveIntegerSchema.nullable().optional(),
     max_submissions_per_solver: positiveIntegerSchema.nullable().optional(),
     submission_contract: submissionContractSchema.nullable().optional(),
+    submission_privacy_mode: submissionPrivacyModeSchema,
   })
   .strict();
 
@@ -249,6 +255,25 @@ export const indexerHealthResponseSchema = z.object({
   checkedAt: z.string(),
 });
 
+const submissionStatusPhaseSchema = z.enum([
+  "intent_created",
+  "onchain_seen",
+  "registration_confirmed",
+  "scoring_queued",
+  "scoring_running",
+  "scored",
+  "failed",
+  "skipped",
+]);
+
+const submissionStatusRefsSchema = z.object({
+  intentId: z.string().uuid().nullable(),
+  submissionId: submissionIdSchema.nullable(),
+  challengeId: challengeIdSchema,
+  challengeAddress: addressSchema,
+  onChainSubmissionId: nonNegativeIntegerSchema.nullable(),
+});
+
 const submissionStatusSubmissionSchema = z.object({
   id: submissionIdSchema,
   challenge_id: challengeIdSchema,
@@ -263,7 +288,9 @@ const submissionStatusSubmissionSchema = z.object({
 });
 
 export const submissionStatusSchema = z.object({
-  submission: submissionStatusSubmissionSchema,
+  refs: submissionStatusRefsSchema,
+  phase: submissionStatusPhaseSchema,
+  submission: submissionStatusSubmissionSchema.nullable(),
   proofBundle: z
     .object({
       reproducible: z.boolean(),
@@ -283,6 +310,8 @@ export const submissionStatusSchema = z.object({
       lockedAt: z.string().datetime({ offset: true }).or(z.string()).nullable(),
     })
     .nullable(),
+  lastError: z.string().nullable(),
+  lastErrorPhase: submissionStatusPhaseSchema.nullable(),
   scoringStatus: z.enum(["pending", "complete", "scored_awaiting_proof"]),
   terminal: z.boolean(),
   recommendedPollSeconds: positiveIntegerSchema,
@@ -313,17 +342,19 @@ export const submissionValidationResponseSchema = z.object({
 });
 
 export const apiErrorResponseSchema = z.object({
-  error: z.string(),
-  code: z.string(),
-  retriable: z.boolean(),
-  nextAction: z.string().optional(),
-  details: z.record(z.unknown()).optional(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    retriable: z.boolean().optional(),
+    next_action: z.string().optional(),
+    details: z.record(z.unknown()).optional(),
+  }),
 });
 
 export const submissionPublicKeyResponseSchema = z.object({
   data: z.object({
-    version: z.literal(SUBMISSION_SEAL_VERSION).optional(),
-    alg: z.string().optional(),
+    version: z.literal(SEALED_SUBMISSION_RESULT_FORMAT),
+    alg: z.string(),
     kid: z.string(),
     publicKeyPem: z.string(),
   }),
@@ -331,7 +362,7 @@ export const submissionPublicKeyResponseSchema = z.object({
 
 export const submissionUploadResponseSchema = z.object({
   data: z.object({
-    submissionCid: z.string().min(1),
+    resultCid: z.string().min(1),
   }),
 });
 
@@ -343,22 +374,31 @@ export const submissionIntentResponseSchema = z.object({
   }),
 });
 
+const submissionRegistrationWarningSchema = z
+  .object({
+    code: z.string().min(1),
+    message: z.string().min(1),
+  })
+  .strict();
+
 export const submissionRegistrationResponseSchema = z.object({
-  ok: z.boolean(),
-  submission: submissionStatusSubmissionSchema.pick({
-    id: true,
-    challenge_id: true,
-    challenge_address: true,
-    on_chain_sub_id: true,
-    solver_address: true,
-    refs: true,
+  data: z.object({
+    submission: submissionStatusSubmissionSchema.pick({
+      id: true,
+      challenge_id: true,
+      challenge_address: true,
+      on_chain_sub_id: true,
+      solver_address: true,
+      refs: true,
+    }),
+    phase: z.literal("registration_confirmed"),
+    warning: submissionRegistrationWarningSchema.nullable(),
   }),
-  warning: z.string().nullable().optional(),
 });
 
 export const submissionCleanupRequestSchema = z.object({
   intentId: z.string().uuid().optional(),
-  submissionCid: z.string().min(1),
+  resultCid: z.string().min(1),
 });
 
 export const submissionCleanupResponseSchema = z.object({
@@ -372,7 +412,8 @@ export const submissionIntentRequestSchema = z
   .object({
     ...challengeTargetFields,
     solverAddress: addressSchema,
-    submissionCid: z.string().min(1),
+    resultCid: z.string().min(1),
+    resultFormat: submissionResultFormatSchema,
   })
   .superRefine(validateChallengeTarget);
 
@@ -380,7 +421,8 @@ export const submissionRegistrationRequestSchema = z
   .object({
     ...challengeTargetFields,
     intentId: z.string().uuid(),
-    submissionCid: z.string().min(1),
+    resultCid: z.string().min(1),
+    resultFormat: submissionResultFormatSchema,
     txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   })
   .superRefine(validateChallengeTarget);

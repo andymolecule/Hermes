@@ -1,4 +1,4 @@
-import { type ChallengeStatus } from "@agora/common";
+import type { ChallengeStatus } from "@agora/common";
 import {
   deleteSubmissionsFromOnChainSubId,
   deleteUnmatchedSubmission,
@@ -24,6 +24,108 @@ import {
 
 type SubmissionRow = Awaited<ReturnType<typeof getSubmissionByChainId>>;
 
+interface SubmissionRegistrationRecord {
+  submission_intent_id: string;
+  submission_cid: string;
+  trace_id: string | null;
+}
+
+export interface PersistRegisteredSubmissionResult {
+  submissionRow: NonNullable<SubmissionRow>;
+  scoreJob: Awaited<ReturnType<typeof ensureScoreJobForRegisteredSubmission>>;
+  cleanupWarning: string | null;
+}
+
+export async function persistRegisteredSubmissionProjection(input: {
+  db: DbClient;
+  challenge: Pick<
+    ChallengeListRow,
+    "id" | "status" | "max_submissions_total" | "max_submissions_per_solver"
+  >;
+  registration: SubmissionRegistrationRecord;
+  onChainSubmissionId: number;
+  onChainSubmission: {
+    solver: string;
+    resultHash: string;
+    proofBundleHash: string;
+    score: bigint;
+    scored: boolean;
+    submittedAt: bigint;
+  };
+  txHash: string;
+  scoredAt?: string | null;
+  upsertSubmissionOnChainImpl?: typeof upsertSubmissionOnChain;
+  ensureScoreJobForRegisteredSubmissionImpl?: typeof ensureScoreJobForRegisteredSubmission;
+  deleteUnmatchedSubmissionImpl?: typeof deleteUnmatchedSubmission;
+}): Promise<PersistRegisteredSubmissionResult> {
+  const upsert = input.upsertSubmissionOnChainImpl ?? upsertSubmissionOnChain;
+  const ensureScoreJob =
+    input.ensureScoreJobForRegisteredSubmissionImpl ??
+    ensureScoreJobForRegisteredSubmission;
+  const deleteUnmatched =
+    input.deleteUnmatchedSubmissionImpl ?? deleteUnmatchedSubmission;
+
+  const submissionRow = await upsert(input.db, {
+    submission_intent_id: input.registration.submission_intent_id,
+    challenge_id: input.challenge.id,
+    on_chain_sub_id: input.onChainSubmissionId,
+    solver_address: input.onChainSubmission.solver,
+    result_hash: input.onChainSubmission.resultHash,
+    submission_cid: input.registration.submission_cid,
+    proof_bundle_hash: input.onChainSubmission.proofBundleHash,
+    score: input.onChainSubmission.scored
+      ? input.onChainSubmission.score.toString()
+      : null,
+    scored: input.onChainSubmission.scored,
+    submitted_at: new Date(
+      Number(input.onChainSubmission.submittedAt) * 1000,
+    ).toISOString(),
+    ...(input.scoredAt !== undefined
+      ? { scored_at: input.scoredAt }
+      : input.onChainSubmission.scored
+        ? {}
+        : { scored_at: null }),
+    tx_hash: input.txHash,
+    trace_id: input.registration.trace_id,
+  });
+
+  const scoreJob = await ensureScoreJob(
+    input.db,
+    {
+      id: input.challenge.id,
+      status: input.challenge.status as ChallengeStatus,
+      max_submissions_total: input.challenge.max_submissions_total,
+      max_submissions_per_solver: input.challenge.max_submissions_per_solver,
+    },
+    {
+      id: submissionRow.id,
+      challenge_id: submissionRow.challenge_id,
+      on_chain_sub_id: submissionRow.on_chain_sub_id,
+      solver_address: submissionRow.solver_address,
+      scored: submissionRow.scored,
+      trace_id: submissionRow.trace_id,
+    },
+    input.registration.trace_id,
+  );
+
+  let cleanupWarning: string | null = null;
+  try {
+    await deleteUnmatched(input.db, {
+      challengeId: input.challenge.id,
+      onChainSubmissionId: input.onChainSubmissionId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    cleanupWarning = `Submission registration succeeded, but unmatched cleanup failed. Details: ${message}`;
+  }
+
+  return {
+    submissionRow,
+    scoreJob,
+    cleanupWarning,
+  };
+}
+
 export async function projectOnChainSubmissionFromRegistration(input: {
   db: DbClient;
   challenge: ChallengeListRow;
@@ -48,17 +150,11 @@ export async function projectOnChainSubmissionFromRegistration(input: {
   const existingSubmission = input.existingSubmission;
   const findIntent =
     input.findSubmissionIntentByMatchImpl ?? findSubmissionIntentByMatch;
-  const upsert = input.upsertSubmissionOnChainImpl ?? upsertSubmissionOnChain;
-  const ensureScoreJob =
-    input.ensureScoreJobForRegisteredSubmissionImpl ??
-    ensureScoreJobForRegisteredSubmission;
   const upsertUnmatched =
     input.upsertUnmatchedSubmissionObservationImpl ??
     upsertUnmatchedSubmissionObservation;
-  const deleteUnmatched =
-    input.deleteUnmatchedSubmissionImpl ?? deleteUnmatchedSubmission;
 
-  let registration = null;
+  let registration: SubmissionRegistrationRecord | null = null;
   if (
     existingSubmission?.submission_intent_id &&
     existingSubmission.submission_cid
@@ -113,55 +209,33 @@ export async function projectOnChainSubmissionFromRegistration(input: {
     );
   }
 
-  const submissionRow = await upsert(input.db, {
-    submission_intent_id: registration.submission_intent_id,
-    challenge_id: input.challenge.id,
-    on_chain_sub_id: input.onChainSubmissionId,
-    solver_address: input.onChainSubmission.solver,
-    result_hash: input.onChainSubmission.resultHash,
-    submission_cid: registration.submission_cid,
-    proof_bundle_hash: input.onChainSubmission.proofBundleHash,
-    score: input.onChainSubmission.scored
-      ? input.onChainSubmission.score.toString()
-      : null,
-    scored: input.onChainSubmission.scored,
-    submitted_at: new Date(
-      Number(input.onChainSubmission.submittedAt) * 1000,
-    ).toISOString(),
-    ...(input.scoredAt !== undefined
-      ? { scored_at: input.scoredAt }
-      : input.onChainSubmission.scored
-        ? {}
-        : { scored_at: null }),
-    tx_hash: input.txHash,
-    trace_id: registration.trace_id,
-  });
-
-  await deleteUnmatched(input.db, {
-    challengeId: input.challenge.id,
+  const persisted = await persistRegisteredSubmissionProjection({
+    db: input.db,
+    challenge: input.challenge,
+    registration,
     onChainSubmissionId: input.onChainSubmissionId,
+    onChainSubmission: input.onChainSubmission,
+    txHash: input.txHash,
+    scoredAt: input.scoredAt,
+    upsertSubmissionOnChainImpl: input.upsertSubmissionOnChainImpl,
+    ensureScoreJobForRegisteredSubmissionImpl:
+      input.ensureScoreJobForRegisteredSubmissionImpl,
+    deleteUnmatchedSubmissionImpl: input.deleteUnmatchedSubmissionImpl,
   });
+  if (persisted.cleanupWarning) {
+    indexerLogger.warn(
+      {
+        event: "indexer.submission.cleanup_failed",
+        challengeId: input.challenge.id,
+        onChainSubmissionId: input.onChainSubmissionId,
+        txHash: input.txHash,
+        warning: persisted.cleanupWarning,
+      },
+      "Submission projection cleanup failed after score job registration",
+    );
+  }
 
-  await ensureScoreJob(
-    input.db,
-    {
-      id: input.challenge.id,
-      status: input.challenge.status as ChallengeStatus,
-      max_submissions_total: input.challenge.max_submissions_total,
-      max_submissions_per_solver: input.challenge.max_submissions_per_solver,
-    },
-    {
-      id: submissionRow.id,
-      challenge_id: submissionRow.challenge_id,
-      on_chain_sub_id: submissionRow.on_chain_sub_id,
-      solver_address: submissionRow.solver_address,
-      scored: submissionRow.scored,
-      trace_id: submissionRow.trace_id,
-    },
-    registration.trace_id,
-  );
-
-  return submissionRow;
+  return persisted.submissionRow;
 }
 
 export async function handleSubmittedEvent(input: {

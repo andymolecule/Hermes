@@ -7,17 +7,19 @@ import {
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
-  GhcrResolutionError,
   type OfficialScorerTemplateIdOutput,
-  STANDARD_AUTHORING_TEMPLATE,
   type TrustedChallengeSpecOutput,
   canonicalizeChallengeSpec,
   deriveOfficialScorerComparator,
+  hasSubmissionSealPublicEnv,
+  listAuthoringSupportedMetricIds,
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
+  resolveDefaultSubmissionPrivacyMode,
   resolvePinnedOfficialScorerImage,
+  resolveTemplateForMetric,
   trustedChallengeSpecSchemaForChain,
-  validateOfficialScorerMetric,
+  validateOfficialScorerMetricStructured,
 } from "@agora/common";
 import type { getText } from "@agora/ipfs";
 import type { executeScoringPipeline } from "@agora/scorer";
@@ -90,13 +92,6 @@ function listArtifactCandidateValues(
   return uploadedArtifacts.map(artifactIdentifier);
 }
 
-function stripNextStepInstruction(message: string) {
-  return message
-    .replace(/\s+Next step:.*$/i, "")
-    .replace(/[.!?]+$/, "")
-    .trim();
-}
-
 function resolveRetainedEvaluationArtifactId(input: {
   uploadedArtifacts: AuthoringArtifactOutput[];
   selectedArtifactId?: string | null;
@@ -123,8 +118,8 @@ function buildDeterministicProposal(input: {
   submissionIdColumnOverride?: string | null;
   submissionValueColumnOverride?: string | null;
 }): AuthoringStepResult<SessionCompilationProposal> {
-  const template = STANDARD_AUTHORING_TEMPLATE;
   const metric = input.metricOverride?.trim() || null;
+  const candidateMetricValues = listAuthoringSupportedMetricIds();
 
   if (!metric) {
     return stepFailure({
@@ -136,29 +131,51 @@ function buildDeterministicProposal(input: {
       blockingLayer: "input",
       field: "metric",
       missingFields: ["metric"],
-      candidateValues: [],
+      candidateValues: candidateMetricValues,
       reasonCodes: ["missing_metric_definition"],
       warnings: [],
     });
   }
 
-  const metricError = validateOfficialScorerMetric(template, metric);
-  if (metricError) {
+  const template = resolveTemplateForMetric(metric, {
+    authoringSupported: true,
+    challengeSpecSupported: true,
+  });
+  if (!template) {
     return stepFailure({
       kind: "awaiting_input",
       code: "AUTHORING_INPUT_REQUIRED",
-      message: `${metricError} Next step: choose a supported metric and retry.`,
+      message: `Metric ${metric} is not supported by the current official authoring registry. Next step: choose a supported metric and retry.`,
       nextAction: "choose a supported metric and retry.",
       blockingLayer: "input",
       field: "metric",
       missingFields: ["metric"],
-      candidateValues: [],
+      candidateValues: candidateMetricValues,
       reasonCodes: ["unsupported_metric"],
       warnings: [],
     });
   }
 
-  const comparator = deriveOfficialScorerComparator(template, metric);
+  const metricValidation = validateOfficialScorerMetricStructured(
+    template.id,
+    metric,
+  );
+  if (!metricValidation.valid) {
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_INPUT_REQUIRED",
+      message: `${metricValidation.error} Next step: choose a supported metric and retry.`,
+      nextAction: "choose a supported metric and retry.",
+      blockingLayer: "input",
+      field: "metric",
+      missingFields: ["metric"],
+      candidateValues: metricValidation.candidateValues,
+      reasonCodes: ["unsupported_metric"],
+      warnings: [],
+    });
+  }
+
+  const comparator = deriveOfficialScorerComparator(template.id, metric);
   if (!comparator) {
     return stepFailure({
       kind: "awaiting_input",
@@ -169,7 +186,7 @@ function buildDeterministicProposal(input: {
       blockingLayer: "input",
       field: "metric",
       missingFields: ["metric"],
-      candidateValues: [],
+      candidateValues: metricValidation.candidateValues,
       reasonCodes: ["metric_comparator_unknown"],
       warnings: [],
     });
@@ -268,7 +285,7 @@ function buildDeterministicProposal(input: {
   }
 
   return stepOk({
-    template,
+    template: template.id as OfficialScorerTemplateIdOutput,
     metric,
     comparator,
     evaluationArtifactIndex,
@@ -281,50 +298,32 @@ function buildDeterministicProposal(input: {
   });
 }
 
-async function resolvePinnedOfficialScorerImageResult(
+function resolvePinnedOfficialScorerImageResult(
   template: OfficialScorerTemplateIdOutput,
   dependencies: {
     resolvePinnedOfficialScorerImageImpl?: typeof resolvePinnedOfficialScorerImage;
   },
-): Promise<AuthoringStepResult<string>> {
-  try {
-    const scorerImage = await (
-      dependencies.resolvePinnedOfficialScorerImageImpl ??
-      resolvePinnedOfficialScorerImage
-    )(template);
-    if (!scorerImage) {
-      return stepFailure({
-        kind: "platform_error",
-        code: "AUTHORING_PLATFORM_UNAVAILABLE",
-        message: `Unknown official scorer template ${template}. Next step: choose a supported template and retry.`,
-        nextAction: "choose a supported template and retry.",
-        blockingLayer: "platform",
-        field: "execution.scorer_image",
-        missingFields: [],
-        candidateValues: [],
-        reasonCodes: ["official_scorer_unavailable"],
-        warnings: [],
-      });
-    }
-    return stepOk(scorerImage);
-  } catch (error) {
-    if (error instanceof GhcrResolutionError) {
-      return stepFailure({
-        kind: "platform_error",
-        code: "AUTHORING_PLATFORM_UNAVAILABLE",
-        message: `Agora could not resolve the official scorer dependency for this session. ${stripNextStepInstruction(error.message)}. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.`,
-        nextAction:
-          "retry later or contact Agora support if the official scorer registry remains unavailable.",
-        blockingLayer: "platform",
-        field: "execution.scorer_image",
-        missingFields: [],
-        candidateValues: [],
-        reasonCodes: ["official_scorer_unavailable"],
-        warnings: [],
-      });
-    }
-    throw error;
+): AuthoringStepResult<string> {
+  const scorerImage = (
+    dependencies.resolvePinnedOfficialScorerImageImpl ??
+    resolvePinnedOfficialScorerImage
+  )(template);
+  if (!scorerImage) {
+    return stepFailure({
+      kind: "platform_error",
+      code: "AUTHORING_PLATFORM_UNAVAILABLE",
+      message:
+        "Agora could not resolve the scoring configuration for the selected metric. Next step: retry later or choose a supported metric and retry.",
+      nextAction: "retry later or choose a supported metric and retry.",
+      blockingLayer: "platform",
+      field: "metric",
+      missingFields: [],
+      candidateValues: [],
+      reasonCodes: ["official_scorer_unavailable"],
+      warnings: [],
+    });
   }
+  return stepOk(scorerImage);
 }
 
 function buildValidationIssue(input: {
@@ -437,6 +436,14 @@ function buildAuthoringIrFromFailure(input: {
               ? input.evaluationArtifactIdOverride
               : null,
         });
+  const retainedMetric =
+    typeof input.metricOverride === "string" ? input.metricOverride.trim() : "";
+  const retainedTemplate = retainedMetric
+    ? (resolveTemplateForMetric(retainedMetric, {
+        authoringSupported: true,
+        challengeSpecSupported: true,
+      })?.id ?? null)
+    : null;
 
   return buildAuthoringIr({
     intent: input.intent,
@@ -447,11 +454,8 @@ function buildAuthoringIrFromFailure(input: {
           rejectionReasons: input.failure.reasonCodes,
         }
       : {
-          template: STANDARD_AUTHORING_TEMPLATE,
-          metric:
-            typeof input.metricOverride === "string"
-              ? input.metricOverride
-              : null,
+          template: retainedTemplate,
+          metric: retainedMetric || null,
           evaluationArtifactId: selectedEvaluationArtifactId,
           evaluationIdColumn: input.evaluationIdColumnOverride ?? null,
           evaluationValueColumn: input.evaluationValueColumnOverride ?? null,
@@ -575,7 +579,7 @@ async function compileAuthoringSessionCandidate(
     });
   }
 
-  const scorerImage = await resolvePinnedOfficialScorerImageResult(
+  const scorerImage = resolvePinnedOfficialScorerImageResult(
     proposal.template,
     dependencies,
   );
@@ -636,6 +640,9 @@ async function compileAuthoringSessionCandidate(
   const minimumScore =
     payoutThreshold?.operator === "gte" ? payoutThreshold.value : undefined;
   const apiRuntime = readApiServerRuntimeConfig();
+  const submissionPrivacyMode = resolveDefaultSubmissionPrivacyMode({
+    sealingConfigured: hasSubmissionSealPublicEnv(),
+  });
 
   const challengeSpecCandidate = {
     schema_version: 5 as const,
@@ -647,6 +654,7 @@ async function compileAuthoringSessionCandidate(
     execution: resolved.value.execution,
     artifacts: resolved.value.resolvedArtifacts,
     submission_contract: resolved.value.submissionContract,
+    submission_privacy_mode: submissionPrivacyMode,
     reward: {
       total: input.intent.reward_total,
       distribution: input.intent.distribution,
@@ -655,7 +663,10 @@ async function compileAuthoringSessionCandidate(
     ...(typeof input.intent.dispute_window_hours === "number"
       ? { dispute_window_hours: input.intent.dispute_window_hours }
       : {}),
-    tags: [...input.intent.tags, `tz:${input.intent.timezone}`],
+    tags: [
+      ...(input.intent.tags ?? []),
+      ...(input.intent.timezone ? [`tz:${input.intent.timezone}`] : []),
+    ],
     ...(minimumScore !== undefined ? { minimum_score: minimumScore } : {}),
   };
 

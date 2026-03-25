@@ -9,8 +9,8 @@ import { getPublicClient, postScore } from "@agora/chain";
 import {
   type ChallengeExecutionRow,
   loadConfig,
-  resolveChallengeExecution,
-  resolveChallengeRuntimeConfig,
+  resolveChallengeExecutionFromPlanCache,
+  resolveChallengeRuntimeConfigFromPlanCache,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
 import {
@@ -70,7 +70,7 @@ export async function oracleScore(
     contract_address: string;
     spec_cid?: string | null;
   };
-  const evalPlan = resolveChallengeExecution(challenge);
+  const evalPlan = resolveChallengeExecutionFromPlanCache(challenge);
   if (!evalPlan.evaluationBundleCid) {
     throw new Error(
       `Challenge ${submission.challenge_id} missing evaluation bundle CID.`,
@@ -79,7 +79,8 @@ export async function oracleScore(
 
   // 2. Run scorer container
   const config = loadConfig();
-  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
+  const cachedRuntimeConfig =
+    resolveChallengeRuntimeConfigFromPlanCache(challenge);
   const submissionSource = await resolveSubmissionSource({
     submissionCid: submission.submission_cid,
     challengeId: challenge.id,

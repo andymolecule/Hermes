@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CHALLENGE_STATUS } from "@agora/common";
+import { CHALLENGE_STATUS, resolveOfficialScorerImage } from "@agora/common";
 import {
   canShowChallengeResults,
   getChallengeLeaderboardEntries,
@@ -14,6 +14,14 @@ const emptyArtifacts = {
   spec_cid: null,
   spec_url: null,
 };
+
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
 
 function buildChallengeDetail(status: ChallengeDetails["challenge"]["status"]) {
   return {
@@ -39,7 +47,7 @@ function buildChallengeDetail(status: ChallengeDetails["challenge"]["status"]) {
         template: "official_table_metric_v1",
         metric: "spearman",
         comparator: "maximize",
-        scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+        scorer_image: tableMetricScorerImage,
       },
     },
     artifacts: emptyArtifacts,

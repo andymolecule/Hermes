@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import {
   assertRuntimeDatabaseSchema,
   createSupabaseClient,
-} from "../packages/db/dist/index.js";
+} from "../packages/db/src/index.ts";
 
 await assertRuntimeDatabaseSchema(createSupabaseClient(true));
 

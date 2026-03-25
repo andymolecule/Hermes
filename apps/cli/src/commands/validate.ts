@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  createCsvTableEvaluationContract,
   DEFAULT_CHAIN_ID,
   type SubmissionContractOutput,
-  resolveChallengeExecution,
+  createCsvTableEvaluationContract,
+  resolveChallengeExecutionFromTrustedSpec,
   validateTrustedChallengeSpec,
 } from "@agora/common";
 import { executeScoringPipeline } from "@agora/scorer";
@@ -108,7 +108,7 @@ export function buildValidateCommand() {
         `Pulling and testing scorer container: ${container}`,
       );
       try {
-        const execution = resolveChallengeExecution(parsed.data);
+        const execution = resolveChallengeExecutionFromTrustedSpec(parsed.data);
         const dryRunInputs = buildDryRunInputs({
           evaluationColumns: {
             required: execution.execution.evaluation_contract.columns.required,

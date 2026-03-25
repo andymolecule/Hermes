@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  type ResolvedChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
   createRuntimePolicies,
-  type ResolvedChallengeExecution,
 } from "@agora/common";
-import fs from "node:fs/promises";
 import {
   buildScoreLocalPipelineInput,
   submitSolution,
@@ -43,6 +43,12 @@ test("buildScoreLocalPipelineInput stages the full scorer runtime contract", () 
       }),
     },
     evaluationBundleCid: "ipfs://bafkreieval",
+    limits: {
+      memory: "2g",
+      cpus: "2",
+      pids: 64,
+      timeoutMs: 600_000,
+    },
     mount: {
       evaluationBundleName: "ground_truth.csv",
       submissionFileName: "submission.csv",
@@ -129,6 +135,7 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
                 comparator: "maximize",
                 scorer_image: "ghcr.io/example/scorer:v1",
               },
+              submission_privacy_mode: "sealed",
               distribution_type: "winner_take_all",
               dispute_window_hours: 168,
               minimum_score: 0,
@@ -149,7 +156,12 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
                 },
               },
             },
-            artifacts: { public: [], private: [], spec_cid: null, spec_url: null },
+            artifacts: {
+              public: [],
+              private: [],
+              spec_cid: null,
+              spec_url: null,
+            },
             submissions: [],
             leaderboard: [],
           },
@@ -176,7 +188,7 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
       return new Response(
         JSON.stringify({
           data: {
-            submissionCid: "bafybeigdyrzt3dryrun",
+            resultCid: "bafybeigdyrzt3dryrun",
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -206,6 +218,137 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
     assert.ok("dryRun" in result && result.dryRun);
     assert.equal(result.challengeAddress, challengeAddress);
     assert.equal(result.submissionCid, "bafybeigdyrzt3dryrun");
+  } finally {
+    globalThis.fetch = originalFetch;
+    process.env = originalEnv;
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("submitSolution public-mode dry-run uploads the raw payload without sealing", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "agora-solver-public-"),
+  );
+  const filePath = path.join(tempDir, "submission.txt");
+  const challengeId = "11111111-1111-4111-8111-111111111111";
+  const challengeAddress = "0x0000000000000000000000000000000000000001";
+  const signerAddress = "0x00000000000000000000000000000000000000AA";
+  let uploadResultFormat: string | null = null;
+  let publicKeyFetched = false;
+
+  await fs.writeFile(filePath, "plain-answer");
+  process.env.AGORA_API_URL = "https://api.agora.test";
+
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === `/api/challenges/${challengeId}`) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge: {
+              id: challengeId,
+              title: "Challenge",
+              description: "Challenge detail",
+              domain: "omics",
+              challenge_type: "prediction",
+              reward_amount: 100,
+              deadline: "2026-04-12T00:00:00.000Z",
+              status: "open",
+              contract_address: challengeAddress,
+              factory_address: "0x0000000000000000000000000000000000000002",
+              factory_challenge_id: 7,
+              refs: {
+                challengeId,
+                challengeAddress,
+                factoryAddress: "0x0000000000000000000000000000000000000002",
+                factoryChallengeId: 7,
+              },
+              execution: {
+                template: "official_table_metric_v1",
+                metric: "r2",
+                comparator: "maximize",
+                scorer_image: "ghcr.io/example/scorer:v1",
+              },
+              submission_privacy_mode: "public",
+              distribution_type: "winner_take_all",
+              dispute_window_hours: 168,
+              minimum_score: 0,
+              max_submissions_total: 10,
+              max_submissions_per_solver: 3,
+              submission_contract: {
+                version: "v1",
+                kind: "csv_table",
+                file: {
+                  extension: ".csv",
+                  mime: "text/csv",
+                  max_bytes: 1024,
+                },
+                columns: {
+                  required: ["prediction"],
+                  value: "prediction",
+                  allow_extra: false,
+                },
+              },
+            },
+            artifacts: {
+              public: [],
+              private: [],
+              spec_cid: null,
+              spec_url: null,
+            },
+            submissions: [],
+            leaderboard: [],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions/public-key") {
+      publicKeyFetched = true;
+      throw new Error("public mode should not fetch the sealing key");
+    }
+
+    if (url.pathname === "/api/submissions/upload" && init?.method === "POST") {
+      uploadResultFormat = new Headers(init.headers).get(
+        "x-agora-result-format",
+      );
+      return new Response(
+        JSON.stringify({
+          data: {
+            resultCid: "bafybeigpublicdryrun",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch: ${url.pathname}`);
+  };
+
+  try {
+    const result = await submitSolution({
+      challengeId,
+      filePath,
+      apiUrl: process.env.AGORA_API_URL,
+      dryRun: true,
+      signer: {
+        getAddress: async () => signerAddress,
+        writeContract: async () => {
+          throw new Error("dry-run should not write on-chain");
+        },
+        waitForFinality: async () => {
+          throw new Error("dry-run should not wait for finality");
+        },
+      },
+    });
+
+    assert.ok("dryRun" in result && result.dryRun);
+    assert.equal(result.submissionCid, "bafybeigpublicdryrun");
+    assert.equal(publicKeyFetched, false);
+    assert.equal(uploadResultFormat, "plain_v0");
   } finally {
     globalThis.fetch = originalFetch;
     process.env = originalEnv;

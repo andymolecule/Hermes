@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type TrustedChallengeSpecOutput,
   computeSpecHash,
   getPinSpecAuthorizationTypedData,
-  type TrustedChallengeSpecOutput,
+  resolveOfficialScorerImage,
 } from "@agora/common";
 import { pinChallengeSpecWithApi } from "../src/commands/post.js";
+
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
 
 function createTrustedSpec(): TrustedChallengeSpecOutput {
   return {
@@ -18,7 +27,7 @@ function createTrustedSpec(): TrustedChallengeSpecOutput {
     execution: {
       version: "v1",
       template: "official_table_metric_v1",
-      scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+      scorer_image: tableMetricScorerImage,
       metric: "accuracy",
       comparator: "maximize",
       evaluation_artifact_uri: "ipfs://hidden",
@@ -77,8 +86,7 @@ function createTrustedSpec(): TrustedChallengeSpecOutput {
 test("pinChallengeSpecWithApi signs the trusted spec and delegates pinning to the API", async () => {
   const originalFetch = global.fetch;
   const spec = createTrustedSpec();
-  const walletAddress =
-    "0x00000000000000000000000000000000000000aa" as const;
+  const walletAddress = "0x00000000000000000000000000000000000000aa" as const;
   const expectedSpecHash = computeSpecHash(spec);
   const fetchCalls: Array<{
     url: string;
@@ -92,8 +100,7 @@ test("pinChallengeSpecWithApi signs the trusted spec and delegates pinning to th
     fetchCalls.push({
       url,
       method: init?.method ?? "GET",
-      body:
-        typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
     });
 
     if (url === "https://api.example/api/pin-spec" && init?.method === "GET") {
@@ -103,10 +110,7 @@ test("pinChallengeSpecWithApi signs the trusted spec and delegates pinning to th
       });
     }
 
-    if (
-      url === "https://api.example/api/pin-spec" &&
-      init?.method === "POST"
-    ) {
+    if (url === "https://api.example/api/pin-spec" && init?.method === "POST") {
       return new Response(JSON.stringify({ specCid: "ipfs://spec-cid" }), {
         status: 200,
         headers: { "content-type": "application/json" },

@@ -2,6 +2,7 @@ import type {
   ChallengeExecutionOutput,
   PinnedChallengeExecutionOutput,
 } from "../schemas/execution-contract.js";
+import type { SubmissionPrivacyMode } from "../schemas/submission.js";
 import type { SubmissionContractOutput } from "../schemas/submission-contract.js";
 
 export const CHALLENGE_DOMAINS = [
@@ -120,6 +121,7 @@ export interface ChallengeSpec {
   execution: PinnedChallengeExecutionOutput;
   artifacts: ChallengeArtifact[];
   submission_contract: SubmissionContractOutput;
+  submission_privacy_mode: SubmissionPrivacyMode;
   reward: ChallengeReward;
   deadline: string;
   tags?: string[];
@@ -141,6 +143,7 @@ export interface TrustedChallengeSpec {
   execution: ChallengeExecutionOutput;
   artifacts: TrustedChallengeArtifact[];
   submission_contract: SubmissionContractOutput;
+  submission_privacy_mode: SubmissionPrivacyMode;
   reward: ChallengeReward;
   deadline: string;
   tags?: string[];

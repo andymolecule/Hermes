@@ -32,6 +32,8 @@ test("authoring intake state records missing required intent fields", () => {
     "description",
     "payout_condition",
     "reward_total",
+    "distribution",
+    "domain",
     "deadline",
   ]);
   assert.deepEqual(authoringIr.assessment.missing_fields, [
@@ -39,6 +41,8 @@ test("authoring intake state records missing required intent fields", () => {
     "description",
     "payout_condition",
     "reward_total",
+    "distribution",
+    "domain",
     "deadline",
   ]);
   assert.equal(authoringIr.execution.template, null);
@@ -52,6 +56,7 @@ test("authoring intake state preserves the resolved table scoring contract field
       payout_condition: "Highest R2 wins.",
       reward_total: "25",
       distribution: "winner_take_all",
+      domain: "bioinformatics",
       deadline: "2026-12-31T00:00:00.000Z",
       timezone: "UTC",
     },
@@ -96,6 +101,7 @@ test("authoring intake state persists canonical compile blockers", () => {
       payout_condition: "Highest Spearman wins.",
       reward_total: "10",
       distribution: "winner_take_all",
+      domain: "bioinformatics",
       deadline: "2026-12-31T00:00:00.000Z",
       timezone: "UTC",
     },

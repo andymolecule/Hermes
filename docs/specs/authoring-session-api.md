@@ -2,7 +2,7 @@
 
 > Status: Step 1 (Business Logic) — LOCKED
 > Status: Step 2 (Clarification / anti-drift scaffold) — COMPLETE
-> Implementation may proceed only through the cutover order in `docs/specs/authoring-session-cutover-checklist.md`.
+> Implementation follows the active machine-contract migration order in `docs/specs/machine-contract-migration.md`.
 
 ---
 
@@ -289,7 +289,7 @@ Public names in this table are permanent. Internal names can change freely.
 23. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run deterministic validation first and must not automatically invoke Layer 2 inference.
 24. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
 25. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
-26. **Standard V1 authoring resolves the official template internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves `official_table_metric_v1` and the exact pinned scorer image during compilation and returns them in `resolved` and `compilation`.
+26. **Standard V1 authoring resolves runtime internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves the matching official template and pinned scorer runtime internally, but public session payloads remain semantic-only and do not expose template ids, scorer images, mounts, or runner limits.
 27. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
 28. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
 29. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
@@ -302,7 +302,7 @@ Public names in this table are permanent. Internal names can change freely.
 | Gate | Layer | What it checks |
 |------|-------|---------------|
 | Spec built | Layer 3 | Challenge YAML compiles from the IR without errors |
-| Official scorer path resolved | Layer 3 | The standard official table scorer template and exact scorer image are resolved |
+| Official scorer path resolved | Layer 3 | The scoring configuration is resolved from the registry and can execute the selected metric and artifact bindings |
 | Evaluation binding resolved | Layer 3 | The hidden evaluation artifact and required column mappings are fully resolved |
 | Dry-run validated + scoreability passed | Layer 3 | `validateChallengeScoreability()` passes against the resolved execution contract |
 
@@ -346,9 +346,11 @@ For file inputs, Agora accepts fetchable URLs or Agora artifact refs only. Agent
 
 Locked success response envelope rule:
 
-- single-resource success responses return the bare resource object directly, including `POST /sessions` and `PATCH /sessions/:id`
-- collection success responses wrap the collection, e.g. `{ "sessions": [...] }`
-- all other single-resource endpoints must not add wrappers such as `{ "session": ... }`, `{ "artifact": ... }`, or `{ "agent": ... }`
+- authoring success responses use the machine-wide `data` envelope
+- `GET /sessions` returns `{ "data": [ ... ] }`
+- `POST /sessions`, `GET /sessions/:id`, `PATCH /sessions/:id`, and `POST /sessions/:id/confirm-publish` return `{ "data": session }`
+- `POST /sessions/:id/publish` returns `{ "data": session }` for sponsor publish or `{ "data": wallet_preparation }` for wallet publish
+- `POST /uploads` returns `{ "data": artifact }`
 
 Locked file item shape:
 
@@ -535,7 +537,7 @@ Example:
   "error": {
     "code": "unauthorized",
     "message": "Invalid or missing authentication.",
-    "next_action": "Register or re-register at POST /api/agents/register"
+    "next_action": "Register at POST /api/agents/register and retry."
   }
 }
 ```
@@ -545,7 +547,7 @@ Registration is pseudonymous, but bound to a stable technical identity:
 - `telegram_bot_id` is the stable machine identity for the agent in the current scoped design
 - no Beach or other third-party platform identity binding is required
 - the API key proves the caller is an Agora-registered agent for that bot, not who the operator is in the real world
-- if the same `telegram_bot_id` registers again, Agora returns the same `agent_id`, issues a fresh API key, and invalidates the old key
+- if the same `telegram_bot_id` registers again, Agora returns the same `agent_id` and issues a fresh API key without revoking the old one
 
 Locked registration contract:
 
@@ -563,7 +565,8 @@ Optional metadata may be included:
 {
   "telegram_bot_id": "bot_123456",
   "agent_name": "AUBRAI",
-  "description": "Longevity research agent"
+  "description": "Longevity research agent",
+  "key_label": "ci-runner"
 }
 ```
 
@@ -571,17 +574,21 @@ Response:
 
 ```json
 {
-  "agent_id": "agent-abc",
-  "api_key": "agora_xxxxxxxx",
-  "status": "created"
+  "data": {
+    "agent_id": "11111111-1111-4111-8111-111111111111",
+    "key_id": "22222222-2222-4222-8222-222222222222",
+    "api_key": "agora_xxxxxxxx",
+    "status": "created"
+  }
 }
 ```
 
 Rules:
 - `telegram_bot_id` is the only required registration field
-- `agent_name` and `description` are optional metadata fields and may be included at registration time
+- `agent_name`, `description`, and `key_label` are optional metadata fields and may be included at registration time
 - the response shape is the same whether optional metadata is provided or not
-`status` is machine-readable and indicates whether the call created a new agent identity or rotated the key for an existing one.
+- `status` is machine-readable and indicates whether the call created a new agent identity or issued a new key for an existing one
+- re-registering the same `telegram_bot_id` returns the same `agent_id`, a new `key_id`, and `status = "existing_key_issued"`
 
 ### 1.11 Funding Models
 
@@ -807,17 +814,17 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q56 | Where should validation explanations live in the canonical response? | Prevents the contract from duplicating the same explanation in multiple top-level fields | Prefer one source of truth inside validation issues | `LOCKED: validation explanations live only inside validation.missing_fields, validation.invalid_fields, validation.dry_run_failure, and validation.unsupported_reason` |
 | Q57 | What exact top-level fields belong in the canonical full session object? | Defines the complete field set external callers may depend on across single-session operations | Prefer one explicit stable field set | `LOCKED: the canonical full session object contains exactly id, state, creator, resolved, validation, checklist, compilation, artifacts, provenance, challenge_id, contract_address, spec_cid, tx_hash, created_at, updated_at, and expires_at` |
 | Q58 | Should compilation expose scoring direction explicitly? | Prevents callers and solvers from inferring score direction from metric names | Prefer an explicit objective field | `LOCKED: compilation includes explicit objective alongside metric, using objective = "maximize" | "minimize"` |
-| Q59 | Should compilation expose the exact immutable scorer image? | Determines whether callers and solvers can inspect the concrete scoring runtime rather than relying on a high-level template label | Prefer explicit immutable image refs for transparency | `LOCKED: compilation includes scorer_image as an immutable image reference, e.g. ghcr.io/...@sha256:...` |
+| Q59 | Should private authoring sessions expose runtime mechanics such as template ids or scorer images? | Prevents the session API from leaking internal execution routing into the machine contract | Prefer semantic-only session payloads | `LOCKED: no. Public authoring/session payloads do not expose template ids, scorer images, mounts, private evaluation URIs, or runner limits.` |
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
-| Q61 | What is the bundled compilation preview contract? | Defines the exact compilation object callers receive inside a private authoring session so they do not have to guess what Agora resolved | Prefer one explicit preview object | `LOCKED: compilation is a private session-owner preview object and includes exactly template, metric, objective, scorer_image, evaluation_artifact_uri, evaluation_contract, submission_contract, resource_limits, reward, deadline, dispute_window_hours, and minimum_score. It is not the public pinned challenge spec; published public specs must omit dereferenceable URIs for private artifacts.` |
+| Q61 | What is the bundled compilation preview contract? | Defines the exact semantic preview object callers receive inside a private authoring session | Prefer one explicit semantic preview object | `LOCKED: compilation includes exactly metric, objective, evaluation_contract, submission_contract, reward, deadline, dispute_window_hours, and minimum_score. Runtime mechanics remain internal.` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
 | Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, unsupported_task, or TX_REVERTED. Sponsor publish reverts use TX_REVERTED; specific diagnostics belong in error.details rather than a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/patch/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
 | Q65 | What is the shared normalized artifact schema? | Prevents upload responses and session artifacts from drifting into different shapes and keeps artifact classification semantics explicit | Prefer one stable artifact object with nullable role until classified | `LOCKED: the normalized artifact object contains exactly artifact_id, uri, file_name, role, and source_url. role is null until Agora classifies the artifact during session processing, and the same object shape is used in upload responses and session responses` |
 | Q66 | What is the exact bundled agent registration contract? | Prevents agent onboarding and key rotation from drifting across partial auth decisions and removes ambiguity about optional metadata at the registration boundary | Prefer one minimal required field with optional profile metadata | `LOCKED: POST /api/agents/register accepts telegram_bot_id as the only required field and may also accept optional agent_name and description. It returns exactly agent_id, api_key, and status, where status is created or rotated. The response shape is the same whether optional metadata is provided or not` |
-| Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer one deterministic resource shape across the whole session API | `LOCKED: single-resource success responses return the bare resource object directly, including POST /api/authoring/sessions and PATCH /api/authoring/sessions/:id. Collection success responses wrap the collection, e.g. { "sessions": [...] }` |
+| Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer one machine-wide response shape | `LOCKED: authoring success responses use the machine-wide data envelope. Collections return { "data": [...] } and single-resource results return { "data": ... }.` |
 | Q68 | How narrow should the public submission_contract schema be in v1? | Prevents speculative generic abstractions from leaking into the solver-facing contract before Agora actually supports more submission kinds | Prefer a current-scope schema only | `LOCKED: submission_contract stays narrow and explicit for the current scoped design. It contains version, kind, extension, mime, max_bytes, and columns. kind refers to the concrete submission kind Agora supports now, not a speculative future abstraction` |
-| Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, template, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation` |
+| Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation.` |
 | Q70 | How should wallet-funded web publish work when the signer lives in the browser? | Prevents the contract from pretending the server can complete a browser-wallet transaction and keeps sponsor vs wallet publish paths explicit | Prefer one publish URL with funding-dependent behavior plus one confirm step | `LOCKED: POST /sessions/:id/publish remains the single publish URL. funding = sponsor performs one-call publish and returns SessionSchema. funding = wallet prepares the browser transaction, keeps the session in ready, and returns a wallet publish preparation object. POST /sessions/:id/confirm-publish then validates the wallet tx_hash and transitions the session to published` |
 | Q71 | How should Layer 2's natural-language turn surface in the public contract? | Determines whether the default session API is validation-first or conversation-first | Prefer no Layer 2 prose in the default path | `LOCKED: the default /sessions contract is structured and deterministic. It does not include assistant_message. If Agora later exposes an explicit assist path, that surface is separate and out of scope here.` |
 
@@ -857,7 +864,8 @@ const ErrorCodeSchema = z.enum([
 // Imported from the shared authoring core schema module.
 const PartialChallengeIntentSchema = challengeIntentSchema.partial();
 
-// Standard V1 authoring has one official template. Callers do not choose it.
+// Standard V1 authoring resolves the official template from the metric.
+// Callers do not choose template ids directly.
 const ExecutionInputSchema = z.object({
   metric: z.string().min(1).optional(),
   evaluation_artifact_id: z.string().min(1).optional(),
@@ -867,9 +875,8 @@ const ExecutionInputSchema = z.object({
   submission_value_column: z.string().min(1).optional(),
 });
 
-// Agora adds derived runtime fields back in resolved state and compilation.
+// Agora adds derived semantic resolution back in resolved state.
 const ResolvedExecutionSchema = z.object({
-  template: z.literal("official_table_metric_v1").optional(),
   metric: z.string().min(1).optional(),
   objective: ObjectiveSchema.optional(),
   evaluation_artifact_id: z.string().min(1).optional(),
@@ -986,13 +993,6 @@ const EvaluationContractSchema = z.object({
   }),
 });
 
-const ResourceLimitsSchema = z.object({
-  memory_mb: z.number().int().positive(),
-  cpus: z.number().int().positive(),
-  timeout_minutes: z.number().int().positive(),
-  pids_limit: z.number().int().positive(),
-});
-
 const RewardSchema = z.object({
   total: z.string().min(1),
   currency: z.string().min(1),
@@ -1000,18 +1000,13 @@ const RewardSchema = z.object({
   protocol_fee_bps: z.number().int().nonnegative(),
 });
 
-// Compilation is a private session-owner preview. It is not the public pinned
-// challenge spec, so it may include the resolved private evaluation artifact
-// URI that Agora will bind into trusted runtime state at publish time.
+// Compilation is a private session-owner preview of challenge semantics, not
+// runtime mechanics.
 const CompilationSchema = z.object({
-  template: z.literal("official_table_metric_v1"),
   metric: z.string().min(1),
   objective: ObjectiveSchema,
-  scorer_image: z.string().min(1),
-  evaluation_artifact_uri: z.string().min(1),
   evaluation_contract: EvaluationContractSchema,
   submission_contract: SubmissionContractSchema,
-  resource_limits: ResourceLimitsSchema,
   reward: RewardSchema,
   deadline: z.string().datetime(),
   dispute_window_hours: z.number().int().nonnegative(),
@@ -1025,7 +1020,6 @@ const ChecklistSchema = z.object({
   reward: z.string().min(1),
   distribution: z.string().min(1),
   deadline: z.string().datetime(),
-  template: z.string().min(1),
   metric: z.string().min(1),
   objective: ObjectiveSchema,
   artifacts_count: z.number().int().nonnegative(),
@@ -1118,8 +1112,8 @@ Example success response:
 
 Validation rules:
 - `telegram_bot_id` is required
-- `agent_name` and `description` are optional
-- re-registering the same `telegram_bot_id` returns the same `agent_id`, rotates the key, invalidates the old key, and sets `status = "rotated"`
+- `agent_name`, `description`, and `key_label` are optional
+- re-registering the same `telegram_bot_id` returns the same `agent_id`, issues a new key, does not revoke the existing keys, and sets `status = "existing_key_issued"`
 
 Error cases:
 - `400 invalid_request` for malformed request body
@@ -1137,7 +1131,7 @@ Success response schema:
 
 ```ts
 const ListSessionsResponseSchema = z.object({
-  sessions: z.array(SessionListItemSchema),
+  data: z.array(SessionListItemSchema),
 });
 ```
 
@@ -1145,7 +1139,7 @@ Example success response:
 
 ```json
 {
-  "sessions": [
+  "data": [
     {
       "id": "session-123",
       "state": "awaiting_input",
@@ -1244,7 +1238,6 @@ Example success response:
       "deadline": "2026-04-01T23:59:59Z"
     },
     "execution": {
-      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
       "evaluation_artifact_id": "art-123",
@@ -1288,7 +1281,7 @@ Example success response:
     "scorer": {
       "status": "pending",
       "code": "scorer_pending_resolution",
-      "message": "Agora has not yet resolved the official scorer dependency for this session."
+      "message": "Agora has not yet resolved the scoring configuration for this session."
     },
     "dry_run": {
       "status": "pending",
@@ -1340,9 +1333,9 @@ Authentication:
 - required
 
 Success response:
-- bare `SessionSchema`
+- returns `{ "data": SessionSchema }`
 
-Example success response:
+Example success response (`data` payload shown inline below):
 
 ```json
 {
@@ -1362,7 +1355,6 @@ Example success response:
       "deadline": "2026-04-01T23:59:59Z"
     },
     "execution": {
-      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
       "evaluation_artifact_id": "art-456",
@@ -1392,7 +1384,7 @@ Example success response:
     "scorer": {
       "status": "pass",
       "code": "scorer_ready",
-      "message": "The official scorer image is resolved and pinned."
+      "message": "The scoring configuration is resolved."
     },
     "dry_run": {
       "status": "pass",
@@ -1408,17 +1400,13 @@ Example success response:
     "reward": "30 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
     "artifacts_count": 3
   },
   "compilation": {
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
-    "evaluation_artifact_uri": "ipfs://QmReferenceScores",
     "evaluation_contract": {
       "kind": "csv_table",
       "columns": {
@@ -1440,12 +1428,6 @@ Example success response:
         "value": "docking_score",
         "allow_extra": true
       }
-    },
-    "resource_limits": {
-      "memory_mb": 4096,
-      "cpus": 2,
-      "timeout_minutes": 20,
-      "pids_limit": 64
     },
     "reward": {
       "total": "30",
@@ -1555,7 +1537,6 @@ Example success response:
       "deadline": "2026-04-01T23:59:59Z"
     },
     "execution": {
-      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
       "evaluation_artifact_id": "art-123",
@@ -1585,7 +1566,7 @@ Example success response:
     "scorer": {
       "status": "pass",
       "code": "scorer_ready",
-      "message": "The official scorer image is resolved and pinned."
+      "message": "The scoring configuration is resolved."
     },
     "dry_run": {
       "status": "pass",
@@ -1601,17 +1582,13 @@ Example success response:
     "reward": "30 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
     "artifacts_count": 3
   },
   "compilation": {
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
-    "evaluation_artifact_uri": "ipfs://QmReferenceScores",
     "evaluation_contract": {
       "kind": "csv_table",
       "columns": {
@@ -1633,12 +1610,6 @@ Example success response:
         "value": "predicted_score",
         "allow_extra": true
       }
-    },
-    "resource_limits": {
-      "memory_mb": 4096,
-      "cpus": 2,
-      "timeout_minutes": 20,
-      "pids_limit": 64
     },
     "reward": {
       "total": "30",
@@ -1822,7 +1793,6 @@ Sponsor-funded example success response:
       "deadline": "2026-04-01T23:59:59Z"
     },
     "execution": {
-      "template": "official_table_metric_v1",
       "metric": "spearman",
       "objective": "maximize",
       "evaluation_artifact_id": "art-456",
@@ -1852,7 +1822,7 @@ Sponsor-funded example success response:
     "scorer": {
       "status": "pass",
       "code": "scorer_ready",
-      "message": "The official scorer image is resolved and pinned."
+      "message": "The scoring configuration is resolved."
     },
     "dry_run": {
       "status": "pass",
@@ -1868,17 +1838,13 @@ Sponsor-funded example success response:
     "reward": "30 USDC",
     "distribution": "winner_take_all",
     "deadline": "2026-04-01T23:59:59Z",
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
     "artifacts_count": 3
   },
   "compilation": {
-    "template": "official_table_metric_v1",
     "metric": "spearman",
     "objective": "maximize",
-    "scorer_image": "ghcr.io/andymolecule/gems-tabular-scorer:v1@sha256:abc123",
-    "evaluation_artifact_uri": "ipfs://QmReferenceScores",
     "evaluation_contract": {
       "kind": "csv_table",
       "columns": {
@@ -1900,12 +1866,6 @@ Sponsor-funded example success response:
         "value": "docking_score",
         "allow_extra": true
       }
-    },
-    "resource_limits": {
-      "memory_mb": 4096,
-      "cpus": 2,
-      "timeout_minutes": 20,
-      "pids_limit": 64
     },
     "reward": {
       "total": "30",
@@ -1999,7 +1959,7 @@ Example request:
 ```
 
 Success response:
-- returns `SessionSchema`
+- returns `{ "data": SessionSchema }`
 - on success the session transitions from `ready` to `published`
 - the returned session includes populated `challenge_id`, `contract_address`, `spec_cid`, and `tx_hash`
 
@@ -2032,7 +1992,7 @@ const UploadUrlRequestSchema = z.object({
 ```
 
 Success response:
-- bare `ArtifactSchema`
+- returns `{ "data": ArtifactSchema }`
 
 Example URL-ingestion request:
 

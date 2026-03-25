@@ -1,7 +1,11 @@
 import {
   createSupabaseClient,
+  ensureScoreJobForRegisteredSubmission,
+  getScoreJobBySubmissionId,
+  listChallengesForIndexing,
+  listSubmissionsForChallenge,
   retryFailedJobs,
-} from "../packages/db/dist/index.js";
+} from "../packages/db/src/index.ts";
 
 const challengeIdArg = process.argv.find((arg) =>
   arg.startsWith("--challenge-id="),
@@ -51,6 +55,55 @@ if (staleRunningError) {
 
 const retriedFailedJobs = await retryFailedJobs(db, challengeId ?? undefined);
 
+const backfillActions = {
+  queued: 0,
+  skipped: 0,
+  unchanged: 0,
+  not_applicable: 0,
+};
+let missingScoreJobsConsidered = 0;
+
+const activeChallenges = (await listChallengesForIndexing(db)).filter(
+  (challenge) =>
+    (!challengeId || challenge.id === challengeId) &&
+    (challenge.status === "open" || challenge.status === "scoring"),
+);
+
+for (const challenge of activeChallenges) {
+  const submissions = await listSubmissionsForChallenge(db, challenge.id);
+  for (const submission of submissions) {
+    if (submission.scored) {
+      continue;
+    }
+
+    const existingJob = await getScoreJobBySubmissionId(db, submission.id);
+    if (existingJob) {
+      continue;
+    }
+
+    missingScoreJobsConsidered += 1;
+    const result = await ensureScoreJobForRegisteredSubmission(
+      db,
+      {
+        id: challenge.id,
+        status: challenge.status,
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      },
+      {
+        id: submission.id,
+        challenge_id: submission.challenge_id,
+        on_chain_sub_id: submission.on_chain_sub_id,
+        solver_address: submission.solver_address,
+        scored: submission.scored,
+        trace_id: submission.trace_id ?? null,
+      },
+      submission.trace_id ?? null,
+    );
+    backfillActions[result.action] += 1;
+  }
+}
+
 console.log(
   JSON.stringify(
     {
@@ -58,6 +111,8 @@ console.log(
       staleMinutes,
       recoveredRunningJobs: staleRunningRows?.length ?? 0,
       retriedFailedJobs,
+      missingScoreJobsConsidered,
+      backfillActions,
     },
     null,
     2,

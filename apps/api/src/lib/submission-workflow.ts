@@ -7,11 +7,21 @@ import {
   isTransientPinnedContractReadError,
   parseSubmittedReceipt,
 } from "@agora/chain";
-import { projectOnChainSubmissionFromRegistration } from "@agora/chain/indexer/submissions";
+import {
+  persistRegisteredSubmissionProjection,
+  projectOnChainSubmissionFromRegistration,
+} from "@agora/chain/indexer/submissions";
 import {
   CHALLENGE_STATUS,
+  DEFAULT_SUBMISSION_PRIVACY_MODE,
+  type SubmissionResultFormat,
   computeSubmissionResultHash,
+  getRequiredSubmissionResultFormat,
+  hasSubmissionSealPublicConfig,
+  isSubmissionResultFormatCompatible,
   isValidPinnedSpecCid,
+  loadConfig,
+  resolveChallengeRuntimeConfigFromPlanCache,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
@@ -20,8 +30,6 @@ import {
   countSubmissionsBySubmissionCid,
   createSubmissionIntent,
   createSupabaseClient,
-  deleteUnmatchedSubmission,
-  ensureScoreJobForRegisteredSubmission,
   findActiveSubmissionIntentByMatch,
   getChallengeByContractAddress,
   getChallengeById,
@@ -29,7 +37,6 @@ import {
   getSubmissionByIntentId,
   getSubmissionIntentById,
   listUnmatchedSubmissionsByMatch,
-  upsertSubmissionOnChain,
 } from "@agora/db";
 import { unpinCid } from "@agora/ipfs";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -127,23 +134,73 @@ function toSubmissionRefs(
   };
 }
 
+interface SubmissionRegistrationWarning {
+  code: string;
+  message: string;
+}
+
 export function toSubmissionRegistrationResponse(input: {
   submission: NonNullable<SubmissionRow>;
   challenge: ChallengeRow;
-  warning?: string | null;
+  warning?: SubmissionRegistrationWarning | null;
 }) {
   return {
-    ok: true,
-    submission: {
-      id: input.submission.id,
-      challenge_id: input.challenge.id,
-      challenge_address: input.challenge.contract_address,
-      on_chain_sub_id: input.submission.on_chain_sub_id,
-      solver_address: input.submission.solver_address,
-      refs: toSubmissionRefs(input.submission, input.challenge),
+    data: {
+      submission: {
+        id: input.submission.id,
+        challenge_id: input.challenge.id,
+        challenge_address: input.challenge.contract_address,
+        on_chain_sub_id: input.submission.on_chain_sub_id,
+        solver_address: input.submission.solver_address,
+        refs: toSubmissionRefs(input.submission, input.challenge),
+      },
+      phase: "registration_confirmed" as const,
+      warning: input.warning ?? null,
     },
-    warning: input.warning ?? null,
   };
+}
+
+function resolveChallengeSubmissionPrivacyMode(challenge: ChallengeRow) {
+  if (challenge.execution_plan_json) {
+    return resolveChallengeRuntimeConfigFromPlanCache({
+      execution_plan_json: challenge.execution_plan_json,
+    }).submissionPrivacyMode;
+  }
+
+  return DEFAULT_SUBMISSION_PRIVACY_MODE;
+}
+
+function assertChallengeSubmissionPayload(input: {
+  challenge: ChallengeRow;
+  resultFormat: SubmissionResultFormat;
+}) {
+  const privacyMode = resolveChallengeSubmissionPrivacyMode(input.challenge);
+  if (
+    privacyMode === "sealed" &&
+    !hasSubmissionSealPublicConfig(loadConfig())
+  ) {
+    throw new SubmissionWorkflowError(
+      503,
+      "SUBMISSION_SEALING_UNAVAILABLE",
+      "Challenge requires sealed submissions, but the submission sealing public key is unavailable. Next step: retry after sealing is restored.",
+      { retriable: true },
+    );
+  }
+
+  if (
+    !isSubmissionResultFormatCompatible({
+      privacyMode,
+      resultFormat: input.resultFormat,
+    })
+  ) {
+    throw new SubmissionWorkflowError(
+      409,
+      "SUBMISSION_RESULT_FORMAT_INVALID",
+      `Challenge requires ${getRequiredSubmissionResultFormat(privacyMode)} results. Next step: upload the correct payload format and retry.`,
+    );
+  }
+
+  return privacyMode;
 }
 
 export async function reconcileTrackedSubmissionsForIntent(
@@ -229,17 +286,18 @@ export async function createSubmissionIntentWorkflow(input: {
   challengeAddress?: string;
   solverAddress: string;
   submittedByAgentId?: string | null;
-  submissionCid: string;
+  resultCid: string;
+  resultFormat: SubmissionResultFormat;
   optionalSessionAddress: string | null;
   requestId: string;
   logger: AgoraLogger;
 }) {
-  const normalizedSubmissionCid = input.submissionCid.trim();
-  if (!isValidPinnedSpecCid(normalizedSubmissionCid)) {
+  const normalizedResultCid = input.resultCid.trim();
+  if (!isValidPinnedSpecCid(normalizedResultCid)) {
     throw new SubmissionWorkflowError(
       400,
       "SUBMISSION_CID_INVALID",
-      "`submissionCid` must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+      "`resultCid` must be a valid pinned ipfs:// CID. Next step: pin the solver payload first, then retry.",
     );
   }
 
@@ -264,6 +322,10 @@ export async function createSubmissionIntentWorkflow(input: {
       "challengeId and challengeAddress refer to different challenges. Next step: retry with one canonical challenge reference.",
     );
   }
+  assertChallengeSubmissionPayload({
+    challenge,
+    resultFormat: input.resultFormat,
+  });
 
   const resolvedChallengeAddress = challenge.contract_address as `0x${string}`;
   const window = await getChallengeSubmissionIntentWindow({
@@ -294,17 +356,17 @@ export async function createSubmissionIntentWorkflow(input: {
 
   const normalizedSolverAddress =
     sessionAddress ?? input.solverAddress.toLowerCase();
-  const resultHash = computeSubmissionResultHash(normalizedSubmissionCid);
+  const resultHash = computeSubmissionResultHash(normalizedResultCid);
   const existingIntent = await findActiveSubmissionIntentByMatch(db, {
     challengeId: challenge.id,
     solverAddress: normalizedSolverAddress,
     resultHash,
   });
-  if (existingIntent && existingIntent.submission_cid !== normalizedSubmissionCid) {
+  if (existingIntent && existingIntent.submission_cid !== normalizedResultCid) {
     throw new SubmissionWorkflowError(
       409,
       "SUBMISSION_INTENT_CONFLICT",
-      "An existing submission intent for this challenge and solver is already linked to different submission metadata. Next step: reuse the original sealed payload or submit a different payload instead of deleting the reserved intent.",
+      "An existing submission intent for this challenge and solver is already linked to different submission metadata. Next step: reuse the original solver payload or submit a different payload instead of deleting the reserved intent.",
     );
   }
 
@@ -315,7 +377,7 @@ export async function createSubmissionIntentWorkflow(input: {
       solver_address: normalizedSolverAddress,
       submitted_by_agent_id: input.submittedByAgentId ?? null,
       result_hash: resultHash,
-      submission_cid: normalizedSubmissionCid,
+      submission_cid: normalizedResultCid,
       expires_at: getSubmissionIntentExpiry({
         deadlineMs: window.deadlineMs,
       }),
@@ -363,7 +425,7 @@ export async function createSubmissionIntentWorkflow(input: {
 
 export async function cleanupSubmissionArtifact(input: {
   intentId?: string;
-  submissionCid: string;
+  resultCid: string;
   createSupabaseClientImpl?: typeof createSupabaseClient;
   getSubmissionIntentByIdImpl?: typeof getSubmissionIntentById;
   countSubmissionIntentsBySubmissionCidImpl?: typeof countSubmissionIntentsBySubmissionCid;
@@ -377,7 +439,8 @@ export async function cleanupSubmissionArtifact(input: {
     input.countSubmissionIntentsBySubmissionCidImpl ??
     countSubmissionIntentsBySubmissionCid;
   const countSubmissions =
-    input.countSubmissionsBySubmissionCidImpl ?? countSubmissionsBySubmissionCid;
+    input.countSubmissionsBySubmissionCidImpl ??
+    countSubmissionsBySubmissionCid;
   const unpin = input.unpinCidImpl ?? unpinCid;
 
   if (input.intentId) {
@@ -392,8 +455,8 @@ export async function cleanupSubmissionArtifact(input: {
   }
 
   const [remainingIntents, persistedSubmissions] = await Promise.all([
-    countIntents(db, input.submissionCid),
-    countSubmissions(db, input.submissionCid),
+    countIntents(db, input.resultCid),
+    countSubmissions(db, input.resultCid),
   ]);
 
   if (remainingIntents > 0 || persistedSubmissions > 0) {
@@ -403,7 +466,7 @@ export async function cleanupSubmissionArtifact(input: {
     };
   }
 
-  await unpin(input.submissionCid);
+  await unpin(input.resultCid);
   return {
     cleanedIntent: false,
     unpinned: true,
@@ -414,18 +477,19 @@ export async function registerSubmissionWorkflow(input: {
   challengeId?: string;
   challengeAddress?: string;
   intentId: string;
-  submissionCid: string;
+  resultCid: string;
+  resultFormat: SubmissionResultFormat;
   txHash: string;
   optionalSessionAddress: string | null;
   requestId: string;
   logger: AgoraLogger;
 }) {
-  const normalizedSubmissionCid = input.submissionCid.trim();
-  if (!isValidPinnedSpecCid(normalizedSubmissionCid)) {
+  const normalizedResultCid = input.resultCid.trim();
+  if (!isValidPinnedSpecCid(normalizedResultCid)) {
     throw new SubmissionWorkflowError(
       400,
       "SUBMISSION_CID_INVALID",
-      "`submissionCid` must be a valid pinned ipfs:// CID. Next step: pin the sealed submission payload first, then retry.",
+      "`resultCid` must be a valid pinned ipfs:// CID. Next step: pin the solver payload first, then retry.",
     );
   }
 
@@ -445,6 +509,10 @@ export async function registerSubmissionWorkflow(input: {
       "challengeId and challengeAddress refer to different challenges. Next step: retry with one canonical challenge reference.",
     );
   }
+  assertChallengeSubmissionPayload({
+    challenge,
+    resultFormat: input.resultFormat,
+  });
 
   const intent = await getSubmissionIntentById(db, input.intentId);
   if (!intent) {
@@ -461,13 +529,11 @@ export async function registerSubmissionWorkflow(input: {
       "Submission intent belongs to a different challenge. Next step: retry with the original challenge target or create a fresh intent for this challenge.",
     );
   }
-  if (
-    intent.submission_cid !== normalizedSubmissionCid
-  ) {
+  if (intent.submission_cid !== normalizedResultCid) {
     throw new SubmissionWorkflowError(
       409,
       "SUBMISSION_INTENT_METADATA_CONFLICT",
-      "Submission intent is linked to different submission metadata. Next step: retry with the original sealed payload from the reserved intent.",
+      "Submission intent is linked to different submission metadata. Next step: retry with the original solver payload from the reserved intent.",
     );
   }
 
@@ -571,12 +637,12 @@ export async function registerSubmissionWorkflow(input: {
     throw error;
   }
 
-  const expectedHash = computeSubmissionResultHash(normalizedSubmissionCid);
+  const expectedHash = computeSubmissionResultHash(normalizedResultCid);
   if (onChain.resultHash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new SubmissionWorkflowError(
       400,
       "RESULT_HASH_MISMATCH",
-      "Provided `submissionCid` does not match the on-chain result hash. Next step: retry with the exact sealed payload that was submitted on-chain.",
+      "Provided `resultCid` does not match the on-chain result hash. Next step: retry with the exact solver payload that was submitted on-chain.",
     );
   }
   if (intent.result_hash.toLowerCase() !== expectedHash.toLowerCase()) {
@@ -621,21 +687,26 @@ export async function registerSubmissionWorkflow(input: {
     );
   }
 
-  let submissionRow: NonNullable<SubmissionRow>;
+  let persisted: Awaited<
+    ReturnType<typeof persistRegisteredSubmissionProjection>
+  >;
   try {
-    submissionRow = await upsertSubmissionOnChain(db, {
-      submission_intent_id: intent.id,
-      challenge_id: challenge.id,
-      on_chain_sub_id: Number(subId),
-      solver_address: onChain.solver,
-      result_hash: onChain.resultHash,
-      submission_cid: intent.submission_cid,
-      proof_bundle_hash: onChain.proofBundleHash,
-      score: onChain.scored ? onChain.score.toString() : null,
-      scored: onChain.scored,
-      submitted_at: new Date(Number(onChain.submittedAt) * 1000).toISOString(),
-      tx_hash: input.txHash,
-      trace_id: input.requestId,
+    persisted = await persistRegisteredSubmissionProjection({
+      db,
+      challenge: {
+        id: challenge.id,
+        status: challenge.status,
+        max_submissions_total: challenge.max_submissions_total,
+        max_submissions_per_solver: challenge.max_submissions_per_solver,
+      },
+      registration: {
+        submission_intent_id: intent.id,
+        submission_cid: intent.submission_cid,
+        trace_id: input.requestId,
+      },
+      onChainSubmissionId: Number(subId),
+      onChainSubmission: onChain,
+      txHash: input.txHash,
     });
   } catch (error) {
     if (error instanceof SubmissionOnChainWriteConflictError) {
@@ -648,29 +719,28 @@ export async function registerSubmissionWorkflow(input: {
     throw error;
   }
 
-  await deleteUnmatchedSubmission(db, {
-    challengeId: challenge.id,
-    onChainSubmissionId: Number(subId),
-  });
-
-  const scoreJob = await ensureScoreJobForRegisteredSubmission(
-    db,
-    {
-      id: challenge.id,
-      status: challenge.status,
-      max_submissions_total: challenge.max_submissions_total,
-      max_submissions_per_solver: challenge.max_submissions_per_solver,
-    },
-    {
-      id: submissionRow.id,
-      challenge_id: submissionRow.challenge_id,
-      on_chain_sub_id: submissionRow.on_chain_sub_id,
-      solver_address: submissionRow.solver_address,
-      scored: submissionRow.scored,
-      trace_id: submissionRow.trace_id ?? intent.trace_id,
-    },
-    intent.trace_id ?? input.requestId,
-  );
+  const submissionRow = persisted.submissionRow;
+  const scoreJob = persisted.scoreJob;
+  const warning = persisted.cleanupWarning
+    ? {
+        code: "FINALIZE_CLEANUP_FAILED",
+        message: persisted.cleanupWarning,
+      }
+    : null;
+  if (warning) {
+    input.logger.warn(
+      {
+        event: "submission.registration.cleanup_failed",
+        challengeId: challenge.id,
+        submissionId: submissionRow.id,
+        onChainSubmissionId: submissionRow.on_chain_sub_id,
+        txHash: input.txHash,
+        traceId: submissionRow.trace_id ?? intent.trace_id ?? input.requestId,
+        error: warning.message,
+      },
+      "Submission registration cleanup failed after success",
+    );
+  }
 
   const replayedRegistration = Boolean(existingSubmissionForIntent);
   if (replayedRegistration) {
@@ -699,10 +769,19 @@ export async function registerSubmissionWorkflow(input: {
     "Submission registration confirmed",
   );
 
+  const responseWarning =
+    warning ??
+    (scoreJob.warning
+      ? {
+          code: "SCORE_JOB_WARNING",
+          message: scoreJob.warning,
+        }
+      : null);
+
   return {
     submission: submissionRow,
     challenge,
-    warning: scoreJob.warning ?? null,
-    status: (scoreJob.warning ? 202 : 200) as ContentfulStatusCode,
+    warning: responseWarning,
+    status: (responseWarning ? 202 : 200) as ContentfulStatusCode,
   };
 }

@@ -14,6 +14,8 @@ export const REQUIRED_AUTHORING_INTENT_FIELDS = [
   "description",
   "payout_condition",
   "reward_total",
+  "distribution",
+  "domain",
   "deadline",
 ] as const satisfies readonly AuthoringValidationFieldOutput[];
 

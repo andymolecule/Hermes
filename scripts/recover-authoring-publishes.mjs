@@ -7,7 +7,7 @@ import {
   getPublishedDraftMetadataByDraftId,
   listStaleAuthoringSponsorBudgetReservations,
   releaseAuthoringSponsorBudgetReservation,
-} from "../packages/db/dist/index.js";
+} from "../packages/db/src/index.ts";
 
 const staleMinutesArg = process.argv.find((arg) =>
   arg.startsWith("--stale-minutes="),

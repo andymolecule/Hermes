@@ -13,18 +13,18 @@ export function jsonError<E extends Env>(
     code: string;
     message: string;
     retriable?: boolean;
+    nextAction?: string;
     extras?: Record<string, unknown>;
   },
 ) {
   return c.json(
-    {
-      ...buildApiErrorResponse({
-        message: input.message,
-        code: input.code,
-        retriable: input.retriable,
-      }),
-      ...(input.extras ?? {}),
-    },
+    buildApiErrorResponse({
+      message: input.message,
+      code: input.code,
+      retriable: input.retriable,
+      nextAction: input.nextAction,
+      details: input.extras,
+    }),
     input.status,
   );
 }

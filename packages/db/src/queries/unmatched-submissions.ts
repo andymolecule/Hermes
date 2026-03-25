@@ -1,4 +1,5 @@
 import type { AgoraDbClient } from "../index";
+import { executeExactCount } from "../query-helpers.js";
 
 export interface UnmatchedSubmissionInsert {
   challenge_id: string;
@@ -131,6 +132,29 @@ export async function listUnmatchedSubmissionsByMatch(
   return (data as UnmatchedSubmissionRow[] | null) ?? [];
 }
 
+export async function getUnmatchedSubmissionByProtocolRefs(
+  db: AgoraDbClient,
+  input: {
+    challengeId: string;
+    onChainSubmissionId: number;
+  },
+) {
+  const { data, error } = await db
+    .from("unmatched_submissions")
+    .select("*")
+    .eq("challenge_id", input.challengeId)
+    .eq("on_chain_sub_id", input.onChainSubmissionId)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to fetch unmatched submission observation: ${error.message}`,
+    );
+  }
+
+  return (data as UnmatchedSubmissionRow | null) ?? null;
+}
+
 export async function listUnmatchedSubmissionsForChallenge(
   db: AgoraDbClient,
   challengeId: string,
@@ -158,16 +182,14 @@ export async function countUnmatchedSubmissions(
 ) {
   let query = db
     .from("unmatched_submissions")
-    .select("challenge_id", { count: "exact", head: true });
+    .select("challenge_id", { count: "exact" });
 
   if (input?.olderThanIso) {
     query = query.lte("first_seen_at", input.olderThanIso);
   }
 
-  const { count, error } = await query;
-  if (error) {
-    throw new Error(`Failed to count unmatched submissions: ${error.message}`);
-  }
-
-  return count ?? 0;
+  return executeExactCount(
+    query.limit(1),
+    "Failed to count unmatched submissions",
+  );
 }

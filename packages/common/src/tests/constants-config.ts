@@ -411,7 +411,6 @@ try {
   const featurePolicy = readFeaturePolicy();
   assert.equal(featurePolicy.enableNonCoreFeatures, false);
   assert.equal(featurePolicy.x402Enabled, false);
-  assert.equal(featurePolicy.allowMcpRemotePrivateKeys, false);
   assert.equal(
     resolveRuntimePrivateKey(loadConfig()),
     process.env.AGORA_ORACLE_KEY,

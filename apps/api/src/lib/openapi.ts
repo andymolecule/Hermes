@@ -36,6 +36,94 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           responses: {
             "200": {
               description: "Service is live.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/HealthzResponse",
+                  },
+                },
+              },
+            },
+            "503": {
+              description: "Service is live but runtime dependencies are not ready.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/HealthzResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/verify": {
+        post: {
+          operationId: "createVerification",
+          summary:
+            "Record a wallet-authenticated verification once public replay is unlocked",
+          security: [{ sessionCookieAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    submissionId: uuidSchema(),
+                    computedScore: { type: "number" },
+                    matchesOriginal: { type: "boolean" },
+                    logCid: { type: "string" },
+                  },
+                  required: [
+                    "submissionId",
+                    "computedScore",
+                    "matchesOriginal",
+                  ],
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Verification recorded.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/VerificationResponse",
+                  },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid verification payload.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/Error",
+                  },
+                },
+              },
+            },
+            "403": {
+              description: "Verification is not yet available for this challenge.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/Error",
+                  },
+                },
+              },
+            },
+            "404": {
+              description: "Submission or proof bundle not found.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/Error",
+                  },
+                },
+              },
             },
           },
         },
@@ -445,6 +533,32 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/submissions/by-intent/{intentId}/status": {
+        get: {
+          operationId: "getSubmissionStatusByIntent",
+          summary: "Get public scoring status for a submission by intent id",
+          parameters: [
+            {
+              in: "path",
+              name: "intentId",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Submission scoring status.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionStatusResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/submissions/{id}/status": {
         get: {
           operationId: "getSubmissionStatus",
@@ -616,8 +730,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       "/api/submissions/upload": {
         post: {
           operationId: "uploadSubmissionArtifact",
-          summary:
-            "Upload a sealed_submission_v2 envelope and return its CID",
+          summary: "Upload the official solver payload and return its CID",
           requestBody: {
             required: true,
             content: {
@@ -688,7 +801,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "cleanupSubmissionArtifact",
           summary:
-            "Unpin an orphaned sealed submission artifact when nothing still references it; live submission intents are retained for registration recovery",
+            "Unpin an orphaned submission artifact when nothing still references it; live submission intents are retained for registration recovery",
           requestBody: {
             required: true,
             content: {
@@ -697,9 +810,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "object",
                   properties: {
                     intentId: uuidSchema(),
-                    submissionCid: { type: "string" },
+                    resultCid: { type: "string" },
                   },
-                  required: ["submissionCid"],
+                  required: ["resultCid"],
                 },
               },
             },
@@ -744,13 +857,24 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 },
               },
             },
+            "202": {
+              description: "Submission registered with a non-fatal warning.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/SubmissionRegistrationResponse",
+                  },
+                },
+              },
+            },
           },
         },
       },
       "/api/agents/register": {
         post: {
           operationId: "registerAgent",
-          summary: "Register or rotate a direct Agora agent API key",
+          summary:
+            "Register a direct Agora agent identity and issue a new API key",
           requestBody: {
             required: true,
             content: {
@@ -763,11 +887,57 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           responses: {
             "200": {
-              description: "Agent registration or rotation result.",
+              description: "Agent registration result.",
               content: {
                 "application/json": {
                   schema: {
                     $ref: "#/components/schemas/AgentRegisterResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/agents/me": {
+        get: {
+          operationId: "getAgentAuthState",
+          summary: "Inspect the authenticated agent and current API key state",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Authenticated agent metadata.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AgentMeResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/api/agents/keys/{id}/revoke": {
+        post: {
+          operationId: "revokeAgentKey",
+          summary: "Revoke one agent API key without affecting the others",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: uuidSchema(),
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Key revoked.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/RevokeAgentKeyResponse",
                   },
                 },
               },
@@ -806,7 +976,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               content: {
                 "application/json": {
                   schema: {
-                    $ref: "#/components/schemas/AuthoringArtifact",
+                    $ref: "#/components/schemas/AuthoringArtifactResponse",
                   },
                 },
               },
@@ -861,7 +1031,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               description: "Canonical authoring session state.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionResponse",
+                  },
                 },
               },
             },
@@ -896,7 +1068,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               description: "Canonical authoring session state.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionResponse",
+                  },
                 },
               },
             },
@@ -939,7 +1113,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               description: "Canonical authoring session state.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionResponse",
+                  },
                 },
               },
             },
@@ -978,9 +1154,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "application/json": {
                   schema: {
                     oneOf: [
-                      { $ref: "#/components/schemas/AuthoringSession" },
                       {
-                        $ref: "#/components/schemas/WalletPublishPreparation",
+                        $ref: "#/components/schemas/AuthoringSessionResponse",
+                      },
+                      {
+                        $ref: "#/components/schemas/WalletPublishPreparationResponse",
                       },
                     ],
                   },
@@ -1019,7 +1197,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               description: "Published session.",
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/AuthoringSession" },
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionResponse",
+                  },
                 },
               },
             },
@@ -1045,6 +1225,26 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         },
       },
       schemas: {
+        HealthzResponse: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            service: { type: "string", enum: ["api"] },
+            runtimeVersion: { type: "string" },
+            checkedAt: isoDateTimeSchema(),
+            readiness: {
+              type: "object",
+              additionalProperties: true,
+            },
+          },
+          required: [
+            "ok",
+            "service",
+            "runtimeVersion",
+            "checkedAt",
+            "readiness",
+          ],
+        },
         AuthoringSessionErrorEnvelope: {
           type: "object",
           properties: {
@@ -1091,17 +1291,87 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             telegram_bot_id: { type: "string" },
             agent_name: { type: "string" },
             description: { type: "string" },
+            key_label: { type: "string" },
           },
           required: ["telegram_bot_id"],
         },
         AgentRegisterResponse: {
           type: "object",
           properties: {
-            agent_id: { type: "string" },
-            api_key: { type: "string" },
-            status: { type: "string", enum: ["created", "rotated"] },
+            data: {
+              type: "object",
+              properties: {
+                agent_id: uuidSchema(),
+                key_id: uuidSchema(),
+                api_key: { type: "string" },
+                status: {
+                  type: "string",
+                  enum: ["created", "existing_key_issued"],
+                },
+              },
+              required: ["agent_id", "key_id", "api_key", "status"],
+            },
           },
-          required: ["agent_id", "api_key", "status"],
+          required: ["data"],
+        },
+        AgentCurrentKey: {
+          type: "object",
+          properties: {
+            key_id: uuidSchema(),
+            key_label: { type: "string", nullable: true },
+            status: { type: "string", enum: ["active"] },
+            created_at: isoDateTimeSchema(),
+            last_used_at: { ...isoDateTimeSchema(), nullable: true },
+            revoked_at: { type: "null" },
+          },
+          required: [
+            "key_id",
+            "key_label",
+            "status",
+            "created_at",
+            "last_used_at",
+            "revoked_at",
+          ],
+        },
+        AgentMeResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                agent_id: uuidSchema(),
+                telegram_bot_id: { type: "string" },
+                agent_name: { type: "string", nullable: true },
+                description: { type: "string", nullable: true },
+                current_key: {
+                  $ref: "#/components/schemas/AgentCurrentKey",
+                },
+              },
+              required: [
+                "agent_id",
+                "telegram_bot_id",
+                "agent_name",
+                "description",
+                "current_key",
+              ],
+            },
+          },
+          required: ["data"],
+        },
+        RevokeAgentKeyResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                agent_id: uuidSchema(),
+                key_id: uuidSchema(),
+                status: { type: "string", enum: ["revoked"] },
+              },
+              required: ["agent_id", "key_id", "status"],
+            },
+          },
+          required: ["data"],
         },
         AuthoringFileInput: {
           oneOf: [
@@ -1168,7 +1438,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         AuthoringSessionResolvedExecution: {
           type: "object",
           properties: {
-            template: { type: "string", enum: ["official_table_metric_v1"] },
             metric: { type: "string" },
             objective: { type: "string", enum: ["maximize", "minimize"] },
             evaluation_artifact_id: { type: "string" },
@@ -1309,7 +1578,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             reward: { type: "string" },
             distribution: { type: "string" },
             deadline: isoDateTimeSchema(),
-            template: { type: "string" },
             metric: { type: "string" },
             objective: { type: "string", enum: ["maximize", "minimize"] },
             artifacts_count: { type: "integer", minimum: 0 },
@@ -1321,7 +1589,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "reward",
             "distribution",
             "deadline",
-            "template",
             "metric",
             "objective",
             "artifacts_count",
@@ -1330,14 +1597,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         AuthoringSessionCompilation: {
           type: "object",
           properties: {
-            template: { type: "string" },
             metric: { type: "string" },
             objective: { type: "string", enum: ["maximize", "minimize"] },
-            scorer_image: { type: "string" },
-            evaluation_artifact_uri: { type: "string" },
             evaluation_contract: { type: "object" },
             submission_contract: { type: "object" },
-            resource_limits: { type: "object" },
             reward: { type: "object" },
             deadline: isoDateTimeSchema(),
             dispute_window_hours: {
@@ -1347,14 +1610,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             minimum_score: { type: "number", nullable: true },
           },
           required: [
-            "template",
             "metric",
             "objective",
-            "scorer_image",
-            "evaluation_artifact_uri",
             "evaluation_contract",
             "submission_contract",
-            "resource_limits",
             "reward",
             "deadline",
             "dispute_window_hours",
@@ -1468,14 +1727,60 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         AuthoringSessionListResponse: {
           type: "object",
           properties: {
-            sessions: {
+            data: {
               type: "array",
               items: {
                 $ref: "#/components/schemas/AuthoringSessionListItem",
               },
             },
           },
-          required: ["sessions"],
+          required: ["data"],
+        },
+        AuthoringSessionResponse: {
+          type: "object",
+          properties: {
+            data: {
+              $ref: "#/components/schemas/AuthoringSession",
+            },
+          },
+          required: ["data"],
+        },
+        AuthoringArtifactResponse: {
+          type: "object",
+          properties: {
+            data: {
+              $ref: "#/components/schemas/AuthoringArtifact",
+            },
+          },
+          required: ["data"],
+        },
+        VerificationRecord: {
+          type: "object",
+          properties: {
+            id: uuidSchema(),
+            proof_bundle_id: uuidSchema(),
+            verifier_address: addressSchema(),
+            computed_score: { type: "number" },
+            matches_original: { type: "boolean" },
+            log_cid: { type: "string", nullable: true },
+          },
+          required: [
+            "id",
+            "proof_bundle_id",
+            "verifier_address",
+            "computed_score",
+            "matches_original",
+            "log_cid",
+          ],
+        },
+        VerificationResponse: {
+          type: "object",
+          properties: {
+            data: {
+              $ref: "#/components/schemas/VerificationRecord",
+            },
+          },
+          required: ["data"],
         },
         ChallengeIntentPatch: {
           type: "object",
@@ -1599,16 +1904,31 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         Error: {
           type: "object",
           properties: {
-            error: { type: "string" },
-            code: { type: "string" },
-            retriable: { type: "boolean" },
-            nextAction: { type: "string" },
-            details: {
+            error: {
               type: "object",
-              additionalProperties: true,
+              properties: {
+                code: { type: "string" },
+                message: { type: "string" },
+                retriable: { type: "boolean" },
+                next_action: { type: "string" },
+                details: {
+                  type: "object",
+                  additionalProperties: true,
+                },
+              },
+              WalletPublishPreparationResponse: {
+                type: "object",
+                properties: {
+                  data: {
+                    $ref: "#/components/schemas/WalletPublishPreparation",
+                  },
+                },
+                required: ["data"],
+              },
+              required: ["code", "message"],
             },
           },
-          required: ["error", "code", "retriable"],
+          required: ["error"],
         },
         ChallengeRefs: {
           type: "object",
@@ -1930,8 +2250,43 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             data: {
               type: "object",
               properties: {
+                refs: {
+                  type: "object",
+                  properties: {
+                    intentId: { ...uuidSchema(), nullable: true },
+                    submissionId: { ...uuidSchema(), nullable: true },
+                    challengeId: uuidSchema(),
+                    challengeAddress: addressSchema(),
+                    onChainSubmissionId: {
+                      type: "integer",
+                      minimum: 0,
+                      nullable: true,
+                    },
+                  },
+                  required: [
+                    "intentId",
+                    "submissionId",
+                    "challengeId",
+                    "challengeAddress",
+                    "onChainSubmissionId",
+                  ],
+                },
+                phase: {
+                  type: "string",
+                  enum: [
+                    "intent_created",
+                    "onchain_seen",
+                    "registration_confirmed",
+                    "scoring_queued",
+                    "scoring_running",
+                    "scored",
+                    "failed",
+                    "skipped",
+                  ],
+                },
                 submission: {
                   $ref: "#/components/schemas/SubmissionStatusPayload",
+                  nullable: true,
                 },
                 proofBundle: {
                   type: "object",
@@ -1970,6 +2325,21 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                     "lockedAt",
                   ],
                 },
+                lastError: { type: "string", nullable: true },
+                lastErrorPhase: {
+                  type: "string",
+                  nullable: true,
+                  enum: [
+                    "intent_created",
+                    "onchain_seen",
+                    "registration_confirmed",
+                    "scoring_queued",
+                    "scoring_running",
+                    "scored",
+                    "failed",
+                    "skipped",
+                  ],
+                },
                 scoringStatus: {
                   type: "string",
                   enum: ["pending", "complete", "scored_awaiting_proof"],
@@ -1981,9 +2351,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 },
               },
               required: [
+                "refs",
+                "phase",
                 "submission",
                 "proofBundle",
                 "job",
+                "lastError",
+                "lastErrorPhase",
                 "scoringStatus",
                 "terminal",
                 "recommendedPollSeconds",
@@ -2127,7 +2501,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 kid: { type: "string" },
                 publicKeyPem: { type: "string" },
               },
-              required: ["kid", "publicKeyPem"],
+              required: ["version", "alg", "kid", "publicKeyPem"],
             },
           },
           required: ["data"],
@@ -2140,9 +2514,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             solverAddress: {
               ...addressSchema(),
             },
-            submissionCid: { type: "string" },
+            resultCid: { type: "string" },
+            resultFormat: {
+              type: "string",
+              enum: ["sealed_submission_v2", "plain_v0"],
+            },
           },
-          required: ["solverAddress", "submissionCid"],
+          required: ["solverAddress", "resultCid", "resultFormat"],
           anyOf: [
             { required: ["challengeId"] },
             { required: ["challengeAddress"] },
@@ -2172,9 +2550,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             data: {
               type: "object",
               properties: {
-                submissionCid: { type: "string" },
+                resultCid: { type: "string" },
               },
-              required: ["submissionCid"],
+              required: ["resultCid"],
             },
           },
           required: ["data"],
@@ -2185,13 +2563,17 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             challengeId: uuidSchema(),
             challengeAddress: addressSchema(),
             intentId: uuidSchema(),
-            submissionCid: { type: "string" },
+            resultCid: { type: "string" },
+            resultFormat: {
+              type: "string",
+              enum: ["sealed_submission_v2", "plain_v0"],
+            },
             txHash: {
               type: "string",
               pattern: "^0x[a-fA-F0-9]{64}$",
             },
           },
-          required: ["intentId", "submissionCid", "txHash"],
+          required: ["intentId", "resultCid", "resultFormat", "txHash"],
           anyOf: [
             { required: ["challengeId"] },
             { required: ["challengeAddress"] },
@@ -2245,29 +2627,46 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         SubmissionRegistrationResponse: {
           type: "object",
           properties: {
-            ok: { type: "boolean" },
-            submission: {
+            data: {
               type: "object",
               properties: {
-                id: uuidSchema(),
-                challenge_id: uuidSchema(),
-                challenge_address: addressSchema(),
-                on_chain_sub_id: { type: "integer", minimum: 0 },
-                solver_address: addressSchema(),
-                refs: { $ref: "#/components/schemas/SubmissionRefs" },
+                submission: {
+                  type: "object",
+                  properties: {
+                    id: uuidSchema(),
+                    challenge_id: uuidSchema(),
+                    challenge_address: addressSchema(),
+                    on_chain_sub_id: { type: "integer", minimum: 0 },
+                    solver_address: addressSchema(),
+                    refs: { $ref: "#/components/schemas/SubmissionRefs" },
+                  },
+                  required: [
+                    "id",
+                    "challenge_id",
+                    "challenge_address",
+                    "on_chain_sub_id",
+                    "solver_address",
+                    "refs",
+                  ],
+                },
+                phase: {
+                  type: "string",
+                  enum: ["registration_confirmed"],
+                },
+                warning: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    code: { type: "string" },
+                    message: { type: "string" },
+                  },
+                  required: ["code", "message"],
+                },
               },
-              required: [
-                "id",
-                "challenge_id",
-                "challenge_address",
-                "on_chain_sub_id",
-                "solver_address",
-                "refs",
-              ],
+              required: ["submission", "phase", "warning"],
             },
-            warning: { type: "string", nullable: true },
           },
-          required: ["ok", "submission"],
+          required: ["data"],
         },
       },
     },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GhcrResolutionError } from "@agora/common";
+import { resolveOfficialScorerImage } from "@agora/common";
 import { resolveAuthoringArtifacts } from "../src/lib/authoring-artifact-resolution.js";
 import {
   compileAuthoringSession,
@@ -61,9 +61,12 @@ const benchmarkArtifacts = [
 ];
 
 function buildRegressionDryRunDependencies() {
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("expected official table scorer image");
+  }
   return {
-    resolvePinnedOfficialScorerImageImpl: async () =>
-      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    resolvePinnedOfficialScorerImageImpl: () => scorerImage,
     getTextImpl: async (_uri: string) => "id,label\nrow-1,1.5\nrow-2,2.5\n",
     executeScoringPipelineImpl: async (_input: unknown) => ({
       result: {
@@ -90,9 +93,12 @@ function buildRegressionDryRunDependencies() {
 }
 
 function buildRankingDryRunDependencies() {
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("expected official table scorer image");
+  }
   return {
-    resolvePinnedOfficialScorerImageImpl: async () =>
-      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    resolvePinnedOfficialScorerImageImpl: () => scorerImage,
     getTextImpl: async (_uri: string) =>
       "peptide_id,reference_rank\npep-1,1\npep-2,2\n",
     executeScoringPipelineImpl: async (_input: unknown) => ({
@@ -166,18 +172,12 @@ test("authoring compiler deterministically compiles a benchmark-style ranking ch
 
   assert.equal(result.execution.metric, "spearman");
   assert.equal(result.execution.comparator, "maximize");
-  assert.equal(
-    result.execution.evaluation_contract.columns.id,
-    "peptide_id",
-  );
+  assert.equal(result.execution.evaluation_contract.columns.id, "peptide_id");
   assert.equal(
     result.execution.evaluation_contract.columns.value,
     "reference_rank",
   );
-  assert.equal(
-    result.submission_contract.columns.value,
-    "predicted_score",
-  );
+  assert.equal(result.submission_contract.columns.value, "predicted_score");
 });
 
 test("authoring compiler returns structured missing-field validation when execution fields are incomplete", async () => {
@@ -234,8 +234,15 @@ test("authoring compiler surfaces dry-run failures as validation.dry_run_failure
       submissionValueColumnOverride: "predicted_score",
     },
     {
-      resolvePinnedOfficialScorerImageImpl: async () =>
-        "ghcr.io/andymolecule/gems-tabular-scorer@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      resolvePinnedOfficialScorerImageImpl: () => {
+        const scorerImage = resolveOfficialScorerImage(
+          "official_table_metric_v1",
+        );
+        if (!scorerImage) {
+          throw new Error("expected official table scorer image");
+        }
+        return scorerImage;
+      },
       getTextImpl: async (_uri: string) =>
         "peptide_id,reference_rank\npep-1,1\npep-2,2\n",
       executeScoringPipelineImpl: async () => ({
@@ -271,7 +278,9 @@ test("authoring compiler auto-heals a stale evaluation artifact id when only one
   const result = await compileAuthoringSessionOutcome(
     {
       intent: baseIntent,
-      uploadedArtifacts: [regressionArtifacts[1] as (typeof regressionArtifacts)[number]],
+      uploadedArtifacts: [
+        regressionArtifacts[1] as (typeof regressionArtifacts)[number],
+      ],
       metricOverride: "rmse",
       evaluationArtifactIdOverride: "stale-artifact-id",
       evaluationIdColumnOverride: "id",
@@ -335,7 +344,7 @@ test("authoring compiler returns artifact candidates when a stale evaluation art
   ]);
 });
 
-test("authoring compiler classifies scorer registry outages as platform blockers", async () => {
+test("authoring compiler classifies missing scorer registry entries as platform blockers", async () => {
   const result = await compileAuthoringSessionOutcome(
     {
       intent: {
@@ -354,12 +363,7 @@ test("authoring compiler classifies scorer registry outages as platform blockers
       submissionValueColumnOverride: "predicted_score",
     },
     {
-      resolvePinnedOfficialScorerImageImpl: async () => {
-        throw new GhcrResolutionError(
-          "http_error",
-          "GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: confirm the image tag exists and is readable.",
-        );
-      },
+      resolvePinnedOfficialScorerImageImpl: () => null,
     },
   );
 
@@ -370,12 +374,11 @@ test("authoring compiler classifies scorer registry outages as platform blockers
   );
   assert.deepEqual(result.validation.invalid_fields, [
     {
-      field: "execution.scorer_image",
+      field: "metric",
       code: "AUTHORING_PLATFORM_UNAVAILABLE",
       message:
-        "Agora could not resolve the official scorer dependency for this session. GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.",
-      next_action:
-        "retry later or contact Agora support if the official scorer registry remains unavailable.",
+        "Agora could not resolve the scoring configuration for the selected metric. Next step: retry later or choose a supported metric and retry.",
+      next_action: "retry later or choose a supported metric and retry.",
       blocking_layer: "platform",
       candidate_values: [],
     },
@@ -404,8 +407,5 @@ test("authoring artifact resolution builds the explicit table execution contract
     resolved.execution.evaluation_contract.columns.value,
     "reference_rank",
   );
-  assert.equal(
-    resolved.submissionContract.columns.value,
-    "predicted_score",
-  );
+  assert.equal(resolved.submissionContract.columns.value, "predicted_score");
 });

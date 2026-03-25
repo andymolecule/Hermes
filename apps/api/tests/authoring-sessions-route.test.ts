@@ -280,10 +280,10 @@ test("POST /sessions creates a new awaiting-input session", async () => {
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.id, "session-new");
-  assert.equal(payload.state, "awaiting_input");
-  assert.equal(payload.creator.type, "agent");
-  assert.equal(payload.validation.missing_fields[0]?.field, "description");
+  assert.equal(payload.data.id, "session-new");
+  assert.equal(payload.data.state, "awaiting_input");
+  assert.equal(payload.data.creator.type, "agent");
+  assert.equal(payload.data.validation.missing_fields[0]?.field, "description");
   assert.ok(storedSession);
   assert.equal(storedSession?.conversation_log_json.length, 2);
 });
@@ -395,10 +395,106 @@ test("POST /sessions accepts structured intent and execution", async () => {
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.state, "ready");
-  assert.equal(payload.compilation.metric, "spearman");
+  assert.equal(payload.data.state, "ready");
+  assert.equal(payload.data.compilation.metric, "spearman");
   assert.equal(capturedInput?.metricOverride, "spearman");
   assert.equal(capturedInput?.submissionValueColumnOverride, "predicted_score");
+});
+
+test("POST /sessions keeps missing distribution and domain in awaiting_input", async () => {
+  let compileCalls = 0;
+  let storedSession: AuthoringSessionRow | null = null;
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    normalizeAuthoringSessionFileInputs: async () => [],
+    compileAuthoringSessionOutcome: async () => {
+      compileCalls += 1;
+      throw new Error(
+        "compile should not run while semantic intent fields are missing",
+      );
+    },
+    createAuthoringSession: async (_db, payload) =>
+      (storedSession = createSession({
+        id: "session-missing-semantics",
+        created_by_agent_id: payload.created_by_agent_id ?? null,
+        poster_address: payload.poster_address ?? null,
+        state: payload.state,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
+          []) as never,
+        intent_json: payload.intent_json ?? null,
+        compilation_json: payload.compilation_json ?? null,
+        conversation_log_json: payload.conversation_log_json ?? [],
+        failure_message: payload.failure_message ?? null,
+        expires_at: payload.expires_at,
+      })),
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...(storedSession ?? createSession({ id: "session-missing-semantics" })),
+        created_by_agent_id:
+          payload.created_by_agent_id ??
+          storedSession?.created_by_agent_id ??
+          null,
+        state: payload.state ?? storedSession?.state ?? "awaiting_input",
+        authoring_ir_json:
+          payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
+        uploaded_artifacts_json:
+          (payload.uploaded_artifacts_json as never) ??
+          storedSession?.uploaded_artifacts_json ??
+          [],
+        intent_json: payload.intent_json ?? storedSession?.intent_json ?? null,
+        compilation_json:
+          payload.compilation_json ?? storedSession?.compilation_json ?? null,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession?.conversation_log_json ??
+          [],
+        failure_message:
+          payload.failure_message ?? storedSession?.failure_message ?? null,
+        expires_at:
+          payload.expires_at ??
+          storedSession?.expires_at ??
+          "2026-03-23T00:00:00.000Z",
+        updated_at: "2026-03-22T00:05:00.000Z",
+      });
+      return storedSession;
+    },
+  });
+
+  const response = await router.request("http://localhost/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      intent: {
+        title: "Structured benchmark",
+        description: "Rank peptides against a hidden benchmark.",
+        payout_condition: "Highest Spearman wins.",
+        reward_total: "30",
+        deadline: "2026-04-01T23:59:59.000Z",
+      },
+      execution: {
+        metric: "spearman",
+      },
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(compileCalls, 0);
+
+  const payload = await response.json();
+  assert.equal(payload.data.state, "awaiting_input");
+  assert.deepEqual(
+    payload.data.validation.missing_fields.map(
+      (issue: { field: string }) => issue.field,
+    ),
+    ["distribution", "domain"],
+  );
 });
 
 test("POST /sessions returns invalid_request for malformed artifact refs", async () => {
@@ -532,8 +628,8 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.state, "ready");
-  assert.equal(payload.compilation.metric, "spearman");
+  assert.equal(payload.data.state, "ready");
+  assert.equal(payload.data.compilation.metric, "spearman");
   assert.equal(storedSession.conversation_log_json.length, 2);
 });
 
@@ -636,8 +732,11 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
   );
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.state, "rejected");
-  assert.equal(payload.validation.unsupported_reason.code, "unsupported_task");
+  assert.equal(payload.data.state, "rejected");
+  assert.equal(
+    payload.data.validation.unsupported_reason.code,
+    "unsupported_task",
+  );
 });
 
 test("GET /sessions/:id exposes artifact candidates and readiness for stale evaluation bindings", async () => {
@@ -702,16 +801,19 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(
-    payload.validation.missing_fields[0].field,
+    payload.data.validation.missing_fields[0].field,
     "evaluation_artifact",
   );
-  assert.deepEqual(payload.validation.missing_fields[0].candidate_values, [
+  assert.deepEqual(payload.data.validation.missing_fields[0].candidate_values, [
     "candidates",
     "reference",
   ]);
-  assert.equal(payload.validation.missing_fields[0].blocking_layer, "input");
-  assert.equal(payload.readiness.artifact_binding.status, "pending");
-  assert.equal(payload.readiness.publishable, false);
+  assert.equal(
+    payload.data.validation.missing_fields[0].blocking_layer,
+    "input",
+  );
+  assert.equal(payload.data.readiness.artifact_binding.status, "pending");
+  assert.equal(payload.data.readiness.publishable, false);
 });
 
 test("GET /sessions/:id exposes platform blockers distinctly from input blockers", async () => {
@@ -756,7 +858,7 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
           compileError: {
             code: "AUTHORING_PLATFORM_UNAVAILABLE",
             message:
-              "Agora could not resolve the official scorer dependency for this session. GHCR returned HTTP 404 while resolving ghcr.io/andymolecule/gems-tabular-scorer:v1. Next step: retry later or contact Agora support if the official scorer registry remains unavailable.",
+              "Unknown official scorer template official_table_metric_v1. Next step: choose a supported template and retry.",
           },
           assessmentOutcome: "awaiting_input",
           missingFields: [],
@@ -769,15 +871,15 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
   );
   assert.equal(response.status, 200);
   const payload = await response.json();
+  assert.equal(payload.data.validation.invalid_fields[0].field, "metric");
   assert.equal(
-    payload.validation.invalid_fields[0].field,
-    "execution.scorer_image",
+    payload.data.validation.invalid_fields[0].blocking_layer,
+    "platform",
   );
-  assert.equal(payload.validation.invalid_fields[0].blocking_layer, "platform");
-  assert.equal(payload.readiness.spec.status, "fail");
-  assert.equal(payload.readiness.scorer.status, "fail");
-  assert.equal(payload.readiness.dry_run.status, "pending");
-  assert.equal(payload.readiness.publishable, false);
+  assert.equal(payload.data.readiness.spec.status, "fail");
+  assert.equal(payload.data.readiness.scorer.status, "fail");
+  assert.equal(payload.data.readiness.dry_run.status, "pending");
+  assert.equal(payload.data.readiness.publishable, false);
 });
 
 test("POST /uploads ingests a URL and returns a normalized artifact", async () => {
@@ -806,8 +908,8 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
 
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.uri, "ipfs://artifact-1");
-  assert.equal(payload.source_url, "https://example.com/data.csv");
+  assert.equal(payload.data.uri, "ipfs://artifact-1");
+  assert.equal(payload.data.source_url, "https://example.com/data.csv");
 });
 
 test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish", async () => {
@@ -870,7 +972,7 @@ test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish
 
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.spec_cid, "ipfs://sanitized-wallet-spec");
+    assert.equal(payload.data.spec_cid, "ipfs://sanitized-wallet-spec");
     assert.equal(pinnedName, "challenge-session-wallet-publish");
     assert.ok(pinnedSpec);
     const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);

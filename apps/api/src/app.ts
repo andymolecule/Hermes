@@ -14,8 +14,8 @@ import {
   initApiObservability,
 } from "./lib/observability.js";
 import { buildOpenApiDocument } from "./lib/openapi.js";
+import { createApiRuntimeReadinessProbe } from "./lib/runtime-readiness.js";
 import { buildX402Metadata, createX402Middleware } from "./middleware/x402.js";
-import agentChallengeRoutes from "./routes/agent-challenges.js";
 import agentRoutes from "./routes/agents.js";
 import analyticsRoutes from "./routes/analytics.js";
 import authRoutes from "./routes/auth.js";
@@ -34,11 +34,17 @@ import workerHealthRoutes from "./routes/worker-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
-export function createApp() {
+export function createApp(
+  dependencies: {
+    getRuntimeReadiness?: ReturnType<typeof createApiRuntimeReadinessProbe>;
+  } = {},
+) {
   const runtimeConfig = readApiServerRuntimeConfig();
   initApiObservability();
   const app = new Hono<ApiEnv>();
   const x402Middleware = createX402Middleware();
+  const getRuntimeReadiness =
+    dependencies.getRuntimeReadiness ?? createApiRuntimeReadinessProbe();
 
   app.use("*", createApiRequestObservabilityMiddleware());
 
@@ -81,18 +87,48 @@ export function createApp() {
     await next();
   });
 
-  app.get("/healthz", (c) => {
-    return c.json({
-      ok: true,
-      service: "api",
-      runtimeVersion: getAgoraRuntimeVersion(),
-      checkedAt: new Date().toISOString(),
-    });
+  app.get("/healthz", async (c) => {
+    const readiness = await getRuntimeReadiness();
+    return c.json(
+      {
+        ok: readiness.ok,
+        service: "api",
+        runtimeVersion: getAgoraRuntimeVersion(),
+        checkedAt: readiness.checkedAt,
+        readiness: readiness.readiness,
+      },
+      readiness.ok ? 200 : 503,
+    );
   });
   app.get("/.well-known/openapi.json", (c) =>
     c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),
   );
   app.get("/.well-known/x402", (c) => c.json(buildX402Metadata()));
+
+  app.use("/api/*", async (c, next) => {
+    const readiness = await getRuntimeReadiness();
+    if (readiness.ok) {
+      await next();
+      return;
+    }
+
+    const failures = readiness.readiness.databaseSchema.failures;
+    const nextAction =
+      [...new Set(failures.map((failure) => failure.nextStep.trim()))][0] ??
+      "Restore database schema compatibility and reload the PostgREST schema cache before accepting traffic.";
+
+    return jsonError(c, {
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+      message:
+        "API runtime database schema is incompatible with the current deployment.",
+      retriable: true,
+      nextAction,
+      extras: {
+        readiness: readiness.readiness,
+      },
+    });
+  });
 
   app.use("*", x402Middleware);
 
@@ -107,7 +143,6 @@ export function createApp() {
   app.route("/api/pin-spec", pinSpecRoutes);
   app.route("/api/authoring", authoringSessionRoutes);
   app.route("/api/worker-health", workerHealthRoutes);
-  app.route("/api/agent/challenges", agentChallengeRoutes);
   app.route("/api/submissions", submissionRoutes);
   app.route("/api/verify", verifyRoutes);
   app.route("/api/me/portfolio", portfolioRoutes);

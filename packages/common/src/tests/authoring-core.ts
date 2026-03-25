@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  challengeIntentSchema,
   challengeAuthoringIrSchema,
   submitAuthoringSessionRequestSchema,
 } from "../schemas/authoring-core.js";
@@ -40,6 +41,50 @@ const validSubmitRequest = submitAuthoringSessionRequestSchema.parse({
 
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
 assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
+
+const parsedIntentWithoutOptionalMetadata = challengeIntentSchema.parse({
+  title: baseIntent.title,
+  description: baseIntent.description,
+  payout_condition: baseIntent.payout_condition,
+  reward_total: baseIntent.reward_total,
+  distribution: baseIntent.distribution,
+  deadline: baseIntent.deadline,
+  dispute_window_hours: baseIntent.dispute_window_hours,
+  domain: baseIntent.domain,
+});
+
+assert.equal("tags" in parsedIntentWithoutOptionalMetadata, false);
+assert.equal("timezone" in parsedIntentWithoutOptionalMetadata, false);
+
+const missingDistribution = challengeIntentSchema.safeParse({
+  title: baseIntent.title,
+  description: baseIntent.description,
+  payout_condition: baseIntent.payout_condition,
+  reward_total: baseIntent.reward_total,
+  deadline: baseIntent.deadline,
+  domain: baseIntent.domain,
+});
+
+assert.equal(
+  missingDistribution.success,
+  false,
+  "challenge intent should not silently default distribution",
+);
+
+const missingDomain = challengeIntentSchema.safeParse({
+  title: baseIntent.title,
+  description: baseIntent.description,
+  payout_condition: baseIntent.payout_condition,
+  reward_total: baseIntent.reward_total,
+  distribution: baseIntent.distribution,
+  deadline: baseIntent.deadline,
+});
+
+assert.equal(
+  missingDomain.success,
+  false,
+  "challenge intent should not silently default domain",
+);
 
 const tooShortDisputeWindow = submitAuthoringSessionRequestSchema.safeParse({
   poster_address: "0x00000000000000000000000000000000000000aa",

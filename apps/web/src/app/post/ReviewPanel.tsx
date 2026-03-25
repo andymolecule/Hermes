@@ -42,15 +42,6 @@ interface ReviewPanelProps {
   errorMessage: string | null;
 }
 
-/* ── Helpers ───────────────────────────────────────────── */
-
-function formatTemplate(value: string) {
-  return value
-    .split("_")
-    .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
-    .join(" ");
-}
-
 function daysRemaining(deadline: string): string {
   const now = new Date();
   const end = new Date(deadline);
@@ -164,14 +155,6 @@ export function ReviewPanel({
                 Scoring Engine
               </div>
               <div className="space-y-2">
-                {compilation?.template ? (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-warm-500">Template</span>
-                    <span className="font-mono text-xs font-medium text-warm-800">
-                      {formatTemplate(compilation.template)}
-                    </span>
-                  </div>
-                ) : null}
                 {compilation?.metric ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-warm-500">Metric</span>
@@ -209,10 +192,13 @@ export function ReviewPanel({
                 </div>
                 <div className="text-lg font-bold text-warm-900">
                   {compilation?.deadline
-                    ? new Date(compilation.deadline).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })
+                    ? new Date(compilation.deadline).toLocaleDateString(
+                        "en-US",
+                        {
+                          month: "short",
+                          day: "numeric",
+                        },
+                      )
                     : "Not set"}
                 </div>
                 {compilation?.deadline ? (
@@ -232,7 +218,9 @@ export function ReviewPanel({
                 value={
                   DISTRIBUTION_LABELS[
                     compilation?.reward?.distribution ?? "winner_take_all"
-                  ] ?? (compilation?.reward?.distribution ?? "winner_take_all")
+                  ] ??
+                  compilation?.reward?.distribution ??
+                  "winner_take_all"
                 }
               />
 
@@ -274,26 +262,33 @@ export function ReviewPanel({
                   Artifacts
                 </div>
                 <div className="space-y-2">
-                  {artifacts.map((artifact: NonNullable<typeof session>["artifacts"][number], index: number) => (
-                    <div
-                      key={artifact.artifact_id ?? index}
-                      className="flex items-center justify-between rounded-md bg-warm-50 px-3 py-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-warm-700">
-                          {artifact.file_name}
-                        </span>
-                        {artifact.role ? (
-                          <span className="font-mono text-[10px] text-warm-400">
-                            {artifact.role}
+                  {artifacts.map(
+                    (
+                      artifact: NonNullable<
+                        typeof session
+                      >["artifacts"][number],
+                      index: number,
+                    ) => (
+                      <div
+                        key={artifact.artifact_id ?? index}
+                        className="flex items-center justify-between rounded-md bg-warm-50 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-warm-700">
+                            {artifact.file_name}
                           </span>
-                        ) : null}
+                          {artifact.role ? (
+                            <span className="font-mono text-[10px] text-warm-400">
+                              {artifact.role}
+                            </span>
+                          ) : null}
+                        </div>
+                        <span className="font-mono text-[10px] text-warm-400">
+                          Agora artifact
+                        </span>
                       </div>
-                      <span className="font-mono text-[10px] text-warm-400">
-                        Agora artifact
-                      </span>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               </div>
             ) : null}

@@ -77,8 +77,8 @@ Each catalog entry owns:
 This is the only official scoring config layer.
 
 The worker hot path reads the resolved submission contract and scoring env from
-the `challenges` table first. IPFS spec reads during scoring are now legacy
-fallback only.
+the `challenges` table first. Pinned-spec reads are only for local/public
+verification paths outside the worker hot path.
 
 Official scorer catalog entries may also declare scorer-facing runtime defaults that
 the pipeline serializes into `/input/agora-runtime.json` for the container.
@@ -103,7 +103,7 @@ It owns:
 - writing `/input/agora-runtime.json` from execution-plan defaults + submission contract
 - pre-scoring contract validation
 - running the Docker scorer
-- DB-first runtime config resolution with legacy IPFS fallback
+- DB-first runtime config resolution, with pinned-spec reads only where local or public verification still needs them
 
 ## Add a new official scoring method
 

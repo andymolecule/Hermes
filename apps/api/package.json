@@ -11,7 +11,7 @@
     "dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/index.ts",
     "worker": "node ../../scripts/run-node-with-root-env.mjs dist/worker.js",
     "worker:dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/worker.ts",
-    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
+    "test": "node ../../scripts/run-ts-tests.mjs tests"
   },
   "dependencies": {
     "@agora/chain": "workspace:*",

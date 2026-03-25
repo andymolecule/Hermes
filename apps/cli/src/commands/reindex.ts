@@ -98,8 +98,9 @@ export function buildReindexCommand() {
         if (opts.purgeIndexedEvents) {
           const { count, error } = await db
             .from("indexed_events")
-            .select("tx_hash", { count: "exact", head: true })
-            .gte("block_number", fromBlock.toString());
+            .select("tx_hash", { count: "exact" })
+            .gte("block_number", fromBlock.toString())
+            .limit(1);
           if (error) {
             throw new Error(
               `Failed to count indexed events to purge: ${error.message}`,

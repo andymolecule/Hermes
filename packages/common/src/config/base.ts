@@ -102,12 +102,6 @@ export const configSchema = z.object({
     .optional(),
   AGORA_EXECUTOR_AUTH_TOKEN: z.string().min(1).optional(),
   AGORA_CORS_ORIGINS: z.string().optional(),
-  AGORA_MCP_PORT: z
-    .preprocess(
-      (value) => (typeof value === "string" ? Number(value) : value),
-      z.number().int(),
-    )
-    .optional(),
   AGORA_LOG_LEVEL: z.string().min(1).optional(),
   AGORA_SENTRY_DSN: z.string().url().optional(),
   AGORA_SENTRY_ENVIRONMENT: z.string().min(1).optional(),
@@ -213,9 +207,6 @@ export const configSchema = z.object({
   AGORA_REQUIRE_PINNED_PRESET_DIGESTS: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(true),
-  AGORA_MCP_ALLOW_REMOTE_PRIVATE_KEYS: z
-    .preprocess(parseBooleanLike, z.boolean())
-    .default(false),
   AGORA_X402_ENABLED: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),
@@ -441,6 +432,15 @@ export function hasSubmissionSealPublicConfig(config: AgoraConfig): boolean {
   return Boolean(
     config.AGORA_SUBMISSION_SEAL_KEY_ID &&
       config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+  );
+}
+
+export function hasSubmissionSealPublicEnv(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return Boolean(
+    env.AGORA_SUBMISSION_SEAL_KEY_ID?.trim() &&
+      env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM?.trim(),
   );
 }
 

@@ -126,25 +126,32 @@ async function testEnsureScoreJobQueuesRegisteredSubmission() {
           ) {
             assert.equal(selection, "id");
             assert.equal(options?.count, "exact");
-            assert.equal(options?.head, true);
+            assert.equal(options?.head, undefined);
             const eqCalls: Array<[string, unknown]> = [];
             return {
               eq(field: string, value: unknown) {
                 eqCalls.push([field, value]);
                 return this;
               },
-              async lte(field: string, value: number) {
+              lte(field: string, value: number) {
                 assert.equal(field, "on_chain_sub_id");
                 assert.equal(value, 2);
-                if (eqCalls.length === 1) {
-                  assert.deepEqual(eqCalls, [["challenge_id", "challenge-1"]]);
-                  return { count: 2, error: null };
-                }
-                assert.deepEqual(eqCalls, [
-                  ["challenge_id", "challenge-1"],
-                  ["solver_address", "0xsolver"],
-                ]);
-                return { count: 1, error: null };
+                return {
+                  async limit(limitValue: number) {
+                    assert.equal(limitValue, 1);
+                    if (eqCalls.length === 1) {
+                      assert.deepEqual(eqCalls, [
+                        ["challenge_id", "challenge-1"],
+                      ]);
+                      return { count: 2, error: null };
+                    }
+                    assert.deepEqual(eqCalls, [
+                      ["challenge_id", "challenge-1"],
+                      ["solver_address", "0xsolver"],
+                    ]);
+                    return { count: 1, error: null };
+                  },
+                };
               },
             };
           },
@@ -225,18 +232,23 @@ async function testEnsureScoreJobSkipsLimitViolation() {
           ) {
             assert.equal(selection, "id");
             assert.equal(options?.count, "exact");
-            assert.equal(options?.head, true);
+            assert.equal(options?.head, undefined);
             const eqCalls: Array<[string, unknown]> = [];
             return {
               eq(field: string, value: unknown) {
                 eqCalls.push([field, value]);
                 return this;
               },
-              async lte() {
-                if (eqCalls.length === 1) {
-                  return { count: 3, error: null };
-                }
-                return { count: 2, error: null };
+              lte() {
+                return {
+                  async limit(limitValue: number) {
+                    assert.equal(limitValue, 1);
+                    if (eqCalls.length === 1) {
+                      return { count: 3, error: null };
+                    }
+                    return { count: 2, error: null };
+                  },
+                };
               },
             };
           },

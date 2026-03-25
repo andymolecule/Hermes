@@ -43,12 +43,12 @@ async function toApiRequestError(response: Response) {
   const payload = await response.json().catch(() => null);
   const parsed = apiErrorResponseSchema.safeParse(payload);
   if (parsed.success) {
-    return new AgoraError(parsed.data.error, {
-      code: parsed.data.code,
-      retriable: parsed.data.retriable,
+    return new AgoraError(parsed.data.error.message, {
+      code: parsed.data.error.code,
+      retriable: parsed.data.error.retriable ?? false,
       status: response.status,
-      nextAction: parsed.data.nextAction,
-      details: parsed.data.details,
+      nextAction: parsed.data.error.next_action,
+      details: parsed.data.error.details,
     });
   }
   return new AgoraError(

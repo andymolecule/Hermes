@@ -419,10 +419,10 @@ export function buildDoctorCommand() {
           );
           const { error } = await db
             .from("challenges")
-            .select("id", { count: "exact", head: true })
+            .select("id", { count: "exact" })
             .limit(1);
           if (error) {
-            throw new Error(error.message);
+            throw new Error(`Supabase connectivity check failed: ${error.message}`);
           }
           checks.push({
             name: "Supabase connectivity",
@@ -524,10 +524,13 @@ export function buildDoctorCommand() {
           );
           const { count, error } = await db
             .from("challenges")
-            .select("id", { count: "exact", head: true })
-            .is("factory_address", null);
+            .select("id", { count: "exact" })
+            .is("factory_address", null)
+            .limit(1);
           if (error) {
-            throw new Error(error.message);
+            throw new Error(
+              `Challenge factory completeness query failed: ${error.message}`,
+            );
           }
           const missingCount = count ?? 0;
           checks.push({

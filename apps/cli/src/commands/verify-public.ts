@@ -1,7 +1,7 @@
 import { getOnChainSubmission } from "@agora/chain";
 import {
   challengeSpecSchema,
-  resolvePinnedChallengeExecution,
+  resolvePinnedChallengeExecutionFromSpec,
 } from "@agora/common";
 import { getJSON } from "@agora/ipfs";
 import {
@@ -156,7 +156,8 @@ export function buildVerifyPublicCommand() {
         const challengeSpec = challengeSpecSchema.parse(
           await getJSON(payload.challengeSpecCid),
         );
-        const execution = resolvePinnedChallengeExecution(challengeSpec);
+        const execution =
+          resolvePinnedChallengeExecutionFromSpec(challengeSpec);
         const run = await executeScoringPipeline({
           image: proof.containerImageDigest,
           evaluationBundle: { cid: payload.evaluationBundleCid },

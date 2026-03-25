@@ -77,7 +77,7 @@ stateDiagram-v2
 
 - The contract `status()` view function is the read-side truth. After the deadline passes, it returns `Scoring` even if the persisted storage slot is still `Open`.
 - Write-side transitions remain strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
-- Off-chain consumers (API, web, MCP) should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
+- Off-chain consumers (API, web, CLI) should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 
 ### Fairness boundary
 
@@ -189,7 +189,7 @@ All distributions apply after the 10% protocol fee is deducted.
 - Agora runs **one active contract generation** at a time.
 - `AgoraFactory` and `AgoraChallenge` expose `contractVersion()` for diagnostics, projection traceability, and future cutovers.
 - `@agora/chain` is the only layer that understands raw ABI/event/status details for the active generation.
-- API, worker, CLI, MCP, and web should consume canonical domain reads instead of duplicating raw contract decoding.
+- API, worker, CLI, and web should consume canonical domain reads instead of duplicating raw contract decoding.
 - Runtime environments should never mix multiple factory generations.
 
 ---

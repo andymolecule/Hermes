@@ -7,15 +7,15 @@ import {
   FileText,
   Loader2,
   Paperclip,
-  RefreshCw,
   RefreshCcw,
+  RefreshCw,
 } from "lucide-react";
 import { type ChangeEvent, type ReactNode, useRef } from "react";
+import { PostNotice } from "./PostSections";
 import type {
   AuthoringFormState,
   UploadedArtifactDraft,
 } from "./authoring-session-form";
-import { PostNotice } from "./PostSections";
 
 interface AvailableArtifact {
   artifact_id: string;
@@ -55,13 +55,13 @@ function FieldShell({
   children: ReactNode;
 }) {
   return (
-    <label className="space-y-2">
-      <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
+    <fieldset className="space-y-2">
+      <legend className="font-mono text-[10px] font-bold uppercase tracking-widest text-warm-500">
         {label}
-      </div>
+      </legend>
       {children}
       {hint ? <div className="text-xs text-warm-500">{hint}</div> : null}
-    </label>
+    </fieldset>
   );
 }
 
@@ -83,9 +83,7 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   );
 }
 
-function SelectInput(
-  props: React.SelectHTMLAttributes<HTMLSelectElement>,
-) {
+function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
@@ -108,9 +106,7 @@ function ValidationSection({
   }
 
   const toneClass =
-    tone === "error"
-      ? "bg-red-50 text-red-800"
-      : "bg-amber-50 text-amber-900";
+    tone === "error" ? "bg-red-50 text-red-800" : "bg-amber-50 text-amber-900";
 
   return (
     <div className={`rounded-lg px-4 py-3 ${toneClass}`}>
@@ -151,7 +147,10 @@ function ValidationPanel({
             Validation state
           </div>
           <div className="mt-1 text-sm text-warm-700">
-            Session <span className="font-mono text-xs text-warm-900">{session.id}</span>
+            Session{" "}
+            <span className="font-mono text-xs text-warm-900">
+              {session.id}
+            </span>
           </div>
         </div>
         <span className="rounded-full bg-[var(--surface-container-high)] px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-warm-700">
@@ -193,16 +192,24 @@ function ValidationPanel({
       {validation.dry_run_failure ? (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-red-800">
           <div className="font-semibold">Dry-run failure</div>
-          <div className="mt-2 text-sm">{validation.dry_run_failure.message}</div>
-          <div className="mt-1 text-xs">{validation.dry_run_failure.next_action}</div>
+          <div className="mt-2 text-sm">
+            {validation.dry_run_failure.message}
+          </div>
+          <div className="mt-1 text-xs">
+            {validation.dry_run_failure.next_action}
+          </div>
         </div>
       ) : null}
 
       {validation.unsupported_reason ? (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-red-800">
           <div className="font-semibold">Unsupported contract</div>
-          <div className="mt-2 text-sm">{validation.unsupported_reason.message}</div>
-          <div className="mt-1 text-xs">{validation.unsupported_reason.next_action}</div>
+          <div className="mt-2 text-sm">
+            {validation.unsupported_reason.message}
+          </div>
+          <div className="mt-1 text-xs">
+            {validation.unsupported_reason.next_action}
+          </div>
         </div>
       ) : null}
     </div>
@@ -307,7 +314,8 @@ export function AuthoringWorkspace({
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-warm-600">
             Provide the structured problem and scoring contract Agora needs.
-            Validation runs directly against the session compiler and scorer dry-run.
+            Validation runs directly against the session compiler and scorer
+            dry-run.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -332,8 +340,12 @@ export function AuthoringWorkspace({
         </div>
       </div>
 
-      {statusMessage ? <PostNotice tone="info">{statusMessage}</PostNotice> : null}
-      {errorMessage ? <PostNotice tone="error">{errorMessage}</PostNotice> : null}
+      {statusMessage ? (
+        <PostNotice tone="info">{statusMessage}</PostNotice>
+      ) : null}
+      {errorMessage ? (
+        <PostNotice tone="error">{errorMessage}</PostNotice>
+      ) : null}
 
       <ValidationPanel session={session} onOpenReview={onOpenReview} />
 
@@ -407,7 +419,9 @@ export function AuthoringWorkspace({
             <TextInput
               type="datetime-local"
               value={form.deadline}
-              onChange={(event) => onFieldChange("deadline", event.target.value)}
+              onChange={(event) =>
+                onFieldChange("deadline", event.target.value)
+              }
             />
           </FieldShell>
         </div>
@@ -418,7 +432,9 @@ export function AuthoringWorkspace({
           Scoring contract
         </div>
         <div className="rounded-lg bg-[var(--surface-container-low)] px-4 py-3 text-sm text-warm-700">
-          Template is fixed to <span className="font-mono">official_table_metric_v1</span>.
+          Agora resolves the official scorer template automatically from the
+          metric you choose and returns the pinned runtime in the compiled
+          session.
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <FieldShell label="Metric">
@@ -499,7 +515,8 @@ export function AuthoringWorkspace({
               Uploaded artifacts
             </div>
             <div className="mt-1 text-sm text-warm-600">
-              Upload files first, then bind the hidden evaluation artifact above.
+              Upload files first, then bind the hidden evaluation artifact
+              above.
             </div>
           </div>
           <button
@@ -525,7 +542,8 @@ export function AuthoringWorkspace({
         <div className="flex items-start gap-2 text-sm text-warm-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warm-500" />
           <div>
-            Agora validates exact fields only. It will not brainstorm or infer hidden requirements on this path.
+            Agora validates exact fields only. It will not brainstorm or infer
+            hidden requirements on this path.
           </div>
         </div>
         <button

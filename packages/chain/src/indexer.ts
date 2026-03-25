@@ -44,6 +44,7 @@ import {
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
+const INDEXER_SCHEMA_RECHECK_MS = 30_000;
 
 export async function runIndexer() {
   await initIndexerObservability();
@@ -87,6 +88,7 @@ export async function runIndexer() {
         : envStartBlock);
 
   let pollCount = 0;
+  let lastSchemaCheckAt = Date.now();
 
   indexerLogger.info(
     {
@@ -98,6 +100,24 @@ export async function runIndexer() {
 
   while (true) {
     try {
+      const now = Date.now();
+      if (now - lastSchemaCheckAt >= INDEXER_SCHEMA_RECHECK_MS) {
+        try {
+          await assertRuntimeDatabaseSchema(db);
+          lastSchemaCheckAt = now;
+        } catch (error) {
+          indexerLogger.error(
+            {
+              event: "indexer.schema_incompatible",
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "Indexer runtime schema is incompatible; skipping poll until schema recovers",
+          );
+          await sleep(POLL_INTERVAL_MS);
+          continue;
+        }
+      }
+
       const chainHead = await publicClient.getBlockNumber();
       const toBlock =
         chainHead > pollingConfig.confirmationDepth

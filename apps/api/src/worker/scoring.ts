@@ -1,14 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  officialScorerTemplateIdSchema,
-  type RunnerLimits,
+  SUBMISSION_CID_MISSING_ERROR,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
-  resolveChallengeExecution,
-  resolveChallengeRunnerLimits,
-  resolveChallengeRuntimeConfig,
+  resolveChallengeExecutionFromPlanCache,
+  resolveChallengeRuntimeConfigFromPlanCache,
   resolveSubmissionLimits,
   resolveSubmissionOpenPrivateKeys,
 } from "@agora/common";
@@ -28,55 +26,7 @@ import {
 import { keccak256, toBytes } from "viem";
 import { createWorkerPhaseObserver, runWorkerPhase } from "./phases.js";
 import type { ChallengeRow, SubmissionRow, WorkerLogFn } from "./types.js";
-
 type DbClient = ReturnType<typeof createSupabaseClient>;
-
-export interface ResolvedRunnerPolicy {
-  limits?: {
-    memory: string;
-    cpus: string;
-    pids: number;
-  };
-  timeoutMs?: number;
-  source: "template" | "default";
-}
-
-function policyFromLimits(
-  runnerLimits: RunnerLimits,
-  source: ResolvedRunnerPolicy["source"],
-): ResolvedRunnerPolicy {
-  return {
-    limits: {
-      memory: runnerLimits.memory,
-      cpus: runnerLimits.cpus,
-      pids: runnerLimits.pids,
-    },
-    timeoutMs: runnerLimits.timeoutMs,
-    source,
-  };
-}
-
-export function resolveRunnerPolicyForChallenge(challenge: {
-  image: string;
-  template: string;
-}): ResolvedRunnerPolicy {
-  const templateResult = officialScorerTemplateIdSchema.safeParse(
-    challenge.template,
-  );
-  if (!templateResult.success) {
-    throw new Error(
-      `Unknown official scorer template on challenge: ${challenge.template}`,
-    );
-  }
-
-  const runnerLimits = resolveChallengeRunnerLimits(templateResult.data);
-  if (!runnerLimits) {
-    throw new Error(
-      `Unknown official scorer template on challenge: ${challenge.template}`,
-    );
-  }
-  return policyFromLimits(runnerLimits, "template");
-}
 
 export interface ScoringOutcomeSuccess {
   ok: true;
@@ -151,11 +101,16 @@ export async function scoreSubmissionAndBuildProof(
     };
   }
 
-  const execution = resolveChallengeExecution(challenge);
-  const runnerPolicy = resolveRunnerPolicyForChallenge({
-    image: execution.image,
-    template: execution.template,
-  });
+  const submissionCid = submission.submission_cid;
+  if (!submissionCid) {
+    return {
+      ok: false,
+      kind: "skipped",
+      reason: SUBMISSION_CID_MISSING_ERROR,
+    };
+  }
+
+  const execution = resolveChallengeExecutionFromPlanCache(challenge);
   const phaseMeta = {
     jobId,
     submissionId: submission.id,
@@ -164,11 +119,12 @@ export async function scoreSubmissionAndBuildProof(
   };
   const config = loadConfig();
   const isProduction = isProductionRuntime(config);
-  const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
+  const cachedRuntimeConfig =
+    resolveChallengeRuntimeConfigFromPlanCache(challenge);
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
     submissionSource = await resolveSubmissionSource({
-      submissionCid: submission.submission_cid as string,
+      submissionCid,
       challengeId: challenge.id,
       solverAddress: submission.solver_address,
       privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(config),
@@ -194,8 +150,12 @@ export async function scoreSubmissionAndBuildProof(
     evaluationContract: cachedRuntimeConfig.evaluationContract,
     metric: execution.metric,
     policies: cachedRuntimeConfig.policies,
-    timeoutMs: runnerPolicy.timeoutMs,
-    limits: runnerPolicy.limits,
+    timeoutMs: execution.limits.timeoutMs,
+    limits: {
+      memory: execution.limits.memory,
+      cpus: execution.limits.cpus,
+      pids: execution.limits.pids,
+    },
     strictPull: isProduction,
     keepWorkspace: true,
     phaseObserver: createWorkerPhaseObserver(log, phaseMeta),
@@ -227,11 +187,10 @@ export async function scoreSubmissionAndBuildProof(
       "pin_proof",
       phaseMeta,
       async () => {
-        const replaySubmissionCid =
-          await pinFile(
-            run.submissionPath,
-            `submission-input-${submission.id}.bin`,
-          );
+        const replaySubmissionCid = await pinFile(
+          run.submissionPath,
+          `submission-input-${submission.id}.bin`,
+        );
         const baseProof = await buildProofBundle({
           challengeId: challenge.id,
           submissionId: submission.id,

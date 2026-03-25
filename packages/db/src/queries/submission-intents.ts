@@ -5,6 +5,7 @@ import {
   resolveSubmissionLimits,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
+import { executeExactCount } from "../query-helpers.js";
 import {
   attachScoreJobTraceIdIfMissing,
   createScoreJob,
@@ -154,19 +155,17 @@ export async function countSubmissionIntentsBySubmissionCid(
 ) {
   let query = db
     .from("submission_intents")
-    .select("id", { count: "exact", head: true })
+    .select("id", { count: "exact" })
     .eq("submission_cid", submissionCid);
 
   if (input?.excludeIntentId) {
     query = query.neq("id", input.excludeIntentId);
   }
 
-  const { count, error } = await query;
-  if (error) {
-    throw new Error(`Failed to count submission intents: ${error.message}`);
-  }
-
-  return count ?? 0;
+  return executeExactCount(
+    query.limit(1),
+    "Failed to count submission intents",
+  );
 }
 
 export async function ensureScoreJobForRegisteredSubmission(

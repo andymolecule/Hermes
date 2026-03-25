@@ -62,10 +62,14 @@ test("verify route blocks writes while the challenge is open", async () => {
   assert.equal(response.status, 403);
   assert.equal(createVerificationCalls, 0);
   assert.deepEqual(await response.json(), {
-    error:
-      "Verification is unavailable while the challenge is open. Check back when scoring begins.",
-    code: "VERIFICATION_UNAVAILABLE",
-    retriable: false,
+    error: {
+      message:
+        "Verification is unavailable while the challenge is open. Check back when scoring begins.",
+      code: "VERIFICATION_UNAVAILABLE",
+      retriable: false,
+      next_action:
+        "Wait until the challenge enters scoring or finalization, then retry.",
+    },
   });
 });
 
@@ -126,8 +130,7 @@ test("verify route creates a verification once scoring has started", async () =>
     log_cid: "bafyverifylog",
   });
   assert.deepEqual(await response.json(), {
-    ok: true,
-    verification: {
+    data: {
       id: "verification-1",
       proof_bundle_id: "proof-1",
       verifier_address: "0x00000000000000000000000000000000000000aa",

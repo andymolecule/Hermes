@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
+import { resolveOfficialScorerImage } from "../official-scorer-catalog.js";
 import {
   buildChallengeExecutionPlanCache,
   canonicalizeChallengeSpec,
   challengeSpecSchema,
   parseChallengeSpecDocument,
-  resolveChallengeExecution,
-  resolvePinnedChallengeExecution,
-  resolveChallengeRuntimeConfig,
+  resolveChallengeExecutionFromPlanCache,
+  resolveChallengeExecutionFromTrustedSpec,
+  resolveChallengeRuntimeConfigFromPlanCache,
+  resolvePinnedChallengeExecutionFromSpec,
   sanitizeChallengeSpecForPublish,
   trustedChallengeSpecSchema,
   validateChallengeScoreability,
@@ -15,7 +17,6 @@ import {
 } from "../schemas/challenge-spec.js";
 import { createChallengeExecution } from "../schemas/execution-contract.js";
 import { createCsvTableEvaluationContract } from "../schemas/scorer-runtime.js";
-import { resolveOfficialScorerImage } from "../official-scorer-catalog.js";
 import { createCsvTableSubmissionContract } from "../schemas/submission-contract.js";
 
 const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
@@ -100,7 +101,7 @@ if (!result.success) {
   throw new Error("Expected sample spec to parse");
 }
 
-const resolved = resolveChallengeExecution(result.data);
+const resolved = resolveChallengeExecutionFromTrustedSpec(result.data);
 assert.equal(resolved.template, "official_table_metric_v1");
 assert.equal(resolved.metric, "r2");
 assert.equal(resolved.evaluationBundleCid, "ipfs://QmHiddenLabels");
@@ -112,22 +113,50 @@ assert.equal(
   true,
   "sanitized public spec should validate for the public schema",
 );
-const pinnedResolved = resolvePinnedChallengeExecution(publicSpec);
+const pinnedResolved = resolvePinnedChallengeExecutionFromSpec(publicSpec);
 assert.equal(pinnedResolved.template, "official_table_metric_v1");
 assert.equal(pinnedResolved.metric, "r2");
 
 const executionPlanCache = buildChallengeExecutionPlanCache(result.data);
-const resolvedFromPlan = resolveChallengeExecution({
+const resolvedFromPlan = resolveChallengeExecutionFromPlanCache({
   execution_plan_json: executionPlanCache,
 });
 assert.equal(resolvedFromPlan.template, "official_table_metric_v1");
 assert.equal(resolvedFromPlan.image, scorerImage);
+assert.deepEqual(resolvedFromPlan.limits, {
+  memory: "2g",
+  cpus: "2",
+  pids: 64,
+  timeoutMs: 600_000,
+});
 
-const runtimeConfigFromPlan = resolveChallengeRuntimeConfig({
+const runtimeConfigFromPlan = resolveChallengeRuntimeConfigFromPlanCache({
   execution_plan_json: executionPlanCache,
 });
 assert.equal(runtimeConfigFromPlan.submissionContract?.kind, "csv_table");
 assert.equal(runtimeConfigFromPlan.evaluationContract?.columns.id, "sample_id");
+
+assert.throws(
+  () =>
+    resolveChallengeExecutionFromPlanCache({
+      execution_plan_json: {
+        ...executionPlanCache,
+        mount: undefined as never,
+      },
+    }),
+  /missing cached mount data/,
+);
+
+assert.throws(
+  () =>
+    resolveChallengeExecutionFromPlanCache({
+      execution_plan_json: {
+        ...executionPlanCache,
+        limits: undefined as never,
+      },
+    }),
+  /missing cached runner limits/,
+);
 
 const scoreability = validateChallengeScoreability(result.data);
 assert.equal(scoreability.ok, true, "sample spec should be scoreable");

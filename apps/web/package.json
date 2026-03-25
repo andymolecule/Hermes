@@ -7,7 +7,7 @@
     "dev": "node scripts/run-next.mjs dev -p 3100",
     "build": "node scripts/run-next.mjs build",
     "start": "node scripts/run-next.mjs start -p 3100",
-    "test": "node --import tsx --test $(find tests -type f -name '*.test.ts' | sort)"
+    "test": "node ../../scripts/run-ts-tests.mjs tests"
   },
   "dependencies": {
     "@agora/common": "workspace:*",

@@ -4,16 +4,21 @@ import {
   type AuthNoncePurpose,
   consumeAuthNonce,
   createAuthAgent,
+  createAuthAgentKey,
   createAuthNonce,
   createAuthSession,
   createSupabaseClient,
-  getAuthAgentByApiKeyHash,
+  getAuthAgentById,
+  getAuthAgentKeyByApiKeyHash,
+  getAuthAgentKeyById,
   getAuthAgentByTelegramBotId,
   getAuthSession,
   purgeExpiredAuthNonces,
   purgeExpiredAuthSessions,
-  rotateAuthAgentApiKey,
   revokeAuthSession,
+  revokeAuthAgentKey,
+  touchAuthAgentKeyLastUsed,
+  updateAuthAgent,
 } from "@agora/db";
 
 interface SessionRecord {
@@ -26,6 +31,12 @@ export interface AgentRecord {
   telegramBotId: string;
   agentName: string | null;
   description: string | null;
+  keyId: string;
+  keyLabel: string | null;
+  keyStatus: "active";
+  keyCreatedAt: string;
+  keyLastUsedAt: string | null;
+  keyRevokedAt: null;
 }
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -139,36 +150,38 @@ export async function registerAgent(input: {
   telegram_bot_id: string;
   agent_name?: string;
   description?: string;
+  key_label?: string;
 }) {
   const db = getDb();
   const apiKey = createAgentApiKey();
   const apiKeyHash = hashOpaqueToken(apiKey);
   const existing = await getAuthAgentByTelegramBotId(db, input.telegram_bot_id);
 
-  if (!existing) {
-    const created = await createAuthAgent(db, {
-      telegramBotId: input.telegram_bot_id,
-      apiKeyHash,
-      agentName: input.agent_name,
-      description: input.description,
-    });
-    return {
-      agent_id: created.id,
-      api_key: apiKey,
-      status: "created" as const,
-    };
-  }
+  const agent = existing
+    ? input.agent_name !== undefined || input.description !== undefined
+      ? await updateAuthAgent(db, {
+          id: existing.id,
+          agentName: input.agent_name,
+          description: input.description,
+        })
+      : existing
+    : await createAuthAgent(db, {
+        telegramBotId: input.telegram_bot_id,
+        agentName: input.agent_name,
+        description: input.description,
+      });
 
-  const rotated = await rotateAuthAgentApiKey(db, {
-    id: existing.id,
+  const key = await createAuthAgentKey(db, {
+    agentId: agent.id,
     apiKeyHash,
-    agentName: input.agent_name,
-    description: input.description,
+    keyLabel: input.key_label,
   });
+
   return {
-    agent_id: rotated.id,
+    agent_id: agent.id,
+    key_id: key.id,
     api_key: apiKey,
-    status: "rotated" as const,
+    status: existing ? ("existing_key_issued" as const) : ("created" as const),
   };
 }
 
@@ -179,9 +192,23 @@ export async function getAgentFromApiKey(
     return null;
   }
 
-  const agent = await getAuthAgentByApiKeyHash(getDb(), hashOpaqueToken(apiKey));
+  const db = getDb();
+  const apiKeyHash = hashOpaqueToken(apiKey);
+  const key = await getAuthAgentKeyByApiKeyHash(db, apiKeyHash);
+  if (!key) {
+    return null;
+  }
+
+  const agent = await getAuthAgentById(db, key.agent_id);
   if (!agent) {
     return null;
+  }
+
+  const keyLastUsedAt = new Date().toISOString();
+  try {
+    await touchAuthAgentKeyLastUsed(db, key.id);
+  } catch {
+    // Best-effort only. Authentication should still succeed.
   }
 
   return {
@@ -189,6 +216,41 @@ export async function getAgentFromApiKey(
     telegramBotId: agent.telegram_bot_id,
     agentName: agent.agent_name,
     description: agent.description,
+    keyId: key.id,
+    keyLabel: key.key_label,
+    keyStatus: "active",
+    keyCreatedAt: key.created_at,
+    keyLastUsedAt,
+    keyRevokedAt: null,
+  };
+}
+
+export async function revokeAgentKey(input: {
+  agentId: string;
+  keyId: string;
+}) {
+  const db = getDb();
+  const existing = await getAuthAgentKeyById(db, {
+    agentId: input.agentId,
+    keyId: input.keyId,
+  });
+  if (!existing) {
+    return null;
+  }
+
+  if (existing.revoked_at) {
+    return {
+      agent_id: input.agentId,
+      key_id: existing.id,
+      status: "revoked" as const,
+    };
+  }
+
+  const revoked = await revokeAuthAgentKey(db, input);
+  return {
+    agent_id: input.agentId,
+    key_id: revoked?.id ?? existing.id,
+    status: "revoked" as const,
   };
 }
 

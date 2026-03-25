@@ -40,7 +40,7 @@ Quick reference for key terms used across Agora documentation and code.
 
 | Term | Definition |
 |------|-----------|
-| **Execution template** (`OfficialExecutionTemplate`) | Official scorer config in `scorer-images.ts` and `schemas/execution-template.ts`: container image, resource limits, mount layout, and supported metrics. |
+| **Execution template** (`OfficialScorerCatalogEntry`) | Official scorer config in `official-scorer-catalog.ts`: pinned image, resource limits, mount layout, policies, and supported metrics. |
 | **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, suggested metric, and posting defaults. Used by the posting UI. |
 | **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by the execution template. |
 | **`score-local`** | Free, unlimited preview scoring. Runs the Docker scorer locally. No chain writes, no proof bundle, no payout effect. |
@@ -92,7 +92,6 @@ Quick reference for key terms used across Agora documentation and code.
 | Term | Definition |
 |------|-----------|
 | **API** | Canonical remote surface for agents and the web frontend. Hono server on port 3000. |
-| **MCP** | Optional adapter for AI agents. stdio mode = full local tool surface; HTTP mode = read-only discovery/status on port 3001. |
 | **CLI** | Canonical local execution surface. `agora` command with subcommands for the full challenge lifecycle. |
 | **SIWE** | Sign-In With Ethereum. Authentication flow used by the web frontend. |
 | **x402** | HTTP payment protocol used for paid API routes (agent discovery, verification). |

@@ -4,26 +4,47 @@ import type { ApiEnv } from "../types.js";
 
 const router = new Hono<ApiEnv>();
 
+async function readExactCount(
+  request: PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  failureMessage: string,
+) {
+  const { count, error } = await request;
+  if (error) {
+    throw new Error(`${failureMessage}: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
 router.get("/", async (c) => {
   const db = createSupabaseClient(false);
   const [
-    { count: challengesCount },
-    { count: submissionsCount },
-    { count: scoredCount },
+    challengesCount,
+    submissionsCount,
+    scoredCount,
   ] = await Promise.all([
-    db.from("challenges").select("*", { count: "exact", head: true }),
-    db.from("submissions").select("*", { count: "exact", head: true }),
-    db
-      .from("submissions")
-      .select("*", { count: "exact", head: true })
-      .eq("scored", true),
+    readExactCount(
+      db.from("challenges").select("*", { count: "exact" }).limit(1),
+      "Failed to count challenges",
+    ),
+    readExactCount(
+      db.from("submissions").select("*", { count: "exact" }).limit(1),
+      "Failed to count submissions",
+    ),
+    readExactCount(
+      db
+        .from("submissions")
+        .select("*", { count: "exact" })
+        .eq("scored", true)
+        .limit(1),
+      "Failed to count scored submissions",
+    ),
   ]);
 
   return c.json({
     data: {
-      challengesTotal: challengesCount ?? 0,
-      submissionsTotal: submissionsCount ?? 0,
-      scoredSubmissions: scoredCount ?? 0,
+      challengesTotal: challengesCount,
+      submissionsTotal: submissionsCount,
+      scoredSubmissions: scoredCount,
     },
   });
 });

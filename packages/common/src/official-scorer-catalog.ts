@@ -1,9 +1,4 @@
 import { z } from "zod";
-import {
-  hasPinnedDigest,
-  resolveOciImageToDigest,
-  sharesGhcrRepository,
-} from "./oci-image.js";
 
 export interface RunnerLimits {
   memory: string;
@@ -17,15 +12,33 @@ export interface ScoringMountConfig {
   submissionFileName: string;
 }
 
+export const officialScorerComparatorSchema = z.enum(["maximize", "minimize"]);
+
+export type OfficialScorerComparatorOutput = z.output<
+  typeof officialScorerComparatorSchema
+>;
+
+export type OfficialScorerSubmissionKind =
+  | "csv_table"
+  | "json_file"
+  | "opaque_file";
+
 export interface OfficialScorerMetricDefinition {
   id: string;
   label: string;
   comparator: OfficialScorerComparatorOutput;
 }
 
+export interface CatalogValidation {
+  valid: boolean;
+  error?: string;
+  candidateValues: string[];
+}
+
 export interface OfficialScorerCatalogEntry {
   id: string;
   label: string;
+  scorerImageTag: string;
   scorerImage: string;
   supportedMetrics: readonly OfficialScorerMetricDefinition[];
   supportedPolicies: {
@@ -33,13 +46,36 @@ export interface OfficialScorerCatalogEntry {
     duplicate_id_policy: readonly ["ignore", "reject"];
     invalid_value_policy: readonly ["ignore", "reject"];
   };
-  mount: ScoringMountConfig;
+  challengeSpecSupported: boolean;
+  authoringSupported: boolean;
+  defaultMount?: ScoringMountConfig;
+  mountsBySubmissionKind?: Partial<
+    Record<OfficialScorerSubmissionKind, ScoringMountConfig>
+  >;
+  supportedSubmissionKinds?: readonly OfficialScorerSubmissionKind[];
   defaultLimits: RunnerLimits;
 }
 
-export const DEFAULT_SCORER_MOUNT: ScoringMountConfig = {
+const TABLE_METRIC_V1_MOUNT: ScoringMountConfig = {
   evaluationBundleName: "ground_truth.csv",
   submissionFileName: "submission.csv",
+};
+
+const JSON_EXACT_MATCH_V1_MOUNT: ScoringMountConfig = {
+  evaluationBundleName: "ground_truth.json",
+  submissionFileName: "submission.json",
+};
+
+const OPAQUE_EXACT_MATCH_V1_MOUNT: ScoringMountConfig = {
+  evaluationBundleName: "ground_truth.bin",
+  submissionFileName: "submission.bin",
+};
+
+const DEFAULT_RUNNER_LIMITS: RunnerLimits = {
+  memory: "2g",
+  cpus: "2",
+  pids: 64,
+  timeoutMs: 600_000,
 };
 
 const OFFICIAL_TABLE_METRICS = [
@@ -50,77 +86,171 @@ const OFFICIAL_TABLE_METRICS = [
   { id: "spearman", label: "Spearman", comparator: "maximize" },
   { id: "accuracy", label: "Accuracy", comparator: "maximize" },
   { id: "f1", label: "F1", comparator: "maximize" },
-] as const;
+] as const satisfies readonly OfficialScorerMetricDefinition[];
+
+const OFFICIAL_EXACT_MATCH_METRICS = [
+  { id: "exact_match", label: "Exact Match", comparator: "maximize" },
+] as const satisfies readonly OfficialScorerMetricDefinition[];
+
+const OFFICIAL_STRUCTURED_RECORD_METRICS = [
+  {
+    id: "validation_score",
+    label: "Validation Score",
+    comparator: "maximize",
+  },
+] as const satisfies readonly OfficialScorerMetricDefinition[];
 
 export const OFFICIAL_SCORER_CATALOG = {
   official_table_metric_v1: {
     id: "official_table_metric_v1",
     label: "Official Table Metric V1",
-    scorerImage: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+    scorerImageTag: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+    scorerImage:
+      "ghcr.io/andymolecule/gems-tabular-scorer@sha256:b5f15b2d056c024c08f2f8a17e521e6ae8837ff49deda2572476b7a649bd17b5",
     supportedMetrics: OFFICIAL_TABLE_METRICS,
     supportedPolicies: {
       coverage_policy: ["ignore", "reject"],
       duplicate_id_policy: ["ignore", "reject"],
       invalid_value_policy: ["ignore", "reject"],
     },
-    mount: DEFAULT_SCORER_MOUNT,
-    defaultLimits: {
-      memory: "2g",
-      cpus: "2",
-      pids: 64,
-      timeoutMs: 600_000,
+    challengeSpecSupported: true,
+    authoringSupported: true,
+    defaultMount: TABLE_METRIC_V1_MOUNT,
+    supportedSubmissionKinds: ["csv_table"],
+    defaultLimits: DEFAULT_RUNNER_LIMITS,
+  },
+  official_exact_match_v1: {
+    id: "official_exact_match_v1",
+    label: "Official Exact Match V1",
+    scorerImageTag: "ghcr.io/andymolecule/gems-match-scorer:v1",
+    scorerImage:
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
+    supportedMetrics: OFFICIAL_EXACT_MATCH_METRICS,
+    supportedPolicies: {
+      coverage_policy: ["ignore", "reject"],
+      duplicate_id_policy: ["ignore", "reject"],
+      invalid_value_policy: ["ignore", "reject"],
     },
+    challengeSpecSupported: true,
+    authoringSupported: true,
+    mountsBySubmissionKind: {
+      csv_table: TABLE_METRIC_V1_MOUNT,
+      json_file: JSON_EXACT_MATCH_V1_MOUNT,
+      opaque_file: OPAQUE_EXACT_MATCH_V1_MOUNT,
+    },
+    supportedSubmissionKinds: ["csv_table", "json_file", "opaque_file"],
+    defaultLimits: DEFAULT_RUNNER_LIMITS,
+  },
+  official_structured_record_v1: {
+    id: "official_structured_record_v1",
+    label: "Official Structured Record V1",
+    scorerImageTag: "ghcr.io/andymolecule/gems-match-scorer:v1",
+    scorerImage:
+      "ghcr.io/andymolecule/gems-match-scorer@sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
+    supportedMetrics: OFFICIAL_STRUCTURED_RECORD_METRICS,
+    supportedPolicies: {
+      coverage_policy: ["ignore", "reject"],
+      duplicate_id_policy: ["ignore", "reject"],
+      invalid_value_policy: ["ignore", "reject"],
+    },
+    challengeSpecSupported: false,
+    authoringSupported: false,
+    mountsBySubmissionKind: {
+      json_file: JSON_EXACT_MATCH_V1_MOUNT,
+    },
+    supportedSubmissionKinds: ["json_file"],
+    defaultLimits: DEFAULT_RUNNER_LIMITS,
   },
 } as const satisfies Record<string, OfficialScorerCatalogEntry>;
 
-const officialScorerTemplateIds = Object.keys(OFFICIAL_SCORER_CATALOG) as [
-  keyof typeof OFFICIAL_SCORER_CATALOG,
-  ...(keyof typeof OFFICIAL_SCORER_CATALOG)[],
-];
+type RegistryTemplateId = keyof typeof OFFICIAL_SCORER_CATALOG;
 
-export const officialScorerTemplateIdSchema = z.enum(officialScorerTemplateIds);
-export const officialScorerComparatorSchema = z.enum([
-  "maximize",
-  "minimize",
-]);
+const challengeSpecTemplateIds = Object.values(OFFICIAL_SCORER_CATALOG)
+  .filter((entry) => entry.challengeSpecSupported)
+  .map((entry) => entry.id) as [string, ...string[]];
+
+function listDuplicateMetricIds() {
+  const templatesByMetric = new Map<string, string[]>();
+  for (const scorer of Object.values(OFFICIAL_SCORER_CATALOG)) {
+    for (const metric of scorer.supportedMetrics) {
+      const templates = templatesByMetric.get(metric.id) ?? [];
+      templates.push(scorer.id);
+      templatesByMetric.set(metric.id, templates);
+    }
+  }
+
+  return Array.from(templatesByMetric.entries())
+    .filter(([, templates]) => templates.length > 1)
+    .map(([metricId, templates]) => `${metricId} -> ${templates.join(", ")}`);
+}
+
+const duplicateMetricIds = listDuplicateMetricIds();
+if (duplicateMetricIds.length > 0) {
+  throw new Error(
+    `Official scorer registry has ambiguous metric ids. Next step: make metric ids globally unique. Duplicates: ${duplicateMetricIds.join("; ")}`,
+  );
+}
+
+export const officialScorerTemplateIdSchema = z.enum(challengeSpecTemplateIds);
 
 export type OfficialScorerTemplateIdOutput = z.output<
   typeof officialScorerTemplateIdSchema
 >;
-export type OfficialScorerComparatorOutput = z.output<
-  typeof officialScorerComparatorSchema
->;
-
-export const STANDARD_AUTHORING_TEMPLATE: OfficialScorerTemplateIdOutput =
-  "official_table_metric_v1";
 
 export function listOfficialScorers(): OfficialScorerCatalogEntry[] {
   return Object.values(OFFICIAL_SCORER_CATALOG);
+}
+
+export function listOfficialScorerTemplateIds(): string[] {
+  return listOfficialScorers().map((entry) => entry.id);
+}
+
+export function listChallengeSpecOfficialScorerTemplateIds(): OfficialScorerTemplateIdOutput[] {
+  return challengeSpecTemplateIds as OfficialScorerTemplateIdOutput[];
 }
 
 export function listOfficialScorerImages(): string[] {
   return listOfficialScorers().map((entry) => entry.scorerImage);
 }
 
+export function listOfficialScorerImageTags(): string[] {
+  return listOfficialScorers().map((entry) => entry.scorerImageTag);
+}
+
+export function listSupportedMetrics(): OfficialScorerMetricDefinition[] {
+  return listOfficialScorers().flatMap((scorer) => scorer.supportedMetrics);
+}
+
+export function listSupportedMetricIds(): string[] {
+  return listSupportedMetrics().map((metric) => metric.id);
+}
+
+export function listAuthoringSupportedMetricIds(): string[] {
+  return listOfficialScorers()
+    .filter((scorer) => scorer.authoringSupported)
+    .flatMap((scorer) => scorer.supportedMetrics.map((metric) => metric.id));
+}
+
 export function lookupOfficialScorer(
   templateId: string,
 ): OfficialScorerCatalogEntry | undefined {
-  return OFFICIAL_SCORER_CATALOG[templateId as OfficialScorerTemplateIdOutput];
+  return OFFICIAL_SCORER_CATALOG[templateId as RegistryTemplateId];
 }
 
 export function resolveOfficialScorerImage(templateId: string): string | null {
   return lookupOfficialScorer(templateId)?.scorerImage ?? null;
 }
 
-export async function resolvePinnedOfficialScorerImage(
+export function resolveOfficialScorerImageTag(
   templateId: string,
-  options: Parameters<typeof resolveOciImageToDigest>[1] = {},
-): Promise<string | null> {
-  const image = resolveOfficialScorerImage(templateId);
-  if (!image) {
-    return null;
-  }
-  return resolveOciImageToDigest(image, options);
+): string | null {
+  return lookupOfficialScorer(templateId)?.scorerImageTag ?? null;
+}
+
+export function resolvePinnedOfficialScorerImage(
+  templateId: string,
+): string | null {
+  return resolveOfficialScorerImage(templateId);
 }
 
 export function resolveOfficialScorerLimits(
@@ -129,10 +259,34 @@ export function resolveOfficialScorerLimits(
   return lookupOfficialScorer(templateId)?.defaultLimits ?? null;
 }
 
+export function listOfficialScorerSubmissionKinds(
+  templateId: string,
+): OfficialScorerSubmissionKind[] {
+  return [
+    ...(lookupOfficialScorer(templateId)?.supportedSubmissionKinds ?? []),
+  ];
+}
+
 export function resolveOfficialScorerMount(
   templateId: string,
+  options: {
+    submissionKind?: OfficialScorerSubmissionKind | null;
+  } = {},
 ): ScoringMountConfig | null {
-  return lookupOfficialScorer(templateId)?.mount ?? null;
+  const scorer = lookupOfficialScorer(templateId);
+  if (!scorer) {
+    return null;
+  }
+
+  if (scorer.defaultMount) {
+    return scorer.defaultMount;
+  }
+
+  if (!options.submissionKind || !scorer.mountsBySubmissionKind) {
+    return null;
+  }
+
+  return scorer.mountsBySubmissionKind[options.submissionKind] ?? null;
 }
 
 export function getOfficialScorerMetric(
@@ -144,18 +298,58 @@ export function getOfficialScorerMetric(
   );
 }
 
+export function validateOfficialScorerTemplateStructured(
+  templateId: string,
+): CatalogValidation {
+  if (lookupOfficialScorer(templateId)) {
+    return {
+      valid: true,
+      candidateValues: listOfficialScorerTemplateIds(),
+    };
+  }
+
+  return {
+    valid: false,
+    error: `Unknown official scorer template: ${templateId}`,
+    candidateValues: listOfficialScorerTemplateIds(),
+  };
+}
+
+export function validateOfficialScorerMetricStructured(
+  templateId: string,
+  metricId: string,
+): CatalogValidation {
+  const scorer = lookupOfficialScorer(templateId);
+  if (!scorer) {
+    return {
+      valid: false,
+      error: `Unknown official scorer template: ${templateId}`,
+      candidateValues: listOfficialScorerTemplateIds(),
+    };
+  }
+
+  const metric = getOfficialScorerMetric(templateId, metricId);
+  if (metric) {
+    return {
+      valid: true,
+      candidateValues: scorer.supportedMetrics.map((candidate) => candidate.id),
+    };
+  }
+
+  return {
+    valid: false,
+    error: `Metric ${metricId} is not supported by official scorer template ${templateId}.`,
+    candidateValues: scorer.supportedMetrics.map((candidate) => candidate.id),
+  };
+}
+
 export function validateOfficialScorerMetric(
   templateId: string,
   metricId: string,
 ): string | null {
-  const scorer = lookupOfficialScorer(templateId);
-  if (!scorer) {
-    return `Unknown official scorer template: ${templateId}`;
-  }
-
-  return getOfficialScorerMetric(templateId, metricId)
-    ? null
-    : `Metric ${metricId} is not supported by official scorer template ${templateId}.`;
+  return (
+    validateOfficialScorerMetricStructured(templateId, metricId).error ?? null
+  );
 }
 
 export function deriveOfficialScorerComparator(
@@ -165,12 +359,39 @@ export function deriveOfficialScorerComparator(
   return getOfficialScorerMetric(templateId, metricId)?.comparator ?? null;
 }
 
+export function resolveTemplateForMetric(
+  metricId: string,
+  options: {
+    authoringSupported?: boolean;
+    challengeSpecSupported?: boolean;
+  } = {},
+): OfficialScorerCatalogEntry | null {
+  const matches = listOfficialScorers().filter((entry) => {
+    if (options.authoringSupported === true && !entry.authoringSupported) {
+      return false;
+    }
+    if (
+      options.challengeSpecSupported === true &&
+      !entry.challengeSpecSupported
+    ) {
+      return false;
+    }
+    return entry.supportedMetrics.some((metric) => metric.id === metricId);
+  });
+
+  if (matches.length > 1) {
+    throw new Error(
+      `Official scorer registry is ambiguous for metric ${metricId}. Next step: make metric ids globally unique across templates.`,
+    );
+  }
+
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
 export function isOfficialScorerImage(image: string): boolean {
   const trimmed = image.trim();
   return listOfficialScorerImages().some(
-    (officialImage) =>
-      trimmed === officialImage ||
-      (hasPinnedDigest(trimmed) && sharesGhcrRepository(officialImage, trimmed)),
+    (officialImage) => trimmed === officialImage,
   );
 }
 
@@ -187,9 +408,5 @@ export function validateOfficialScorerBinding(
     return null;
   }
 
-  if (hasPinnedDigest(image) && sharesGhcrRepository(officialImage, image)) {
-    return null;
-  }
-
-  return `execution.scorer_image must resolve from execution.template. Next step: use the official scorer image for the selected template and retry.`;
+  return "execution.scorer_image must exactly match the pinned official scorer image for the selected template. Next step: use the registry-pinned image and retry.";
 }

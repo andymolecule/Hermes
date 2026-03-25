@@ -66,8 +66,8 @@ test("applySessionToForm hydrates the form from resolved and compiled session da
         timezone: "UTC",
       },
       execution: {
-        template: "official_table_metric_v1",
         metric: "spearman",
+        objective: "maximize",
         evaluation_artifact_id: "artifact-1",
         evaluation_id_column: "peptide_id",
         evaluation_value_column: "reference_rank",
@@ -111,17 +111,13 @@ test("applySessionToForm hydrates the form from resolved and compiled session da
       reward: "10 USDC",
       distribution: "winner_take_all",
       deadline: "2026-04-01T00:00:00.000Z",
-      template: "official_table_metric_v1",
       metric: "spearman",
       objective: "maximize",
       artifacts_count: 1,
     },
     compilation: {
-      template: "official_table_metric_v1",
       metric: "spearman",
       objective: "maximize",
-      scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
-      evaluation_artifact_uri: "ipfs://artifact-1",
       evaluation_contract: {
         kind: "csv_table",
         columns: {
@@ -143,12 +139,6 @@ test("applySessionToForm hydrates the form from resolved and compiled session da
           value: "predicted_score",
           allow_extra: true,
         },
-      },
-      resource_limits: {
-        memory_mb: 2048,
-        cpus: 2,
-        timeout_minutes: 10,
-        pids_limit: 64,
       },
       reward: {
         total: "10",

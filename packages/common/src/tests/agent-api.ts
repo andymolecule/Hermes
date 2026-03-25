@@ -3,9 +3,14 @@ import {
   agentChallengeDetailResponseSchema,
   agentChallengesListResponseSchema,
   agentChallengesQuerySchema,
+  agentMeResponseSchema,
   apiErrorResponseSchema,
   challengeRegistrationResponseSchema,
   challengeSolverStatusResponseSchema,
+  registerAgentRequestSchema,
+  registerAgentResponseSchema,
+  resolveOfficialScorerImage,
+  revokeAgentKeyResponseSchema,
   submissionIntentResponseSchema,
   submissionPublicKeyResponseSchema,
   submissionRegistrationResponseSchema,
@@ -13,6 +18,59 @@ import {
   submissionValidationResponseSchema,
   submissionWaitStatusResponseSchema,
 } from "../index.js";
+
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
+
+const registerRequest = registerAgentRequestSchema.parse({
+  telegram_bot_id: "bot_123456",
+  agent_name: "AUBRAI",
+  description: "Longevity research agent",
+  key_label: "ci-runner",
+});
+assert.equal(registerRequest.key_label, "ci-runner");
+
+const registerResponse = registerAgentResponseSchema.parse({
+  data: {
+    agent_id: "11111111-1111-4111-8111-111111111111",
+    key_id: "22222222-2222-4222-8222-222222222222",
+    api_key: "agora_xxxxxxxx",
+    status: "existing_key_issued",
+  },
+});
+assert.equal(registerResponse.data.status, "existing_key_issued");
+
+const meResponse = agentMeResponseSchema.parse({
+  data: {
+    agent_id: "11111111-1111-4111-8111-111111111111",
+    telegram_bot_id: "bot_123456",
+    agent_name: "AUBRAI",
+    description: "Longevity research agent",
+    current_key: {
+      key_id: "22222222-2222-4222-8222-222222222222",
+      key_label: "ci-runner",
+      status: "active",
+      created_at: "2026-03-12T00:00:00.000Z",
+      last_used_at: "2026-03-12T00:05:00.000Z",
+      revoked_at: null,
+    },
+  },
+});
+assert.equal(meResponse.data.current_key.status, "active");
+
+const revokeKeyResponse = revokeAgentKeyResponseSchema.parse({
+  data: {
+    agent_id: "11111111-1111-4111-8111-111111111111",
+    key_id: "22222222-2222-4222-8222-222222222222",
+    status: "revoked",
+  },
+});
+assert.equal(revokeKeyResponse.data.status, "revoked");
 
 const query = agentChallengesQuerySchema.parse({
   limit: "10",
@@ -90,8 +148,9 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
         template: "official_table_metric_v1",
         metric: "r2",
         comparator: "maximize",
-        scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+        scorer_image: tableMetricScorerImage,
       },
+      submission_privacy_mode: "sealed",
       distribution_type: "winner_take_all",
       dispute_window_hours: 168,
       minimum_score: 0,
@@ -159,23 +218,25 @@ const challengeRegistration = challengeRegistrationResponseSchema.parse({
 assert.equal(challengeRegistration.data.ok, true);
 
 const submissionRegistration = submissionRegistrationResponseSchema.parse({
-  ok: true,
-  submission: {
-    id: "22222222-2222-4222-8222-222222222222",
-    challenge_id: "11111111-1111-4111-8111-111111111111",
-    challenge_address: "0x0000000000000000000000000000000000000001",
-    on_chain_sub_id: 1,
-    solver_address: "0x0000000000000000000000000000000000000001",
-    refs: {
-      submissionId: "22222222-2222-4222-8222-222222222222",
-      challengeId: "11111111-1111-4111-8111-111111111111",
-      challengeAddress: "0x0000000000000000000000000000000000000001",
-      onChainSubmissionId: 1,
+  data: {
+    submission: {
+      id: "22222222-2222-4222-8222-222222222222",
+      challenge_id: "11111111-1111-4111-8111-111111111111",
+      challenge_address: "0x0000000000000000000000000000000000000001",
+      on_chain_sub_id: 1,
+      solver_address: "0x0000000000000000000000000000000000000001",
+      refs: {
+        submissionId: "22222222-2222-4222-8222-222222222222",
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        challengeAddress: "0x0000000000000000000000000000000000000001",
+        onChainSubmissionId: 1,
+      },
     },
+    phase: "registration_confirmed",
+    warning: null,
   },
-  warning: null,
 });
-assert.equal(submissionRegistration.submission.on_chain_sub_id, 1);
+assert.equal(submissionRegistration.data.submission.on_chain_sub_id, 1);
 
 const submissionIntent = submissionIntentResponseSchema.parse({
   data: {
@@ -201,6 +262,14 @@ assert.equal(submissionPublicKey.data.version, "sealed_submission_v2");
 
 const statusResponse = submissionStatusResponseSchema.parse({
   data: {
+    refs: {
+      intentId: "44444444-4444-4444-8444-444444444444",
+      submissionId: "22222222-2222-4222-8222-222222222222",
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      challengeAddress: "0x0000000000000000000000000000000000000001",
+      onChainSubmissionId: 1,
+    },
+    phase: "scoring_queued",
     submission: {
       id: "22222222-2222-4222-8222-222222222222",
       challenge_id: "11111111-1111-4111-8111-111111111111",
@@ -227,13 +296,15 @@ const statusResponse = submissionStatusResponseSchema.parse({
       nextAttemptAt: "2026-03-12T00:05:00.000Z",
       lockedAt: null,
     },
+    lastError: null,
+    lastErrorPhase: null,
     scoringStatus: "pending",
     terminal: false,
     recommendedPollSeconds: 15,
   },
 });
 
-assert.equal(statusResponse.data.scoringStatus, "pending");
+assert.equal(statusResponse.data.phase, "scoring_queued");
 assert.equal(statusResponse.data.job?.status, "queued");
 
 const waitResponse = submissionWaitStatusResponseSchema.parse({
@@ -245,6 +316,29 @@ const waitResponse = submissionWaitStatusResponseSchema.parse({
 });
 
 assert.equal(waitResponse.data.waitedMs, 4_000);
+
+const onChainSeenStatus = submissionStatusResponseSchema.parse({
+  data: {
+    refs: {
+      intentId: "44444444-4444-4444-8444-444444444444",
+      submissionId: null,
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      challengeAddress: "0x0000000000000000000000000000000000000001",
+      onChainSubmissionId: 2,
+    },
+    phase: "onchain_seen",
+    submission: null,
+    proofBundle: null,
+    job: null,
+    lastError: null,
+    lastErrorPhase: null,
+    scoringStatus: "pending",
+    terminal: false,
+    recommendedPollSeconds: 20,
+  },
+});
+
+assert.equal(onChainSeenStatus.data.phase, "onchain_seen");
 
 const solverStatusResponse = challengeSolverStatusResponseSchema.parse({
   data: {
@@ -280,17 +374,19 @@ const submissionValidation = submissionValidationResponseSchema.parse({
 assert.equal(submissionValidation.data.valid, false);
 
 const apiError = apiErrorResponseSchema.parse({
-  error: "Rate limit exceeded. Try again later.",
-  code: "RATE_LIMITED",
-  retriable: true,
-  nextAction: "Wait for the quota window to reset before retrying.",
-  details: {
-    retryAfterSeconds: 60,
+  error: {
+    code: "RATE_LIMITED",
+    message: "Rate limit exceeded. Try again later.",
+    retriable: true,
+    next_action: "Wait for the quota window to reset before retrying.",
+    details: {
+      retryAfterSeconds: 60,
+    },
   },
 });
 
-assert.equal(apiError.code, "RATE_LIMITED");
+assert.equal(apiError.error.code, "RATE_LIMITED");
 assert.equal(
-  apiError.nextAction,
+  apiError.error.next_action,
   "Wait for the quota window to reset before retrying.",
 );

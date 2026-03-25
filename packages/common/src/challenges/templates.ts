@@ -1,7 +1,7 @@
 import {
-  STANDARD_AUTHORING_TEMPLATE,
   deriveOfficialScorerComparator,
   resolveOfficialScorerImage,
+  resolveTemplateForMetric,
   type OfficialScorerComparatorOutput,
 } from "../official-scorer-catalog.js";
 import { createChallengeExecution } from "../schemas/execution-contract.js";
@@ -11,6 +11,7 @@ import {
   type SubmissionContractOutput,
   createCsvTableSubmissionContract,
 } from "../schemas/submission-contract.js";
+import type { SubmissionPrivacyMode } from "../schemas/submission.js";
 import type {
   ChallengeDomain,
   ChallengeType,
@@ -135,6 +136,7 @@ export interface ChallengeSpecCandidateInput {
   };
   deadline: string;
   submission: ChallengeSubmissionContractDraftInput;
+  submissionPrivacyMode?: SubmissionPrivacyMode;
   minimumScore?: number;
   disputeWindowHours?: number;
   tags?: string[];
@@ -147,14 +149,20 @@ export function buildChallengeSpecCandidate(
 ): TrustedChallengeSpec {
   const defaults = getChallengeTypeDefaults(input.type);
   const metric = input.metric?.trim() || defaults.defaultMetric;
+  const template = resolveTemplateForMetric(metric, {
+    challengeSpecSupported: true,
+  });
+  if (!template) {
+    throw new Error(
+      `Unknown official scorer template for metric ${metric}. Next step: choose a supported metric and retry.`,
+    );
+  }
   const comparator =
     input.comparator ??
-    deriveOfficialScorerComparator(STANDARD_AUTHORING_TEMPLATE, metric) ??
+    deriveOfficialScorerComparator(template.id, metric) ??
     "maximize";
   const scorerImage =
-    input.scorerImage?.trim() ||
-    resolveOfficialScorerImage(STANDARD_AUTHORING_TEMPLATE) ||
-    "";
+    input.scorerImage?.trim() || resolveOfficialScorerImage(template.id) || "";
   const submissionContract = buildSubmissionContractForChallengeType(
     input.submission,
   ) as CsvTableSubmissionContract;
@@ -171,7 +179,7 @@ export function buildChallengeSpecCandidate(
     type: input.type,
     description: input.description,
     execution: createChallengeExecution({
-      template: STANDARD_AUTHORING_TEMPLATE,
+      template: template.id,
       scorerImage,
       metric,
       comparator,
@@ -193,6 +201,7 @@ export function buildChallengeSpecCandidate(
     }),
     artifacts: input.artifacts,
     submission_contract: submissionContract,
+    submission_privacy_mode: input.submissionPrivacyMode ?? "sealed",
     reward: {
       total: input.reward.total,
       distribution: input.reward.distribution,

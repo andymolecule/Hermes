@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AgoraError } from "@agora/common";
+import { AgoraError, resolveOfficialScorerImage } from "@agora/common";
 import {
   cleanupSubmissionArtifactWithApi,
   createSubmissionIntentWithApi,
@@ -8,6 +8,7 @@ import {
   getChallengeSolverStatusFromApi,
   getIndexerHealthFromApi,
   getSubmissionPublicKeyFromApi,
+  getSubmissionStatusByIntentFromApi,
   getSubmissionStatusByOnChainFromApi,
   getSubmissionStatusFromApi,
   listChallengesFromApi,
@@ -16,6 +17,14 @@ import {
   uploadSubmissionArtifactToApi,
   waitForSubmissionStatusFromApi,
 } from "../api-client.js";
+
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
 
 test("listChallengesFromApi serializes discovery query params", async () => {
   const originalFetch = global.fetch;
@@ -58,6 +67,14 @@ test("submission endpoints parse canonical API responses", async () => {
       return new Response(
         JSON.stringify({
           data: {
+            refs: {
+              intentId: "22222222-2222-4222-8222-222222222222",
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId: "11111111-1111-4111-8111-111111111111",
+              challengeAddress: "0x0000000000000000000000000000000000000001",
+              onChainSubmissionId: 9,
+            },
+            phase: "registration_confirmed",
             submission: {
               id: "22222222-2222-4222-8222-222222222222",
               challenge_id: "11111111-1111-4111-8111-111111111111",
@@ -77,6 +94,8 @@ test("submission endpoints parse canonical API responses", async () => {
             },
             proofBundle: null,
             job: null,
+            lastError: null,
+            lastErrorPhase: null,
             scoringStatus: "pending",
             terminal: false,
             recommendedPollSeconds: 20,
@@ -104,6 +123,7 @@ test("submission endpoints parse canonical API responses", async () => {
       "https://api.example",
     );
     assert.equal(status.data.scoringStatus, "pending");
+    assert.ok(status.data.submission);
     assert.equal(
       status.data.submission.refs.challengeAddress,
       "0x0000000000000000000000000000000000000001",
@@ -113,7 +133,8 @@ test("submission endpoints parse canonical API responses", async () => {
       {
         challengeId: "11111111-1111-4111-8111-111111111111",
         solverAddress: "0x0000000000000000000000000000000000000001",
-        submissionCid: "ipfs://result",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
       },
       "https://api.example",
     );
@@ -134,6 +155,14 @@ test("submission wait endpoint parses long-poll metadata", async () => {
     return new Response(
       JSON.stringify({
         data: {
+          refs: {
+            intentId: "22222222-2222-4222-8222-222222222222",
+            submissionId: "22222222-2222-4222-8222-222222222222",
+            challengeId: "11111111-1111-4111-8111-111111111111",
+            challengeAddress: "0x0000000000000000000000000000000000000001",
+            onChainSubmissionId: 1,
+          },
+          phase: "scored",
           submission: {
             id: "22222222-2222-4222-8222-222222222222",
             challenge_id: "11111111-1111-4111-8111-111111111111",
@@ -160,6 +189,8 @@ test("submission wait endpoint parses long-poll metadata", async () => {
             nextAttemptAt: null,
             lockedAt: null,
           },
+          lastError: null,
+          lastErrorPhase: null,
           scoringStatus: "complete",
           terminal: true,
           recommendedPollSeconds: 60,
@@ -180,6 +211,52 @@ test("submission wait endpoint parses long-poll metadata", async () => {
     assert.match(requestedUrl, /timeout_seconds=20/);
     assert.equal(response.data.waitedMs, 4_000);
     assert.equal(response.data.timedOut, false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("submission status can be reconciled by intent id before registration", async () => {
+  const originalFetch = global.fetch;
+  let requestedUrl = "";
+  global.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        data: {
+          refs: {
+            intentId: "22222222-2222-4222-8222-222222222222",
+            submissionId: null,
+            challengeId: "11111111-1111-4111-8111-111111111111",
+            challengeAddress: "0x0000000000000000000000000000000000000001",
+            onChainSubmissionId: null,
+          },
+          phase: "intent_created",
+          submission: null,
+          proofBundle: null,
+          job: null,
+          lastError: null,
+          lastErrorPhase: null,
+          scoringStatus: "pending",
+          terminal: false,
+          recommendedPollSeconds: 15,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    const response = await getSubmissionStatusByIntentFromApi(
+      "22222222-2222-4222-8222-222222222222",
+      "https://api.example",
+    );
+    assert.match(
+      requestedUrl,
+      /\/api\/submissions\/by-intent\/22222222-2222-4222-8222-222222222222\/status$/,
+    );
+    assert.equal(response.data.phase, "intent_created");
+    assert.equal(response.data.submission, null);
   } finally {
     global.fetch = originalFetch;
   }
@@ -261,7 +338,7 @@ test("submission cleanup endpoint parses the cleanup result", async () => {
   try {
     const response = await cleanupSubmissionArtifactWithApi(
       {
-        submissionCid: "ipfs://sealed-submission",
+        resultCid: "ipfs://sealed-submission",
         intentId: "22222222-2222-4222-8222-222222222222",
       },
       "https://api.example",
@@ -313,9 +390,11 @@ test("submission intent creation retries retriable API failures", async () => {
     if (calls === 1) {
       return new Response(
         JSON.stringify({
-          error: "temporary outage",
-          code: "TEMPORARY_OUTAGE",
-          retriable: true,
+          error: {
+            code: "TEMPORARY_OUTAGE",
+            message: "temporary outage",
+            retriable: true,
+          },
         }),
         { status: 503, headers: { "content-type": "application/json" } },
       );
@@ -338,7 +417,8 @@ test("submission intent creation retries retriable API failures", async () => {
       {
         challengeId: "11111111-1111-4111-8111-111111111111",
         solverAddress: "0x0000000000000000000000000000000000000001",
-        submissionCid: "ipfs://result",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
       },
       "https://api.example",
     );
@@ -388,7 +468,7 @@ test("submission upload endpoint parses the returned CID", async () => {
     return new Response(
       JSON.stringify({
         data: {
-          submissionCid: "ipfs://sealed-submission",
+          resultCid: "ipfs://sealed-submission",
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -401,14 +481,16 @@ test("submission upload endpoint parses the returned CID", async () => {
         bytes: new TextEncoder().encode('{"ok":true}'),
         fileName: "sealed-submission.json",
         contentType: "application/json",
+        resultFormat: "sealed_submission_v2",
       },
       "https://api.example",
     );
-    assert.equal(response.submissionCid, "ipfs://sealed-submission");
+    assert.equal(response.resultCid, "ipfs://sealed-submission");
     assert.equal(requestedUrl, "https://api.example/api/submissions/upload");
     assert.deepEqual(requestedHeaders, {
       "content-type": "application/json",
       "x-file-name": "sealed-submission.json",
+      "x-agora-result-format": "sealed_submission_v2",
     });
   } finally {
     global.fetch = originalFetch;
@@ -474,8 +556,9 @@ test("challenge detail parsing requires the canonical artifacts block", async ()
               template: "official_table_metric_v1",
               metric: "accuracy",
               comparator: "maximize",
-              scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+              scorer_image: tableMetricScorerImage,
             },
+            submission_privacy_mode: "sealed",
             refs: {
               challengeId: "11111111-1111-4111-8111-111111111111",
               challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -531,8 +614,9 @@ test("API client supports protocol-ref challenge and submission lookups", async 
                 template: "official_table_metric_v1",
                 metric: "accuracy",
                 comparator: "maximize",
-                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+                scorer_image: tableMetricScorerImage,
               },
+              submission_privacy_mode: "sealed",
               refs: {
                 challengeId: "11111111-1111-4111-8111-111111111111",
                 challengeAddress: "0x0000000000000000000000000000000000000001",
@@ -557,6 +641,14 @@ test("API client supports protocol-ref challenge and submission lookups", async 
       return new Response(
         JSON.stringify({
           data: {
+            refs: {
+              intentId: "22222222-2222-4222-8222-222222222222",
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId: "11111111-1111-4111-8111-111111111111",
+              challengeAddress: "0x0000000000000000000000000000000000000001",
+              onChainSubmissionId: 9,
+            },
+            phase: "registration_confirmed",
             submission: {
               id: "22222222-2222-4222-8222-222222222222",
               challenge_id: "11111111-1111-4111-8111-111111111111",
@@ -576,6 +668,8 @@ test("API client supports protocol-ref challenge and submission lookups", async 
             },
             proofBundle: null,
             job: null,
+            lastError: null,
+            lastErrorPhase: null,
             scoringStatus: "pending",
             terminal: false,
             recommendedPollSeconds: 20,
@@ -586,21 +680,23 @@ test("API client supports protocol-ref challenge and submission lookups", async 
     }
     return new Response(
       JSON.stringify({
-        ok: true,
-        submission: {
-          id: "22222222-2222-4222-8222-222222222222",
-          challenge_id: "11111111-1111-4111-8111-111111111111",
-          challenge_address: "0x0000000000000000000000000000000000000001",
-          on_chain_sub_id: 9,
-          solver_address: "0x0000000000000000000000000000000000000001",
-          refs: {
-            submissionId: "22222222-2222-4222-8222-222222222222",
-            challengeId: "11111111-1111-4111-8111-111111111111",
-            challengeAddress: "0x0000000000000000000000000000000000000001",
-            onChainSubmissionId: 9,
+        data: {
+          submission: {
+            id: "22222222-2222-4222-8222-222222222222",
+            challenge_id: "11111111-1111-4111-8111-111111111111",
+            challenge_address: "0x0000000000000000000000000000000000000001",
+            on_chain_sub_id: 9,
+            solver_address: "0x0000000000000000000000000000000000000001",
+            refs: {
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId: "11111111-1111-4111-8111-111111111111",
+              challengeAddress: "0x0000000000000000000000000000000000000001",
+              onChainSubmissionId: 9,
+            },
           },
+          phase: "registration_confirmed",
+          warning: null,
         },
-        warning: null,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
@@ -623,13 +719,15 @@ test("API client supports protocol-ref challenge and submission lookups", async 
       },
       "https://api.example",
     );
+    assert.ok(status.data.submission);
     assert.equal(status.data.submission.refs.onChainSubmissionId, 9);
 
     const registration = await registerSubmissionWithApi(
       {
         challengeAddress: "0x0000000000000000000000000000000000000001",
         intentId: "22222222-2222-4222-8222-222222222222",
-        submissionCid: "ipfs://result",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
         txHash:
           "0x1111111111111111111111111111111111111111111111111111111111111111",
       },

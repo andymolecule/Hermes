@@ -13,7 +13,6 @@ import {
   trustedChallengeSpecSchema,
 } from "./challenge-spec.js";
 import { challengeExecutionSchema } from "./execution-contract.js";
-import { semiCustomEvaluatorContractSchema } from "./evaluator-contract.js";
 import { submissionContractSchema } from "./submission-contract.js";
 
 const AUTHORING_MAX_TITLE_LENGTH = 160;
@@ -50,6 +49,7 @@ const AUTHORING_VALIDATION_FIELDS = [
   "payout_condition",
   "reward_total",
   "distribution",
+  "domain",
   "deadline",
   "metric",
   "evaluation_artifact",
@@ -196,7 +196,7 @@ export const challengeIntentSchema = z.object({
         parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
       );
     }, `reward_total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
-  distribution: distributionSchema.default("winner_take_all"),
+  distribution: distributionSchema,
   deadline: z.string().datetime({ offset: true }),
   dispute_window_hours: z
     .number()
@@ -207,12 +207,11 @@ export const challengeIntentSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .max(AUTHORING_MAX_DOMAIN_LENGTH)
-    .default("other"),
+    .max(AUTHORING_MAX_DOMAIN_LENGTH),
   tags: z
     .array(z.string().trim().min(1).max(AUTHORING_MAX_TAG_LENGTH))
     .max(AUTHORING_MAX_TAGS)
-    .default([]),
+    .optional(),
   solver_instructions: z
     .string()
     .trim()
@@ -223,7 +222,7 @@ export const challengeIntentSchema = z.object({
     .trim()
     .min(1)
     .max(AUTHORING_MAX_TIMEZONE_LENGTH)
-    .default("UTC"),
+    .optional(),
 });
 
 export const partialChallengeIntentSchema = challengeIntentSchema.partial();

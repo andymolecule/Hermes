@@ -4,6 +4,8 @@ import { CHALLENGE_LIMITS } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import { hasPinnedDigest, validateScorerImage } from "../oci-image.js";
 import {
+  type OfficialScorerComparatorOutput,
+  type OfficialScorerTemplateIdOutput,
   isOfficialScorerImage,
   resolveOfficialScorerImage,
   resolveOfficialScorerLimits,
@@ -11,8 +13,6 @@ import {
   resolvePinnedOfficialScorerImage,
   validateOfficialScorerBinding,
   validateOfficialScorerMetric,
-  type OfficialScorerComparatorOutput,
-  type OfficialScorerTemplateIdOutput,
 } from "../official-scorer-catalog.js";
 import type {
   ChallengeArtifact,
@@ -29,15 +29,19 @@ import {
   challengeExecutionSchema,
   pinnedChallengeExecutionSchema,
 } from "./execution-contract.js";
-import {
-  type CsvTableEvaluationContractOutput,
-  type ScorerRuntimePoliciesOutput,
+import type {
+  CsvTableEvaluationContractOutput,
+  ScorerRuntimePoliciesOutput,
 } from "./scorer-runtime.js";
 import {
   type CsvTableSubmissionContract,
   type SubmissionContractOutput,
   submissionContractSchema,
 } from "./submission-contract.js";
+import {
+  DEFAULT_SUBMISSION_PRIVACY_MODE,
+  submissionPrivacyModeSchema,
+} from "./submission.js";
 
 const domainEnum = z.enum(CHALLENGE_DOMAINS);
 const typeEnum = z.enum(CHALLENGE_TYPES);
@@ -143,7 +147,9 @@ function findDuplicateTrustedArtifactKey(
   return null;
 }
 
-function findDuplicatePublicArtifactKey(artifacts: ChallengeArtifact[]): string | null {
+function findDuplicatePublicArtifactKey(
+  artifacts: ChallengeArtifact[],
+): string | null {
   const seen = new Set<string>();
   for (const artifact of artifacts) {
     const key =
@@ -333,6 +339,9 @@ const baseSpecFields = {
   type: typeEnum,
   description: z.string().trim().min(1),
   submission_contract: submissionContractSchema,
+  submission_privacy_mode: submissionPrivacyModeSchema.default(
+    DEFAULT_SUBMISSION_PRIVACY_MODE,
+  ),
   reward: z.object({
     total: rewardTotalSchema,
     distribution: rewardDistributionEnum,
@@ -380,8 +389,7 @@ const _trustedChallengeSpecShape = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["artifacts"],
-        message:
-          `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
+        message: `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
       });
     }
 
@@ -473,8 +481,7 @@ const _pinnedChallengeSpecShape = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["artifacts"],
-        message:
-          `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
+        message: `Duplicate artifact_id "${duplicateArtifactId}" is not allowed. Next step: assign unique artifact IDs and retry.`,
       });
     }
 
@@ -583,8 +590,12 @@ function withDisputeMin<T extends z.ZodTypeAny>(schema: T, minHours: number) {
 }
 
 export const trustedChallengeSpecSchema = _trustedChallengeSpecShape;
-export type TrustedChallengeSpecInput = z.input<typeof trustedChallengeSpecSchema>;
-export type TrustedChallengeSpecOutput = z.output<typeof trustedChallengeSpecSchema>;
+export type TrustedChallengeSpecInput = z.input<
+  typeof trustedChallengeSpecSchema
+>;
+export type TrustedChallengeSpecOutput = z.output<
+  typeof trustedChallengeSpecSchema
+>;
 
 export const challengeSpecSchema = _pinnedChallengeSpecShape;
 export type ChallengeSpecInput = z.input<typeof challengeSpecSchema>;
@@ -609,6 +620,7 @@ export interface ChallengeExecutionPlanCacheRow {
   evaluation_artifact_uri: string;
   evaluation_contract: CsvTableEvaluationContractOutput;
   submission_contract: SubmissionContractOutput;
+  submission_privacy_mode: "sealed" | "public";
   policies: ScorerRuntimePoliciesOutput;
 }
 
@@ -624,6 +636,12 @@ export interface ResolvedChallengeExecution {
   comparator: OfficialScorerComparatorOutput;
   execution: ChallengeExecutionOutput;
   evaluationBundleCid?: string;
+  limits: {
+    memory: string;
+    cpus: string;
+    pids: number;
+    timeoutMs: number;
+  };
   mount: {
     evaluationBundleName?: string;
     submissionFileName: string;
@@ -644,6 +662,7 @@ export interface ResolvedPinnedChallengeExecution {
 
 export interface ResolvedChallengeRuntimeConfig {
   submissionContract?: SubmissionContractOutput;
+  submissionPrivacyMode: "sealed" | "public";
   evaluationContract?: CsvTableEvaluationContractOutput;
   policies?: Partial<ScorerRuntimePoliciesOutput>;
 }
@@ -703,6 +722,77 @@ function mountFromPlan(
   };
 }
 
+function limitsFromPlan(
+  limits: ChallengeExecutionPlanCacheRow["limits"] | undefined,
+): {
+  memory: string;
+  cpus: string;
+  pids: number;
+  timeoutMs: number;
+} | null {
+  if (
+    !limits ||
+    typeof limits.memory !== "string" ||
+    limits.memory.trim().length === 0 ||
+    typeof limits.cpus !== "string" ||
+    limits.cpus.trim().length === 0 ||
+    typeof limits.pids !== "number" ||
+    !Number.isFinite(limits.pids) ||
+    limits.pids <= 0 ||
+    typeof limits.timeout_ms !== "number" ||
+    !Number.isFinite(limits.timeout_ms) ||
+    limits.timeout_ms <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    memory: limits.memory,
+    cpus: limits.cpus,
+    pids: limits.pids,
+    timeoutMs: limits.timeout_ms,
+  };
+}
+
+function resolveTemplateMount(input: {
+  template: OfficialScorerTemplateIdOutput;
+  submissionContract: SubmissionContractOutput;
+}) {
+  const mount = resolveOfficialScorerMount(input.template, {
+    submissionKind:
+      input.submissionContract.kind === "csv_table" ||
+      input.submissionContract.kind === "opaque_file"
+        ? input.submissionContract.kind
+        : null,
+  });
+  if (!mount) {
+    throw new Error(
+      `Unknown official scorer template ${input.template}. Next step: choose a supported template and retry.`,
+    );
+  }
+  return mount;
+}
+
+function resolveTemplateLimits(template: OfficialScorerTemplateIdOutput) {
+  const limits = resolveOfficialScorerLimits(template);
+  if (!limits) {
+    throw new Error(
+      `Unknown official scorer template ${template}. Next step: choose a supported template and retry.`,
+    );
+  }
+  return limits;
+}
+
+function getExecutionPlanFromRow(row: ChallengeExecutionRow) {
+  const executionPlan = row.execution_plan_json;
+  if (!executionPlan) {
+    throw new Error(
+      "Challenge is missing execution_plan_json. Next step: rebuild the challenge projection and retry.",
+    );
+  }
+  return executionPlan;
+}
+
 export function sanitizeChallengeSpecForPublish(
   spec: TrustedChallengeSpecOutput,
 ): ChallengeSpecOutput {
@@ -730,7 +820,9 @@ export function sanitizeChallengeSpecForPublish(
             uri: artifact.uri,
             ...(artifact.file_name ? { file_name: artifact.file_name } : {}),
             ...(artifact.mime_type ? { mime_type: artifact.mime_type } : {}),
-            ...(artifact.description ? { description: artifact.description } : {}),
+            ...(artifact.description
+              ? { description: artifact.description }
+              : {}),
           }
         : {
             artifact_id: artifact.artifact_id,
@@ -738,26 +830,22 @@ export function sanitizeChallengeSpecForPublish(
             visibility: artifact.visibility,
             ...(artifact.file_name ? { file_name: artifact.file_name } : {}),
             ...(artifact.mime_type ? { mime_type: artifact.mime_type } : {}),
-            ...(artifact.description ? { description: artifact.description } : {}),
+            ...(artifact.description
+              ? { description: artifact.description }
+              : {}),
           },
     ),
   });
 }
 
-export function buildChallengeExecutionPlanCache(spec: TrustedChallengeSpecOutput) {
-  const mount = resolveOfficialScorerMount(spec.execution.template);
-  if (!mount) {
-    throw new Error(
-      `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
-    );
-  }
-
-  const limits = resolveOfficialScorerLimits(spec.execution.template);
-  if (!limits) {
-    throw new Error(
-      `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
-    );
-  }
+export function buildChallengeExecutionPlanCache(
+  spec: TrustedChallengeSpecOutput,
+) {
+  const mount = resolveTemplateMount({
+    template: spec.execution.template,
+    submissionContract: spec.submission_contract,
+  });
+  const limits = resolveTemplateLimits(spec.execution.template);
 
   return {
     version: "v1",
@@ -778,6 +866,7 @@ export function buildChallengeExecutionPlanCache(spec: TrustedChallengeSpecOutpu
     evaluation_artifact_uri: spec.execution.evaluation_artifact_uri,
     evaluation_contract: spec.execution.evaluation_contract,
     submission_contract: spec.submission_contract,
+    submission_privacy_mode: spec.submission_privacy_mode,
     policies: spec.execution.policies,
   } satisfies ChallengeExecutionPlanCacheRow;
 }
@@ -802,10 +891,7 @@ export async function canonicalizeChallengeSpec(
   }
 
   if (options.resolveOfficialPresetDigests === true) {
-    const resolved = await resolvePinnedOfficialScorerImage(
-      spec.execution.template,
-      options,
-    );
+    const resolved = resolvePinnedOfficialScorerImage(spec.execution.template);
     if (!resolved) {
       throw new Error(
         `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
@@ -823,44 +909,51 @@ export async function canonicalizeChallengeSpec(
   };
 }
 
-export function resolveChallengeExecution(
-  spec: TrustedChallengeSpecOutput | ChallengeExecutionRow,
+export function resolveChallengeExecutionFromTrustedSpec(
+  spec: TrustedChallengeSpecOutput,
 ): ResolvedChallengeExecution {
-  if ("execution" in spec) {
-    const mount = resolveOfficialScorerMount(spec.execution.template);
-    if (!mount) {
-      throw new Error(
-        `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
-      );
-    }
+  const mount = resolveTemplateMount({
+    template: spec.execution.template,
+    submissionContract: spec.submission_contract,
+  });
+  const limits = resolveTemplateLimits(spec.execution.template);
 
-    return {
-      template: spec.execution.template,
-      image: spec.execution.scorer_image,
-      metric: spec.execution.metric,
-      comparator: spec.execution.comparator,
-      execution: spec.execution,
-      evaluationBundleCid: spec.execution.evaluation_artifact_uri,
-      mount: {
-        evaluationBundleName: mount.evaluationBundleName,
-        submissionFileName: mount.submissionFileName,
-      },
-    };
-  }
+  return {
+    template: spec.execution.template,
+    image: spec.execution.scorer_image,
+    metric: spec.execution.metric,
+    comparator: spec.execution.comparator,
+    execution: spec.execution,
+    evaluationBundleCid: spec.execution.evaluation_artifact_uri,
+    limits: {
+      memory: limits.memory,
+      cpus: limits.cpus,
+      pids: limits.pids,
+      timeoutMs: limits.timeoutMs,
+    },
+    mount: {
+      evaluationBundleName: mount.evaluationBundleName,
+      submissionFileName: mount.submissionFileName,
+    },
+  };
+}
 
-  const executionPlan = spec.execution_plan_json;
-  if (!executionPlan) {
+export function resolveChallengeExecutionFromPlanCache(
+  row: ChallengeExecutionRow,
+): ResolvedChallengeExecution {
+  const executionPlan = getExecutionPlanFromRow(row);
+
+  const mount = mountFromPlan(executionPlan.mount);
+  if (!mount) {
     throw new Error(
-      "Challenge is missing execution_plan_json. Next step: rebuild the challenge projection and retry.",
+      "Challenge execution_plan_json is missing cached mount data. Next step: rebuild the challenge projection and retry.",
     );
   }
 
-  const mount =
-    mountFromPlan(executionPlan.mount) ??
-    resolveOfficialScorerMount(executionPlan.template);
-  if (!mount) {
+  const limits = limitsFromPlan(executionPlan.limits);
+  if (!limits) {
     throw new Error(
-      `Unknown official scorer template ${executionPlan.template}. Next step: choose a supported template and retry.`,
+      "Challenge execution_plan_json is missing cached runner limits. Next step: rebuild the challenge projection and retry.",
     );
   }
 
@@ -880,6 +973,7 @@ export function resolveChallengeExecution(
       policies: executionPlan.policies,
     }),
     evaluationBundleCid: executionPlan.evaluation_artifact_uri,
+    limits,
     mount: {
       evaluationBundleName: mount.evaluationBundleName,
       submissionFileName: mount.submissionFileName,
@@ -887,15 +981,13 @@ export function resolveChallengeExecution(
   };
 }
 
-export function resolvePinnedChallengeExecution(
+export function resolvePinnedChallengeExecutionFromSpec(
   spec: ChallengeSpecOutput,
 ): ResolvedPinnedChallengeExecution {
-  const mount = resolveOfficialScorerMount(spec.execution.template);
-  if (!mount) {
-    throw new Error(
-      `Unknown official scorer template ${spec.execution.template}. Next step: choose a supported template and retry.`,
-    );
-  }
+  const mount = resolveTemplateMount({
+    template: spec.execution.template,
+    submissionContract: spec.submission_contract,
+  });
 
   return {
     template: spec.execution.template,
@@ -910,29 +1002,22 @@ export function resolvePinnedChallengeExecution(
   };
 }
 
-export function resolveChallengeRuntimeConfig(
+export function resolveChallengeRuntimeConfigFromPlanCache(
   row: ChallengeExecutionRow,
 ): ResolvedChallengeRuntimeConfig {
-  const executionPlan = row.execution_plan_json;
-  if (!executionPlan) {
-    throw new Error(
-      "Challenge is missing execution_plan_json. Next step: rebuild the challenge projection and retry.",
-    );
-  }
+  const executionPlan = getExecutionPlanFromRow(row);
 
   return {
     submissionContract: executionPlan.submission_contract,
+    submissionPrivacyMode:
+      executionPlan.submission_privacy_mode ?? DEFAULT_SUBMISSION_PRIVACY_MODE,
     evaluationContract: executionPlan.evaluation_contract,
     policies: executionPlan.policies,
   };
 }
 
 export function resolveScoringEnvironmentFromSpec(
-  _spec:
-    | ChallengeSpecOutput
-    | TrustedChallengeSpecOutput
-    | null
-    | undefined,
+  _spec: ChallengeSpecOutput | TrustedChallengeSpecOutput | null | undefined,
 ): Record<string, string> | undefined {
   return undefined;
 }
@@ -992,28 +1077,6 @@ export function validateChallengeScoreability(
     ok: errors.length === 0,
     errors,
   };
-}
-
-export function resolveChallengeRunnerLimits(
-  template: OfficialScorerTemplateIdOutput,
-) {
-  return resolveOfficialScorerLimits(template);
-}
-
-export function resolveChallengeTemplate(
-  spec: TrustedChallengeSpecOutput | ChallengeExecutionRow,
-): OfficialScorerTemplateIdOutput {
-  if ("execution" in spec) {
-    return spec.execution.template;
-  }
-
-  const executionPlan = spec.execution_plan_json;
-  if (!executionPlan) {
-    throw new Error(
-      "Challenge is missing execution_plan_json. Next step: rebuild the challenge projection and retry.",
-    );
-  }
-  return executionPlan.template;
 }
 
 export type ChallengeSourceOutput = z.output<typeof challengeSourceSchema>;

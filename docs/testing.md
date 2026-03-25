@@ -96,7 +96,6 @@ pnpm --filter <package> test
 ```bash
 pnpm --filter @agora/api test
 pnpm --filter @agora/cli test
-pnpm --filter @agora/mcp-server test
 pnpm --filter @agora/web test
 ```
 
@@ -104,7 +103,6 @@ pnpm --filter @agora/web test
 |-----|---------------|
 | `@agora/api` | Health endpoints, worker job claiming, fairness visibility, submission limits, scoring lifecycle, secret redaction, HTTP caching |
 | `@agora/cli` | Command parsing, output formatting |
-| `@agora/mcp-server` | Tool catalog, challenge listing |
 | `@agora/web` | Component rendering, browser API client behavior, wallet/session state helpers |
 
 Useful focused API regression slices:
@@ -125,7 +123,6 @@ node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-
 | DB tests | `packages/db/src/tests/*.ts` |
 | Scorer tests | `packages/scorer/src/tests/*.test.ts` |
 | API tests | `apps/api/tests/*.test.ts` |
-| MCP tests | `apps/mcp-server/src/tests/*.test.ts` |
 | E2E script | `scripts/e2e-test.sh` |
 | Preflight script | `scripts/preflight-testnet.sh` |
 | Verification scripts | `scripts/verify-*.mjs` |

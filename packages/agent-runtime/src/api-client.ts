@@ -130,12 +130,12 @@ async function toApiRequestError(response: Response) {
   const payload = await response.json().catch(() => null);
   const parsedError = apiErrorResponseSchema.safeParse(payload);
   if (parsedError.success) {
-    return new AgoraError(parsedError.data.error, {
-      code: parsedError.data.code,
-      retriable: parsedError.data.retriable,
+    return new AgoraError(parsedError.data.error.message, {
+      code: parsedError.data.error.code,
+      retriable: parsedError.data.error.retriable ?? false,
       status: response.status,
-      nextAction: parsedError.data.nextAction,
-      details: parsedError.data.details,
+      nextAction: parsedError.data.error.next_action,
+      details: parsedError.data.error.details,
     });
   }
   return new AgoraError(
@@ -275,6 +275,18 @@ export async function getSubmissionStatusByOnChainFromApi(
   });
 }
 
+export async function getSubmissionStatusByIntentFromApi(
+  intentId: string,
+  apiUrl?: string,
+) {
+  return requestJson({
+    apiUrl,
+    pathname: `/api/submissions/by-intent/${intentId}/status`,
+    parse: (json) => submissionStatusResponseSchema.parse(json),
+    maxAttempts: 3,
+  });
+}
+
 export async function getSubmissionPublicKeyFromApi(apiUrl?: string) {
   return requestJson({
     apiUrl,
@@ -289,6 +301,7 @@ export async function uploadSubmissionArtifactToApi(
     bytes: Uint8Array;
     fileName?: string;
     contentType?: string;
+    resultFormat: "sealed_submission_v2" | "plain_v0";
   },
   apiUrl?: string,
 ) {
@@ -299,6 +312,7 @@ export async function uploadSubmissionArtifactToApi(
       headers: {
         ...(input.contentType ? { "content-type": input.contentType } : {}),
         ...(input.fileName ? { "x-file-name": input.fileName } : {}),
+        "x-agora-result-format": input.resultFormat,
       },
       body: input.bytes,
     },
@@ -314,7 +328,8 @@ export async function createSubmissionIntentWithApi(
     challengeId?: string;
     challengeAddress?: `0x${string}`;
     solverAddress: `0x${string}`;
-    submissionCid: string;
+    resultCid: string;
+    resultFormat: "sealed_submission_v2" | "plain_v0";
   },
   apiUrl?: string,
 ) {
@@ -337,13 +352,14 @@ export async function registerSubmissionWithApi(
     challengeId?: string;
     challengeAddress?: `0x${string}`;
     intentId: string;
-    submissionCid: string;
+    resultCid: string;
+    resultFormat: "sealed_submission_v2" | "plain_v0";
     txHash: `0x${string}`;
   },
   apiUrl?: string,
 ) {
   const payload = submissionRegistrationRequestSchema.parse(input);
-  return requestJson({
+  const response = await requestJson({
     apiUrl,
     pathname: "/api/submissions",
     init: {
@@ -353,11 +369,12 @@ export async function registerSubmissionWithApi(
     parse: (json) => submissionRegistrationResponseSchema.parse(json),
     maxAttempts: 3,
   });
+  return response.data;
 }
 
 export async function cleanupSubmissionArtifactWithApi(
   input: {
-    submissionCid: string;
+    resultCid: string;
     intentId?: string;
   },
   apiUrl?: string,

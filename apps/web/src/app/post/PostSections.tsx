@@ -18,8 +18,7 @@ export function PostNotice({
       className={cx(
         "rounded-lg px-4 py-3 text-sm",
         tone === "info" && "bg-accent-50 text-accent-700",
-        tone === "success" &&
-          "bg-emerald-50 text-emerald-800",
+        tone === "success" && "bg-emerald-50 text-emerald-800",
         tone === "error" && "bg-red-50 text-red-800",
         tone === "warning" && "bg-amber-50 text-amber-900",
       )}
@@ -117,7 +116,11 @@ export function ExpertModePanel() {
           <div className="mt-3 space-y-3 text-sm leading-6 text-warm-700">
             <p>Custom scorer image or runtime settings.</p>
             <p>
-              The standard authoring path cannot express the required execution
+              Scoring semantics that the standard session contract cannot
+              express.
+            </p>
+            <p>
+              The standard authoring path cannot express the required scoring
               contract.
             </p>
             <p>
@@ -138,8 +141,8 @@ export function ExpertModePanel() {
           </div>
           <p className="mt-3 text-sm leading-6 text-warm-700">
             Standard mode covers the fastest path when the bounty can be
-            expressed as a deterministic value-to-value comparison under the
-            official table scorer template.
+            expressed as a deterministic comparison under the official scoring
+            registry.
           </p>
         </div>
       </div>

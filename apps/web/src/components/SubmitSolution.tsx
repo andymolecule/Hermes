@@ -3,6 +3,8 @@
 import {
   CHALLENGE_STATUS,
   SUBMISSION_LIMITS,
+  getRequiredSubmissionResultFormat,
+  type SubmissionPrivacyMode,
   type SubmissionContractOutput,
   deriveExpectedColumns,
   importSubmissionSealPublicKey,
@@ -70,6 +72,9 @@ const PRIVATE_SUBMISSION_DISCLOSURE_COPY =
 const PRIVATE_SUBMISSION_UNAVAILABLE_COPY =
   "Private answer protection is currently unavailable. Agora requires sealed submissions to keep submission contents hidden while a challenge is open. Retry later after sealed submissions are restored.";
 const READY_TO_SEAL_BADGE_COPY = "Will seal on submit";
+const PUBLIC_SUBMISSION_COPY =
+  "This challenge accepts public submission payloads. Anyone who knows the CID may be able to read the uploaded result bytes from IPFS.";
+const READY_TO_UPLOAD_PUBLIC_BADGE_COPY = "Public payload";
 
 function getFileSelectionError(file: { size: number }) {
   return getSubmissionSizeError(
@@ -116,7 +121,30 @@ function formatExpectedColumns(columns: string[]) {
   return columns.join(", ");
 }
 
-function SubmissionPrivacyNotice() {
+function SubmissionPrivacyNotice(input: {
+  submissionPrivacyMode: SubmissionPrivacyMode;
+}) {
+  if (input.submissionPrivacyMode === "public") {
+    return (
+      <div className="rounded-lg bg-[var(--surface-container-high)] overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--surface-container)]">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+          <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[var(--text-muted)]">
+            Submission Visibility
+          </h4>
+        </div>
+        <div className="px-4 py-3 space-y-2.5">
+          <p className="text-xs leading-relaxed text-[var(--text-secondary)]">
+            {PUBLIC_SUBMISSION_COPY}
+          </p>
+          <p className="text-[10.5px] leading-relaxed text-[var(--text-muted)]">
+            Agora will still store only the result hash on-chain, but the uploaded payload itself is not sealed for this challenge.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg bg-[var(--surface-container-high)] overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--surface-container)]">
@@ -157,6 +185,7 @@ interface SubmitSolutionProps {
   challengeAddress: string;
   challengeStatus: string;
   deadline: string;
+  submissionPrivacyMode: SubmissionPrivacyMode;
   submissionContract?: SubmissionContractOutput | null;
   submissionUnavailableReason?: string | null;
 }
@@ -166,10 +195,12 @@ export function SubmitSolution({
   challengeAddress,
   challengeStatus,
   deadline,
+  submissionPrivacyMode,
   submissionContract,
   submissionUnavailableReason,
 }: SubmitSolutionProps) {
   const { address, isConnected, chainId } = useAccount();
+  const isSealedSubmission = submissionPrivacyMode === "sealed";
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
   const wrongChain = isConnected && isWrongWalletChain(chainId);
@@ -181,7 +212,7 @@ export function SubmitSolution({
     queryFn: getSubmissionPublicKey,
     staleTime: 5 * 60 * 1000,
     retry: false,
-    enabled: canSubmit,
+    enabled: canSubmit && isSealedSubmission,
   });
 
   const [resultFile, setResultFile] = useState<File | null>(null);
@@ -207,11 +238,13 @@ export function SubmitSolution({
   const submissionPublicKey = submissionKeyQuery.data;
   const isCheckingSealing = submissionKeyQuery.isLoading;
   const sealingUnavailableMessage =
-    !submissionPublicKey && submissionKeyQuery.isError
+    isSealedSubmission && !submissionPublicKey && submissionKeyQuery.isError
       ? getSubmissionSealingErrorMessage(submissionKeyQuery.error)
       : null;
   const dropZoneDisabled =
-    isSubmitting || uploading || isCheckingSealing || !submissionPublicKey;
+    isSubmitting ||
+    uploading ||
+    (isSealedSubmission && (isCheckingSealing || !submissionPublicKey));
 
   if (!canSubmit) {
     return (
@@ -324,7 +357,10 @@ export function SubmitSolution({
     selectResultFile(file);
   }
 
-  async function pinResultToIpfs(file: File): Promise<string> {
+  async function pinResultToIpfs(
+    file: File,
+    resultFormat: "sealed_submission_v2" | "plain_v0",
+  ): Promise<string> {
     setUploading(true);
     try {
       const pinRes = await fetch("/api/submissions/upload", {
@@ -332,6 +368,7 @@ export function SubmitSolution({
         headers: {
           "content-type": file.type || "application/octet-stream",
           "x-file-name": file.name || "sealed-submission.json",
+          "x-agora-result-format": resultFormat,
         },
         body: file,
       });
@@ -339,9 +376,21 @@ export function SubmitSolution({
         const body = await pinRes.text();
         let message = body || `Upload failed (${pinRes.status}).`;
         try {
-          const parsed = JSON.parse(body) as { error?: unknown };
-          if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
+          const parsed = JSON.parse(body) as {
+            error?: { message?: unknown } | unknown;
+          };
+          if (
+            typeof parsed.error === "string" &&
+            parsed.error.trim().length > 0
+          ) {
             message = parsed.error;
+          } else if (
+            parsed.error &&
+            typeof parsed.error === "object" &&
+            "message" in parsed.error &&
+            typeof (parsed.error as { message?: unknown }).message === "string"
+          ) {
+            message = (parsed.error as { message: string }).message;
           }
         } catch {
           // Fall back to the raw response body.
@@ -349,11 +398,11 @@ export function SubmitSolution({
         throw new Error(message);
       }
       const {
-        data: { submissionCid },
+        data: { resultCid },
       } = (await pinRes.json()) as {
-        data: { submissionCid: string };
+        data: { resultCid: string };
       };
-      return submissionCid;
+      return resultCid;
     } finally {
       setUploading(false);
     }
@@ -376,11 +425,11 @@ export function SubmitSolution({
       setStatus("Wallet address not available. Reconnect and retry.");
       return;
     }
-    if (isCheckingSealing) {
+    if (isSealedSubmission && isCheckingSealing) {
       setStatus("Checking private answer protection. Wait a moment and retry.");
       return;
     }
-    if (!submissionPublicKey) {
+    if (isSealedSubmission && !submissionPublicKey) {
       setStatus(
         sealingUnavailableMessage ??
           "Private answer protection is unavailable. Retry later.",
@@ -408,6 +457,9 @@ export function SubmitSolution({
 
     try {
       setIsSubmitting(true);
+      const resultFormat = getRequiredSubmissionResultFormat(
+        submissionPrivacyMode,
+      );
 
       // Pre-flight CSV header validation (saves gas on malformed files)
       if (inputMode === "file" && resultFile && requiresCsvSubmission) {
@@ -427,9 +479,6 @@ export function SubmitSolution({
         }
       }
 
-      const publicKey = await importSubmissionSealPublicKey(
-        submissionPublicKey.publicKeyPem,
-      );
       const normalizedAddress = address.toLowerCase();
 
       let sourceFile: File;
@@ -452,24 +501,40 @@ export function SubmitSolution({
         sourceFile = new File([blob], "result.txt", { type: "text/plain" });
       }
 
-      setStatus("Encrypting and sealing your answer locally...");
-      const sealedEnvelope = await sealSubmission({
-        challengeId,
-        solverAddress: normalizedAddress,
-        fileName: sourceFile.name || "submission.bin",
-        mimeType: sourceFile.type || "application/octet-stream",
-        bytes: new Uint8Array(await sourceFile.arrayBuffer()),
-        keyId: submissionPublicKey.kid,
-        publicKey,
-      });
-      const sealedFile = new File(
-        [serializeSealedSubmissionEnvelope(sealedEnvelope)],
-        "sealed-submission.json",
-        { type: "application/json" },
-      );
+      let uploadFile = sourceFile;
+      if (isSealedSubmission) {
+        const activeSubmissionPublicKey = submissionPublicKey;
+        if (!activeSubmissionPublicKey) {
+          throw new Error(
+            "Private answer protection is unavailable. Retry later.",
+          );
+        }
+        const publicKey = await importSubmissionSealPublicKey(
+          activeSubmissionPublicKey.publicKeyPem,
+        );
+        setStatus("Encrypting and sealing your answer locally...");
+        const sealedEnvelope = await sealSubmission({
+          challengeId,
+          solverAddress: normalizedAddress,
+          fileName: sourceFile.name || "submission.bin",
+          mimeType: sourceFile.type || "application/octet-stream",
+          bytes: new Uint8Array(await sourceFile.arrayBuffer()),
+          keyId: activeSubmissionPublicKey.kid,
+          publicKey,
+        });
+        uploadFile = new File(
+          [serializeSealedSubmissionEnvelope(sealedEnvelope)],
+          "sealed-submission.json",
+          { type: "application/json" },
+        );
+      }
 
-      setStatus("Uploading sealed submission to IPFS...");
-      const cid = await pinResultToIpfs(sealedFile);
+      setStatus(
+        isSealedSubmission
+          ? "Uploading sealed submission to IPFS..."
+          : "Uploading submission to IPFS...",
+      );
+      const cid = await pinResultToIpfs(uploadFile, resultFormat);
       if (!isValidPinnedSpecCid(cid)) {
         throw new Error("Pinned CID is invalid.");
       }
@@ -478,7 +543,8 @@ export function SubmitSolution({
       const submissionIntent = await createSubmissionIntent({
         challengeId,
         solverAddress: normalizedAddress as `0x${string}`,
-        submissionCid: cid,
+        resultCid: cid,
+        resultFormat,
       });
       if (wrongChain) {
         throw new Error(getWrongChainMessage(chainId));
@@ -510,7 +576,8 @@ export function SubmitSolution({
         await createSubmissionRecord({
           challengeId,
           intentId: submissionIntent.intentId,
-          submissionCid: cid,
+          resultCid: cid,
+          resultFormat,
           txHash: tx,
         });
       } catch (registrationError) {
@@ -587,14 +654,14 @@ export function SubmitSolution({
             </span>
           </div>
 
-          {isCheckingSealing ? (
+          {isSealedSubmission && isCheckingSealing ? (
             <div className="flex items-start gap-3 p-4 border border-[var(--surface-container)] bg-[var(--surface-container-high)] text-[var(--text-primary)] text-sm rounded-lg">
               <Loader2 className="w-5 h-5 mt-0.5 shrink-0 animate-spin" />
               <p className="font-mono text-xs font-bold uppercase tracking-wide leading-relaxed">
                 Checking private answer protection...
               </p>
             </div>
-          ) : sealingUnavailableMessage ? (
+          ) : isSealedSubmission && sealingUnavailableMessage ? (
             <div className="flex items-start gap-3 p-4 border border-[var(--surface-container)] bg-white text-[var(--text-primary)] text-sm rounded-lg">
               <AlertCircle
                 className="w-5 h-5 mt-0.5 shrink-0"
@@ -654,7 +721,7 @@ export function SubmitSolution({
                       {formatExpectedColumns(requiredColumns)}
                     </div>
                     <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">
-                      Agora checks these headers locally before sealing and
+                      Agora checks these headers locally before upload and
                       before you confirm the wallet transaction.
                     </p>
                   </div>
@@ -702,8 +769,14 @@ export function SubmitSolution({
                           </span>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--color-success)] bg-[var(--color-success-bg)] border border-[var(--color-success-border)] px-2 py-0.5 rounded-sm flex items-center gap-1">
-                              <Lock className="w-3 h-3" />
-                              {READY_TO_SEAL_BADGE_COPY}
+                              {isSealedSubmission ? (
+                                <Lock className="w-3 h-3" />
+                              ) : (
+                                <Upload className="w-3 h-3" />
+                              )}
+                              {isSealedSubmission
+                                ? READY_TO_SEAL_BADGE_COPY
+                                : READY_TO_UPLOAD_PUBLIC_BADGE_COPY}
                             </span>
                             <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-[var(--text-muted)] bg-white border border-[var(--surface-container)] px-2 py-0.5 rounded-sm">
                               {(resultFile.size / 1024).toFixed(1)} KB — click
@@ -760,7 +833,9 @@ export function SubmitSolution({
               </div>
 
               {/* ── Privacy Section ── */}
-              <SubmissionPrivacyNotice />
+              <SubmissionPrivacyNotice
+                submissionPrivacyMode={submissionPrivacyMode}
+              />
 
               {/* ── Submit ── */}
               <button

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveOfficialScorerImage } from "@agora/common";
 import { hydrateChallengeSpec } from "../src/lib/api";
+
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
 
 test("hydrateChallengeSpec accepts current specs", () => {
   const spec = hydrateChallengeSpec({
@@ -13,7 +22,7 @@ test("hydrateChallengeSpec accepts current specs", () => {
     execution: {
       version: "v1",
       template: "official_table_metric_v1",
-      scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+      scorer_image: tableMetricScorerImage,
       metric: "accuracy",
       comparator: "maximize",
       evaluation_artifact_id: "artifact-hidden",
@@ -115,7 +124,7 @@ test("hydrateChallengeSpec rejects malformed v5 pinned specs that still expose t
         execution: {
           version: "v1",
           template: "official_table_metric_v1",
-          scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+          scorer_image: tableMetricScorerImage,
           metric: "accuracy",
           comparator: "maximize",
           evaluation_artifact_uri: "ipfs://hidden",

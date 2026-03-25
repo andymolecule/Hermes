@@ -3,22 +3,26 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import {
-  DEFAULT_SCORER_MOUNT,
   SCORER_RUNTIME_CONFIG_FILE_NAME,
   createCsvTableSubmissionContract,
+  resolveOfficialScorerImage,
+  resolveOfficialScorerMount,
   scorerRuntimeConfigSchema,
 } from "@agora/common";
 import {
   executeScoringPipeline,
   resolveLocalScoringRuntimeConfig,
-  resolveScoringRuntimeConfig,
   resolveTrustedScoringRuntimeConfig,
 } from "../pipeline.js";
 
 test("executeScoringPipeline rejects contract-invalid CSV before Docker runs", async () => {
+  const mount = resolveOfficialScorerMount("official_table_metric_v1");
+  if (!mount) {
+    throw new Error("expected official table mount");
+  }
   const run = await executeScoringPipeline({
     image: "ghcr.io/example/unused:latest",
-    mount: DEFAULT_SCORER_MOUNT,
+    mount,
     submission: {
       content: "sample_id,normalized_signal\ns1,0.5\n",
     },
@@ -65,6 +69,10 @@ test("resolveTrustedScoringRuntimeConfig returns cached DB values without fallba
 });
 
 test("resolveLocalScoringRuntimeConfig loads submission contract from pinned YAML specs", async () => {
+  const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
+  if (!scorerImage) {
+    throw new Error("expected official table scorer image");
+  }
   const originalFetch = global.fetch;
   global.fetch = async (input) => {
     assert.equal(
@@ -83,7 +91,7 @@ execution:
   template: official_table_metric_v1
   metric: r2
   comparator: maximize
-  scorer_image: ghcr.io/andymolecule/gems-tabular-scorer:v1
+  scorer_image: ${scorerImage}
   evaluation_artifact_id: artifact-hidden
   evaluation_contract:
     kind: csv_table
@@ -140,12 +148,4 @@ deadline: 2026-03-20T00:00:00Z
   } finally {
     global.fetch = originalFetch;
   }
-});
-
-test("resolveScoringRuntimeConfig remains a compatibility alias for local fallback resolution", async () => {
-  const runtime = await resolveScoringRuntimeConfig({
-    env: { AGORA_TOLERANCE: "0.01" },
-  });
-
-  assert.deepEqual(runtime.env, { AGORA_TOLERANCE: "0.01" });
 });

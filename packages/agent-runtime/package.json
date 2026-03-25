@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test $(find src/tests -type f -name '*.test.ts' | sort)"
+    "test": "node ../../scripts/run-ts-tests.mjs src/tests"
   },
   "dependencies": {
     "@agora/chain": "workspace:*",

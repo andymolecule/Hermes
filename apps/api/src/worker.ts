@@ -7,11 +7,9 @@
 
 export {
   maybeRunWorkerCli,
-  resolveRunnerPolicyForChallenge,
   startWorker,
   shouldExitForRuntimeMismatch,
   WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,
-  type ResolvedRunnerPolicy,
 } from "./worker/index.js";
 
 import { maybeRunWorkerCli } from "./worker/index.js";

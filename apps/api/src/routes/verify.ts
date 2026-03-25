@@ -84,6 +84,8 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
           code: "VERIFICATION_UNAVAILABLE",
           message:
             "Verification is unavailable while the challenge is open. Check back when scoring begins.",
+          nextAction:
+            "Wait until the challenge enters scoring or finalization, then retry.",
         });
       }
 
@@ -96,6 +98,8 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
           status: 404,
           code: "PROOF_BUNDLE_NOT_FOUND",
           message: "Proof bundle not found for submission.",
+          nextAction:
+            "Wait for scoring to finish producing the proof bundle or inspect the submission status before retrying.",
         });
       }
 
@@ -107,7 +111,7 @@ export function createVerifyRouter(deps: VerifyRouteDeps = defaultDeps) {
         log_cid: logCid ?? null,
       });
 
-      return c.json({ ok: true, verification });
+      return c.json({ data: verification });
     },
   );
 

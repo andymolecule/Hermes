@@ -4,6 +4,7 @@ import {
   SubmissionWorkflowError,
   cleanupSubmissionArtifact,
   reconcileTrackedSubmissionsForIntent,
+  toSubmissionRegistrationResponse,
 } from "../src/lib/submission-workflow.js";
 
 test("cleanupSubmissionArtifact refuses to delete a live submission intent", async () => {
@@ -12,7 +13,7 @@ test("cleanupSubmissionArtifact refuses to delete a live submission intent", asy
   await assert.rejects(
     cleanupSubmissionArtifact({
       intentId: "2d931510-d99f-494a-8c67-87feb05e1594",
-      submissionCid: "ipfs://bafy-test",
+      resultCid: "ipfs://bafy-test",
       createSupabaseClientImpl: () => db,
       getSubmissionIntentByIdImpl: async () =>
         ({
@@ -43,7 +44,7 @@ test("cleanupSubmissionArtifact unpins orphaned results when nothing references 
   const unpinned: string[] = [];
 
   const result = await cleanupSubmissionArtifact({
-    submissionCid: "ipfs://bafy-orphan",
+    resultCid: "ipfs://bafy-orphan",
     createSupabaseClientImpl: () => ({}) as never,
     getSubmissionIntentByIdImpl: async () => null,
     countSubmissionIntentsBySubmissionCidImpl: async () => 0,
@@ -129,4 +130,46 @@ test("reconcileTrackedSubmissionsForIntent reprojects tracked unmatched rows aft
     projected[0]?.txHash,
     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   );
+});
+
+test("toSubmissionRegistrationResponse returns the canonical envelope and warning", () => {
+  const response = toSubmissionRegistrationResponse({
+    submission: {
+      id: "submission-1",
+      challenge_id: "challenge-1",
+      on_chain_sub_id: 7,
+      solver_address: "0x2222222222222222222222222222222222222222",
+    } as never,
+    challenge: {
+      id: "challenge-1",
+      contract_address: "0x1111111111111111111111111111111111111111",
+    } as never,
+    warning: {
+      code: "FINALIZE_CLEANUP_FAILED",
+      message: "cleanup warning",
+    },
+  });
+
+  assert.deepEqual(response, {
+    data: {
+      submission: {
+        id: "submission-1",
+        challenge_id: "challenge-1",
+        challenge_address: "0x1111111111111111111111111111111111111111",
+        on_chain_sub_id: 7,
+        solver_address: "0x2222222222222222222222222222222222222222",
+        refs: {
+          submissionId: "submission-1",
+          challengeId: "challenge-1",
+          challengeAddress: "0x1111111111111111111111111111111111111111",
+          onChainSubmissionId: 7,
+        },
+      },
+      phase: "registration_confirmed",
+      warning: {
+        code: "FINALIZE_CLEANUP_FAILED",
+        message: "cleanup warning",
+      },
+    },
+  });
 });

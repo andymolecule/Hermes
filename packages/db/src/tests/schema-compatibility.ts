@@ -9,10 +9,17 @@ import {
 type MockResponse = { error: { message: string } | null };
 
 function createMockDb(results: Record<string, MockResponse>) {
+  const selectCalls: Array<{ table: string; select: string; options: unknown }> =
+    [];
+  const deleteCalls: Array<{
+    table: string;
+    filters: Record<string, string | number | boolean>;
+  }> = [];
   return {
     from(table: string) {
       return {
-        select(select: string) {
+        select(select: string, options?: unknown) {
+          selectCalls.push({ table, select, options });
           const key = `${table}:${select}`;
           return {
             async limit() {
@@ -20,7 +27,30 @@ function createMockDb(results: Record<string, MockResponse>) {
             },
           };
         },
+        delete() {
+          const filters: Record<string, string | number | boolean> = {};
+          const query = {
+            eq(column: string, value: string | number | boolean) {
+              filters[column] = value;
+              return query;
+            },
+            get error() {
+              deleteCalls.push({ table, filters: { ...filters } });
+              return (
+                results[`${table}:delete:${JSON.stringify(filters)}`]?.error ??
+                null
+              );
+            },
+          };
+          return query;
+        },
       };
+    },
+    getSelectCalls() {
+      return selectCalls;
+    },
+    getDeleteCalls() {
+      return deleteCalls;
     },
   };
 }
@@ -41,12 +71,24 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "submission_intents_columns",
     table: "submission_intents",
+    operation: "select",
     select: "trace_id,submitted_by_agent_id,submission_cid",
     nextStep: "apply migration",
   },
   {
+    id: "unmatched_submissions_cleanup_path",
+    table: "unmatched_submissions",
+    operation: "delete",
+    filters: {
+      challenge_id: "00000000-0000-0000-0000-000000000000",
+      on_chain_sub_id: -1,
+    },
+    nextStep: "reload schema cache",
+  },
+  {
     id: "submissions_registration_columns",
     table: "submissions",
+    operation: "select",
     select: "submission_intent_id,trace_id,submission_cid",
     nextStep: "apply migration",
   },
@@ -78,8 +120,13 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "auth_agents_table",
     table: "auth_agents",
-    select:
-      "telegram_bot_id,agent_name,description,api_key_hash,last_rotated_at",
+    select: "telegram_bot_id,agent_name,description,created_at,updated_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "auth_agent_keys_table",
+    table: "auth_agent_keys",
+    select: "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
     nextStep: "apply migration",
   },
   {
@@ -104,6 +151,25 @@ const passingFailures = await verifyRuntimeDatabaseSchema(
   checks,
 );
 assert.deepEqual(passingFailures, []);
+assert.equal(
+  passingDb.getSelectCalls().every((call) => call.options === undefined),
+  true,
+  "runtime schema probes should use normal SELECT requests rather than HEAD-only probes",
+);
+assert.equal(
+  checks.some((check) => check.id === "unmatched_submissions_cleanup_path"),
+  true,
+  "runtime schema checks should explicitly probe the unmatched_submissions cleanup path",
+);
+assert.deepEqual(passingDb.getDeleteCalls(), [
+  {
+    table: "unmatched_submissions",
+    filters: {
+      challenge_id: "00000000-0000-0000-0000-000000000000",
+      on_chain_sub_id: -1,
+    },
+  },
+]);
 
 const failingDb = createMockDb({
   "worker_runtime_state:executor_ready": {
@@ -116,6 +182,23 @@ const failingDb = createMockDb({
 const failures = await verifyRuntimeDatabaseSchema(failingDb as never, checks);
 assert.equal(failures.length, 1);
 assert.equal(failures[0]?.checkId, "worker_executor_ready_column");
+
+const deleteFailingDb = createMockDb({
+  'unmatched_submissions:delete:{"challenge_id":"00000000-0000-0000-0000-000000000000","on_chain_sub_id":-1}':
+    {
+      error: {
+        message:
+          "Could not find the table 'public.unmatched_submissions' in the schema cache",
+      },
+    },
+});
+const deleteFailures = await verifyRuntimeDatabaseSchema(
+  deleteFailingDb as never,
+  checks,
+);
+assert.equal(deleteFailures.length, 1);
+assert.equal(deleteFailures[0]?.checkId, "unmatched_submissions_cleanup_path");
+assert.equal(deleteFailures[0]?.operation, "delete");
 
 assert.equal(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
@@ -134,6 +217,34 @@ assert.equal(
   ),
   true,
   "runtime schema checks should guard submissions.submission_cid",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "auth_agents_table" &&
+      check.select === "telegram_bot_id,agent_name,description,created_at,updated_at",
+  ),
+  true,
+  "runtime schema checks should guard the auth_agents identity columns",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "auth_agent_keys_table" &&
+      check.select ===
+        "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
+  ),
+  true,
+  "runtime schema checks should guard the auth_agent_keys table",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "unmatched_submissions_cleanup_path" &&
+      check.operation === "delete",
+  ),
+  true,
+  "runtime schema checks should guard the unmatched_submissions delete path",
 );
 
 await assert.rejects(

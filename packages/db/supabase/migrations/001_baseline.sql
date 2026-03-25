@@ -339,14 +339,25 @@ create table auth_agents (
   telegram_bot_id text not null unique,
   agent_name text,
   description text,
-  api_key_hash text not null unique,
-  last_rotated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create index idx_auth_agents_api_key_hash
-  on auth_agents(api_key_hash);
+create table auth_agent_keys (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references auth_agents(id) on delete cascade,
+  key_label text,
+  api_key_hash text not null unique,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+
+create index idx_auth_agent_keys_agent_id
+  on auth_agent_keys(agent_id);
+
+create index idx_auth_agent_keys_api_key_hash
+  on auth_agent_keys(api_key_hash);
 
 alter table challenges
   add constraint challenges_created_by_agent_id_fkey

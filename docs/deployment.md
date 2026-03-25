@@ -103,7 +103,7 @@ flowchart TB
     C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
     D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
-    F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor, MCP)"]
+    F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor)"]
     G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
     H --> I["9. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
     I --> J{"All checks pass?"}
@@ -125,11 +125,6 @@ Clean v2 cutover:
 3. Deploy fresh `v2` factory.
 4. Update canonical `(chain id, factory address, USDC address)` tuple everywhere.
 5. Set `AGORA_INDEXER_START_BLOCK` and reindex from zero.
-
-MCP route note:
-- remote MCP traffic is served by the MCP server at `/mcp` on port `3001`
-- it is not part of the Hono API route map under `/api/*`
-- canonical machine-readable API discovery lives at `/.well-known/openapi.json`
 
 ---
 
@@ -224,7 +219,7 @@ This section covers non-code work for deployment across hosted systems.
 ### Operator Machines
 
 - Replace local `.env` files with current `AGORA_*` naming.
-- Update Claude/MCP client configs to Agora server and tool ids.
+- Update agent client configs to Agora API origin and tool ids.
 - Confirm CLI config directories and aliases use `agora`.
 - Confirm cron jobs, shell aliases, launch agents, or systemd units do not reference retired names.
 
@@ -234,7 +229,6 @@ This section covers non-code work for deployment across hosted systems.
 - Hosted web app title and metadata display Agora.
 - `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
 - API auth flow sets `agora_session`.
-- MCP server registers as `agora-mcp`.
 - CLI help text shows `agora`.
 - Runtime envs contain only `AGORA_*` and `NEXT_PUBLIC_AGORA_*` keys for first-party settings.
 - All externally referenced scorer images resolve under the Agora registry namespace.

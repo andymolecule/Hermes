@@ -45,7 +45,7 @@ export function createRequireAgentApiKey(
         status: 401,
         code: "unauthorized",
         message: "Invalid or missing authentication.",
-        nextAction: "Register or re-register at POST /api/agents/register",
+        nextAction: "Register at POST /api/agents/register and retry.",
       });
     }
 
@@ -92,7 +92,7 @@ export function createRequireAuthoringPrincipal(
       code: "unauthorized",
       message: "Invalid or missing authentication.",
       nextAction:
-        "Sign in with SIWE or register / re-register at POST /api/agents/register and retry.",
+        "Sign in with SIWE or register at POST /api/agents/register and retry.",
     });
   };
 }

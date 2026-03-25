@@ -10,7 +10,7 @@ import {
   CHALLENGE_STATUS,
   challengeRegistrationRequestSchema,
   getEffectiveChallengeStatus,
-  resolveChallengeRuntimeConfig,
+  resolveChallengeRuntimeConfigFromPlanCache,
   validateChallengeScoreability,
   validateSubmissionUploadAgainstContract,
 } from "@agora/common";
@@ -351,7 +351,8 @@ router.post("/by-address/:address/validate-submission", async (c) => {
     c.req.param("address"),
   );
   const submissionContract =
-    resolveChallengeRuntimeConfig(challenge).submissionContract ?? null;
+    resolveChallengeRuntimeConfigFromPlanCache(challenge).submissionContract ??
+    null;
   const validation = validateSubmissionUploadAgainstContract({
     bytes: upload.bytes,
     fileName: upload.fileName,
@@ -386,7 +387,8 @@ router.post("/:id/validate-submission", async (c) => {
   const db = createSupabaseClient(true);
   const challenge = await getChallengeById(db, c.req.param("id"));
   const submissionContract =
-    resolveChallengeRuntimeConfig(challenge).submissionContract ?? null;
+    resolveChallengeRuntimeConfigFromPlanCache(challenge).submissionContract ??
+    null;
   const validation = validateSubmissionUploadAgainstContract({
     bytes: upload.bytes,
     fileName: upload.fileName,

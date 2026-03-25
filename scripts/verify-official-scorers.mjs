@@ -3,16 +3,19 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  listOfficialScorerImages,
+  listOfficialScorers,
   resolveOciImageToDigest,
-} from "../packages/common/dist/index.js";
+} from "../packages/common/src/index.ts";
 
-const images = Array.from(new Set(listOfficialScorerImages()));
+const registry = listOfficialScorers();
+const rows = Array.from(
+  new Map(registry.map((entry) => [entry.scorerImageTag, entry])).values(),
+);
 const REQUIRED_PLATFORMS = ["linux/amd64", "linux/arm64"];
 
-if (images.length === 0) {
+if (rows.length === 0) {
   throw new Error(
-    "No official scorer images configured. Next step: define an official scorer catalog entry before running release verification.",
+    "No official scorer images configured. Next step: define an official scorer registry entry before running release verification.",
   );
 }
 
@@ -114,15 +117,23 @@ assertDockerAvailable();
 const failures = [];
 const resolved = [];
 
-for (const image of images) {
+for (const row of rows) {
   try {
-    const digest = await resolveOciImageToDigest(image, { env: {} });
-    assertMultiArchManifest(image);
-    pullOfficialImageAnonymously(image);
-    resolved.push({ image, digest });
+    const digest = await resolveOciImageToDigest(row.scorerImageTag, { env: {} });
+    if (digest !== row.scorerImage) {
+      throw new Error(
+        `pinned digest drift detected: expected ${row.scorerImage}, resolved ${digest}`,
+      );
+    }
+    assertMultiArchManifest(row.scorerImageTag);
+    pullOfficialImageAnonymously(row.scorerImageTag);
+    resolved.push({
+      tag: row.scorerImageTag,
+      digest,
+    });
   } catch (error) {
     failures.push({
-      image,
+      image: row.scorerImageTag,
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -138,6 +149,6 @@ if (failures.length > 0) {
 
 for (const row of resolved) {
   console.log(
-    `[official-scorers] ${row.image} -> ${row.digest} (multi-arch manifest ok; anonymous docker pull ok for linux/amd64 and linux/arm64)`,
+    `[official-scorers] ${row.tag} -> ${row.digest} (registry digest matches; multi-arch manifest ok; anonymous docker pull ok for linux/amd64 and linux/arm64)`,
   );
 }

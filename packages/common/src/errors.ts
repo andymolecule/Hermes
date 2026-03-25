@@ -8,11 +8,13 @@ export interface AgoraErrorOptions {
 }
 
 export interface ApiErrorResponse {
-  error: string;
-  code: string;
-  retriable: boolean;
-  nextAction?: string;
-  details?: Record<string, unknown>;
+  error: {
+    code: string;
+    message: string;
+    retriable?: boolean;
+    next_action?: string;
+    details?: Record<string, unknown>;
+  };
 }
 
 export const AGORA_ERROR_CODES = {
@@ -100,10 +102,12 @@ export function buildApiErrorResponse(input: {
   details?: Record<string, unknown>;
 }): ApiErrorResponse {
   return {
-    error: input.message,
-    code: input.code,
-    retriable: input.retriable ?? false,
-    nextAction: input.nextAction ?? extractNextAction(input.message),
-    details: input.details,
+    error: {
+      code: input.code,
+      message: input.message,
+      retriable: input.retriable ?? false,
+      next_action: input.nextAction ?? extractNextAction(input.message),
+      details: input.details,
+    },
   };
 }

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { generateKeyPairSync } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -29,9 +30,12 @@ import {
   importSubmissionSealPublicKey,
   loadConfig,
   readLifecycleE2ERuntimeConfig,
+  resetConfigCache,
   resolveOfficialScorerImage,
   resolveRuntimePrivateKey,
+  sanitizeChallengeSpecForPublish,
   sealSubmission,
+  type TrustedChallengeSpecOutput,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -45,19 +49,27 @@ import { processJob } from "./worker/jobs.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const E2E_REWARD_USDC = 1;
-const E2E_DEADLINE_SECONDS = 60;
+// Keep enough headroom to pass submission-intent safety checks; the harness
+// advances chain time locally once the challenge is registered.
+const E2E_DEADLINE_SECONDS = 5 * 60;
 const E2E_POLL_INTERVAL_MS = 1_000;
 const E2E_POLL_TIMEOUT_MS = 60_000;
 
 type LifecycleScenarioPrepared = {
   label: string;
-  specCid: string;
+  publicSpecCid: string;
+  trustedSpec: TrustedChallengeSpecOutput;
   submissionSourcePath: string;
   assertPublicApis?: (input: {
     app: ReturnType<typeof createApp>;
     challengeId: string;
     submissionId: string;
   }) => Promise<void>;
+};
+
+type LifecycleScenarioPrepareInput = {
+  deadlineIso: string;
+  disputeWindowHours: number;
 };
 
 function repoPath(...segments: string[]) {
@@ -89,6 +101,25 @@ function requiredConfigPresent() {
   }
 }
 
+function ensureLocalLifecycleSealConfig() {
+  const config = loadConfig();
+  if (hasSubmissionSealWorkerConfig(config)) {
+    return config;
+  }
+
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+
+  process.env.AGORA_SUBMISSION_SEAL_KEY_ID = "lifecycle-e2e-seal";
+  process.env.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM = publicKey;
+  process.env.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM = privateKey;
+  resetConfigCache();
+  return loadConfig();
+}
+
 export function canRunLifecycleE2E() {
   try {
     const config = loadConfig();
@@ -104,17 +135,25 @@ async function advanceTimeTo(
 ) {
   const nextTimestampNumber = Number(nextTimestamp);
 
-  try {
-    await publicClient.request({
-      method: "anvil_setNextBlockTimestamp",
-      params: [nextTimestampNumber],
-    } as never);
-    await publicClient.request({
-      method: "evm_mine",
-      params: [],
-    } as never);
-    return;
-  } catch {}
+  const setNextBlockTimestampMethods = [
+    "anvil_setNextBlockTimestamp",
+    "hardhat_setNextBlockTimestamp",
+    "evm_setNextBlockTimestamp",
+  ] as const;
+
+  for (const method of setNextBlockTimestampMethods) {
+    try {
+      await publicClient.request({
+        method,
+        params: [nextTimestampNumber],
+      } as never);
+      await publicClient.request({
+        method: "evm_mine",
+        params: [],
+      } as never);
+      return;
+    } catch {}
+  }
 
   const latestBlock = await publicClient.getBlock();
   const delta = Number(nextTimestamp - latestBlock.timestamp);
@@ -164,7 +203,12 @@ async function ensureWalletMatchesOracle(
   }
 }
 
-function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
+function buildTrustedReproducibilitySpec(input: {
+  trainCid: string;
+  expectedCid: string;
+  deadlineIso: string;
+  disputeWindowHours: number;
+}) {
   const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
     throw new Error("missing official table scorer image");
@@ -192,6 +236,7 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
         uri: input.expectedCid,
       },
     ],
+    submission_privacy_mode: "sealed" as const,
     execution: createChallengeExecution({
       template: "official_table_metric_v1" as const,
       scorerImage,
@@ -219,15 +264,18 @@ function buildE2ESpec(input: { trainCid: string; expectedCid: string }) {
       total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
-    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    deadline: input.deadlineIso,
+    dispute_window_hours: input.disputeWindowHours,
     lab_tba: ZERO_ADDRESS,
   };
 }
 
-function buildPredictionE2ESpec(input: {
+function buildTrustedPredictionSpec(input: {
   trainCid: string;
   testCid: string;
   hiddenLabelsCid: string;
+  deadlineIso: string;
+  disputeWindowHours: number;
 }) {
   const scorerImage = resolveOfficialScorerImage("official_table_metric_v1");
   if (!scorerImage) {
@@ -262,6 +310,7 @@ function buildPredictionE2ESpec(input: {
         uri: input.hiddenLabelsCid,
       },
     ],
+    submission_privacy_mode: "sealed" as const,
     execution: createChallengeExecution({
       template: "official_table_metric_v1" as const,
       scorerImage,
@@ -288,8 +337,22 @@ function buildPredictionE2ESpec(input: {
       total: String(E2E_REWARD_USDC),
       distribution: "top_3" as const,
     },
-    deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    deadline: input.deadlineIso,
+    dispute_window_hours: input.disputeWindowHours,
     lab_tba: ZERO_ADDRESS,
+  };
+}
+
+async function pinChallengeSpecPair(input: {
+  label: string;
+  trustedSpec: TrustedChallengeSpecOutput;
+}) {
+  return {
+    publicSpecCid: await pinJSON(
+      `e2e-${input.label}-public-spec.json`,
+      sanitizeChallengeSpecForPublish(input.trustedSpec),
+    ),
+    trustedSpec: input.trustedSpec,
   };
 }
 
@@ -413,6 +476,44 @@ async function getTrackedChallengeRow(
   return data as ChallengeListRow;
 }
 
+async function registerTrackedChallenge(input: {
+  app: ReturnType<typeof createApp>;
+  txHash: `0x${string}`;
+  trustedSpec: TrustedChallengeSpecOutput;
+}) {
+  const response = await input.app.request(
+    new Request("http://localhost/api/challenges", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        txHash: input.txHash,
+        trusted_spec: input.trustedSpec,
+      }),
+    }),
+  );
+  if (response.status !== 200) {
+    throw new Error(
+      `Challenge registration failed (${response.status}): ${await response.text()}`,
+    );
+  }
+
+  const body = (await response.json()) as {
+    data?: {
+      challengeId?: string;
+      challengeAddress?: `0x${string}`;
+    };
+  };
+  const challengeId = body.data?.challengeId;
+  const challengeAddress = body.data?.challengeAddress;
+  if (!challengeId || !challengeAddress) {
+    throw new Error(
+      "Challenge registration route succeeded without challenge refs.",
+    );
+  }
+
+  return { challengeId, challengeAddress };
+}
+
 async function projectFactoryReceipt(input: {
   db: ReturnType<typeof createSupabaseClient>;
   publicClient: ReturnType<typeof getPublicClient>;
@@ -472,7 +573,9 @@ async function projectChallengeReceipt(input: {
   });
 }
 
-async function prepareReproducibilityScenario() {
+async function prepareReproducibilityScenario(
+  input: LifecycleScenarioPrepareInput,
+) {
   const reproducibilityDir = repoPath(
     "challenges",
     "test-data",
@@ -487,12 +590,21 @@ async function prepareReproducibilityScenario() {
     "e2e-expected-output.csv",
   );
 
+  const trustedSpec = buildTrustedReproducibilitySpec({
+    trainCid,
+    expectedCid,
+    deadlineIso: input.deadlineIso,
+    disputeWindowHours: input.disputeWindowHours,
+  });
+  const { publicSpecCid } = await pinChallengeSpecPair({
+    label: "reproducibility",
+    trustedSpec,
+  });
+
   return {
     label: "reproducibility",
-    specCid: await pinJSON(
-      "e2e-reproducibility-spec.json",
-      buildE2ESpec({ trainCid, expectedCid }),
-    ),
+    publicSpecCid,
+    trustedSpec,
     submissionSourcePath: path.join(
       reproducibilityDir,
       "sample_submission.csv",
@@ -625,7 +737,7 @@ async function assertPredictionPublicApis(input: {
   });
 }
 
-async function preparePredictionScenario() {
+async function preparePredictionScenario(input: LifecycleScenarioPrepareInput) {
   const predictionDir = repoPath("challenges", "test-data", "prediction");
   const trainCid = await pinFile(
     path.join(predictionDir, "train.csv"),
@@ -640,12 +752,22 @@ async function preparePredictionScenario() {
     "e2e-prediction-hidden-labels.csv",
   );
 
+  const trustedSpec = buildTrustedPredictionSpec({
+    trainCid,
+    testCid,
+    hiddenLabelsCid,
+    deadlineIso: input.deadlineIso,
+    disputeWindowHours: input.disputeWindowHours,
+  });
+  const { publicSpecCid } = await pinChallengeSpecPair({
+    label: "prediction",
+    trustedSpec,
+  });
+
   return {
     label: "prediction",
-    specCid: await pinJSON(
-      "e2e-prediction-spec.json",
-      buildPredictionE2ESpec({ trainCid, testCid, hiddenLabelsCid }),
-    ),
+    publicSpecCid,
+    trustedSpec,
     submissionSourcePath: path.join(predictionDir, "sample_submission.csv"),
     assertPublicApis: assertPredictionPublicApis,
   } satisfies LifecycleScenarioPrepared;
@@ -665,18 +787,22 @@ async function runLifecycleScenario(input: {
   console.log(`\n=== E2E TEST: ${prepared.label} ===\n`);
   console.log("1. Base fixtures pinned");
 
-  const approveTxHash = await approve(
-    config.AGORA_FACTORY_ADDRESS,
-    E2E_REWARD_USDC,
-  );
+  const deadlineTimestampMs = new Date(prepared.trustedSpec.deadline).getTime();
+  if (!Number.isFinite(deadlineTimestampMs)) {
+    throw new Error("Lifecycle E2E prepared an invalid challenge deadline.");
+  }
+  const onChainDeadlineSeconds = BigInt(Math.floor(deadlineTimestampMs / 1000));
+
+  const approveTxHash = await approve(config.AGORA_FACTORY_ADDRESS, E2E_REWARD_USDC);
   await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
 
-  const latestBlock = await publicClient.getBlock();
   const createTxHash = await createChallenge({
-    specCid: prepared.specCid,
+    specCid: prepared.publicSpecCid,
     rewardAmount: E2E_REWARD_USDC,
-    deadline: Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)),
-    disputeWindowHours: lifecycleE2EConfig.disputeWindowHours,
+    deadline: Number(onChainDeadlineSeconds),
+    disputeWindowHours:
+      prepared.trustedSpec.dispute_window_hours ??
+      lifecycleE2EConfig.disputeWindowHours,
     minimumScore: 0n,
     distributionType: 1,
     labTba: ZERO_ADDRESS,
@@ -687,6 +813,13 @@ async function runLifecycleScenario(input: {
   const { challengeAddress } = parseChallengeCreatedReceipt(createReceipt);
   console.log("2. Challenge created:", challengeAddress);
 
+  const registration = await registerTrackedChallenge({
+    app,
+    txHash: createTxHash,
+    trustedSpec: prepared.trustedSpec,
+  });
+  console.log("3. Challenge registered:", registration.challengeId);
+
   await projectFactoryReceipt({
     db,
     publicClient,
@@ -694,13 +827,12 @@ async function runLifecycleScenario(input: {
     blockNumber: createReceipt.blockNumber,
   });
 
-  const challenge = await waitFor("projected challenge row", async () => {
-    try {
-      return await getTrackedChallengeRow(db, challengeAddress);
-    } catch {
-      return null;
-    }
-  });
+  const challenge = await getTrackedChallengeRow(db, challengeAddress);
+  if (challenge.id !== registration.challengeId) {
+    throw new Error(
+      `Challenge registration returned ${registration.challengeId}, but the tracked row is ${challenge.id}.`,
+    );
+  }
 
   const submissionCid = await (async () => {
     const publicKeyPem = config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM;
@@ -723,7 +855,7 @@ async function runLifecycleScenario(input: {
     });
     return pinJSON(`e2e-${prepared.label}-sealed-submission.json`, envelope);
   })();
-  console.log("3. Submission payload pinned (sealed path)");
+  console.log("4. Submission payload pinned (sealed path)");
 
   const intentResponse = await app.request(
     new Request("http://localhost/api/submissions/intent", {
@@ -732,7 +864,8 @@ async function runLifecycleScenario(input: {
       body: JSON.stringify({
         challengeId: challenge.id,
         solverAddress: accountAddress.toLowerCase(),
-        submissionCid: submissionCid,
+        resultCid: submissionCid,
+        resultFormat: "sealed_submission_v2",
       }),
     }),
   );
@@ -767,23 +900,35 @@ async function runLifecycleScenario(input: {
       body: JSON.stringify({
         challengeId: challenge.id,
         intentId,
-        submissionCid: submissionCid,
+        resultCid: submissionCid,
+        resultFormat: "sealed_submission_v2",
         txHash: submitTxHash,
       }),
     }),
   );
-  if (submissionResponse.status !== 200) {
+  if (submissionResponse.status !== 200 && submissionResponse.status !== 202) {
     throw new Error(
       `Submission projection failed (${submissionResponse.status}): ${await submissionResponse.text()}`,
     );
   }
   const submissionBody = (await submissionResponse.json()) as {
-    submission?: { id?: string };
-    ok?: boolean;
+    data?: {
+      submission?: { id?: string };
+      phase?: string;
+      warning?: { code?: string; message?: string } | null;
+    };
   };
-  const submissionId = submissionBody.submission?.id;
+  const submissionId = submissionBody.data?.submission?.id;
   if (!submissionId) {
     throw new Error("Submission route succeeded without a submission id.");
+  }
+  if (submissionBody.data?.phase !== "registration_confirmed") {
+    throw new Error("Submission route returned an unexpected lifecycle phase.");
+  }
+  if (submissionBody.data?.warning) {
+    console.log(
+      `[warning] submission registration cleanup: ${submissionBody.data.warning.code ?? submissionBody.data.warning.message ?? "unknown_warning"}`,
+    );
   }
 
   const lockedResponse = await app.request(
@@ -796,9 +941,7 @@ async function runLifecycleScenario(input: {
   }
   console.log("5. Open gate confirmed on public verification");
 
-  const deadlineSeconds =
-    latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS) + 1n;
-  await advanceTimeTo(publicClient, deadlineSeconds);
+  await advanceTimeTo(publicClient, onChainDeadlineSeconds + 1n);
 
   const startTxHash = await startChallengeScoring(challengeAddress);
   await publicClient.waitForTransactionReceipt({ hash: startTxHash });
@@ -936,7 +1079,7 @@ async function runLifecycleScenario(input: {
 }
 
 export async function runLifecycleE2E() {
-  const config = loadConfig();
+  const config = ensureLocalLifecycleSealConfig();
   if (!config.AGORA_SUPABASE_SERVICE_KEY) {
     throw new Error(
       "Lifecycle E2E requires AGORA_SUPABASE_SERVICE_KEY. Provide it and retry.",
@@ -965,17 +1108,19 @@ export async function runLifecycleE2E() {
 
   const db = createSupabaseClient(true);
   const app = createApp();
-  if (!hasSubmissionSealWorkerConfig(config)) {
-    throw new Error(
-      "Lifecycle E2E now requires submission sealing config. Set the submission seal env vars and retry.",
-    );
-  }
-  const scenarios = await Promise.all([
-    prepareReproducibilityScenario(),
-    preparePredictionScenario(),
-  ]);
+  const prepareScenarios = [
+    prepareReproducibilityScenario,
+    preparePredictionScenario,
+  ] as const;
 
-  for (const prepared of scenarios) {
+  for (const prepareScenario of prepareScenarios) {
+    const latestBlock = await publicClient.getBlock();
+    const prepared = await prepareScenario({
+      deadlineIso: new Date(
+        Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)) * 1000,
+      ).toISOString(),
+      disputeWindowHours: readLifecycleE2ERuntimeConfig().disputeWindowHours,
+    });
     await runLifecycleScenario({
       db,
       publicClient,

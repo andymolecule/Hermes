@@ -1,8 +1,10 @@
 "use client";
 
 import type {
+  AuthoringArtifactResponseOutput,
   AuthoringSessionArtifactOutput,
   AuthoringSessionOutput,
+  AuthoringSessionResponseOutput,
   CreateAuthoringSessionRequestInput,
   PatchAuthoringSessionRequestInput,
 } from "@agora/common";
@@ -72,7 +74,8 @@ export async function uploadAuthoringSessionFile(file: File) {
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionArtifactOutput;
+  const payload = (await response.json()) as AuthoringArtifactResponseOutput;
+  return payload.data as AuthoringSessionArtifactOutput;
 }
 
 export async function createAuthoringSession(
@@ -86,7 +89,8 @@ export async function createAuthoringSession(
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return ((await response.json()) as AuthoringSessionResponseOutput)
+    .data as AuthoringSessionOutput;
 }
 
 export async function getAuthoringSession(sessionId: string) {
@@ -97,7 +101,8 @@ export async function getAuthoringSession(sessionId: string) {
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return ((await response.json()) as AuthoringSessionResponseOutput)
+    .data as AuthoringSessionOutput;
 }
 
 export async function patchAuthoringSession(input: {
@@ -112,5 +117,6 @@ export async function patchAuthoringSession(input: {
   if (!response.ok) {
     throw await toAuthoringSessionRequestError(response);
   }
-  return (await response.json()) as AuthoringSessionOutput;
+  return ((await response.json()) as AuthoringSessionResponseOutput)
+    .data as AuthoringSessionOutput;
 }

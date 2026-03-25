@@ -12,7 +12,7 @@ Recent agent workflow audits exposed three recurring failure modes:
 - workflow identifiers are fragmented across UUIDs, contract addresses, factory ids, and on-chain submission ids
 - local agent workflows depend on internal control-plane state (Supabase, indexer freshness, metadata reconciliation) for actions that should primarily depend on the API and chain
 
-These are boundary problems, not isolated route bugs. If they are not corrected now, future feature work will keep adding glue code across CLI, MCP, API, worker, and DB projections.
+These are boundary problems, not isolated route bugs. If they are not corrected now, future feature work will keep adding glue code across CLI, API, worker, and DB projections.
 
 ## Decision
 
@@ -37,7 +37,6 @@ These are boundary problems, not isolated route bugs. If they are not corrected 
 
 - Solver-facing submit no longer requires direct DB access or a service key.
 - CLI post and submit become continuous lifecycle entrypoints instead of chain-only wrappers.
-- MCP stays a thin adapter and must describe the canonical identifiers correctly.
 - API route schemas need direct contract tests so response drift fails in CI.
 - Future work should consolidate duplicate remote read surfaces instead of expanding them.
 
@@ -54,7 +53,7 @@ These are boundary problems, not isolated route bugs. If they are not corrected 
 
 - Route solver-facing `submit` through API challenge lookup instead of direct Supabase reads.
 - Route CLI `post` through API registration after the chain receipt is confirmed.
-- Remove startup checks that unnecessarily disable MCP read-only or local preview flows.
+- Remove startup checks that unnecessarily disable local preview or API-driven workflows.
 
 ### Phase 2: Identity continuity
 

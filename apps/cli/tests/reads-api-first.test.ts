@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { resolveOfficialScorerImage } from "@agora/common";
 import { buildGetCommand } from "../src/commands/get.js";
 import { resolveArtifactFileName } from "../src/commands/get.js";
 import { buildListCommand } from "../src/commands/list.js";
@@ -14,6 +15,13 @@ const challengeId = "11111111-1111-4111-8111-111111111111";
 const challengeAddress = "0x0000000000000000000000000000000000000001";
 const factoryAddress = "0x0000000000000000000000000000000000000002";
 const cliDir = path.resolve(import.meta.dirname ?? ".", "..");
+const tableMetricScorerImage = resolveOfficialScorerImage(
+  "official_table_metric_v1",
+);
+
+if (!tableMetricScorerImage) {
+  throw new Error("expected pinned official_table_metric_v1 scorer image");
+}
 
 function withTempHome<T>(fn: (homeDir: string) => T) {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "agora-cli-home-"));
@@ -111,8 +119,9 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
                 template: "official_table_metric_v1",
                 metric: "r2",
                 comparator: "maximize",
-                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+                scorer_image: tableMetricScorerImage,
               },
+              submission_privacy_mode: "sealed",
               submission_contract: {
                 version: "v1",
                 kind: "csv_table",
@@ -166,6 +175,14 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
       return new Response(
         JSON.stringify({
           data: {
+            refs: {
+              intentId: "33333333-3333-4333-8333-333333333333",
+              submissionId: "22222222-2222-4222-8222-222222222222",
+              challengeId,
+              challengeAddress,
+              onChainSubmissionId: 0,
+            },
+            phase: "scoring_queued",
             submission: {
               id: "22222222-2222-4222-8222-222222222222",
               challenge_id: challengeId,
@@ -192,6 +209,8 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               nextAttemptAt: null,
               lockedAt: null,
             },
+            lastError: null,
+            lastErrorPhase: null,
             scoringStatus: "pending",
             terminal: false,
             recommendedPollSeconds: 15,
@@ -289,8 +308,9 @@ test("status and get commands expose solver-specific submission limits and claim
                 template: "official_table_metric_v1",
                 metric: "r2",
                 comparator: "maximize",
-                scorer_image: "ghcr.io/andymolecule/gems-tabular-scorer:v1",
+                scorer_image: tableMetricScorerImage,
               },
+              submission_privacy_mode: "sealed",
               refs: {
                 challengeId,
                 challengeAddress,
@@ -381,6 +401,14 @@ test("submission-status --watch prefers the submission event stream", async () =
       [
         `event: status
 data: ${JSON.stringify({
+          refs: {
+            intentId: "33333333-3333-4333-8333-333333333333",
+            submissionId: "22222222-2222-4222-8222-222222222222",
+            challengeId,
+            challengeAddress,
+            onChainSubmissionId: 0,
+          },
+          phase: "scoring_running",
           submission: {
             id: "22222222-2222-4222-8222-222222222222",
             challenge_id: challengeId,
@@ -407,6 +435,8 @@ data: ${JSON.stringify({
             nextAttemptAt: null,
             lockedAt: null,
           },
+          lastError: null,
+          lastErrorPhase: null,
           scoringStatus: "pending",
           terminal: false,
           recommendedPollSeconds: 1,
@@ -414,6 +444,14 @@ data: ${JSON.stringify({
 
 event: terminal
 data: ${JSON.stringify({
+          refs: {
+            intentId: "33333333-3333-4333-8333-333333333333",
+            submissionId: "22222222-2222-4222-8222-222222222222",
+            challengeId,
+            challengeAddress,
+            onChainSubmissionId: 0,
+          },
+          phase: "scored",
           submission: {
             id: "22222222-2222-4222-8222-222222222222",
             challenge_id: challengeId,
@@ -440,6 +478,8 @@ data: ${JSON.stringify({
             nextAttemptAt: null,
             lockedAt: null,
           },
+          lastError: null,
+          lastErrorPhase: null,
           scoringStatus: "complete",
           terminal: true,
           recommendedPollSeconds: 60,
@@ -492,9 +532,11 @@ test("submission-status --watch falls back to long-poll when the event stream is
     if (url.endsWith("/events")) {
       return new Response(
         JSON.stringify({
-          error: "Not found",
-          code: "NOT_FOUND",
-          retriable: false,
+          error: {
+            code: "NOT_FOUND",
+            message: "Not found",
+            retriable: false,
+          },
         }),
         { status: 404, headers: { "content-type": "application/json" } },
       );
@@ -507,6 +549,14 @@ test("submission-status --watch falls back to long-poll when the event stream is
     return new Response(
       JSON.stringify({
         data: {
+          refs: {
+            intentId: "33333333-3333-4333-8333-333333333333",
+            submissionId: "22222222-2222-4222-8222-222222222222",
+            challengeId,
+            challengeAddress,
+            onChainSubmissionId: 0,
+          },
+          phase: waitCalls >= 2 ? "scored" : "scoring_running",
           submission: {
             id: "22222222-2222-4222-8222-222222222222",
             challenge_id: challengeId,
@@ -544,6 +594,8 @@ test("submission-status --watch falls back to long-poll when the event stream is
                   lockedAt: null,
                 },
           scoringStatus: waitCalls >= 2 ? "complete" : "pending",
+          lastError: null,
+          lastErrorPhase: null,
           terminal: waitCalls >= 2,
           recommendedPollSeconds: 1,
           waitedMs: waitCalls >= 2 ? 100 : 1_000,

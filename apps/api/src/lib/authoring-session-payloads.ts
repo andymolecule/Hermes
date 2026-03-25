@@ -11,7 +11,6 @@ import {
   authoringSessionSchema,
   authoringSessionValidationSchema,
   getOfficialScorerMetric,
-  resolveOfficialScorerLimits,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
 import {
@@ -70,21 +69,6 @@ function buildSummary(session: AuthoringSessionRow) {
   return title ?? description ?? null;
 }
 
-function parseMemoryMb(value: string) {
-  const normalized = value.trim().toLowerCase();
-  const numeric = Number.parseFloat(normalized);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return 0;
-  }
-  if (normalized.endsWith("g")) {
-    return Math.round(numeric * 1024);
-  }
-  if (normalized.endsWith("m")) {
-    return Math.round(numeric);
-  }
-  return Math.round(numeric);
-}
-
 function buildCompilation(compilation: CompilationResultOutput | null) {
   if (!compilation) {
     return null;
@@ -92,7 +76,6 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
 
   const execution = compilation.execution;
   const metric = getOfficialScorerMetric(execution.template, execution.metric);
-  const templateLimits = resolveOfficialScorerLimits(execution.template);
   const challengeSpec = compilation.challenge_spec;
   const submissionContract = compilation.submission_contract;
 
@@ -103,11 +86,8 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
   }
 
   return {
-    template: execution.template,
     metric: metric?.id ?? execution.metric,
     objective: execution.comparator,
-    scorer_image: execution.scorer_image,
-    evaluation_artifact_uri: execution.evaluation_artifact_uri,
     evaluation_contract: execution.evaluation_contract,
     submission_contract: {
       version: submissionContract.version,
@@ -128,14 +108,6 @@ function buildCompilation(compilation: CompilationResultOutput | null) {
           "value",
         allow_extra: submissionContract.columns.allow_extra,
       },
-    },
-    resource_limits: {
-      memory_mb: templateLimits ? parseMemoryMb(templateLimits.memory) : 2048,
-      cpus: templateLimits ? Number.parseInt(templateLimits.cpus, 10) : 2,
-      timeout_minutes: templateLimits
-        ? Math.max(1, Math.round(templateLimits.timeoutMs / 60_000))
-        : 10,
-      pids_limit: templateLimits?.pids ?? 64,
     },
     reward: {
       total: challengeSpec.reward.total,
@@ -165,7 +137,6 @@ function buildChecklist(compilation: CompilationResultOutput | null) {
     reward: `${challengeSpec.reward.total} USDC`,
     distribution: challengeSpec.reward.distribution,
     deadline: challengeSpec.deadline,
-    template: compilation.execution.template,
     metric: compilation.execution.metric,
     objective: compilation.execution.comparator,
     artifacts_count: compilation.resolved_artifacts.length,
@@ -252,6 +223,11 @@ function buildFieldPrompt(field: string) {
       return {
         message: "Agora still needs the reward distribution.",
         nextAction: "Provide the distribution and retry.",
+      };
+    case "domain":
+      return {
+        message: "Agora still needs the challenge domain.",
+        nextAction: "Provide the domain and retry.",
       };
     case "metric":
       return {
@@ -356,13 +332,13 @@ function buildValidation(
       missing_fields: [],
       invalid_fields: [
         buildValidationIssue({
-          field: "execution.scorer_image",
+          field: "metric",
           code: compileErrorCode,
           message:
             compileErrorMessage ??
-            "Agora could not reach the official scorer dependency for this session.",
+            "Agora could not resolve the scoring configuration for the selected metric.",
           nextAction:
-            "Retry later or contact Agora support if the official scorer registry remains unavailable.",
+            "Retry later or choose a supported metric if the problem persists.",
           candidateValues: [],
         }),
       ],
@@ -460,7 +436,7 @@ function buildReadiness(
       scorer: buildReadinessCheck({
         status: "pass",
         code: "scorer_ready",
-        message: "The official scorer image is resolved and pinned.",
+        message: "The scoring configuration is resolved.",
       }),
       dry_run: buildReadinessCheck({
         status: "pass",
@@ -520,7 +496,7 @@ function buildReadiness(
           code: compileErrorCode,
           message:
             compileErrorMessage ??
-            "Agora could not resolve the official scorer dependency needed to build this spec.",
+            "Agora could not resolve the scoring configuration needed to build this spec.",
         })
       : missingFields.size > 0 || !session.intent_json
         ? buildReadinessCheck({
@@ -583,7 +559,7 @@ function buildReadiness(
       ? buildReadinessCheck({
           status: "pass",
           code: "scorer_ready",
-          message: "The official scorer image is resolved and pinned.",
+          message: "The scoring configuration is resolved.",
         })
       : compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE"
         ? buildReadinessCheck({
@@ -591,7 +567,7 @@ function buildReadiness(
             code: compileErrorCode,
             message:
               compileErrorMessage ??
-              "Agora could not reach the official scorer dependency for this session.",
+              "Agora could not resolve the scoring configuration for this session.",
           })
         : missingFields.has("metric") ||
             !session.authoring_ir_json?.execution.metric
@@ -599,13 +575,13 @@ function buildReadiness(
               status: "pending",
               code: "scorer_pending_metric",
               message:
-                "Agora still needs a supported metric before it can resolve the official scorer.",
+                "Agora still needs a supported metric before it can resolve the scoring configuration.",
             })
           : buildReadinessCheck({
               status: "pending",
               code: "scorer_pending_resolution",
               message:
-                "Agora has not yet resolved the official scorer dependency for this session.",
+                "Agora has not yet resolved the scoring configuration for this session.",
             });
 
   const dryRun =
@@ -648,11 +624,6 @@ export function buildSessionIntentCandidate(session: AuthoringSessionRow) {
 function buildResolved(session: AuthoringSessionRow) {
   const intent = buildSessionIntentCandidate(session);
   const execution = {
-    ...(session.compilation_json?.execution.template
-      ? { template: session.compilation_json.execution.template }
-      : session.authoring_ir_json?.execution.template
-        ? { template: session.authoring_ir_json.execution.template }
-        : {}),
     ...(session.compilation_json?.execution.metric
       ? { metric: session.compilation_json.execution.metric }
       : session.authoring_ir_json?.execution.metric

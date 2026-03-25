@@ -2,7 +2,7 @@ import { getChallengeLifecycleState } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   type ChallengeStatus,
-  resolveChallengeExecution,
+  resolveChallengeExecutionFromPlanCache,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -12,6 +12,10 @@ import {
   getScoreJobBySubmissionId,
   getSubmissionByChainId,
   getSubmissionById,
+  getSubmissionByIntentId,
+  getSubmissionIntentById,
+  getUnmatchedSubmissionByProtocolRefs,
+  listUnmatchedSubmissionsByMatch,
 } from "@agora/db";
 import { getJSON } from "@agora/ipfs";
 import {
@@ -57,6 +61,21 @@ type PublicProofBundle = {
 
 type SubmissionRow = Awaited<ReturnType<typeof getSubmissionById>>;
 type ChallengeRow = Awaited<ReturnType<typeof getChallengeById>>;
+type SubmissionIntentRow = Awaited<ReturnType<typeof getSubmissionIntentById>>;
+type ScoreJobRow = Awaited<ReturnType<typeof getScoreJobBySubmissionId>>;
+type UnmatchedSubmissionRow = Awaited<
+  ReturnType<typeof getUnmatchedSubmissionByProtocolRefs>
+>;
+
+type SubmissionStatusPhase =
+  | "intent_created"
+  | "onchain_seen"
+  | "registration_confirmed"
+  | "scoring_queued"
+  | "scoring_running"
+  | "scored"
+  | "failed"
+  | "skipped";
 
 export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
   return status !== CHALLENGE_STATUS.open;
@@ -94,16 +113,73 @@ function sanitizeScoreJobError(error: string | null) {
   return error.length > 300 ? `${error.slice(0, 297)}...` : error;
 }
 
-function toSubmissionStatusPayload(
-  submission: SubmissionRow,
-  challenge: ChallengeRow,
-  proofBundle: Awaited<ReturnType<typeof getProofBundleBySubmissionId>>,
-  scoreJob: Awaited<ReturnType<typeof getScoreJobBySubmissionId>>,
-) {
+function resolveSubmissionStatusPhase(input: {
+  submission: SubmissionRow | null;
+  scoreJob: ScoreJobRow | null;
+  unmatchedSubmission: UnmatchedSubmissionRow | null;
+}): SubmissionStatusPhase {
+  if (!input.submission) {
+    return input.unmatchedSubmission ? "onchain_seen" : "intent_created";
+  }
+  if (input.scoreJob?.status === "failed") {
+    return "failed";
+  }
+  if (input.scoreJob?.status === "skipped") {
+    return "skipped";
+  }
+  if (input.submission.scored) {
+    return "scored";
+  }
+  if (input.scoreJob?.status === "running") {
+    return "scoring_running";
+  }
+  if (input.scoreJob?.status === "queued") {
+    return "scoring_queued";
+  }
+  return "registration_confirmed";
+}
+
+function toSubmissionStatusRefs(input: {
+  challenge: ChallengeRow;
+  submission: SubmissionRow | null;
+  intent: SubmissionIntentRow | null;
+  unmatchedSubmission: UnmatchedSubmissionRow | null;
+}) {
+  return {
+    intentId:
+      input.intent?.id ??
+      (typeof input.submission?.submission_intent_id === "string"
+        ? input.submission.submission_intent_id
+        : null),
+    submissionId: input.submission?.id ?? null,
+    challengeId: input.challenge.id,
+    challengeAddress: input.challenge.contract_address,
+    onChainSubmissionId:
+      input.submission?.on_chain_sub_id ??
+      input.unmatchedSubmission?.on_chain_sub_id ??
+      null,
+  };
+}
+
+export function buildSubmissionStatusPayload(input: {
+  submission: SubmissionRow | null;
+  challenge: ChallengeRow;
+  intent: SubmissionIntentRow | null;
+  proofBundle: Awaited<ReturnType<typeof getProofBundleBySubmissionId>> | null;
+  scoreJob: ScoreJobRow | null;
+  unmatchedSubmission: UnmatchedSubmissionRow | null;
+}) {
+  const phase = resolveSubmissionStatusPhase({
+    submission: input.submission,
+    scoreJob: input.scoreJob,
+    unmatchedSubmission: input.unmatchedSubmission,
+  });
+  const lastError = sanitizeScoreJobError(input.scoreJob?.last_error ?? null);
+
   let scoringStatus: "pending" | "complete" | "scored_awaiting_proof";
-  if (!submission.scored) {
+  if (!input.submission?.scored) {
     scoringStatus = "pending";
-  } else if (proofBundle?.cid) {
+  } else if (input.proofBundle?.cid) {
     scoringStatus = "complete";
   } else {
     scoringStatus = "scored_awaiting_proof";
@@ -111,42 +187,54 @@ function toSubmissionStatusPayload(
 
   const terminal =
     scoringStatus === "complete" ||
-    scoreJob?.status === "failed" ||
-    scoreJob?.status === "skipped";
-  const recommendedPollSeconds = terminal
-    ? 60
-    : scoreJob?.status === "running"
+    input.scoreJob?.status === "failed" ||
+    input.scoreJob?.status === "skipped";
+  const recommendedPollSeconds =
+    phase === "scoring_running"
       ? 5
-      : scoreJob?.status === "queued"
+      : phase === "scoring_queued" || phase === "intent_created"
         ? 15
-        : 20;
+        : terminal
+          ? 60
+          : 20;
 
   return {
-    submission: {
-      id: submission.id,
-      challenge_id: challenge.id,
-      challenge_address: challenge.contract_address,
-      on_chain_sub_id: submission.on_chain_sub_id,
-      solver_address: submission.solver_address,
-      score: normalizeSubmissionScore(submission.score),
-      scored: submission.scored,
-      submitted_at: submission.submitted_at,
-      scored_at: submission.scored_at ?? null,
-      refs: toSubmissionRefs(submission, challenge),
-    },
-    proofBundle: proofBundle
+    refs: toSubmissionStatusRefs({
+      challenge: input.challenge,
+      submission: input.submission,
+      intent: input.intent,
+      unmatchedSubmission: input.unmatchedSubmission,
+    }),
+    phase,
+    lastError,
+    lastErrorPhase: lastError ? phase : null,
+    submission: input.submission
       ? {
-          reproducible: proofBundle.reproducible,
+          id: input.submission.id,
+          challenge_id: input.challenge.id,
+          challenge_address: input.challenge.contract_address,
+          on_chain_sub_id: input.submission.on_chain_sub_id,
+          solver_address: input.submission.solver_address,
+          score: normalizeSubmissionScore(input.submission.score),
+          scored: input.submission.scored,
+          submitted_at: input.submission.submitted_at,
+          scored_at: input.submission.scored_at ?? null,
+          refs: toSubmissionRefs(input.submission, input.challenge),
         }
       : null,
-    job: scoreJob
+    proofBundle: input.proofBundle
       ? {
-          status: scoreJob.status,
-          attempts: scoreJob.attempts,
-          maxAttempts: scoreJob.max_attempts,
-          lastError: sanitizeScoreJobError(scoreJob.last_error),
-          nextAttemptAt: scoreJob.next_attempt_at,
-          lockedAt: scoreJob.locked_at,
+          reproducible: input.proofBundle.reproducible,
+        }
+      : null,
+    job: input.scoreJob
+      ? {
+          status: input.scoreJob.status,
+          attempts: input.scoreJob.attempts,
+          maxAttempts: input.scoreJob.max_attempts,
+          lastError,
+          nextAttemptAt: input.scoreJob.next_attempt_at,
+          lockedAt: input.scoreJob.locked_at,
         }
       : null,
     scoringStatus,
@@ -155,7 +243,7 @@ function toSubmissionStatusPayload(
   };
 }
 
-type SubmissionStatusPayload = ReturnType<typeof toSubmissionStatusPayload>;
+type SubmissionStatusPayload = ReturnType<typeof buildSubmissionStatusPayload>;
 type SubmissionWaitPayload = ReturnType<typeof withSubmissionWaitMetadata>;
 
 function sleep(ms: number) {
@@ -242,22 +330,23 @@ export function buildSubmissionStatusEventStream(input: {
 }
 
 function getSubmissionStatusSignature(
-  payload: ReturnType<typeof toSubmissionStatusPayload>,
+  payload: ReturnType<typeof buildSubmissionStatusPayload>,
 ) {
   return JSON.stringify({
-    scored: payload.submission.scored,
-    score: payload.submission.score,
+    phase: payload.phase,
+    scored: payload.submission?.scored ?? null,
+    score: payload.submission?.score ?? null,
     scoringStatus: payload.scoringStatus,
     terminal: payload.terminal,
     jobStatus: payload.job?.status ?? null,
     attempts: payload.job?.attempts ?? null,
     lastError: payload.job?.lastError ?? null,
-    scoredAt: payload.submission.scored_at,
+    scoredAt: payload.submission?.scored_at ?? null,
   });
 }
 
 function withSubmissionWaitMetadata(
-  payload: ReturnType<typeof toSubmissionStatusPayload>,
+  payload: ReturnType<typeof buildSubmissionStatusPayload>,
   waitedMs: number,
   timedOut: boolean,
 ) {
@@ -274,12 +363,14 @@ export async function getSubmissionStatusData(submissionId: string) {
   const challenge = await getChallengeById(db, submission.challenge_id);
   const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
   const scoreJob = await getScoreJobBySubmissionId(db, submissionId);
-  return toSubmissionStatusPayload(
+  return buildSubmissionStatusPayload({
     submission,
     challenge,
+    intent: null,
     proofBundle,
     scoreJob,
-  );
+    unmatchedSubmission: null,
+  });
 }
 
 async function waitForSubmissionStatusData(input: {
@@ -298,7 +389,7 @@ export async function waitForSubmissionStatusDataWithReader(input: {
   timeoutSeconds: number;
   readStatus: (
     submissionId: string,
-  ) => Promise<ReturnType<typeof toSubmissionStatusPayload>>;
+  ) => Promise<ReturnType<typeof buildSubmissionStatusPayload>>;
   sleepImpl?: (ms: number) => Promise<void>;
 }) {
   const startedAt = Date.now();
@@ -346,11 +437,69 @@ export async function getSubmissionStatusDataByProtocolRefs(input: {
     input.onChainSubmissionId,
   );
   if (!submission) {
-    return null;
+    const unmatchedSubmission = await getUnmatchedSubmissionByProtocolRefs(db, {
+      challengeId: challenge.id,
+      onChainSubmissionId: input.onChainSubmissionId,
+    });
+    if (!unmatchedSubmission) {
+      return null;
+    }
+    return buildSubmissionStatusPayload({
+      submission: null,
+      challenge,
+      intent: null,
+      proofBundle: null,
+      scoreJob: null,
+      unmatchedSubmission,
+    });
   }
   const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
   const scoreJob = await getScoreJobBySubmissionId(db, submission.id);
-  return toSubmissionStatusPayload(submission, challenge, proofBundle, scoreJob);
+  return buildSubmissionStatusPayload({
+    submission,
+    challenge,
+    intent: null,
+    proofBundle,
+    scoreJob,
+    unmatchedSubmission: null,
+  });
+}
+
+export async function getSubmissionStatusDataByIntentId(intentId: string) {
+  const db = createSupabaseClient(true);
+  const intent = await getSubmissionIntentById(db, intentId);
+  if (!intent) {
+    return null;
+  }
+
+  const challenge = await getChallengeById(db, intent.challenge_id);
+  const submission = await getSubmissionByIntentId(db, intent.id);
+  if (!submission) {
+    const unmatchedRows = await listUnmatchedSubmissionsByMatch(db, {
+      challengeId: challenge.id,
+      solverAddress: intent.solver_address,
+      resultHash: intent.result_hash,
+    });
+    return buildSubmissionStatusPayload({
+      submission: null,
+      challenge,
+      intent,
+      proofBundle: null,
+      scoreJob: null,
+      unmatchedSubmission: unmatchedRows[0] ?? null,
+    });
+  }
+
+  const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
+  const scoreJob = await getScoreJobBySubmissionId(db, submission.id);
+  return buildSubmissionStatusPayload({
+    submission,
+    challenge,
+    intent,
+    proofBundle,
+    scoreJob,
+    unmatchedSubmission: null,
+  });
 }
 
 export function getPublicSubmissionVerificationUnavailableMessage() {
@@ -370,20 +519,20 @@ export async function buildPublicSubmissionVerification(
 
   const db = createSupabaseClient(true);
   const proofBundle = await getProofBundleBySubmissionId(db, submission.id);
-  const execution = resolveChallengeExecution(challenge);
+  const execution = resolveChallengeExecutionFromPlanCache(challenge);
 
   let proofPayload: PublicProofBundle | null = null;
   if (proofBundle?.cid) {
     proofPayload = await getJSON<PublicProofBundle>(proofBundle.cid);
   }
 
-  const replaySubmissionCid =
-    proofPayload?.replaySubmissionCid ?? null;
+  const replaySubmissionCid = proofPayload?.replaySubmissionCid ?? null;
 
   const verification: PublicSubmissionVerification = {
     challengeId: challenge.id,
     challengeAddress: challenge.contract_address,
-    challengeSpecCid: proofPayload?.challengeSpecCid ?? challenge.spec_cid ?? null,
+    challengeSpecCid:
+      proofPayload?.challengeSpecCid ?? challenge.spec_cid ?? null,
     submissionId: submission.id,
     onChainSubId: submission.on_chain_sub_id,
     solverAddress: submission.solver_address,
@@ -394,7 +543,9 @@ export async function buildPublicSubmissionVerification(
     proofBundleCid: proofBundle?.cid ?? submission.proof_bundle_cid ?? null,
     proofBundleHash: submission.proof_bundle_hash ?? null,
     evaluationBundleCid:
-      proofPayload?.evaluationBundleCid ?? execution.evaluationBundleCid ?? null,
+      proofPayload?.evaluationBundleCid ??
+      execution.evaluationBundleCid ??
+      null,
     replaySubmissionCid,
     containerImageDigest:
       proofPayload?.containerImageDigest ??
