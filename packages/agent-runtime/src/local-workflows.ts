@@ -18,7 +18,6 @@ import {
   AgoraError,
   type ResolvedChallengeExecution,
   SUBMISSION_LIMITS,
-  SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
   challengeSpecSchema,
   importSubmissionSealPublicKey,
@@ -160,13 +159,13 @@ async function assertSubmitDeadlineSafetyWindow(deadline: string | undefined) {
 
 async function cleanupFailedSubmissionArtifact(input: {
   apiUrl?: string;
-  resultCid: string;
+  submissionCid: string;
   intentId?: string;
 }) {
   try {
     await cleanupSubmissionArtifactWithApi(
       {
-        resultCid: input.resultCid,
+        submissionCid: input.submissionCid,
         intentId: input.intentId,
       },
       input.apiUrl,
@@ -181,7 +180,7 @@ export type SubmissionRegistrationStatus = "confirmed" | "confirmation_pending";
 export interface SubmitSolutionDryRunResult {
   challengeId: string | null;
   challengeAddress: `0x${string}`;
-  resultCid: string;
+  submissionCid: string;
   dryRun: true;
 }
 
@@ -189,7 +188,7 @@ export interface SubmitSolutionResult {
   challengeId: string | null;
   challengeAddress: `0x${string}`;
   txHash: `0x${string}`;
-  resultCid: string;
+  submissionCid: string;
   submissionId: string | null;
   onChainSubmissionId: number;
   submission: { id: string } | null;
@@ -326,7 +325,7 @@ export async function submitSolution(input: {
   const sealedEnvelopeBytes = new TextEncoder().encode(
     serializeSealedSubmissionEnvelope(sealedEnvelope),
   );
-  const { resultCid } = await uploadSubmissionArtifactToApi(
+  const { submissionCid } = await uploadSubmissionArtifactToApi(
     {
       bytes: sealedEnvelopeBytes,
       fileName: `sealed-submission-${challengeSealRef}.json`,
@@ -339,7 +338,7 @@ export async function submitSolution(input: {
     return {
       challengeId,
       challengeAddress,
-      resultCid,
+      submissionCid,
       dryRun: true,
     };
   }
@@ -352,15 +351,14 @@ export async function submitSolution(input: {
       {
         ...challengeTarget,
         solverAddress: solverAddress as `0x${string}`,
-        resultCid,
-        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+        submissionCid,
       },
       apiUrl,
     );
   } catch (error) {
     await cleanupFailedSubmissionArtifact({
       apiUrl,
-      resultCid,
+      submissionCid,
     });
     throw error;
   }
@@ -386,7 +384,7 @@ export async function submitSolution(input: {
     if (!(error instanceof AmbiguousWriteResultError)) {
       await cleanupFailedSubmissionArtifact({
         apiUrl,
-        resultCid,
+        submissionCid,
         intentId: submissionIntent.intentId,
       });
     }
@@ -402,7 +400,7 @@ export async function submitSolution(input: {
   }).catch(async (error) => {
     await cleanupFailedSubmissionArtifact({
       apiUrl,
-      resultCid,
+      submissionCid,
       intentId: submissionIntent.intentId,
     });
     throw error;
@@ -419,9 +417,8 @@ export async function submitSolution(input: {
       {
         ...challengeTarget,
         intentId: submissionIntent.intentId,
-        resultCid,
+        submissionCid,
         txHash,
-        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
       },
       apiUrl,
     );
@@ -438,7 +435,7 @@ export async function submitSolution(input: {
     challengeId,
     challengeAddress,
     txHash,
-    resultCid,
+    submissionCid,
     submissionId: registeredSubmission?.id ?? null,
     onChainSubmissionId: Number(onChainSubmissionId),
     submission: registeredSubmission,
@@ -622,9 +619,9 @@ export async function verifySubmission(input: {
         "Submission does not belong to the provided challenge. Next step: confirm the challenge and submission IDs.",
       );
     }
-    if (!submission.result_cid) {
+    if (!submission.submission_cid) {
       throw cliWorkflowError(
-        "Submission is missing result CID metadata. Next step: inspect the submission row and resubmit if needed.",
+        "Submission is missing submission CID metadata. Next step: inspect the submission row and resubmit if needed.",
       );
     }
     if (submission.on_chain_sub_id == null) {
@@ -706,8 +703,7 @@ export async function verifySubmission(input: {
       evaluationBundle: { cid: executionPlan.evaluationBundleCid },
       mount: executionPlan.mount,
       submission: await resolveSubmissionSource({
-        resultCid: submission.result_cid,
-        resultFormat: submission.result_format,
+        submissionCid: submission.submission_cid,
         challengeId: challenge.id,
         solverAddress: submission.solver_address,
         privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(runtimeConfig),

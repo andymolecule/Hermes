@@ -3,7 +3,6 @@
 import {
   CHALLENGE_STATUS,
   SUBMISSION_LIMITS,
-  SUBMISSION_RESULT_FORMAT,
   type SubmissionContractOutput,
   deriveExpectedColumns,
   importSubmissionSealPublicKey,
@@ -75,7 +74,7 @@ const READY_TO_SEAL_BADGE_COPY = "Will seal on submit";
 function getFileSelectionError(file: { size: number }) {
   return getSubmissionSizeError(
     file.size,
-    "Selected file is empty. Choose a non-empty result file and retry.",
+    "Selected file is empty. Choose a non-empty submission file and retry.",
     `Selected file exceeds the ${MAX_UPLOAD_MB} MB limit. Choose a smaller file and retry.`,
   );
 }
@@ -350,11 +349,11 @@ export function SubmitSolution({
         throw new Error(message);
       }
       const {
-        data: { resultCid },
+        data: { submissionCid },
       } = (await pinRes.json()) as {
-        data: { resultCid: string };
+        data: { submissionCid: string };
       };
-      return resultCid;
+      return submissionCid;
     } finally {
       setUploading(false);
     }
@@ -393,8 +392,8 @@ export function SubmitSolution({
         requiresCsvSubmission
           ? `Upload a CSV file with columns: ${formatExpectedColumns(requiredColumns)}.`
           : requiresFileSubmission
-            ? "Upload a result file before submitting."
-            : "Upload a result file or enter your answer.",
+            ? "Upload a submission file before submitting."
+            : "Upload a submission file or enter your answer.",
       );
       return;
     }
@@ -479,8 +478,7 @@ export function SubmitSolution({
       const submissionIntent = await createSubmissionIntent({
         challengeId,
         solverAddress: normalizedAddress as `0x${string}`,
-        resultCid: cid,
-        resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
+        submissionCid: cid,
       });
       if (wrongChain) {
         throw new Error(getWrongChainMessage(chainId));
@@ -512,9 +510,8 @@ export function SubmitSolution({
         await createSubmissionRecord({
           challengeId,
           intentId: submissionIntent.intentId,
-          resultCid: cid,
+          submissionCid: cid,
           txHash: tx,
-          resultFormat: SUBMISSION_RESULT_FORMAT.sealedSubmissionV2,
         });
       } catch (registrationError) {
         metadataWarning =
@@ -721,7 +718,7 @@ export function SubmitSolution({
                             strokeWidth={1.5}
                           />
                           <span className="text-sm font-medium text-[var(--text-secondary)]">
-                            Drop your result file here or{" "}
+                            Drop your submission file here or{" "}
                             <span className="text-[var(--text-primary)] font-bold underline underline-offset-2">
                               browse
                             </span>

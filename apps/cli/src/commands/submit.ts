@@ -14,8 +14,8 @@ import { ensurePrivateKey } from "../lib/wallet";
 
 export function buildSubmitCommand() {
   const cmd = new Command("submit")
-    .description("Submit a result file to a challenge")
-    .argument("<file>", "Result file path")
+    .description("Submit a submission file to a challenge")
+    .argument("<file>", "Submission file path")
     .requiredOption("--challenge <id>", "Challenge UUID or contract address")
     .option("--dry-run", "Pin only, skip on-chain submission", false)
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
@@ -59,7 +59,7 @@ export function buildSubmitCommand() {
         if ("dryRun" in result && result.dryRun) {
           printSuccess("Dry run complete. No on-chain submission sent.");
           printWarning(`Challenge address: ${result.challengeAddress}`);
-          printWarning(`Pinned result: ${result.resultCid}`);
+          printWarning(`Pinned submission: ${result.submissionCid}`);
           return;
         }
 

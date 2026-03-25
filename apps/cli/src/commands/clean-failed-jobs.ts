@@ -26,7 +26,7 @@ interface FailedJobWithContext {
   updated_at: string;
   submissions: {
     id: string;
-    result_cid: string | null;
+    submission_cid: string | null;
     solver_address: string;
   } | null;
   challenges: {
@@ -143,7 +143,7 @@ export function buildCleanFailedJobsCommand() {
         let query = db
           .from("score_jobs")
           .select(
-            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, result_cid, solver_address), challenges(id, title, status, execution_plan_json)",
+            "id, submission_id, challenge_id, attempts, max_attempts, last_error, updated_at, submissions(id, submission_cid, solver_address), challenges(id, title, status, execution_plan_json)",
           )
           .eq("status", "failed")
           .order("updated_at", { ascending: false });

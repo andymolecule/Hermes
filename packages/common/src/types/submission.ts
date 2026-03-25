@@ -1,21 +1,13 @@
 export interface SubmissionMetadata {
   challengeId: string;
   solverAddress: string;
-  resultCid: string;
+  submissionCid: string;
   resultHash: string;
   submittedAt: string;
 }
 
-export const SUBMISSION_RESULT_FORMAT = {
-  plainV0: "plain_v0",
-  sealedSubmissionV2: "sealed_submission_v2",
-} as const;
-
-export const SUBMISSION_RESULT_CID_MISSING_ERROR =
-  "missing_result_cid_onchain_submission";
-
-export type SubmissionResultFormat =
-  (typeof SUBMISSION_RESULT_FORMAT)[keyof typeof SUBMISSION_RESULT_FORMAT];
+export const SUBMISSION_CID_MISSING_ERROR =
+  "missing_submission_cid_onchain_submission";
 
 export interface ProofBundle {
   inputHash: string;

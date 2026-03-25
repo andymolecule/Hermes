@@ -1,7 +1,7 @@
 import { getChallengeLifecycleState, getPublicClient } from "@agora/chain";
 import {
   CHALLENGE_STATUS,
-  SUBMISSION_RESULT_CID_MISSING_ERROR,
+  SUBMISSION_CID_MISSING_ERROR,
   isTerminalScoreJobError,
 } from "@agora/common";
 import {
@@ -216,10 +216,10 @@ export async function processJob(
       return;
     }
 
-    if (!submission.result_cid) {
+    if (!submission.submission_cid) {
       log(
         "warn",
-        "Submission missing result_cid — cannot score (on-chain-only submission)",
+        "Submission missing submission CID metadata — cannot score (on-chain-only submission)",
         {
           submissionId: submission.id,
           challengeId: challenge.id,
@@ -233,7 +233,7 @@ export async function processJob(
           challenge_id: challenge.id,
           trace_id: job.trace_id ?? submission.trace_id ?? null,
         },
-        SUBMISSION_RESULT_CID_MISSING_ERROR,
+        SUBMISSION_CID_MISSING_ERROR,
       );
       return;
     }

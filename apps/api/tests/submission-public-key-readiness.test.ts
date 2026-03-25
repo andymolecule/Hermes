@@ -3,6 +3,7 @@ import test from "node:test";
 import { resetConfigCache } from "@agora/common";
 import router, {
   canServeSubmissionSealPublicKey,
+  validateSealedSubmissionUpload,
 } from "../src/routes/submissions.js";
 
 function setRequiredConfigEnv() {
@@ -94,4 +95,33 @@ test("public key route returns 503 when sealing config is missing", async () => 
     restoreRequiredConfig();
     resetConfigCache();
   }
+});
+
+test("sealed upload validator accepts a canonical sealed envelope", () => {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({
+      version: "sealed_submission_v2",
+      alg: "aes-256-gcm+rsa-oaep-256",
+      kid: "submission-seal-test",
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      solverAddress: "0x0000000000000000000000000000000000000001",
+      fileName: "submission.csv",
+      mimeType: "text/csv",
+      iv: "aGVsbG8",
+      wrappedKey: "d3JhcHBlZC1rZXk",
+      ciphertext: "Y2lwaGVydGV4dA",
+    }),
+  );
+
+  assert.doesNotThrow(() => {
+    validateSealedSubmissionUpload(bytes);
+  });
+});
+
+test("sealed upload validator rejects plaintext payloads", () => {
+  const bytes = new TextEncoder().encode("id,prediction\ns1,0.9\n");
+
+  assert.throws(() => {
+    validateSealedSubmissionUpload(bytes);
+  }, /sealed_submission_v2|JSON envelope|Unexpected token/i);
 });

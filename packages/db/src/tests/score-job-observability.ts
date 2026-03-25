@@ -4,6 +4,7 @@ import {
   failJob,
   getOldestRunningStartedAt,
   markScoreJobSkipped,
+  reviveMetadataBlockedScoreJob,
   requeueJobWithoutAttemptPenalty,
   runningOverThresholdCount,
 } from "../queries/score-jobs.js";
@@ -240,6 +241,63 @@ async function testGetOldestRunningStartedAtReturnsTimestamp() {
   assert.equal(oldest, "2026-03-06T10:00:00.000Z");
 }
 
+async function testReviveMetadataBlockedScoreJobMatchesCanonicalPrefix() {
+  const calls: {
+    eq?: [string, unknown];
+    statuses?: unknown[];
+    like?: [string, unknown];
+    payload?: Record<string, unknown>;
+  } = {};
+
+  const db = {
+    from(table: string) {
+      assert.equal(table, "score_jobs");
+      return {
+        update(nextPayload: Record<string, unknown>) {
+          calls.payload = nextPayload;
+          return {
+            eq(field: string, value: unknown) {
+              calls.eq = [field, value];
+              return this;
+            },
+            in(field: string, value: unknown[]) {
+              assert.equal(field, "status");
+              calls.statuses = value;
+              return this;
+            },
+            like(field: string, value: unknown) {
+              calls.like = [field, value];
+              return {
+                select(selection: string) {
+                  assert.equal(selection, "*");
+                  return {
+                    async maybeSingle() {
+                      return {
+                        data: { id: "job-legacy", ...nextPayload },
+                        error: null,
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  const revived = await reviveMetadataBlockedScoreJob(db, "submission-legacy");
+  assert.equal(revived?.id, "job-legacy");
+  assert.deepEqual(calls.eq, ["submission_id", "submission-legacy"]);
+  assert.deepEqual(calls.statuses, ["failed", "skipped"]);
+  assert.deepEqual(calls.like, [
+    "last_error",
+    "missing_submission_cid_onchain_submission%",
+  ]);
+  assert.equal(calls.payload?.last_error, null);
+}
+
 await testCompleteJobClearsRunStartedAt();
 await testFailJobClearsRunStartedAt();
 await testExhaustedFailJobKeepsNextAttemptAtNonNull();
@@ -247,4 +305,5 @@ await testRequeueClearsRunStartedAt();
 await testMarkScoreJobSkippedKeepsNextAttemptAtNonNull();
 await testRunningOverThresholdCountUsesRunStartedAt();
 await testGetOldestRunningStartedAtReturnsTimestamp();
+await testReviveMetadataBlockedScoreJobMatchesCanonicalPrefix();
 console.log("score job observability tests passed");

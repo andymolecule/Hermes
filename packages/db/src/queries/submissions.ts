@@ -1,4 +1,3 @@
-import { type SubmissionResultFormat } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
 export class SubmissionOnChainWriteConflictError extends Error {
@@ -14,8 +13,7 @@ export interface SubmissionOnChainWrite {
   on_chain_sub_id: number;
   solver_address: string;
   result_hash: string;
-  result_cid: string;
-  result_format: SubmissionResultFormat;
+  submission_cid: string;
   proof_bundle_hash: string;
   score: string | null;
   scored: boolean;
@@ -29,12 +27,12 @@ export interface SubmissionOnChainWrite {
  * Upsert a registered submission row and refresh its on-chain-owned fields.
  *
  * Ownership model:
- * - Registration owns: submission_intent_id/result_cid/result_format
+ * - Registration owns: submission_intent_id/submission_cid
  * - On-chain/indexer/API submit confirmation own: solver/result_hash/proof_bundle_hash/score/scored/submitted_at/scored_at/tx_hash
  * - Worker scoring output owns: proof_bundle_cid + score fields (via updateScore)
  *
  * This function refuses to repoint an existing submission row to a different
- * submission intent or result payload.
+ * submission intent or submission payload.
  */
 export async function upsertSubmissionOnChain(
   db: AgoraDbClient,
@@ -75,12 +73,9 @@ export async function upsertSubmissionOnChain(
       "Submission row is already linked to a different submission intent. Next step: inspect the existing submission row and retry with the original intent id.",
     );
   }
-  if (
-    current.result_cid !== normalizedPayload.result_cid ||
-    current.result_format !== normalizedPayload.result_format
-  ) {
+  if (current.submission_cid !== normalizedPayload.submission_cid) {
     throw new SubmissionOnChainWriteConflictError(
-      "Submission row is already linked to different submission metadata. Next step: inspect the existing submission row and retry with the original result CID and format.",
+      "Submission row is already linked to different submission metadata. Next step: inspect the existing submission row and retry with the original submission CID.",
     );
   }
 
@@ -246,17 +241,17 @@ export async function countSubmissionsBySolverForChallenge(
   return count ?? 0;
 }
 
-export async function countSubmissionsByResultCid(
+export async function countSubmissionsBySubmissionCid(
   db: AgoraDbClient,
-  resultCid: string,
+  submissionCid: string,
 ) {
   const { count, error } = await db
     .from("submissions")
     .select("id", { count: "exact", head: true })
-    .eq("result_cid", resultCid);
+    .eq("submission_cid", submissionCid);
   if (error) {
     throw new Error(
-      `Failed to count submissions by result CID: ${error.message}`,
+      `Failed to count submissions by submission CID: ${error.message}`,
     );
   }
   return count ?? 0;

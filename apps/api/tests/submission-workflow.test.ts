@@ -12,7 +12,7 @@ test("cleanupSubmissionArtifact refuses to delete a live submission intent", asy
   await assert.rejects(
     cleanupSubmissionArtifact({
       intentId: "2d931510-d99f-494a-8c67-87feb05e1594",
-      resultCid: "ipfs://bafy-test",
+      submissionCid: "ipfs://bafy-test",
       createSupabaseClientImpl: () => db,
       getSubmissionIntentByIdImpl: async () =>
         ({
@@ -20,14 +20,13 @@ test("cleanupSubmissionArtifact refuses to delete a live submission intent", asy
           challenge_id: "challenge-1",
           solver_address: "0xsolver",
           result_hash: "0xhash",
-          result_cid: "ipfs://bafy-test",
-          result_format: "plain_v0",
+          submission_cid: "ipfs://bafy-test",
           trace_id: null,
           expires_at: "2026-03-31T00:00:00.000Z",
           created_at: "2026-03-20T00:00:00.000Z",
         }) as never,
-      countSubmissionIntentsByResultCidImpl: async () => 1,
-      countSubmissionsByResultCidImpl: async () => 0,
+      countSubmissionIntentsBySubmissionCidImpl: async () => 1,
+      countSubmissionsBySubmissionCidImpl: async () => 0,
       unpinCidImpl: async () => {
         throw new Error("should not unpin");
       },
@@ -44,11 +43,11 @@ test("cleanupSubmissionArtifact unpins orphaned results when nothing references 
   const unpinned: string[] = [];
 
   const result = await cleanupSubmissionArtifact({
-    resultCid: "ipfs://bafy-orphan",
+    submissionCid: "ipfs://bafy-orphan",
     createSupabaseClientImpl: () => ({}) as never,
     getSubmissionIntentByIdImpl: async () => null,
-    countSubmissionIntentsByResultCidImpl: async () => 0,
-    countSubmissionsByResultCidImpl: async () => 0,
+    countSubmissionIntentsBySubmissionCidImpl: async () => 0,
+    countSubmissionsBySubmissionCidImpl: async () => 0,
     unpinCidImpl: async (cid) => {
       unpinned.push(cid);
     },

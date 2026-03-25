@@ -55,7 +55,7 @@ assert.ok(
   "score job statuses should include skipped",
 );
 assert.equal(
-  isMetadataBlockedScoreJobError("missing_result_cid_onchain_submission"),
+  isMetadataBlockedScoreJobError("missing_submission_cid_onchain_submission"),
   true,
   "metadata-blocked score job detection should match the canonical error",
 );

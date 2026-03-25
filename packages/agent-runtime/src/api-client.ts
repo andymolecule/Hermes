@@ -314,8 +314,7 @@ export async function createSubmissionIntentWithApi(
     challengeId?: string;
     challengeAddress?: `0x${string}`;
     solverAddress: `0x${string}`;
-    resultCid: string;
-    resultFormat?: "plain_v0" | "sealed_submission_v2";
+    submissionCid: string;
   },
   apiUrl?: string,
 ) {
@@ -338,9 +337,8 @@ export async function registerSubmissionWithApi(
     challengeId?: string;
     challengeAddress?: `0x${string}`;
     intentId: string;
-    resultCid: string;
+    submissionCid: string;
     txHash: `0x${string}`;
-    resultFormat: "sealed_submission_v2";
   },
   apiUrl?: string,
 ) {
@@ -359,7 +357,7 @@ export async function registerSubmissionWithApi(
 
 export async function cleanupSubmissionArtifactWithApi(
   input: {
-    resultCid: string;
+    submissionCid: string;
     intentId?: string;
   },
   apiUrl?: string,

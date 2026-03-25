@@ -113,8 +113,7 @@ test("submission endpoints parse canonical API responses", async () => {
       {
         challengeId: "11111111-1111-4111-8111-111111111111",
         solverAddress: "0x0000000000000000000000000000000000000001",
-        resultCid: "ipfs://result",
-        resultFormat: "sealed_submission_v2",
+        submissionCid: "ipfs://result",
       },
       "https://api.example",
     );
@@ -262,7 +261,7 @@ test("submission cleanup endpoint parses the cleanup result", async () => {
   try {
     const response = await cleanupSubmissionArtifactWithApi(
       {
-        resultCid: "ipfs://sealed-submission",
+        submissionCid: "ipfs://sealed-submission",
         intentId: "22222222-2222-4222-8222-222222222222",
       },
       "https://api.example",
@@ -339,8 +338,7 @@ test("submission intent creation retries retriable API failures", async () => {
       {
         challengeId: "11111111-1111-4111-8111-111111111111",
         solverAddress: "0x0000000000000000000000000000000000000001",
-        resultCid: "ipfs://result",
-        resultFormat: "sealed_submission_v2",
+        submissionCid: "ipfs://result",
       },
       "https://api.example",
     );
@@ -390,7 +388,7 @@ test("submission upload endpoint parses the returned CID", async () => {
     return new Response(
       JSON.stringify({
         data: {
-          resultCid: "ipfs://sealed-submission",
+          submissionCid: "ipfs://sealed-submission",
         },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -406,7 +404,7 @@ test("submission upload endpoint parses the returned CID", async () => {
       },
       "https://api.example",
     );
-    assert.equal(response.resultCid, "ipfs://sealed-submission");
+    assert.equal(response.submissionCid, "ipfs://sealed-submission");
     assert.equal(requestedUrl, "https://api.example/api/submissions/upload");
     assert.deepEqual(requestedHeaders, {
       "content-type": "application/json",
@@ -631,10 +629,9 @@ test("API client supports protocol-ref challenge and submission lookups", async 
       {
         challengeAddress: "0x0000000000000000000000000000000000000001",
         intentId: "22222222-2222-4222-8222-222222222222",
-        resultCid: "ipfs://result",
+        submissionCid: "ipfs://result",
         txHash:
           "0x1111111111111111111111111111111111111111111111111111111111111111",
-        resultFormat: "sealed_submission_v2",
       },
       "https://api.example",
     );

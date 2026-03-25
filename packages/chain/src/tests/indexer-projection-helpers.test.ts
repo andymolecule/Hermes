@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CHALLENGE_STATUS, SUBMISSION_RESULT_FORMAT } from "@agora/common";
+import { CHALLENGE_STATUS } from "@agora/common";
 import { projectOnChainSubmissionFromRegistration } from "../indexer/submissions.js";
 
 test("projectOnChainSubmissionFromRegistration recovers missing submission rows from the reserved intent", async () => {
@@ -37,8 +37,7 @@ test("projectOnChainSubmissionFromRegistration recovers missing submission rows 
         challenge_id: "challenge-1",
         solver_address: "0x2222222222222222222222222222222222222222",
         result_hash: "0xhash",
-        result_cid: "ipfs://bafy-result",
-        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        submission_cid: "ipfs://bafy-result",
         trace_id: "trace-1",
         expires_at: "2026-03-31T00:00:00.000Z",
         created_at: "2026-03-20T00:00:00.000Z",
@@ -50,8 +49,7 @@ test("projectOnChainSubmissionFromRegistration recovers missing submission rows 
         challenge_id: "challenge-1",
         on_chain_sub_id: 3,
         solver_address: "0x2222222222222222222222222222222222222222",
-        result_cid: "ipfs://bafy-result",
-        result_format: SUBMISSION_RESULT_FORMAT.plainV0,
+        submission_cid: "ipfs://bafy-result",
         submission_intent_id: "intent-1",
         scored: false,
         trace_id: "trace-1",
@@ -76,7 +74,7 @@ test("projectOnChainSubmissionFromRegistration recovers missing submission rows 
   assert.equal(row?.id, "submission-1");
   assert.equal(upserts.length, 1);
   assert.equal(upserts[0]?.submission_intent_id, "intent-1");
-  assert.equal(upserts[0]?.result_cid, "ipfs://bafy-result");
+  assert.equal(upserts[0]?.submission_cid, "ipfs://bafy-result");
   assert.deepEqual(deleted, [
     {
       challengeId: "challenge-1",

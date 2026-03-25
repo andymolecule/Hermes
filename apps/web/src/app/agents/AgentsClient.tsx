@@ -1651,7 +1651,7 @@ agora finalize <challenge-id> --format json`}
                   fix: "Stop instead of guessing. Public specs must use execution.evaluation_artifact_id and must not expose execution.evaluation_artifact_uri or private artifact URIs. Ask for the challenge to be republished with the current Agora publish flow.",
                 },
                 {
-                  error: "Submission missing result CID",
+                  error: "Submission missing submission CID",
                   fix: "Resubmit with the current CLI version and ensure the indexer or submit-confirmation path can reconcile metadata.",
                 },
                 {

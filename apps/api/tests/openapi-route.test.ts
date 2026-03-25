@@ -33,4 +33,26 @@ test("openapi document is served from well-known path", async () => {
   assert.ok("/api/submissions/{id}/status" in body.paths);
   assert.ok("/api/submissions" in body.paths);
   assert.ok(!("/api/submissions/attach-metadata" in body.paths));
+
+  const uploadPath = body.paths["/api/submissions/upload"] as {
+    post?: {
+      requestBody?: {
+        content?: Record<string, unknown>;
+      };
+    };
+  };
+  const uploadContent = uploadPath.post?.requestBody?.content ?? {};
+  assert.ok(
+    "application/octet-stream" in uploadContent,
+    "submission upload should advertise raw octet-stream bodies",
+  );
+  assert.ok(
+    "multipart/form-data" in uploadContent,
+    "submission upload should advertise multipart form uploads",
+  );
+  assert.equal(
+    "application/json" in uploadContent,
+    false,
+    "submission upload should not advertise JSON bodies",
+  );
 });

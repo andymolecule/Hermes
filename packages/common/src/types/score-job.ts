@@ -1,4 +1,4 @@
-import { SUBMISSION_RESULT_CID_MISSING_ERROR } from "./submission.js";
+import { SUBMISSION_CID_MISSING_ERROR } from "./submission.js";
 
 export const SCORE_JOB_STATUS = {
   queued: "queued",
@@ -36,10 +36,7 @@ export function isScoreJobStatus(value: unknown): value is ScoreJobStatus {
 export function isMetadataBlockedScoreJobError(
   value: string | null | undefined,
 ): boolean {
-  return (
-    typeof value === "string" &&
-    value.startsWith(SUBMISSION_RESULT_CID_MISSING_ERROR)
-  );
+  return typeof value === "string" && value.startsWith(SUBMISSION_CID_MISSING_ERROR);
 }
 
 export function isTerminalScoreJobError(

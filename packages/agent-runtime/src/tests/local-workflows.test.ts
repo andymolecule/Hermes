@@ -176,7 +176,7 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
       return new Response(
         JSON.stringify({
           data: {
-            resultCid: "bafybeigdyrzt3dryrun",
+            submissionCid: "bafybeigdyrzt3dryrun",
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -205,7 +205,7 @@ test("submitSolution dry-run uses the injected signer address without on-chain w
 
     assert.ok("dryRun" in result && result.dryRun);
     assert.equal(result.challengeAddress, challengeAddress);
-    assert.equal(result.resultCid, "bafybeigdyrzt3dryrun");
+    assert.equal(result.submissionCid, "bafybeigdyrzt3dryrun");
   } finally {
     globalThis.fetch = originalFetch;
     process.env = originalEnv;

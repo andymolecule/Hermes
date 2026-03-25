@@ -8,7 +8,6 @@ import path from "node:path";
 import { getPublicClient, postScore } from "@agora/chain";
 import {
   type ChallengeExecutionRow,
-  SUBMISSION_RESULT_FORMAT,
   loadConfig,
   resolveChallengeExecution,
   resolveChallengeRuntimeConfig,
@@ -54,13 +53,12 @@ export async function oracleScore(
     id: string;
     challenge_id: string;
     on_chain_sub_id: number;
-    result_cid: string | null;
-    result_format?: string | null;
+    submission_cid: string | null;
     solver_address: string;
   };
-  if (!submission.result_cid) {
+  if (!submission.submission_cid) {
     throw new Error(
-      `Submission ${submissionId} is missing result CID. Cannot score.`,
+      `Submission ${submissionId} is missing submission CID. Cannot score.`,
     );
   }
 
@@ -83,8 +81,7 @@ export async function oracleScore(
   const config = loadConfig();
   const cachedRuntimeConfig = resolveChallengeRuntimeConfig(challenge);
   const submissionSource = await resolveSubmissionSource({
-    resultCid: submission.result_cid,
-    resultFormat: submission.result_format,
+    submissionCid: submission.submission_cid,
     challengeId: challenge.id,
     solverAddress: submission.solver_address,
     privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(config),
@@ -111,13 +108,10 @@ export async function oracleScore(
     }
 
     // 3. Build proof bundle
-    const replaySubmissionCid =
-      submission.result_format === SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
-        ? await pinFile(
-            run.submissionPath,
-            `submission-input-${submission.id}.bin`,
-          )
-        : submission.result_cid;
+    const replaySubmissionCid = await pinFile(
+      run.submissionPath,
+      `submission-input-${submission.id}.bin`,
+    );
     const baseProof = await buildProofBundle({
       challengeId: challenge.id,
       submissionId: submission.id,

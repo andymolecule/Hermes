@@ -88,7 +88,7 @@ agora score-local ch-001 --submission ./results.csv --format json
 
 ### `agora submit <file>`
 
-Pin a result file to IPFS and submit its hash on-chain.
+Pin a submission file to IPFS and submit its hash on-chain.
 
 ```bash
 agora submit ./results.csv --challenge ch-001 --format json

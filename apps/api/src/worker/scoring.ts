@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   officialScorerTemplateIdSchema,
   type RunnerLimits,
-  SUBMISSION_RESULT_FORMAT,
   getSubmissionLimitViolation,
   isProductionRuntime,
   loadConfig,
@@ -169,8 +168,7 @@ export async function scoreSubmissionAndBuildProof(
   let submissionSource: Awaited<ReturnType<typeof resolveSubmissionSource>>;
   try {
     submissionSource = await resolveSubmissionSource({
-      resultCid: submission.result_cid as string,
-      resultFormat: submission.result_format,
+      submissionCid: submission.submission_cid as string,
       challengeId: challenge.id,
       solverAddress: submission.solver_address,
       privateKeyPemsByKid: resolveSubmissionOpenPrivateKeys(config),
@@ -230,13 +228,10 @@ export async function scoreSubmissionAndBuildProof(
       phaseMeta,
       async () => {
         const replaySubmissionCid =
-          submission.result_format ===
-          SUBMISSION_RESULT_FORMAT.sealedSubmissionV2
-            ? await pinFile(
-                run.submissionPath,
-                `submission-input-${submission.id}.bin`,
-              )
-            : (submission.result_cid ?? null);
+          await pinFile(
+            run.submissionPath,
+            `submission-input-${submission.id}.bin`,
+          );
         const baseProof = await buildProofBundle({
           challengeId: challenge.id,
           submissionId: submission.id,
