@@ -423,3 +423,27 @@ When reviewing existing frontend code, flag these for cleanup:
 - Text containers without `max-width` that stretch beyond ~75 characters
 - Components mixing raw palette values (`text-warm-500`) and semantic tokens (`text-[var(--text-muted)]`)
 - Responsive breakpoints handled inconsistently among siblings
+
+---
+
+## 13. Visual Verification (Required)
+
+After every frontend change to `apps/web/`, you **must** visually verify the result using browser tools before considering the work done. This is a lightweight evaluator pattern — code review alone is not sufficient for design quality.
+
+**Steps:**
+
+1. Ensure the dev server is running (`pnpm --filter @agora/web dev -- --port 3100`)
+2. Use `claude-in-chrome` to navigate to the affected page(s)
+3. Screenshot the result
+4. Compare against this design system: check surface layering, typography roles, spacing scale, color tokens, and anti-patterns
+5. If the screenshot reveals violations — wrong font on a label, a hard border where a tonal shift should be, arbitrary spacing — fix them before finishing
+
+**What to check visually:**
+
+- Surface hierarchy reads correctly (base → low → mid → high layers are distinguishable)
+- Typography roles are correct (Space Grotesk only on h1/h2/h3, Inter for body, JetBrains Mono for data)
+- No visible hard borders used for sectioning
+- Spacing feels generous and consistent (no cramped or uneven gaps)
+- Cards use background shift on hover, not translateY or shadow changes
+- Mono-spaced data (prices, addresses, scores) is visually distinct from body text
+- The page has one clear primary action, not competing CTAs

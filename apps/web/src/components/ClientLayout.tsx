@@ -1,9 +1,10 @@
 "use client";
 
+import { Landmark } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Landmark } from "lucide-react";
+import { ActivityToast } from "./ActivityToast";
 import { WalletButton } from "./WalletButton";
 
 const WebProviders = dynamic(
@@ -31,10 +32,12 @@ function TopNav() {
     <header
       className="fixed top-0 w-full z-50 flex items-center h-16"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--surface-base) 80%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, var(--surface-base) 80%, transparent)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
-        boxShadow: "0 1px 0 var(--ghost-border), 0 20px 40px rgba(28, 28, 24, 0.03)",
+        boxShadow:
+          "0 1px 0 var(--ghost-border), 0 20px 40px rgba(28, 28, 24, 0.03)",
       }}
     >
       {/* 3-column layout: logo | nav (centered) | wallet */}
@@ -88,6 +91,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 w-full max-w-7xl mx-auto px-6 py-10 pt-24">
           {children}
         </main>
+        <ActivityToast />
       </div>
     </WebProviders>
   );
