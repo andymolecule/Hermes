@@ -9,7 +9,7 @@ import {
 const runtimeIdentity = {
   chainId: 84532,
   factoryAddress: "0x14e9f4d792cf613e5c33bb4deb51d5a0eb09e045",
-  usdcAddress: "0xebc333bfcdb4f6db61e637f8f7bbf13125a7d480",
+  usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
 };
 
 const healthConfig = {

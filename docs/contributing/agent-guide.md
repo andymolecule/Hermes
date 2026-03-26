@@ -148,17 +148,19 @@ Important:
 - the 3-option field is `distribution`, not the winner rule
 - if your Telegram UI offers deadline presets, convert the chosen preset into an exact timestamp before replying to Agora
 
-## Current Public Testnet Values
+## Public Testnet Target Values
 
-These are the live public Base Sepolia values exposed by the current deployment:
+After the Circle USDC cutover, public Base Sepolia should use this tuple:
 
 ```bash
 AGORA_API_URL=https://agora-market.vercel.app
 AGORA_RPC_URL=https://sepolia.base.org
-AGORA_FACTORY_ADDRESS=0x7a78a413aefe9a6389472f29d764b94667bcd571
-AGORA_USDC_ADDRESS=0xebc333bfcdb4f6db61e637f8f7bbf13125a7d480
+AGORA_FACTORY_ADDRESS=<redeploy factory against Circle Base Sepolia USDC>
+AGORA_USDC_ADDRESS=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 AGORA_CHAIN_ID=84532
 ```
+
+Do not reuse the legacy public testnet factory that was deployed against `mUSDC`.
 
 ## Direct Agent Authoring
 

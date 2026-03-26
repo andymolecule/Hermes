@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+CIRCLE_BASE_SEPOLIA_USDC="0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
 if [[ -f ".env" ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -125,6 +127,11 @@ if [[ "${factory_usdc,,}" != "${AGORA_USDC_ADDRESS,,}" ]]; then
   exit 1
 fi
 
+if [[ "$AGORA_CHAIN_ID" == "84532" && "${AGORA_USDC_ADDRESS,,}" != "${CIRCLE_BASE_SEPOLIA_USDC,,}" ]]; then
+  echo "[FAIL] Base Sepolia runtime must use Circle USDC: expected ${CIRCLE_BASE_SEPOLIA_USDC,,}, got ${AGORA_USDC_ADDRESS,,}"
+  exit 1
+fi
+
 factory_oracle="$(cast call "$AGORA_FACTORY_ADDRESS" "oracle()(address)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
 expected_oracle="$(cast wallet address --private-key "$AGORA_ORACLE_KEY" | tr -d '[:space:]')"
 if [[ "${factory_oracle,,}" != "${expected_oracle,,}" ]]; then
@@ -133,6 +140,22 @@ if [[ "${factory_oracle,,}" != "${expected_oracle,,}" ]]; then
 fi
 
 echo "[OK] Factory identity verified: version=2 usdc=$factory_usdc oracle=$factory_oracle"
+
+echo "[STEP] Verifying USDC contract metadata"
+usdc_name="$(cast call "$AGORA_USDC_ADDRESS" 'name()(string)' --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+usdc_symbol="$(cast call "$AGORA_USDC_ADDRESS" 'symbol()(string)' --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+usdc_decimals="$(cast call "$AGORA_USDC_ADDRESS" 'decimals()(uint8)' --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
+if [[ "$usdc_decimals" != "6" ]]; then
+  echo "[FAIL] USDC decimals mismatch: expected 6, got $usdc_decimals"
+  exit 1
+fi
+if [[ "$AGORA_CHAIN_ID" == "84532" ]]; then
+  if [[ "$usdc_name" != "\"USDC\"" || "$usdc_symbol" != "\"USDC\"" ]]; then
+    echo "[FAIL] Base Sepolia token metadata mismatch: expected USDC/USDC, got $usdc_name/$usdc_symbol"
+    exit 1
+  fi
+fi
+echo "[OK] USDC contract verified: name=$usdc_name symbol=$usdc_symbol decimals=$usdc_decimals"
 
 echo
 
