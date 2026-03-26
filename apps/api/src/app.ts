@@ -100,6 +100,20 @@ export function createApp(
       readiness.ok ? 200 : 503,
     );
   });
+  // Alias under /api/ so Railway's edge proxy cannot shadow it.
+  app.get("/api/health", async (c) => {
+    const readiness = await getRuntimeReadiness();
+    return c.json(
+      {
+        ok: readiness.ok,
+        service: "api",
+        runtimeVersion: getAgoraRuntimeVersion(),
+        checkedAt: readiness.checkedAt,
+        readiness: readiness.readiness,
+      },
+      readiness.ok ? 200 : 503,
+    );
+  });
   app.get("/.well-known/openapi.json", (c) =>
     c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),
   );

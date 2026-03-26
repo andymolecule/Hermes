@@ -176,7 +176,7 @@ const expectedWebRuntimeVersion =
   sharedExpectedRuntimeVersion ||
   resolveGitRuntimeVersion();
 
-const apiHealth = await fetchJson(`${apiUrl}/healthz`, "API /healthz");
+const apiHealth = await fetchJson(`${apiUrl}/api/health`, "API /api/health");
 const webVersion = await fetchJson(`${webUrl}/api/version`, "Web /api/version");
 const workerHealth = options.skipWorker
   ? null
@@ -193,7 +193,7 @@ const webRuntimeVersion =
 
 if (!apiRuntimeVersion) {
   throw new Error(
-    "API /healthz did not return runtimeVersion. Next step: deploy the current API build and retry.",
+    "API /api/health did not return runtimeVersion. Next step: deploy the current API build and retry.",
   );
 }
 

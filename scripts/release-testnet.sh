@@ -125,7 +125,7 @@ wait_for_deploy_verify() {
   local attempt=1
 
   while (( attempt <= attempts )); do
-    if pnpm deploy:verify -- --api-url="$AGORA_API_URL" --web-url="$AGORA_WEB_URL"; then
+    if pnpm deploy:verify --api-url="$AGORA_API_URL" --web-url="$AGORA_WEB_URL"; then
       return 0
     fi
     echo "[INFO] deploy:verify not ready yet (attempt ${attempt}/${attempts}); retrying in ${sleep_seconds}s"

@@ -6,6 +6,9 @@ cd "$ROOT_DIR"
 
 CIRCLE_BASE_SEPOLIA_USDC="0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
+# macOS ships bash 3.2 which lacks ${,,} for lowercase.
+lc() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
 if [[ -f ".env" ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -96,7 +99,7 @@ echo "[STEP] Running CLI doctor"
 node apps/cli/dist/index.js doctor --format table
 
 echo "[STEP] Checking API health endpoint"
-API_HEALTH_URL="${AGORA_API_URL%/}/healthz"
+API_HEALTH_URL="${AGORA_API_URL%/}/api/health"
 http_status=$(curl -s -o /tmp/agora_preflight_healthz.json -w "%{http_code}" "$API_HEALTH_URL" || true)
 if [[ "$http_status" != "200" ]]; then
   echo "[FAIL] API health check failed ($API_HEALTH_URL => HTTP $http_status)"
@@ -122,20 +125,20 @@ if [[ "$factory_version" != "2" ]]; then
 fi
 
 factory_usdc="$(cast call "$AGORA_FACTORY_ADDRESS" "usdc()(address)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
-if [[ "${factory_usdc,,}" != "${AGORA_USDC_ADDRESS,,}" ]]; then
-  echo "[FAIL] Factory usdc() mismatch: env=${AGORA_USDC_ADDRESS,,} chain=${factory_usdc,,}"
+if [[ "$(lc "$factory_usdc")" != "$(lc "$AGORA_USDC_ADDRESS")" ]]; then
+  echo "[FAIL] Factory usdc() mismatch: env=$(lc "$AGORA_USDC_ADDRESS") chain=$(lc "$factory_usdc")"
   exit 1
 fi
 
-if [[ "$AGORA_CHAIN_ID" == "84532" && "${AGORA_USDC_ADDRESS,,}" != "${CIRCLE_BASE_SEPOLIA_USDC,,}" ]]; then
-  echo "[FAIL] Base Sepolia runtime must use Circle USDC: expected ${CIRCLE_BASE_SEPOLIA_USDC,,}, got ${AGORA_USDC_ADDRESS,,}"
+if [[ "$AGORA_CHAIN_ID" == "84532" && "$(lc "$AGORA_USDC_ADDRESS")" != "$(lc "$CIRCLE_BASE_SEPOLIA_USDC")" ]]; then
+  echo "[FAIL] Base Sepolia runtime must use Circle USDC: expected=$(lc "$CIRCLE_BASE_SEPOLIA_USDC") got=$(lc "$AGORA_USDC_ADDRESS")"
   exit 1
 fi
 
 factory_oracle="$(cast call "$AGORA_FACTORY_ADDRESS" "oracle()(address)" --rpc-url "$AGORA_RPC_URL" | tr -d '[:space:]')"
 expected_oracle="$(cast wallet address --private-key "$AGORA_ORACLE_KEY" | tr -d '[:space:]')"
-if [[ "${factory_oracle,,}" != "${expected_oracle,,}" ]]; then
-  echo "[FAIL] Factory oracle() mismatch: key=${expected_oracle,,} chain=${factory_oracle,,}"
+if [[ "$(lc "$factory_oracle")" != "$(lc "$expected_oracle")" ]]; then
+  echo "[FAIL] Factory oracle() mismatch: key=$(lc "$expected_oracle") chain=$(lc "$factory_oracle")"
   exit 1
 fi
 
