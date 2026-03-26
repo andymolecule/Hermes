@@ -136,6 +136,7 @@ Decision test:
 
 Agora does:
 - Normalize incoming context into a structured intermediate representation
+- Specify required machine fields and valid recovery options clearly
 - Return exact missing or invalid fields
 - Validate against scorer/runtime requirements
 - Publish when the caller explicitly confirms
@@ -164,6 +165,23 @@ Rules:
 - wallet identity remains canonical for on-chain actions even when an authenticated agent is also known
 - challenge repair or re-registration flows never establish new ownership; they preserve any existing `created_by_agent_id` set during authenticated publish
 
+### 1.2B Machine Boundary Rule
+
+In the default `/sessions` flow, Agora is a deterministic specifier and
+validator of machine input. It is not an interpreter of loose machine
+synonyms.
+
+Rules:
+- when Agora already knows the canonical allowed values for a field, callers
+  must send one of those canonical values
+- if the request envelope is well formed but a semantic value is unsupported,
+  the session returns `awaiting_input` with `validation.invalid_fields`
+- create, patch, and later get must preserve the same field-level validation
+  classification
+
+This keeps Agora machine-first without reintroducing assistive or
+conversational authoring behavior.
+
 ### 1.3 Verbs (The Validation Flow)
 
 ```
@@ -189,7 +207,7 @@ contract defined here.
 |------|---------|-------|
 | Session | Yes | `authoring_sessions` table |
 | Resolved state | Yes | jsonb within session row (`authoring_ir_json`) |
-| Validation state | Yes | jsonb within session row (`authoring_ir_json`) |
+| Validation state | Yes | persisted validation snapshot within the session aggregate; canonical reads must return it directly rather than reconstructing it from generic compile hints |
 | Artifacts | Yes | Pinned to IPFS, refs stored in session row |
 | Checklist | Derived | Built from compilation outcome at read time |
 | Spec | Yes | Built by compiler, stored as `compilation_json` |
@@ -265,7 +283,7 @@ Public names in this table are permanent. Internal names can change freely.
 ### 1.7 Hard Rules
 
 1. **Every bounty attempt = new session.** Never refresh, reuse, or dedupe against an existing session. External post/thread IDs are metadata/provenance only, not identity.
-2. **Agora normalizes, validates, publishes.** Agora never decides reward amount, deadline, distribution, or domain on the caller's behalf.
+2. **Agora specifies, validates, publishes.** Agora never decides reward amount, deadline, distribution, or domain on the caller's behalf, and it does not reinterpret loose machine synonyms for canonical fields later in compile.
 3. **The default session contract is structured.** The main `/sessions` API does not model question/answer turns as the core machine protocol.
 4. **`ready` requires all 4 publish gates passed.** No partial readiness.
 5. **Publish requires explicit confirmation.** Response includes a final checklist summary. Caller sends `confirm_publish: true`.
@@ -286,7 +304,7 @@ Public names in this table are permanent. Internal names can change freely.
 20. **Agent attribution uses Agora ids, not copied names.** The target data model stores nullable `created_by_agent_id` / `submitted_by_agent_id` foreign keys and joins `auth_agents.agent_name` at read time when needed.
 21. **Wallet identity remains canonical for chain actions.** Poster and solver wallets, transaction hashes, and claim records stay wallet-based even when an Agora agent is also known.
 22. **Agora stays platform-agnostic at the file boundary.** The session API accepts fetchable file URLs and Agora artifact refs. Platform-specific file handles such as Telegram file IDs are out of the public contract.
-23. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run deterministic validation first and must not automatically invoke Layer 2 inference.
+23. **Default session flow is deterministic.** `POST /sessions` and `PATCH /sessions/:id` must run one shared deterministic assessment boundary first and must not automatically invoke Layer 2 inference.
 24. **Layer 2 is explicit assist-only.** If Agora exposes an inference helper later, it must be an explicit assist path outside the default `/sessions` contract.
 25. **Structured inputs are authoritative.** `intent`, `execution`, and `files` are the source of truth. The default session contract does not accept conversational freeform fields.
 26. **Standard V1 authoring resolves runtime internally.** Callers provide metric, artifact binding, and column mappings. Agora resolves the matching official template and pinned scorer runtime internally, but public session payloads remain semantic-only and do not expose template ids, scorer images, mounts, or runner limits.
@@ -296,6 +314,9 @@ Public names in this table are permanent. Internal names can change freely.
 30. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
 31. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
 32. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` in the canonical authoring error envelope and should include decoded revert details such as `revertErrorName` and `revertReason` in the optional `error.details` payload when the underlying viem error exposes them.
+33. **Well-formed semantic mistakes stay in the session object.** Unsupported values inside a valid create/patch envelope return `awaiting_input` with `validation.invalid_fields`; they do not become top-level `invalid_request` errors.
+34. **Create, patch, and get share one validation truth.** Public `validation` comes from the persisted assessment result, not from read-time heuristics over compile error codes.
+35. **Closed semantic fields reuse canonical shared schemas.** Fields such as `domain` must reuse the same `@agora/common` enum/union definitions across authoring input, session output, challenge queries, and challenge summaries.
 
 ### 1.8 Publish Gates (All 4 Required for `ready`)
 
@@ -746,6 +767,12 @@ These should stay out of scope unless explicitly re-approved after the session c
 - `session.id` is the only continuation token after create
 - `POST /sessions` must accept partial input
 - `PATCH /sessions/:id` must accept structured state deltas
+- Agora specifies required machine values clearly; it does not reinterpret loose
+  semantic aliases later
+- Caller-correctable semantic issues in a well-formed request stay in the
+  session object as validation, not the top-level error envelope
+- Create and patch persist one authoritative assessment snapshot; later `GET`
+  returns that same validation classification
 - `POST /sessions/:id/publish` must require explicit confirmation
 - Direct mutation responses plus authenticated self-scoped `GET /sessions` and `GET /sessions/:id` reads are the only in-scope read model; callbacks/webhooks are out of scope
 - Public contract should describe business states, not internal compiler mechanics
@@ -851,6 +878,14 @@ const PublicSessionStateSchema = z.enum([
 
 const FundingSchema = z.enum(["wallet", "sponsor"]);
 const ObjectiveSchema = z.enum(["maximize", "minimize"]);
+const ChallengeDomainSchema = z.enum([
+  "longevity",
+  "drug_discovery",
+  "protein_design",
+  "omics",
+  "neuroscience",
+  "other",
+]);
 
 const ErrorCodeSchema = z.enum([
   "unauthorized",
@@ -862,6 +897,8 @@ const ErrorCodeSchema = z.enum([
 ]);
 
 // Imported from the shared authoring core schema module.
+// Any closed semantic field in that schema, such as domain, must reuse the
+// canonical shared enum rather than an arbitrary string.
 const PartialChallengeIntentSchema = challengeIntentSchema.partial();
 
 // Standard V1 authoring resolves the official template from the metric.
@@ -920,7 +957,7 @@ const ValidationIssueSchema = z.object({
   message: z.string().min(1),
   next_action: z.string().min(1),
   blocking_layer: z.enum(["input", "dry_run", "platform"]),
-  candidate_values: z.array(z.string().min(1)),
+  candidate_values: z.array(z.string().min(1)).default([]),
 });
 
 const DryRunFailureSchema = z.object({
@@ -1015,7 +1052,7 @@ const CompilationSchema = z.object({
 
 const ChecklistSchema = z.object({
   title: z.string().min(1),
-  domain: z.string().min(1),
+  domain: ChallengeDomainSchema,
   type: z.string().min(1),
   reward: z.string().min(1),
   distribution: z.string().min(1),
@@ -2087,25 +2124,44 @@ No implementation work should start from prose alone.
 
 ## 5. Implementation Plan
 
-> High-level scope decisions are locked. Section 4.4 is now written. Coding should remain paused until this exact contract is reviewed and approved.
+> High-level scope decisions are locked. Implementation should tighten the
+> current code to this contract, not invent a second authoring flow.
 
-### 5.1 Exit Criteria Before Coding Resumes
+### 5.1 Tightening Order
 
-1. All open decisions in section 4.2 are answered
-2. The candidate delete list is approved or explicitly revised
-3. One route family is chosen as canonical
-4. One response shape is chosen as canonical
-5. A compatibility decision is made
+1. Fix authoring semantic authority first
+2. Unify sponsor publish with shared challenge registration
+3. Tighten canonical semantic schemas across `@agora/common`
+4. Then do smaller cleanup like query-schema tightening and non-authoritative client preflight cleanup
 
-### 5.2 Clarification-First Sequence
+### 5.2 Keep
 
-1. Answer the open decisions in section 4.2
-2. Lock section 3 delete/compatibility choices
-3. Write exact request/response JSON in section 4
-4. Update adjacent docs to match this contract
-5. Only then write a file-by-file implementation plan
+- one public authoring route family: `/api/authoring/sessions/*`
+- one canonical session shape and state machine
+- semantic-only public payloads
+- sponsor-funded and wallet-funded publish as funding variants of the same
+  public publish flow
+- client-side preflight as advisory only; API assessment remains authoritative
 
-### 5.3 Adjacent Docs That Must Be Reconciled After Lock
+### 5.3 Delete Or Stop Doing
 
-- `docs/challenge-authoring-ir.md`
-- any API docs or tests still using public `draft` terminology
+- read-time validation reconstruction from generic compile error codes
+- caller-derived hard throws in create/patch assessment
+- duplicate sponsor-publish registration logic
+- loose free-text modeling for closed semantic fields that already have shared
+  canonical enums
+
+### 5.4 Refactor Target
+
+- one authoritative assessment boundary for `POST /sessions` and
+  `PATCH /sessions/:id`
+- one persisted validation snapshot that `GET /sessions/:id` returns unchanged
+- one shared challenge-registration path used by sponsor publish and tx-hash
+  registration
+- one set of canonical finite semantic schemas in `@agora/common`
+
+### 5.5 Concrete Code Plan
+
+The detailed file-by-file implementation order and acceptance gates live in
+`docs/specs/machine-contract-migration.md` Phase 6. That plan is the active
+coding checklist for this contract.

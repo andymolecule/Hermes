@@ -126,6 +126,25 @@ Validation responses must include:
 - a next action
 - candidate values when Agora knows the valid options
 
+### 2.4A One semantic authority from intake through readback
+
+For machine-facing flows, Agora must not accept looser semantic values and
+reinterpret them later during compile or readback.
+
+Rules:
+
+- if `@agora/common` already defines a closed semantic set, create/patch
+  assessment must validate against that canonical source before final compile
+- a well-formed request with caller-correctable semantic mistakes returns a
+  structured resource-state validation result, not an unhandled exception and
+  not a transport-level `400`
+- create and patch produce one authoritative assessment snapshot
+- subsequent reads return that persisted snapshot instead of rebuilding
+  validation from generic compile error codes or fallback heuristics
+
+Agent reliability comes from one stable semantic contract, not from additional
+interpreters or late inference layers.
+
 ### 2.5 Agent declares intent, Agora resolves execution
 
 Routing from semantic request to execution runtime is fully internal.
@@ -264,6 +283,11 @@ These principles imply the following near-term design decisions:
 6. Submission privacy defaults switch to sealed mode.
 7. Agent auth gains explicit introspection and stops forcing brittle
    re-registration flows.
+8. Authoring create/patch gain one authoritative assessment boundary.
+9. Sponsor-funded publish reuses the shared challenge-registration path.
+10. Closed semantic enums in `@agora/common` are tightened before smaller
+    endpoint-specific cleanup.
+11. Client-side preflights remain advisory; API validation stays authoritative.
 
 ---
 

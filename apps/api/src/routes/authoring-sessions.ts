@@ -4,13 +4,12 @@ import {
   type AuthoringSessionCreatorOutput,
   CHALLENGE_LIMITS,
   SUBMISSION_LIMITS,
-  challengeIntentSchema,
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   defaultMinimumScoreForExecution,
   ensureAgoraError,
   loadConfig,
-  partialChallengeIntentSchema,
+  partialChallengeIntentTransportSchema,
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
   readAuthoringSponsorRuntimeConfig,
@@ -35,11 +34,7 @@ import { Hono } from "hono";
 import { parseUnits, zeroAddress } from "viem";
 import type { z } from "zod";
 import { compileAuthoringSessionOutcome } from "../lib/authoring-compiler.js";
-import {
-  buildAuthoringIr,
-  deriveAuthoringIntentCandidate,
-  extractMissingIntentFields,
-} from "../lib/authoring-ir.js";
+import { buildAuthoringIr } from "../lib/authoring-ir.js";
 import { jsonAuthoringSessionApiError } from "../lib/authoring-session-api-error.js";
 import {
   type StoredAuthoringSessionArtifact,
@@ -62,6 +57,7 @@ import {
   isAuthoringSessionExpired,
 } from "../lib/authoring-session-payloads.js";
 import { sponsorAndPublishAuthoringSession } from "../lib/authoring-sponsored-publish.js";
+import { assessAuthoringIntentCandidate } from "../lib/authoring-validation.js";
 import {
   type ChallengeRegistrationError,
   registerChallengeFromTxHash,
@@ -184,18 +180,6 @@ function cleanText(value?: string | null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function describeZodError(error: z.ZodError) {
-  return error.issues[0]?.message ?? "Invalid challenge input.";
-}
-
-function invalidAuthoringIntentError(error: z.ZodError) {
-  return new AgoraError(describeZodError(error), {
-    code: "invalid_request",
-    status: 400,
-    nextAction: "Fix the request values and retry.",
-  });
-}
-
 function applyStructuredIntent(
   intentCandidate: Record<string, unknown>,
   intent?: Record<string, unknown>,
@@ -220,7 +204,7 @@ function buildTurnInputSummary(route: "create" | "patch") {
 }
 
 function normalizeLoggedIntent(intent: unknown) {
-  const parsed = partialChallengeIntentSchema.safeParse(intent);
+  const parsed = partialChallengeIntentTransportSchema.safeParse(intent);
   if (!parsed.success || Object.keys(parsed.data).length === 0) {
     return undefined;
   }
@@ -670,47 +654,47 @@ async function persistAssessmentResult(input: {
         ? input.intentCandidate.title
         : null,
     ) ?? null;
-  const effectiveIntentCandidate = deriveAuthoringIntentCandidate({
-    intent: input.intentCandidate,
+  const assessedIntent = assessAuthoringIntentCandidate({
+    currentIntent: input.session?.authoring_ir_json?.intent.current ?? null,
+    intentCandidate: input.intentCandidate,
     sourceTitle,
   });
+  const inputEntry = buildTurnInputLogEntry({
+    route: input.route,
+    requestId: input.requestId,
+    stateBefore: input.session ? getSessionPublicState(input.session) : null,
+    intent: input.intentPatch,
+    execution: {
+      ...(input.metricOverride ? { metric: input.metricOverride } : {}),
+      ...(input.evaluationArtifactIdOverride
+        ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
+        : {}),
+      ...(input.evaluationIdColumnOverride
+        ? { evaluation_id_column: input.evaluationIdColumnOverride }
+        : {}),
+      ...(input.evaluationValueColumnOverride
+        ? { evaluation_value_column: input.evaluationValueColumnOverride }
+        : {}),
+      ...(input.submissionIdColumnOverride
+        ? { submission_id_column: input.submissionIdColumnOverride }
+        : {}),
+      ...(input.submissionValueColumnOverride
+        ? { submission_value_column: input.submissionValueColumnOverride }
+        : {}),
+    },
+    files: input.files,
+  });
 
-  const missingFields = extractMissingIntentFields(effectiveIntentCandidate);
-
-  if (missingFields.length > 0) {
+  if (!assessedIntent.parsedIntent) {
     const authoringIr = buildAuthoringIr({
-      intent: effectiveIntentCandidate,
+      intent: assessedIntent.acceptedIntent,
       uploadedArtifacts: input.uploadedArtifacts,
       sourceTitle,
       origin: input.origin ??
         input.session?.authoring_ir_json?.origin ?? { provider: "direct" },
       assessmentOutcome: "awaiting_input",
-      missingFields,
-    });
-    const inputEntry = buildTurnInputLogEntry({
-      route: input.route,
-      requestId: input.requestId,
-      stateBefore: input.session ? getSessionPublicState(input.session) : null,
-      intent: input.intentPatch,
-      execution: {
-        ...(input.metricOverride ? { metric: input.metricOverride } : {}),
-        ...(input.evaluationArtifactIdOverride
-          ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
-          : {}),
-        ...(input.evaluationIdColumnOverride
-          ? { evaluation_id_column: input.evaluationIdColumnOverride }
-          : {}),
-        ...(input.evaluationValueColumnOverride
-          ? { evaluation_value_column: input.evaluationValueColumnOverride }
-          : {}),
-        ...(input.submissionIdColumnOverride
-          ? { submission_id_column: input.submissionIdColumnOverride }
-          : {}),
-        ...(input.submissionValueColumnOverride
-          ? { submission_value_column: input.submissionValueColumnOverride }
-          : {}),
-      },
-      files: input.files,
+      missingFields: assessedIntent.missingFields,
+      validationSnapshot: assessedIntent.validation,
     });
 
     if (input.session) {
@@ -776,16 +760,9 @@ async function persistAssessmentResult(input: {
     };
   }
 
-  const parsedIntentResult = challengeIntentSchema.safeParse(
-    effectiveIntentCandidate,
-  );
-  if (!parsedIntentResult.success) {
-    throw invalidAuthoringIntentError(parsedIntentResult.error);
-  }
-  const parsedIntent = parsedIntentResult.data;
   const outcome = await input.compileAuthoringSessionOutcomeImpl(
     {
-      intent: parsedIntent,
+      intent: assessedIntent.parsedIntent,
       uploadedArtifacts: input.uploadedArtifacts,
       metricOverride: input.metricOverride ?? undefined,
       evaluationArtifactIdOverride:
@@ -812,38 +789,13 @@ async function persistAssessmentResult(input: {
       : state === "awaiting_input"
         ? buildExpiry(AWAITING_INPUT_TTL_MS)
         : buildExpiry(TERMINAL_TTL_MS);
-  const inputEntry = buildTurnInputLogEntry({
-    route: input.route,
-    requestId: input.requestId,
-    stateBefore: input.session ? getSessionPublicState(input.session) : null,
-    intent: input.intentPatch,
-    execution: {
-      ...(input.metricOverride ? { metric: input.metricOverride } : {}),
-      ...(input.evaluationArtifactIdOverride
-        ? { evaluation_artifact_id: input.evaluationArtifactIdOverride }
-        : {}),
-      ...(input.evaluationIdColumnOverride
-        ? { evaluation_id_column: input.evaluationIdColumnOverride }
-        : {}),
-      ...(input.evaluationValueColumnOverride
-        ? { evaluation_value_column: input.evaluationValueColumnOverride }
-        : {}),
-      ...(input.submissionIdColumnOverride
-        ? { submission_id_column: input.submissionIdColumnOverride }
-        : {}),
-      ...(input.submissionValueColumnOverride
-        ? { submission_value_column: input.submissionValueColumnOverride }
-        : {}),
-    },
-    files: input.files,
-  });
 
   if (input.session) {
     const session = await input.updateAuthoringSessionImpl(input.db, {
       id: input.session.id,
       expected_updated_at: input.session.updated_at,
       state,
-      intent_json: parsedIntent,
+      intent_json: assessedIntent.parsedIntent,
       authoring_ir_json: outcome.authoringIr,
       uploaded_artifacts_json: input.uploadedArtifacts,
       compilation_json: outcome.compilation ?? null,
@@ -876,7 +828,7 @@ async function persistAssessmentResult(input: {
   const session = await input.createAuthoringSessionImpl(input.db, {
     ...creatorInsertFields(input.principal),
     state,
-    intent_json: parsedIntent,
+    intent_json: assessedIntent.parsedIntent,
     authoring_ir_json: outcome.authoringIr,
     uploaded_artifacts_json: input.uploadedArtifacts,
     compilation_json: outcome.compilation ?? null,

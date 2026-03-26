@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
+import { CHALLENGE_DOMAINS } from "../types/challenge.js";
 import {
   authoringSourceRawContextSchema,
   authoringSourceSessionFieldsSchema,
@@ -35,7 +36,16 @@ const AUTHORING_REWARD_TOTAL_PATTERN = new RegExp(
   `^\\d+(?:\\.\\d{1,${CHALLENGE_LIMITS.rewardDecimals}})?$`,
 );
 
-const distributionSchema = z.enum(["winner_take_all", "top_3", "proportional"]);
+export const AUTHORING_DISTRIBUTION_VALUES = [
+  "winner_take_all",
+  "top_3",
+  "proportional",
+] as const;
+
+export const challengeRewardDistributionSchema = z.enum(
+  AUTHORING_DISTRIBUTION_VALUES,
+);
+export const challengeDomainSchema = z.enum(CHALLENGE_DOMAINS);
 
 const authoringRoutingModeSchema = z.enum([
   "not_ready",
@@ -171,6 +181,20 @@ function normalizeRewardTotal(value: unknown) {
   return value;
 }
 
+const challengeIntentTransportSchema = z.object({
+  title: z.string().trim(),
+  description: z.string().trim(),
+  payout_condition: z.string().trim(),
+  reward_total: z.preprocess(normalizeRewardTotal, z.string().trim()),
+  distribution: z.string().trim(),
+  deadline: z.string().trim(),
+  dispute_window_hours: z.number().int(),
+  domain: z.string().trim(),
+  tags: z.array(z.string().trim()),
+  solver_instructions: z.string().trim(),
+  timezone: z.string().trim(),
+});
+
 export const challengeIntentSchema = z.object({
   title: z.string().trim().min(1).max(AUTHORING_MAX_TITLE_LENGTH),
   description: z.string().trim().min(1).max(AUTHORING_MAX_DESCRIPTION_LENGTH),
@@ -196,18 +220,14 @@ export const challengeIntentSchema = z.object({
         parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
       );
     }, `reward_total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
-  distribution: distributionSchema,
+  distribution: challengeRewardDistributionSchema,
   deadline: z.string().datetime({ offset: true }),
   dispute_window_hours: z
     .number()
     .int()
     .min(CHALLENGE_LIMITS.disputeWindowMinHours)
     .optional(),
-  domain: z
-    .string()
-    .trim()
-    .min(1)
-    .max(AUTHORING_MAX_DOMAIN_LENGTH),
+  domain: challengeDomainSchema,
   tags: z
     .array(z.string().trim().min(1).max(AUTHORING_MAX_TAG_LENGTH))
     .max(AUTHORING_MAX_TAGS)
@@ -226,6 +246,34 @@ export const challengeIntentSchema = z.object({
 });
 
 export const partialChallengeIntentSchema = challengeIntentSchema.partial();
+export const partialChallengeIntentTransportSchema =
+  challengeIntentTransportSchema.partial();
+
+export const authoringValidationBlockingLayerSchema = z.enum([
+  "input",
+  "dry_run",
+  "platform",
+]);
+
+export const authoringValidationIssueSchema = z
+  .object({
+    field: z.string().trim().min(1),
+    code: z.string().trim().min(1),
+    message: z.string().trim().min(1),
+    next_action: z.string().trim().min(1),
+    blocking_layer: authoringValidationBlockingLayerSchema,
+    candidate_values: z.array(z.string().trim().min(1)).default([]),
+  })
+  .strict();
+
+export const authoringValidationSnapshotSchema = z
+  .object({
+    missing_fields: z.array(authoringValidationIssueSchema).default([]),
+    invalid_fields: z.array(authoringValidationIssueSchema).default([]),
+    dry_run_failure: authoringValidationIssueSchema.nullable().default(null),
+    unsupported_reason: authoringValidationIssueSchema.nullable().default(null),
+  })
+  .strict();
 
 export const confirmationContractSchema = z.object({
   solver_submission: z.string().trim().min(1),
@@ -277,7 +325,7 @@ const authoringArtifactSchemaV1 = z.object({
 });
 
 export const challengeAuthoringIrSchema = z.object({
-  version: z.literal(4),
+  version: z.literal(5),
   origin: z.object({
     provider: externalSourceProviderSchema,
     external_id: z.string().trim().min(1).nullable().optional(),
@@ -310,6 +358,9 @@ export const challengeAuthoringIrSchema = z.object({
     warnings: z.array(z.string().trim().min(1)).default([]),
     missing_fields: z.array(authoringValidationFieldSchema).default([]),
   }),
+  validation_snapshot: authoringValidationSnapshotSchema
+    .nullable()
+    .default(null),
   execution: z.object({
     template: z.string().trim().min(1).nullable(),
     metric: z.string().trim().min(1).nullable(),
@@ -340,7 +391,7 @@ export const challengeAuthoringIrSchema = z.object({
 export const submitAuthoringSourceSessionRequestSchema =
   authoringSourceSessionFieldsSchema
     .extend({
-      intent: partialChallengeIntentSchema.optional(),
+      intent: partialChallengeIntentTransportSchema.optional(),
     })
     .superRefine((value, ctx) => {
       const seenUrls = new Set<string>();
@@ -383,7 +434,7 @@ export const submitAuthoringSessionRequestSchema = z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
-    intent: partialChallengeIntentSchema.optional(),
+    intent: partialChallengeIntentTransportSchema.optional(),
     uploaded_artifacts: z
       .array(authoringArtifactSchema)
       .max(AUTHORING_MAX_ARTIFACTS)
@@ -413,6 +464,12 @@ export type PartialChallengeIntentInput = z.input<
 export type PartialChallengeIntentOutput = z.output<
   typeof partialChallengeIntentSchema
 >;
+export type PartialChallengeIntentTransportInput = z.input<
+  typeof partialChallengeIntentTransportSchema
+>;
+export type PartialChallengeIntentTransportOutput = z.output<
+  typeof partialChallengeIntentTransportSchema
+>;
 export type AuthoringArtifactInput = z.input<typeof authoringArtifactSchema>;
 export type AuthoringArtifactOutput = z.output<typeof authoringArtifactSchema>;
 export type ChallengeAuthoringIrInput = z.input<
@@ -423,6 +480,15 @@ export type ChallengeAuthoringIrOutput = z.output<
 >;
 export type AuthoringAmbiguityClassOutput = z.output<
   typeof authoringAmbiguityClassSchema
+>;
+export type AuthoringValidationBlockingLayerOutput = z.output<
+  typeof authoringValidationBlockingLayerSchema
+>;
+export type AuthoringValidationIssueOutput = z.output<
+  typeof authoringValidationIssueSchema
+>;
+export type AuthoringValidationSnapshotOutput = z.output<
+  typeof authoringValidationSnapshotSchema
 >;
 export type ConfirmationContractOutput = z.output<
   typeof confirmationContractSchema

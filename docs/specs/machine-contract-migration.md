@@ -253,8 +253,48 @@ Make published challenges score without touching the live registry.
 
 ### Objective
 
-Keep one authoring workflow while removing runtime leakage and hardcoded
-template assumptions.
+Keep one authoring workflow while removing semantic drift, runtime leakage,
+duplicate publish logic, and hardcoded template assumptions.
+
+### Tightening order
+
+1. Fix authoring semantic authority first.
+2. Unify sponsor publish with shared challenge registration.
+3. Tighten canonical semantic schemas across `@agora/common`.
+4. Then do smaller cleanup like query-schema tightening and
+   non-authoritative client preflight cleanup.
+
+### Keep
+
+- `/api/authoring/sessions/*` as the only public authoring route family
+- one canonical session shape and the locked state machine
+- semantic-only public session payloads
+- sponsor-funded and wallet-funded publish as funding variants of the same
+  public publish flow
+- agent-runtime preflights as advisory helpers, not as the source of truth
+
+### Delete
+
+- read-time validation reconstruction from
+  `authoring_ir_json.execution.compile_error_codes`,
+  `compile_error_message`, or similar heuristics
+- caller-derived hard throws on the create/patch assessment path
+- duplicate sponsor-publish registration logic that re-verifies challenge
+  creation separately from the shared registration helper
+- free-text modeling for canonical finite semantics where
+  `@agora/common` already owns the enum/union
+
+### Refactor
+
+- create and patch around one authoritative assessment boundary:
+  `transport parse -> merge state -> assess -> persist snapshot -> return
+  snapshot`
+- public `validation` to come from the persisted assessment result, not from
+  compile-error reconstruction
+- sponsor publish to reuse the shared challenge-registration helper after the
+  chain write succeeds
+- canonical finite semantic schemas to be shared across authoring input,
+  session output, challenge queries, and challenge summaries
 
 ### Actions
 
@@ -270,6 +310,133 @@ template assumptions.
    - runner limits
 6. Normalize authoring route success and error envelopes to the machine-wide
    contract.
+
+### Concrete code plan
+
+#### 6A. Fix authoring semantic authority
+
+Objective:
+- make create, patch, and get agree on one field-level validation truth
+
+Primary files:
+- `packages/common/src/schemas/authoring-core.ts`
+- `packages/common/src/schemas/authoring-session-api.ts`
+- `apps/api/src/routes/authoring-sessions.ts`
+- `apps/api/src/lib/authoring-compiler.ts`
+- `apps/api/src/lib/authoring-ir.ts`
+- `apps/api/src/lib/authoring-validation.ts`
+- `apps/api/src/lib/authoring-session-payloads.ts`
+- `packages/common/src/tests/authoring-core.ts`
+- `packages/common/src/tests/authoring-session-api.ts`
+- `apps/api/tests/authoring-compiler.test.ts`
+- `apps/api/tests/authoring-sessions-route.test.ts`
+
+Changes:
+- keep transport parsing permissive for partial session input, but validate
+  closed semantic fields such as `domain` against the canonical shared enum
+  during the shared assessment step
+- introduce one authoritative assessment result for create and patch that
+  produces `resolved`, `validation`, `readiness`, and compile eligibility in a
+  single pass
+- replace caller-derived `.parse()` on the create/patch path with
+  `.safeParse()` plus structured field-level failures
+- persist the exact validation snapshot needed for the public session contract
+  instead of only missing fields plus generic compile-error hints
+- make `GET /sessions/:id` read the persisted validation snapshot directly
+  instead of rebuilding it heuristically from `compile_error_codes`
+
+Acceptance gates:
+- unsupported `domain` or similar caller-correctable semantic values return
+  `200` with `state = awaiting_input`
+- `validation.invalid_fields` names the correct field and candidate values
+- create, patch, and get return the same validation classification
+- caller-correctable input no longer escapes as an unhandled `500`
+
+#### 6B. Unify sponsor publish with shared challenge registration
+
+Objective:
+- remove duplicate publish/registration verification logic and keep one
+  canonical post-transaction registration path
+
+Primary files:
+- `apps/api/src/lib/authoring-sponsored-publish.ts`
+- `apps/api/src/lib/challenge-registration.ts`
+- `apps/api/src/routes/authoring-sessions.ts`
+- `apps/api/tests/authoring-sessions-route.test.ts`
+- `apps/api/tests/challenge-registration.test.ts`
+
+Changes:
+- keep sponsor pre-simulation, funding checks, and tx broadcast in the sponsor
+  publish helper
+- move post-broadcast challenge registration and shared verification into the
+  existing `registerChallengeFromTxHash(...)` path
+- remove duplicate challenge-creation registration branches from sponsor
+  publish once the shared helper covers the needed assertions
+
+Acceptance gates:
+- sponsor-funded publish and tx-hash registration use the same registration
+  helper
+- challenge identity, spec CID, and contract-address verification happen in
+  one place
+- publish failures still return the locked authoring error envelope
+
+#### 6C. Tighten canonical semantic schemas across `@agora/common`
+
+Objective:
+- make shared finite semantics canonical across request, response, query, and
+  read contracts
+
+Primary files:
+- `packages/common/src/types/challenge.ts`
+- `packages/common/src/schemas/authoring-core.ts`
+- `packages/common/src/schemas/authoring-session-api.ts`
+- `packages/common/src/schemas/agent-api.ts`
+- `apps/api/src/routes/challenges-shared.ts`
+- `apps/api/src/lib/openapi.ts`
+- `packages/common/src/tests/agent-api.ts`
+
+Changes:
+- reuse the canonical challenge-domain enum in authoring intent, authoring
+  session outputs, agent challenge queries, and challenge summary/detail
+  schemas
+- remove duplicated free-text definitions for closed semantic fields where the
+  common package already owns the canonical set
+- align OpenAPI generation and route query parsing with the tightened shared
+  schemas
+
+Acceptance gates:
+- `domain` and similar closed semantic fields have one canonical definition in
+  `@agora/common`
+- challenge query/read contracts no longer accept shapes the authoring flow can
+  never publish
+- generated API docs match the tightened shared schemas
+
+#### 6D. Finish smaller cleanup
+
+Objective:
+- remove lower-value drift after the semantic boundary is fixed
+
+Primary files:
+- `packages/agent-runtime/src/local-workflows.ts`
+- `packages/agent-runtime/src/api-client.ts`
+- `packages/agent-runtime/src/tests/local-workflows.test.ts`
+- `packages/agent-runtime/src/tests/api-client.test.ts`
+- query-schema call sites under `apps/api/src/routes/`
+
+Changes:
+- keep client-side authoring preflights clearly advisory and aligned with the
+  server contract
+- tighten leftover query schemas that still use looser free-text modeling than
+  the shared canonical schemas
+- remove stale compatibility checks that only existed to paper over the old
+  drift
+
+Acceptance gates:
+- agent-runtime preflights never disagree with the API about closed semantic
+  fields
+- remaining cleanup does not introduce new public contracts or route families
+- the codebase has one clear semantic authority for authoring and challenge
+  discovery
 
 ### Primary files
 
@@ -366,3 +533,10 @@ The migration is complete only when all of the following are true:
 6. Finalize is idempotent and does not produce ambiguous 500s.
 7. Agent auth supports unattended workflows without surprise key invalidation.
 8. Layer 1 is the single source of truth for executable scorer templates.
+9. Authoring create, patch, and get share one persisted validation truth.
+10. Sponsor-funded publish and tx-hash registration use one shared challenge
+    registration path.
+11. Closed semantic fields such as `domain` have one canonical shared schema
+    across authoring and challenge discovery contracts.
+12. Agent-runtime preflights are advisory only and cannot override API
+    validation.

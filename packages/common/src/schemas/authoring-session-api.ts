@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { CHALLENGE_LIMITS } from "../constants.js";
-import { partialChallengeIntentSchema } from "./authoring-core.js";
+import {
+  authoringValidationBlockingLayerSchema,
+  authoringValidationIssueSchema,
+  authoringValidationSnapshotSchema,
+  challengeDomainSchema,
+  challengeRewardDistributionSchema,
+  partialChallengeIntentSchema,
+  partialChallengeIntentTransportSchema,
+} from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -138,7 +146,7 @@ export const authoringSessionRewardSchema = z
   .object({
     total: z.string().trim().min(1),
     currency: z.string().trim().min(1),
-    distribution: z.string().trim().min(1),
+    distribution: challengeRewardDistributionSchema,
     protocol_fee_bps: z.number().int().nonnegative(),
   })
   .strict();
@@ -162,10 +170,10 @@ export const authoringSessionCompilationSchema = z
 export const authoringSessionChecklistSchema = z
   .object({
     title: z.string().trim().min(1),
-    domain: z.string().trim().min(1),
+    domain: challengeDomainSchema,
     type: z.string().trim().min(1),
     reward: z.string().trim().min(1),
-    distribution: z.string().trim().min(1),
+    distribution: challengeRewardDistributionSchema,
     deadline: isoDatetimeSchema,
     metric: z.string().trim().min(1),
     objective: authoringSessionObjectiveSchema,
@@ -180,35 +188,14 @@ export const authoringSessionResolvedSchema = z
   })
   .strict();
 
-export const authoringSessionBlockingLayerSchema = z.enum([
-  "input",
-  "dry_run",
-  "platform",
-]);
+export const authoringSessionBlockingLayerSchema =
+  authoringValidationBlockingLayerSchema;
 
-export const authoringSessionValidationIssueSchema = z
-  .object({
-    field: z.string().trim().min(1),
-    code: z.string().trim().min(1),
-    message: z.string().trim().min(1),
-    next_action: z.string().trim().min(1),
-    blocking_layer: authoringSessionBlockingLayerSchema,
-    candidate_values: z.array(z.string().trim().min(1)).default([]),
-  })
-  .strict();
+export const authoringSessionValidationIssueSchema =
+  authoringValidationIssueSchema;
 
-export const authoringSessionValidationSchema = z
-  .object({
-    missing_fields: z.array(authoringSessionValidationIssueSchema).default([]),
-    invalid_fields: z.array(authoringSessionValidationIssueSchema).default([]),
-    dry_run_failure: authoringSessionValidationIssueSchema
-      .nullable()
-      .default(null),
-    unsupported_reason: authoringSessionValidationIssueSchema
-      .nullable()
-      .default(null),
-  })
-  .strict();
+export const authoringSessionValidationSchema =
+  authoringValidationSnapshotSchema;
 
 export const authoringSessionReadinessStatusSchema = z.enum([
   "pass",
@@ -301,7 +288,7 @@ export const authoringArtifactResponseSchema = z
 
 export const createAuthoringSessionRequestSchema = z
   .object({
-    intent: partialChallengeIntentSchema.optional(),
+    intent: partialChallengeIntentTransportSchema.optional(),
     execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
     provenance: authoringSessionProvenanceSchema.optional(),
@@ -324,7 +311,7 @@ export const createAuthoringSessionRequestSchema = z
 
 export const patchAuthoringSessionRequestSchema = z
   .object({
-    intent: partialChallengeIntentSchema.optional(),
+    intent: partialChallengeIntentTransportSchema.optional(),
     execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).min(1).optional(),
   })

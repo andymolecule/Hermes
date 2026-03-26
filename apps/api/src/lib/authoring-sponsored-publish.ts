@@ -3,10 +3,7 @@ import {
   balanceOf,
   classifyWriteError,
   createAgoraWalletClientForPrivateKey,
-  getFactoryContractVersion,
   getPublicClient,
-  parseChallengeCreatedReceipt,
-  parseChallengeCreationCall,
   sendWriteWithRetry,
 } from "@agora/chain";
 import {
@@ -23,17 +20,16 @@ import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
 import {
   type AuthoringSessionRow,
   attachAuthoringSponsorBudgetReservationTx,
-  buildChallengeInsert,
   consumeAuthoringSponsorBudgetReservation,
   releaseAuthoringSponsorBudgetReservation,
   reserveAuthoringSponsorBudget,
   sumRewardAmountForSourceProvider,
   updateAuthoringSession,
-  upsertChallenge,
 } from "@agora/db";
 import { type Abi, maxUint256, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getAuthoringSessionSourceAttribution } from "./authoring-session-source-attribution.js";
+import { registerChallengeFromTxHash } from "./challenge-registration.js";
 
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
@@ -248,83 +244,6 @@ export async function ensureSponsorFactoryAllowance(input: {
   );
 }
 
-function assertCreationMatchesSpec(input: {
-  spec: TrustedChallengeSpecOutput;
-  rewardUnits: bigint;
-  deadline: bigint;
-  disputeWindowHours: bigint;
-  minimumScore: bigint;
-  distributionType: number;
-  maxSubmissions: bigint;
-  maxSubmissionsPerSolver: bigint;
-}) {
-  if (parseUnits(String(input.spec.reward.total), 6) !== input.rewardUnits) {
-    throw new Error(
-      "Sponsored challenge reward does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (BigInt(toUnixSeconds(input.spec.deadline)) !== input.deadline) {
-    throw new Error(
-      "Sponsored challenge deadline does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (
-    BigInt(
-      input.spec.dispute_window_hours ??
-        CHALLENGE_LIMITS.defaultDisputeWindowHours,
-    ) !== input.disputeWindowHours
-  ) {
-    throw new Error(
-      "Sponsored challenge dispute window does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (
-    parseUnits(
-      String(
-        input.spec.minimum_score ??
-          defaultMinimumScoreForExecution(input.spec.execution) ??
-          0,
-      ),
-      18,
-    ) !== input.minimumScore
-  ) {
-    throw new Error(
-      "Sponsored challenge minimum score does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (
-    input.distributionType !==
-    (DISTRIBUTION_TO_ENUM[
-      input.spec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
-    ] ?? 0)
-  ) {
-    throw new Error(
-      "Sponsored challenge distribution does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (
-    input.maxSubmissions !==
-    BigInt(
-      input.spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
-    )
-  ) {
-    throw new Error(
-      "Sponsored challenge max_submissions_total does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-  if (
-    input.maxSubmissionsPerSolver !==
-    BigInt(
-      input.spec.max_submissions_per_solver ??
-        SUBMISSION_LIMITS.maxPerSolverPerChallenge,
-    )
-  ) {
-    throw new Error(
-      "Sponsored challenge max_submissions_per_solver does not match the compiled spec. Next step: retry publishing and inspect the sponsor transaction builder.",
-    );
-  }
-}
-
 export async function sponsorAndPublishAuthoringSession(input: {
   db: Parameters<typeof updateAuthoringSession>[0];
   session: AuthoringSessionRow;
@@ -354,7 +273,9 @@ export async function sponsorAndPublishAuthoringSession(input: {
   let budgetReserved = false;
   let createTxHash: `0x${string}` | null = null;
   let challengeCreationConfirmed = false;
-  let challengeRow: Awaited<ReturnType<typeof upsertChallenge>> | null = null;
+  let challengeRow:
+    | Awaited<ReturnType<typeof registerChallengeFromTxHash>>["challengeRow"]
+    | null = null;
 
   try {
     if (
@@ -486,64 +407,13 @@ export async function sponsorAndPublishAuthoringSession(input: {
       );
     }
     challengeCreationConfirmed = true;
-
-    const {
-      challengeId: factoryChallengeId,
-      challengeAddress,
-      posterAddress,
-    } = parseChallengeCreatedReceipt(receipt);
-    const transaction = await publicClient.getTransaction({
-      hash: createTxHash,
-    });
-    const transactionInput =
-      (transaction as { input?: `0x${string}`; data?: `0x${string}` }).input ??
-      (transaction as { data?: `0x${string}` }).data;
-    if (!transactionInput) {
-      throw new Error(
-        "Sponsored challenge transaction calldata is unavailable. Next step: retry once the transaction is indexed by your RPC provider.",
-      );
-    }
-
-    const creation = parseChallengeCreationCall(transactionInput);
-    if (creation.specCid !== input.specCid) {
-      throw new Error(
-        "Sponsored challenge transaction does not match the pinned spec CID. Next step: retry publishing and inspect the sponsor transaction builder.",
-      );
-    }
-    assertCreationMatchesSpec({
-      spec: input.spec,
-      rewardUnits,
-      deadline: creation.deadline,
-      disputeWindowHours: creation.disputeWindowHours,
-      minimumScore: creation.minimumScore,
-      distributionType: creation.distributionType,
-      maxSubmissions: creation.maxSubmissions,
-      maxSubmissionsPerSolver: creation.maxSubmissionsPerSolver,
-    });
-
-    const contractVersion = await getFactoryContractVersion(
-      config.AGORA_FACTORY_ADDRESS,
-      receipt.blockNumber,
-    );
-    const challengeInsert = await buildChallengeInsert({
-      chainId: config.AGORA_CHAIN_ID,
-      contractVersion,
-      factoryChallengeId: Number(factoryChallengeId),
-      contractAddress: challengeAddress,
-      factoryAddress: config.AGORA_FACTORY_ADDRESS,
-      posterAddress,
-      createdByAgentId: input.session.created_by_agent_id,
-      specCid: input.specCid,
-      spec: input.spec,
-      rewardAmountUsdc: rewardAmount,
-      disputeWindowHours:
-        input.spec.dispute_window_hours ??
-        CHALLENGE_LIMITS.defaultDisputeWindowHours,
-      requirePinnedPresetDigests: config.AGORA_REQUIRE_PINNED_PRESET_DIGESTS,
+    const registration = await registerChallengeFromTxHash({
+      db: input.db,
       txHash: createTxHash,
-      onChainDeadline: input.spec.deadline,
+      expectedSpec: input.spec,
+      createdByAgentId: input.session.created_by_agent_id ?? null,
     });
-    challengeRow = await upsertChallenge(input.db, challengeInsert);
+    challengeRow = registration.challengeRow;
 
     const publishedSession = await (
       input.updateAuthoringSessionImpl ?? updateAuthoringSession
@@ -575,13 +445,13 @@ export async function sponsorAndPublishAuthoringSession(input: {
       sponsorAddress,
       challenge: {
         challengeId: challengeRow.id,
-        challengeAddress,
-        factoryChallengeId: Number(factoryChallengeId),
+        challengeAddress: registration.challengeAddress,
+        factoryChallengeId: registration.factoryChallengeId,
         refs: {
           challengeId: challengeRow.id,
-          challengeAddress,
+          challengeAddress: registration.challengeAddress,
           factoryAddress: config.AGORA_FACTORY_ADDRESS,
-          factoryChallengeId: Number(factoryChallengeId),
+          factoryChallengeId: registration.factoryChallengeId,
         },
       },
     };

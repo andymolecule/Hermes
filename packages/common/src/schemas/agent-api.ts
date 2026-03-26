@@ -5,6 +5,7 @@ import {
 } from "../official-scorer-catalog.js";
 import { CHALLENGE_STATUS, CHALLENGE_TYPES } from "../types/challenge.js";
 import { SCORE_JOB_STATUSES } from "../types/score-job.js";
+import { challengeDomainSchema } from "./authoring-core.js";
 import { trustedChallengeSpecSchema } from "./challenge-spec.js";
 import { submissionContractSchema } from "./submission-contract.js";
 import {
@@ -90,7 +91,7 @@ export const submissionRefsSchema = z.object({
 
 export const agentChallengesQuerySchema = z.object({
   status: challengeStatusSchema.optional(),
-  domain: z.string().min(1).optional(),
+  domain: challengeDomainSchema.optional(),
   poster_address: normalizedAddressSchema.optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   min_reward: z.coerce.number().nonnegative().optional(),
@@ -110,7 +111,7 @@ export const challengeSummarySchema = z
     id: challengeIdSchema,
     title: z.string(),
     description: z.string().optional(),
-    domain: z.string(),
+    domain: challengeDomainSchema,
     challenge_type: challengeTypeSchema.optional(),
     reward_amount: z.number(),
     deadline: z.string().datetime({ offset: true }).or(z.string()),

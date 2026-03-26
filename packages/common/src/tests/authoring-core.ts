@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  challengeIntentSchema,
   challengeAuthoringIrSchema,
+  challengeIntentSchema,
+  partialChallengeIntentTransportSchema,
   submitAuthoringSessionRequestSchema,
 } from "../schemas/authoring-core.js";
 import { authoringSourceSessionInputSchema } from "../schemas/authoring-source.js";
@@ -97,8 +98,8 @@ const tooShortDisputeWindow = submitAuthoringSessionRequestSchema.safeParse({
 
 assert.equal(
   tooShortDisputeWindow.success,
-  false,
-  "authoring core should reject negative dispute windows",
+  true,
+  "transport authoring request should defer semantic dispute-window validation",
 );
 
 const outOfRangeReward = submitAuthoringSessionRequestSchema.safeParse({
@@ -112,8 +113,29 @@ const outOfRangeReward = submitAuthoringSessionRequestSchema.safeParse({
 
 assert.equal(
   outOfRangeReward.success,
+  true,
+  "transport authoring request should defer semantic reward validation",
+);
+
+const invalidTransportDomain = partialChallengeIntentTransportSchema.safeParse({
+  domain: "biology",
+});
+
+assert.equal(
+  invalidTransportDomain.success,
+  true,
+  "transport authoring intent should preserve invalid enum candidates for semantic assessment",
+);
+
+const invalidCanonicalDomain = challengeIntentSchema.safeParse({
+  ...baseIntent,
+  domain: "biology",
+});
+
+assert.equal(
+  invalidCanonicalDomain.success,
   false,
-  "authoring core should reject out-of-range reward totals at intake time",
+  "canonical challenge intent should reject invalid domains",
 );
 
 const duplicateUri = submitAuthoringSessionRequestSchema.safeParse({
@@ -177,12 +199,12 @@ const tooManyTags = submitAuthoringSessionRequestSchema.safeParse({
 
 assert.equal(
   tooManyTags.success,
-  false,
-  "authoring core should cap tag count per session",
+  true,
+  "transport authoring request should defer semantic tag validation",
 );
 
 const authoringIr = challengeAuthoringIrSchema.parse({
-  version: 4,
+  version: 5,
   origin: {
     provider: "direct",
     external_id: null,
@@ -212,6 +234,12 @@ const authoringIr = challengeAuthoringIrSchema.parse({
     reason_codes: [],
     warnings: [],
     missing_fields: [],
+  },
+  validation_snapshot: {
+    missing_fields: [],
+    invalid_fields: [],
+    dry_run_failure: null,
+    unsupported_reason: null,
   },
   execution: {
     template: "official_table_metric_v1",

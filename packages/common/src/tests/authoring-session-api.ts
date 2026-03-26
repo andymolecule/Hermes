@@ -32,6 +32,13 @@ const patchRequest = patchAuthoringSessionRequestSchema.parse({
 });
 assert.equal(patchRequest.execution?.evaluation_artifact_id, "art-123");
 
+const transportDomainPatch = patchAuthoringSessionRequestSchema.parse({
+  intent: {
+    domain: "biology",
+  },
+});
+assert.equal(transportDomainPatch.intent?.domain, "biology");
+
 const session = authoringSessionSchema.parse({
   id: "session-123",
   state: "awaiting_input",

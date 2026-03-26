@@ -75,6 +75,7 @@ assert.equal(revokeKeyResponse.data.status, "revoked");
 const query = agentChallengesQuerySchema.parse({
   limit: "10",
   min_reward: "25",
+  domain: "longevity",
   poster_address: "0xbC8a05842b6FEc7F8A701cE6C2f8d3Fc725Dad98",
   updated_since: "2026-03-12T00:00:00.000Z",
   cursor: "2026-03-11T00:00:00.000Z",
@@ -86,7 +87,16 @@ assert.equal(
   query.poster_address,
   "0xbc8a05842b6fec7f8a701ce6c2f8d3fc725dad98",
 );
+assert.equal(query.domain, "longevity");
 assert.equal(query.updated_since, "2026-03-12T00:00:00.000Z");
+
+assert.equal(
+  agentChallengesQuerySchema.safeParse({
+    domain: "biology",
+  }).success,
+  false,
+  "challenge discovery should use canonical challenge domains",
+);
 
 const listResponse = agentChallengesListResponseSchema.parse({
   data: [

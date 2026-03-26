@@ -1,6 +1,7 @@
 import {
   type AuthoringSessionReadinessCheckOutput,
   type AuthoringSessionReadinessOutput,
+  type AuthoringSessionValidationIssueOutput,
   type AuthoringSessionValidationOutput,
   CHALLENGE_LIMITS,
   type ChallengeIntentOutput,
@@ -17,7 +18,7 @@ import {
   type StoredAuthoringSessionArtifact,
   toAuthoringSessionArtifactPayload,
 } from "./authoring-session-artifacts.js";
-import { classifyAuthoringBlockingLayer } from "./authoring-validation.js";
+import { emptyAuthoringValidation } from "./authoring-validation.js";
 
 type ChallengeRefs = {
   id: string;
@@ -151,16 +152,6 @@ function buildArtifactRoleMap(session: AuthoringSessionRow) {
   return roleByUri;
 }
 
-function artifactId(artifact: StoredAuthoringSessionArtifact, index: number) {
-  return artifact.id?.trim() || `artifact-${index + 1}`;
-}
-
-function listArtifactCandidateValues(session: AuthoringSessionRow) {
-  return (
-    (session.uploaded_artifacts_json ?? []) as StoredAuthoringSessionArtifact[]
-  ).map(artifactId);
-}
-
 function resolveCreator(session: AuthoringSessionRow) {
   if (typeof session.created_by_agent_id === "string") {
     return {
@@ -175,225 +166,18 @@ function resolveCreator(session: AuthoringSessionRow) {
   };
 }
 
-function buildValidationIssue(input: {
-  field: string;
-  code: string;
-  message: string;
-  nextAction: string;
-  candidateValues?: string[];
-}) {
-  return {
-    field: input.field,
-    code: input.code,
-    message: input.message,
-    next_action: input.nextAction,
-    blocking_layer: classifyAuthoringBlockingLayer(input.code),
-    candidate_values: input.candidateValues ?? [],
-  };
-}
-
-function buildFieldPrompt(field: string) {
-  switch (field) {
-    case "title":
-      return {
-        message: "Agora still needs the challenge title.",
-        nextAction: "Provide the title and retry.",
-      };
-    case "description":
-      return {
-        message: "Agora still needs the challenge description.",
-        nextAction: "Provide the description and retry.",
-      };
-    case "payout_condition":
-      return {
-        message: "Agora still needs a deterministic winner rule.",
-        nextAction: "Provide a deterministic payout condition and retry.",
-      };
-    case "reward_total":
-      return {
-        message: "Agora still needs the total reward amount.",
-        nextAction: "Provide an in-range reward_total and retry.",
-      };
-    case "deadline":
-      return {
-        message: "Agora still needs the challenge deadline.",
-        nextAction: "Provide an exact deadline timestamp and retry.",
-      };
-    case "distribution":
-      return {
-        message: "Agora still needs the reward distribution.",
-        nextAction: "Provide the distribution and retry.",
-      };
-    case "domain":
-      return {
-        message: "Agora still needs the challenge domain.",
-        nextAction: "Provide the domain and retry.",
-      };
-    case "metric":
-      return {
-        message: "Agora still needs the scoring metric.",
-        nextAction: "Provide the metric and retry.",
-      };
-    case "evaluation_artifact":
-      return {
-        message: "Agora still needs the hidden evaluation artifact.",
-        nextAction: "Attach the hidden evaluation file and retry.",
-      };
-    case "evaluation_id_column":
-      return {
-        message: "Agora still needs the evaluation ID column.",
-        nextAction: "Provide the evaluation_id_column and retry.",
-      };
-    case "evaluation_value_column":
-      return {
-        message: "Agora still needs the evaluation value column.",
-        nextAction: "Provide the evaluation_value_column and retry.",
-      };
-    case "submission_id_column":
-      return {
-        message: "Agora still needs the submission ID column.",
-        nextAction: "Provide the submission_id_column and retry.",
-      };
-    case "submission_value_column":
-      return {
-        message: "Agora still needs the submission value column.",
-        nextAction: "Provide the submission_value_column and retry.",
-      };
-    default:
-      return {
-        message: `Agora still needs ${field}.`,
-        nextAction: `Provide ${field} and retry.`,
-      };
-  }
-}
-
 function buildValidation(
   session: AuthoringSessionRow,
   publicState: ReturnType<typeof toPublicState>,
 ): AuthoringSessionValidationOutput {
-  const compileErrorCode =
-    session.authoring_ir_json?.execution.compile_error_codes[0] ?? null;
-  const compileErrorMessage =
-    session.authoring_ir_json?.execution.compile_error_message ?? null;
-  const rejectionReason =
-    session.authoring_ir_json?.execution.rejection_reasons[0] ?? null;
-  const missingFields = [
-    ...(session.authoring_ir_json?.assessment.missing_fields ?? []),
-  ];
-  const artifactCandidateValues = listArtifactCandidateValues(session);
-
   if (publicState === "ready" || publicState === "published") {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: [],
-      invalid_fields: [],
-      dry_run_failure: null,
-      unsupported_reason: null,
-    });
+    return authoringSessionValidationSchema.parse(emptyAuthoringValidation());
   }
 
-  if (publicState === "rejected") {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: [],
-      invalid_fields: [],
-      dry_run_failure: null,
-      unsupported_reason: buildValidationIssue({
-        field: "task",
-        code: rejectionReason ?? compileErrorCode ?? "unsupported_task",
-        message:
-          session.failure_message ??
-          compileErrorMessage ??
-          "Agora could not prepare a publishable challenge from this session.",
-        nextAction:
-          "Create a new session with a supported deterministic table-scoring challenge.",
-        candidateValues: [],
-      }),
-    });
-  }
-
-  if (compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")) {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: [],
-      invalid_fields: [],
-      dry_run_failure: buildValidationIssue({
-        field: "execution",
-        code: compileErrorCode,
-        message:
-          compileErrorMessage ??
-          "Agora could not validate the scoring contract during dry-run.",
-        nextAction: "Adjust the execution fields or artifacts and retry.",
-        candidateValues: [],
-      }),
-      unsupported_reason: null,
-    });
-  }
-
-  if (compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE") {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: [],
-      invalid_fields: [
-        buildValidationIssue({
-          field: "metric",
-          code: compileErrorCode,
-          message:
-            compileErrorMessage ??
-            "Agora could not resolve the scoring configuration for the selected metric.",
-          nextAction:
-            "Retry later or choose a supported metric if the problem persists.",
-          candidateValues: [],
-        }),
-      ],
-      dry_run_failure: null,
-      unsupported_reason: null,
-    });
-  }
-
-  if (missingFields.length > 0) {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: missingFields.map((field) => {
-        const prompt = buildFieldPrompt(field);
-        return buildValidationIssue({
-          field,
-          code: compileErrorCode ?? "missing_field",
-          message: compileErrorMessage ?? prompt.message,
-          nextAction: prompt.nextAction,
-          candidateValues:
-            field === "evaluation_artifact" ? artifactCandidateValues : [],
-        });
-      }),
-      invalid_fields: [],
-      dry_run_failure: null,
-      unsupported_reason: null,
-    });
-  }
-
-  if (compileErrorCode) {
-    return authoringSessionValidationSchema.parse({
-      missing_fields: [],
-      invalid_fields: [
-        buildValidationIssue({
-          field: "execution",
-          code: compileErrorCode,
-          message:
-            compileErrorMessage ??
-            "Agora could not validate the current execution contract.",
-          nextAction: "Fix the execution fields or artifacts and retry.",
-          candidateValues:
-            compileErrorCode === "AUTHORING_EVALUATION_ARTIFACT_MISSING"
-              ? artifactCandidateValues
-              : [],
-        }),
-      ],
-      dry_run_failure: null,
-      unsupported_reason: null,
-    });
-  }
-
-  return authoringSessionValidationSchema.parse({
-    missing_fields: [],
-    invalid_fields: [],
-    dry_run_failure: null,
-    unsupported_reason: null,
-  });
+  return authoringSessionValidationSchema.parse(
+    session.authoring_ir_json?.validation_snapshot ??
+      emptyAuthoringValidation(),
+  );
 }
 
 function buildReadinessCheck(input: {
@@ -408,17 +192,40 @@ function buildReadinessCheck(input: {
   } satisfies AuthoringSessionReadinessCheckOutput;
 }
 
+function findIssueByField(
+  issues: AuthoringSessionValidationIssueOutput[],
+  fields: string[],
+) {
+  return issues.find((issue) => fields.includes(issue.field)) ?? null;
+}
+
+function toMissingFieldSet(validation: AuthoringSessionValidationOutput) {
+  return new Set(validation.missing_fields.map((issue) => issue.field));
+}
+
+function toInvalidFieldSet(validation: AuthoringSessionValidationOutput) {
+  return new Set(validation.invalid_fields.map((issue) => issue.field));
+}
+
 function buildReadiness(
   session: AuthoringSessionRow,
   publicState: ReturnType<typeof toPublicState>,
+  validation: AuthoringSessionValidationOutput,
 ): AuthoringSessionReadinessOutput {
   const compileErrorCode =
     session.authoring_ir_json?.execution.compile_error_codes[0] ?? null;
   const compileErrorMessage =
     session.authoring_ir_json?.execution.compile_error_message ?? null;
-  const missingFields = new Set(
-    session.authoring_ir_json?.assessment.missing_fields ?? [],
-  );
+  const missingFields = toMissingFieldSet(validation);
+  const invalidFields = toInvalidFieldSet(validation);
+  const platformIssue =
+    validation.invalid_fields.find(
+      (issue) => issue.blocking_layer === "platform",
+    ) ?? null;
+  const dryRunFailure = validation.dry_run_failure;
+  const unsupportedReason = validation.unsupported_reason;
+  const hasCompiledSpec =
+    session.compilation_json !== null || validation.dry_run_failure !== null;
 
   if (publicState === "ready" || publicState === "published") {
     return authoringSessionReadinessSchema.parse({
@@ -449,28 +256,31 @@ function buildReadiness(
 
   if (publicState === "rejected") {
     const message =
+      unsupportedReason?.message ??
       session.failure_message ??
       compileErrorMessage ??
       "This session was rejected and cannot become publishable.";
+    const code =
+      unsupportedReason?.code ?? compileErrorCode ?? "session_rejected";
     return authoringSessionReadinessSchema.parse({
       spec: buildReadinessCheck({
         status: "fail",
-        code: compileErrorCode ?? "session_rejected",
+        code,
         message,
       }),
       artifact_binding: buildReadinessCheck({
         status: "fail",
-        code: compileErrorCode ?? "session_rejected",
+        code,
         message,
       }),
       scorer: buildReadinessCheck({
         status: "fail",
-        code: compileErrorCode ?? "session_rejected",
+        code,
         message,
       }),
       dry_run: buildReadinessCheck({
         status: "fail",
-        code: compileErrorCode ?? "session_rejected",
+        code,
         message,
       }),
       publishable: false,
@@ -484,63 +294,83 @@ function buildReadiness(
     Boolean(session.authoring_ir_json?.execution.submission_columns.id) &&
     Boolean(session.authoring_ir_json?.execution.submission_columns.value);
 
-  const spec = compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")
+  const spec = dryRunFailure
     ? buildReadinessCheck({
         status: "pass",
         code: "spec_built",
         message: "Agora compiled the canonical challenge spec.",
       })
-    : compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE"
+    : platformIssue
       ? buildReadinessCheck({
           status: "fail",
-          code: compileErrorCode,
+          code: platformIssue.code,
           message:
-            compileErrorMessage ??
+            platformIssue.message ??
             "Agora could not resolve the scoring configuration needed to build this spec.",
         })
-      : missingFields.size > 0 || !session.intent_json
+      : missingFields.size > 0 ||
+          invalidFields.has("title") ||
+          invalidFields.has("description") ||
+          invalidFields.has("payout_condition") ||
+          invalidFields.has("reward_total") ||
+          invalidFields.has("distribution") ||
+          invalidFields.has("domain") ||
+          invalidFields.has("deadline") ||
+          !session.intent_json
         ? buildReadinessCheck({
             status: "pending",
             code: "spec_pending_input",
             message:
               "Agora still needs enough structured input to build the canonical challenge spec.",
           })
-        : buildReadinessCheck({
-            status: "pending",
-            code: "spec_pending_compile",
-            message:
-              "Agora has not yet produced a publishable compiled spec for this session.",
-          });
+        : hasCompiledSpec
+          ? buildReadinessCheck({
+              status: "pass",
+              code: "spec_ready",
+              message: "Agora compiled the canonical challenge spec.",
+            })
+          : buildReadinessCheck({
+              status: "pending",
+              code: "spec_pending_compile",
+              message:
+                "Agora has not yet produced a publishable compiled spec for this session.",
+            });
+
+  const artifactBindingIssue = findIssueByField(validation.invalid_fields, [
+    "evaluation_artifact",
+    "evaluation_id_column",
+    "evaluation_value_column",
+    "submission_id_column",
+    "submission_value_column",
+    "execution",
+  ]);
 
   const artifactBinding =
-    artifactBindingResolved &&
-    (session.compilation_json !== null ||
-      compileErrorCode?.startsWith("AUTHORING_DRY_RUN_"))
+    artifactBindingResolved && hasCompiledSpec
       ? buildReadinessCheck({
           status: "pass",
           code: "artifact_binding_ready",
           message:
             "The hidden evaluation artifact and column mappings are resolved.",
         })
-      : compileErrorCode === "AUTHORING_EVALUATION_COLUMNS_INVALID"
+      : artifactBindingIssue
         ? buildReadinessCheck({
-            status: "fail",
-            code: compileErrorCode,
-            message:
-              compileErrorMessage ??
-              "The selected evaluation artifact does not match the chosen columns.",
+            status:
+              artifactBindingIssue.blocking_layer === "platform"
+                ? "fail"
+                : "pending",
+            code: artifactBindingIssue.code,
+            message: artifactBindingIssue.message,
           })
         : missingFields.has("evaluation_artifact") ||
             missingFields.has("evaluation_id_column") ||
             missingFields.has("evaluation_value_column") ||
             missingFields.has("submission_id_column") ||
-            missingFields.has("submission_value_column") ||
-            compileErrorCode === "AUTHORING_EVALUATION_ARTIFACT_MISSING"
+            missingFields.has("submission_value_column")
           ? buildReadinessCheck({
               status: "pending",
-              code: compileErrorCode ?? "artifact_binding_pending",
+              code: "artifact_binding_pending",
               message:
-                compileErrorMessage ??
                 "Agora still needs a valid evaluation artifact binding and column mappings.",
             })
           : buildReadinessCheck({
@@ -553,36 +383,35 @@ function buildReadiness(
                 : "Agora still needs a valid evaluation artifact binding and column mappings.",
             });
 
-  const scorer =
-    session.compilation_json !== null ||
-    compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")
+  const scorer = hasCompiledSpec
+    ? buildReadinessCheck({
+        status: "pass",
+        code: "scorer_ready",
+        message: "The scoring configuration is resolved.",
+      })
+    : platformIssue
       ? buildReadinessCheck({
-          status: "pass",
-          code: "scorer_ready",
-          message: "The scoring configuration is resolved.",
+          status: "fail",
+          code: platformIssue.code,
+          message:
+            platformIssue.message ??
+            "Agora could not resolve the scoring configuration for this session.",
         })
-      : compileErrorCode === "AUTHORING_PLATFORM_UNAVAILABLE"
+      : missingFields.has("metric") ||
+          invalidFields.has("metric") ||
+          !session.authoring_ir_json?.execution.metric
         ? buildReadinessCheck({
-            status: "fail",
-            code: compileErrorCode,
+            status: "pending",
+            code: "scorer_pending_metric",
             message:
-              compileErrorMessage ??
-              "Agora could not resolve the scoring configuration for this session.",
+              "Agora still needs a supported metric before it can resolve the scoring configuration.",
           })
-        : missingFields.has("metric") ||
-            !session.authoring_ir_json?.execution.metric
-          ? buildReadinessCheck({
-              status: "pending",
-              code: "scorer_pending_metric",
-              message:
-                "Agora still needs a supported metric before it can resolve the scoring configuration.",
-            })
-          : buildReadinessCheck({
-              status: "pending",
-              code: "scorer_pending_resolution",
-              message:
-                "Agora has not yet resolved the scoring configuration for this session.",
-            });
+        : buildReadinessCheck({
+            status: "pending",
+            code: "scorer_pending_resolution",
+            message:
+              "Agora has not yet resolved the scoring configuration for this session.",
+          });
 
   const dryRun =
     session.compilation_json !== null
@@ -591,13 +420,11 @@ function buildReadiness(
           code: "dry_run_ready",
           message: "Dry-run validation passed.",
         })
-      : compileErrorCode?.startsWith("AUTHORING_DRY_RUN_")
+      : dryRunFailure
         ? buildReadinessCheck({
             status: "fail",
-            code: compileErrorCode,
-            message:
-              compileErrorMessage ??
-              "Agora could not validate the scoring contract during dry-run.",
+            code: dryRunFailure.code,
+            message: dryRunFailure.message,
           })
         : buildReadinessCheck({
             status: "pending",
@@ -696,7 +523,7 @@ export function buildAuthoringSessionPayload(
     creator: resolveCreator(session),
     resolved: buildResolved(session),
     validation,
-    readiness: buildReadiness(session, publicState),
+    readiness: buildReadiness(session, publicState, validation),
     checklist: buildChecklist(session.compilation_json),
     compilation: buildCompilation(session.compilation_json),
     artifacts: uploadedArtifacts.map((artifact) =>

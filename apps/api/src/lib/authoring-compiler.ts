@@ -1,15 +1,18 @@
 import {
+  AUTHORING_DISTRIBUTION_VALUES,
   AgoraError,
   type AuthoringArtifactOutput,
-  type AuthoringSessionValidationIssueOutput,
   type AuthoringSessionValidationOutput,
   type AuthoringValidationFieldOutput,
+  CHALLENGE_DOMAINS,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
   type OfficialScorerTemplateIdOutput,
+  type PartialChallengeIntentOutput,
   type TrustedChallengeSpecOutput,
   canonicalizeChallengeSpec,
+  challengeIntentSchema,
   deriveOfficialScorerComparator,
   hasSubmissionSealPublicEnv,
   listAuthoringSupportedMetricIds,
@@ -36,6 +39,10 @@ import {
   stepFailure,
   stepOk,
 } from "./authoring-step.js";
+import {
+  buildAuthoringValidationIssue,
+  emptyAuthoringValidation,
+} from "./authoring-validation.js";
 
 export interface AuthoringSessionOutcome {
   state: "ready" | "awaiting_input" | "rejected";
@@ -62,6 +69,11 @@ interface SessionCompilationCandidate {
   proposal: SessionCompilationProposal;
   compilation: CompilationResultOutput;
 }
+
+const challengeIntentFieldSchemas = challengeIntentSchema.shape;
+const challengeIntentFieldNames = Object.keys(
+  challengeIntentFieldSchemas,
+) as Array<keyof typeof challengeIntentFieldSchemas>;
 
 function artifactIdentifier(artifact: AuthoringArtifactOutput, index: number) {
   return artifact.id?.trim() || `artifact-${index + 1}`;
@@ -326,24 +338,6 @@ function resolvePinnedOfficialScorerImageResult(
   return stepOk(scorerImage);
 }
 
-function buildValidationIssue(input: {
-  field: string;
-  code: string;
-  message: string;
-  nextAction: string;
-  blockingLayer: "input" | "dry_run" | "platform";
-  candidateValues?: string[];
-}) {
-  return {
-    field: input.field,
-    code: input.code,
-    message: input.message,
-    next_action: input.nextAction,
-    blocking_layer: input.blockingLayer,
-    candidate_values: input.candidateValues ?? [],
-  } satisfies AuthoringSessionValidationIssueOutput;
-}
-
 function buildValidationFromStepFailure(
   failure: AuthoringStepFailure,
 ): AuthoringSessionValidationOutput {
@@ -352,7 +346,7 @@ function buildValidationFromStepFailure(
       missing_fields: [],
       invalid_fields: [],
       dry_run_failure: null,
-      unsupported_reason: buildValidationIssue({
+      unsupported_reason: buildAuthoringValidationIssue({
         field: failure.field,
         code: failure.code,
         message: failure.message,
@@ -367,7 +361,7 @@ function buildValidationFromStepFailure(
     return {
       missing_fields: [],
       invalid_fields: [],
-      dry_run_failure: buildValidationIssue({
+      dry_run_failure: buildAuthoringValidationIssue({
         field: failure.field,
         code: failure.code,
         message: failure.message,
@@ -382,7 +376,7 @@ function buildValidationFromStepFailure(
   if (failure.missingFields.length > 0) {
     return {
       missing_fields: failure.missingFields.map((field) =>
-        buildValidationIssue({
+        buildAuthoringValidationIssue({
           field,
           code: failure.code,
           message: failure.message,
@@ -401,7 +395,7 @@ function buildValidationFromStepFailure(
   return {
     missing_fields: [],
     invalid_fields: [
-      buildValidationIssue({
+      buildAuthoringValidationIssue({
         field: failure.field,
         code: failure.code,
         message: failure.message,
@@ -415,6 +409,21 @@ function buildValidationFromStepFailure(
   };
 }
 
+function sanitizeIntentForAuthoringIr(
+  intent: ChallengeIntentOutput,
+): PartialChallengeIntentOutput {
+  const sanitizedIntent = {} as Record<string, unknown>;
+  for (const field of challengeIntentFieldNames) {
+    const parsedField = challengeIntentFieldSchemas[field].safeParse(
+      intent[field],
+    );
+    if (parsedField.success) {
+      sanitizedIntent[field] = parsedField.data;
+    }
+  }
+  return sanitizedIntent as PartialChallengeIntentOutput;
+}
+
 function buildAuthoringIrFromFailure(input: {
   failure: AuthoringStepFailure;
   intent: ChallengeIntentOutput;
@@ -426,6 +435,7 @@ function buildAuthoringIrFromFailure(input: {
   submissionIdColumnOverride?: string | null;
   submissionValueColumnOverride?: string | null;
 }) {
+  const validation = buildValidationFromStepFailure(input.failure);
   const selectedEvaluationArtifactId =
     input.failure.kind === "rejected"
       ? null
@@ -446,7 +456,7 @@ function buildAuthoringIrFromFailure(input: {
     : null;
 
   return buildAuthoringIr({
-    intent: input.intent,
+    intent: sanitizeIntentForAuthoringIr(input.intent),
     uploadedArtifacts: input.uploadedArtifacts,
     origin: { provider: "direct" },
     ...(input.failure.kind === "rejected"
@@ -471,6 +481,7 @@ function buildAuthoringIrFromFailure(input: {
       input.failure.kind === "rejected" ? "rejected" : "awaiting_input",
     assessmentReasonCodes: input.failure.reasonCodes,
     assessmentWarnings: input.failure.warnings,
+    validationSnapshot: validation,
   });
 }
 
@@ -670,9 +681,40 @@ async function compileAuthoringSessionCandidate(
     ...(minimumScore !== undefined ? { minimum_score: minimumScore } : {}),
   };
 
-  const parsedSpec = trustedChallengeSpecSchemaForChain(
+  const parsedSpecResult = trustedChallengeSpecSchemaForChain(
     apiRuntime.chainId,
-  ).parse(challengeSpecCandidate);
+  ).safeParse(challengeSpecCandidate);
+  if (!parsedSpecResult.success) {
+    const issue = parsedSpecResult.error.issues[0];
+    const fieldPath = issue?.path.filter(
+      (segment): segment is string => typeof segment === "string",
+    );
+    const field = fieldPath?.[fieldPath.length - 1] ?? "execution";
+    const candidateValues =
+      field === "domain"
+        ? [...CHALLENGE_DOMAINS]
+        : field === "distribution"
+          ? [...AUTHORING_DISTRIBUTION_VALUES]
+          : [];
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_SPEC_INVALID",
+      message:
+        issue?.message ??
+        "Agora could not validate the compiled challenge spec.",
+      nextAction:
+        candidateValues.length > 0
+          ? `Provide one of the supported ${field} values and retry.`
+          : `Provide a valid ${field} and retry.`,
+      blockingLayer: "input",
+      field,
+      missingFields: [],
+      candidateValues,
+      reasonCodes: ["spec_validation_failed"],
+      warnings: proposal.warnings,
+    });
+  }
+  const parsedSpec = parsedSpecResult.data;
   const canonicalSpec = await canonicalizeChallengeSpec(parsedSpec);
   const compilerRuntime = readAuthoringCompilerRuntimeConfig();
   const dryRun = await executeAuthoringDryRunResult(
@@ -810,16 +852,12 @@ export async function compileAuthoringSessionOutcome(
     assessmentOutcome: "ready",
     assessmentReasonCodes: result.value.proposal.reasonCodes,
     assessmentWarnings: result.value.proposal.warnings,
+    validationSnapshot: emptyAuthoringValidation(),
   });
   return {
     state: "ready",
     compilation: result.value.compilation,
     authoringIr,
-    validation: {
-      missing_fields: [],
-      invalid_fields: [],
-      dry_run_failure: null,
-      unsupported_reason: null,
-    },
+    validation: emptyAuthoringValidation(),
   };
 }

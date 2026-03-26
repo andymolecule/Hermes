@@ -146,6 +146,7 @@ test("authoring compiler deterministically compiles a supported table regression
   assert.equal(result.challenge_type, "prediction");
   assert.equal(result.challenge_spec.execution.metric, "rmse");
   assert.equal(result.dry_run.status, "validated");
+  assert.deepEqual(result.challenge_spec.domain, "omics");
 });
 
 test("authoring compiler deterministically compiles a benchmark-style ranking challenge", async () => {
@@ -212,6 +213,41 @@ test("authoring compiler returns structured missing-field validation when execut
     result.authoringIr.execution.compile_error_codes[0],
     "AUTHORING_INPUT_REQUIRED",
   );
+  assert.equal(
+    result.authoringIr.validation_snapshot?.missing_fields[0]?.field,
+    "evaluation_artifact",
+  );
+});
+
+test("authoring compiler converts late invalid spec enums into structured validation", async () => {
+  const result = await compileAuthoringSessionOutcome(
+    {
+      intent: {
+        ...baseIntent,
+        domain: "biology" as never,
+      },
+      uploadedArtifacts: regressionArtifacts,
+      metricOverride: "rmse",
+      evaluationArtifactIdOverride: "labels",
+      evaluationIdColumnOverride: "id",
+      evaluationValueColumnOverride: "label",
+      submissionIdColumnOverride: "id",
+      submissionValueColumnOverride: "predicted_value",
+    },
+    buildRegressionDryRunDependencies(),
+  );
+
+  assert.equal(result.state, "awaiting_input");
+  assert.deepEqual(result.validation.missing_fields, []);
+  assert.equal(result.validation.invalid_fields[0]?.field, "domain");
+  assert.deepEqual(result.validation.invalid_fields[0]?.candidate_values, [
+    "longevity",
+    "drug_discovery",
+    "protein_design",
+    "omics",
+    "neuroscience",
+    "other",
+  ]);
 });
 
 test("authoring compiler surfaces dry-run failures as validation.dry_run_failure", async () => {
@@ -272,6 +308,10 @@ test("authoring compiler surfaces dry-run failures as validation.dry_run_failure
     "AUTHORING_DRY_RUN_REJECTED",
   );
   assert.equal(result.validation.missing_fields.length, 0);
+  assert.equal(
+    result.authoringIr.validation_snapshot?.dry_run_failure?.code,
+    "AUTHORING_DRY_RUN_REJECTED",
+  );
 });
 
 test("authoring compiler auto-heals a stale evaluation artifact id when only one artifact remains", async () => {
@@ -383,6 +423,10 @@ test("authoring compiler classifies missing scorer registry entries as platform 
       candidate_values: [],
     },
   ]);
+  assert.equal(
+    result.authoringIr.validation_snapshot?.invalid_fields[0]?.blocking_layer,
+    "platform",
+  );
 });
 
 test("authoring artifact resolution builds the explicit table execution contract", () => {

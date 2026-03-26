@@ -9,16 +9,16 @@ import {
 import {
   CHALLENGE_LIMITS,
   type ChallengeSpecOutput,
-  type TrustedChallengeSpecOutput,
   SUBMISSION_LIMITS,
+  type TrustedChallengeSpecOutput,
   computeSpecHash,
   loadConfig,
   sanitizeChallengeSpecForPublish,
   validateChallengeScoreability,
 } from "@agora/common";
 import {
-  buildChallengeInsert,
   type AgoraDbClient,
+  buildChallengeInsert,
   getChallengeByTxHash,
   upsertChallenge,
 } from "@agora/db";
@@ -178,8 +178,13 @@ export type RegisteredChallengeFromTx = {
 
 export function resolveChallengeCreatedByAgentIdForRegistration(input: {
   existingChallenge?: { created_by_agent_id?: string | null } | null;
+  createdByAgentId?: string | null;
 }) {
-  return input.existingChallenge?.created_by_agent_id ?? null;
+  return (
+    input.existingChallenge?.created_by_agent_id ??
+    input.createdByAgentId ??
+    null
+  );
 }
 
 export async function registerChallengeFromTxHash(input: {
@@ -187,6 +192,7 @@ export async function registerChallengeFromTxHash(input: {
   txHash: `0x${string}`;
   expectedPosterAddress?: `0x${string}`;
   expectedSpec?: TrustedChallengeSpecOutput;
+  createdByAgentId?: string | null;
 }) {
   const config = loadConfig();
   const publicClient = getPublicClient();
@@ -271,7 +277,10 @@ export async function registerChallengeFromTxHash(input: {
     }
 
     specCid = creation.specCid;
-    publicSpec = await fetchValidatedChallengeSpec(specCid, config.AGORA_CHAIN_ID);
+    publicSpec = await fetchValidatedChallengeSpec(
+      specCid,
+      config.AGORA_CHAIN_ID,
+    );
     assertSpecMatchesFactoryCreation({
       spec: publicSpec,
       reward,
@@ -330,7 +339,7 @@ export async function registerChallengeFromTxHash(input: {
     } satisfies RegisteredChallengeFromTx;
   }
 
-  let challengeInsert;
+  let challengeInsert: Awaited<ReturnType<typeof buildChallengeInsert>>;
   try {
     const scoreability = validateChallengeScoreability(input.expectedSpec);
     if (!scoreability.ok) {
@@ -351,6 +360,7 @@ export async function registerChallengeFromTxHash(input: {
       posterAddress,
       createdByAgentId: resolveChallengeCreatedByAgentIdForRegistration({
         existingChallenge,
+        createdByAgentId: input.createdByAgentId,
       }),
       specCid,
       spec: input.expectedSpec,

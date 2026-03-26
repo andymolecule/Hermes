@@ -15,6 +15,11 @@ This is the durable interpretation layer used by:
 It is not the public API contract. The public contract is the authoring session
 API in [specs/authoring-session-api.md](specs/authoring-session-api.md).
 
+The IR may help drive compile and persistence, but it is not the canonical
+source of public field-level validation. Public session `validation` should come
+from the persisted assessment snapshot, not be reconstructed later from IR
+compile hints.
+
 ## Design Rule
 
 Agora should never jump directly from natural language to an on-chain publish.
@@ -56,7 +61,7 @@ surface anymore.
 
 ## What The IR Must Capture
 
-The IR is the durable typed interpretation of the session so far. It must
+The IR is the durable typed working state of the session so far. It must
 answer:
 
 - what problem the creator is trying to solve
@@ -66,6 +71,9 @@ answer:
 - which execution template and metric fit
 - what information is still missing
 - why Agora rejected the task if it cannot be compiled into a valid challenge
+
+The IR is internal. The public machine contract should not depend on callers
+or read helpers reverse-engineering validation from internal IR fields.
 
 ## Conceptual Shape
 
@@ -102,6 +110,12 @@ type ChallengeAuthoringIr = {
     warnings: string[];
     missing_fields: string[];
   };
+  validation_snapshot: {
+    missing_fields: ValidationIssue[];
+    invalid_fields: ValidationIssue[];
+    dry_run_failure: ValidationIssue | null;
+    unsupported_reason: ValidationIssue | null;
+  } | null;
   execution: {
     template: string | null;
     metric: string | null;
@@ -117,11 +131,17 @@ type ChallengeAuthoringIr = {
       value: string | null;
     };
     rejection_reasons: string[];
-    compile_error_codes: string[];
-    compile_error_message: string | null;
+    compile_diagnostics: {
+      codes: string[];
+      message: string | null;
+    };
   };
 };
 ```
+
+`validation_snapshot` is the persisted source for public session validation.
+`compile_diagnostics` remains internal compiler detail and must not be the only
+durable representation of caller-correctable issues.
 
 ## Outcome Model
 
@@ -156,16 +176,19 @@ It validates:
 Compile output is the authoritative source for:
 
 - whether the session is `ready`
-- which validation blockers remain
+- which internal compile blockers remain
 - what the final compilation object contains
 - whether the task must be `rejected`
+
+The shared assessment result is the authoritative source for public validation
+returned by create, patch, and get.
 
 ## Bottom Line
 
 The right abstraction is:
 
 ```text
-create/patch = interpret + validate + compile dry-run
+create/patch = assess + validate + compile dry-run + persist exact snapshot
 publish = explicit irreversible creation path
 ```
 

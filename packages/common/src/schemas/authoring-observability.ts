@@ -1,13 +1,13 @@
 import { z } from "zod";
+import { partialChallengeIntentTransportSchema } from "./authoring-core.js";
 import {
   authoringSessionArtifactSchema,
+  authoringSessionExecutionInputSchema,
   authoringSessionFileInputSchema,
   authoringSessionPublicStateSchema,
   authoringSessionResolvedSchema,
   authoringSessionValidationSchema,
-  authoringSessionExecutionInputSchema,
 } from "./authoring-session-api.js";
-import { partialChallengeIntentSchema } from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -58,7 +58,7 @@ export const authoringConversationLogEntrySchema = z
     summary: z.string().trim().min(1),
     state_before: z.string().trim().min(1).nullable(),
     state_after: z.string().trim().min(1).nullable(),
-    intent: partialChallengeIntentSchema.optional(),
+    intent: partialChallengeIntentTransportSchema.optional(),
     execution: authoringSessionExecutionInputSchema.optional(),
     files: z.array(authoringSessionFileInputSchema).optional(),
     resolved: authoringSessionResolvedSchema.optional(),

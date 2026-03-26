@@ -1,4 +1,9 @@
-import { CHALLENGE_LIMITS, getAgoraRuntimeVersion } from "@agora/common";
+import {
+  AUTHORING_DISTRIBUTION_VALUES,
+  CHALLENGE_DOMAINS,
+  CHALLENGE_LIMITS,
+  getAgoraRuntimeVersion,
+} from "@agora/common";
 
 function uuidSchema() {
   return { type: "string", format: "uuid" } as const;
@@ -143,7 +148,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 enum: ["open", "scoring", "finalized", "disputed", "cancelled"],
               },
             },
-            { in: "query", name: "domain", schema: { type: "string" } },
+            {
+              in: "query",
+              name: "domain",
+              schema: { type: "string", enum: [...CHALLENGE_DOMAINS] },
+            },
             {
               in: "query",
               name: "poster_address",
@@ -1623,10 +1632,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             title: { type: "string" },
-            domain: { type: "string" },
+            domain: { type: "string", enum: [...CHALLENGE_DOMAINS] },
             type: { type: "string" },
             reward: { type: "string" },
-            distribution: { type: "string" },
+            distribution: {
+              type: "string",
+              enum: [...AUTHORING_DISTRIBUTION_VALUES],
+            },
             deadline: isoDateTimeSchema(),
             metric: { type: "string" },
             objective: { type: "string", enum: ["maximize", "minimize"] },
@@ -1848,7 +1860,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               type: "integer",
               minimum: CHALLENGE_LIMITS.disputeWindowMinHours,
             },
-            domain: { type: "string" },
+            domain: { type: "string", enum: [...CHALLENGE_DOMAINS] },
             tags: { type: "array", items: { type: "string" } },
             solver_instructions: { type: "string" },
             timezone: { type: "string" },
@@ -2001,7 +2013,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             id: uuidSchema(),
             title: { type: "string" },
             description: { type: "string" },
-            domain: { type: "string" },
+            domain: { type: "string", enum: [...CHALLENGE_DOMAINS] },
             challenge_type: { type: "string" },
             reward_amount: { type: "number" },
             deadline: isoDateTimeSchema(),

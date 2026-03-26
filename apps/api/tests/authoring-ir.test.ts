@@ -25,7 +25,7 @@ test("authoring intake state records missing required intent fields", () => {
     uploadedArtifacts: [],
   });
 
-  assert.equal(authoringIr.version, 4);
+  assert.equal(authoringIr.version, 5);
   assert.equal(authoringIr.origin.provider, "direct");
   assert.deepEqual(authoringIr.intent.missing_fields, [
     "title",
@@ -46,6 +46,7 @@ test("authoring intake state records missing required intent fields", () => {
     "deadline",
   ]);
   assert.equal(authoringIr.execution.template, null);
+  assert.equal(authoringIr.validation_snapshot, null);
 });
 
 test("authoring intake state preserves the resolved table scoring contract fields", () => {
@@ -56,7 +57,7 @@ test("authoring intake state preserves the resolved table scoring contract field
       payout_condition: "Highest R2 wins.",
       reward_total: "25",
       distribution: "winner_take_all",
-      domain: "bioinformatics",
+      domain: "omics",
       deadline: "2026-12-31T00:00:00.000Z",
       timezone: "UTC",
     },
@@ -72,6 +73,12 @@ test("authoring intake state preserves the resolved table scoring contract field
     submissionValueColumn: "predicted_score",
     assessmentOutcome: "ready",
     assessmentReasonCodes: ["matched_table_metric"],
+    validationSnapshot: {
+      missing_fields: [],
+      invalid_fields: [],
+      dry_run_failure: null,
+      unsupported_reason: null,
+    },
   });
 
   assert.equal(authoringIr.intent.missing_fields.length, 0);
@@ -87,10 +94,8 @@ test("authoring intake state preserves the resolved table scoring contract field
     authoringIr.execution.submission_columns.value,
     "predicted_score",
   );
-  assert.equal(
-    authoringIr.assessment.reason_codes[0],
-    "matched_table_metric",
-  );
+  assert.equal(authoringIr.assessment.reason_codes[0], "matched_table_metric");
+  assert.deepEqual(authoringIr.validation_snapshot?.invalid_fields, []);
 });
 
 test("authoring intake state persists canonical compile blockers", () => {
@@ -101,21 +106,42 @@ test("authoring intake state persists canonical compile blockers", () => {
       payout_condition: "Highest Spearman wins.",
       reward_total: "10",
       distribution: "winner_take_all",
-      domain: "bioinformatics",
+      domain: "omics",
       deadline: "2026-12-31T00:00:00.000Z",
       timezone: "UTC",
     },
     uploadedArtifacts,
     compileError: {
       code: "AUTHORING_ARTIFACTS_AMBIGUOUS",
-      message: "Agora could not determine which file contains the hidden labels.",
+      message:
+        "Agora could not determine which file contains the hidden labels.",
     },
     assessmentOutcome: "awaiting_input",
     missingFields: ["evaluation_artifact"],
+    validationSnapshot: {
+      missing_fields: [
+        {
+          field: "evaluation_artifact",
+          code: "AUTHORING_ARTIFACTS_AMBIGUOUS",
+          message:
+            "Agora could not determine which file contains the hidden labels.",
+          next_action: "Provide the evaluation_artifact and retry.",
+          blocking_layer: "input",
+          candidate_values: [],
+        },
+      ],
+      invalid_fields: [],
+      dry_run_failure: null,
+      unsupported_reason: null,
+    },
   });
 
   assert.deepEqual(authoringIr.execution.compile_error_codes, [
     "AUTHORING_ARTIFACTS_AMBIGUOUS",
   ]);
   assert.equal(authoringIr.assessment.missing_fields[0], "evaluation_artifact");
+  assert.equal(
+    authoringIr.validation_snapshot?.missing_fields[0]?.field,
+    "evaluation_artifact",
+  );
 });

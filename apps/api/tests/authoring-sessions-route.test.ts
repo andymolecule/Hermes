@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AgoraError,
+  CHALLENGE_DOMAINS,
   authoringSessionErrorEnvelopeSchema,
   challengeSpecSchema,
   createChallengeExecution,
@@ -82,6 +83,24 @@ function createArtifacts() {
       source_url: "https://example.com/ligands.csv",
     },
   ];
+}
+
+function createValidationIssue(input: {
+  field: string;
+  code: string;
+  message: string;
+  nextAction: string;
+  blockingLayer?: "input" | "dry_run" | "platform";
+  candidateValues?: string[];
+}) {
+  return {
+    field: input.field,
+    code: input.code,
+    message: input.message,
+    next_action: input.nextAction,
+    blocking_layer: input.blockingLayer ?? "input",
+    candidate_values: input.candidateValues ?? [],
+  };
 }
 
 function createCompilation() {
@@ -192,6 +211,19 @@ function createSession(
         origin: { provider: "direct", ingested_at: "2026-03-22T00:00:00.000Z" },
         assessmentOutcome: "awaiting_input",
         missingFields: ["payout_condition"],
+        validationSnapshot: {
+          missing_fields: [
+            createValidationIssue({
+              field: "payout_condition",
+              code: "AUTHORING_INPUT_REQUIRED",
+              message: "Agora still needs a deterministic winner rule.",
+              nextAction: "Provide a deterministic payout condition and retry.",
+            }),
+          ],
+          invalid_fields: [],
+          dry_run_failure: null,
+          unsupported_reason: null,
+        },
       }),
     uploaded_artifacts_json: uploadedArtifacts as never,
     compilation_json: overrides.compilation_json ?? null,
@@ -419,8 +451,8 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
         "compile should not run while semantic intent fields are missing",
       );
     },
-    createAuthoringSession: async (_db, payload) =>
-      (storedSession = createSession({
+    createAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
         id: "session-missing-semantics",
         created_by_agent_id: payload.created_by_agent_id ?? null,
         poster_address: payload.poster_address ?? null,
@@ -433,10 +465,13 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
         conversation_log_json: payload.conversation_log_json ?? [],
         failure_message: payload.failure_message ?? null,
         expires_at: payload.expires_at,
-      })),
+      });
+      return storedSession;
+    },
     updateAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
-        ...(storedSession ?? createSession({ id: "session-missing-semantics" })),
+        ...(storedSession ??
+          createSession({ id: "session-missing-semantics" })),
         created_by_agent_id:
           payload.created_by_agent_id ??
           storedSession?.created_by_agent_id ??
@@ -633,7 +668,7 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
   assert.equal(storedSession.conversation_log_json.length, 2);
 });
 
-test("PATCH /sessions/:id returns invalid_request for invalid reward_total values", async () => {
+test("PATCH /sessions/:id keeps invalid reward_total in validation.invalid_fields", async () => {
   let storedSession = createSession({
     created_by_agent_id: "agent-abc",
     poster_address: null,
@@ -646,6 +681,19 @@ test("PATCH /sessions/:id returns invalid_request for invalid reward_total value
       origin: { provider: "direct", ingested_at: "2026-03-22T00:00:00.000Z" },
       assessmentOutcome: "awaiting_input",
       missingFields: ["reward_total"],
+      validationSnapshot: {
+        missing_fields: [
+          createValidationIssue({
+            field: "reward_total",
+            code: "AUTHORING_INPUT_REQUIRED",
+            message: "Agora still needs the total reward amount.",
+            nextAction: "Provide a valid reward_total and retry.",
+          }),
+        ],
+        invalid_fields: [],
+        dry_run_failure: null,
+        unsupported_reason: null,
+      },
     }),
   });
 
@@ -686,10 +734,152 @@ test("PATCH /sessions/:id returns invalid_request for invalid reward_total value
     },
   );
 
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.error.code, "invalid_request");
-  assert.match(payload.error.message, /reward_total/i);
+  assert.equal(payload.data.state, "awaiting_input");
+  assert.deepEqual(payload.data.validation.missing_fields, []);
+  assert.equal(payload.data.validation.invalid_fields[0].field, "reward_total");
+  assert.match(
+    payload.data.validation.invalid_fields[0].message,
+    /reward_total/i,
+  );
+});
+
+test("POST /sessions keeps invalid canonical domains in validation.invalid_fields", async () => {
+  let compileCalls = 0;
+  let storedSession: AuthoringSessionRow | null = null;
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    normalizeAuthoringSessionFileInputs: async () => [],
+    compileAuthoringSessionOutcome: async () => {
+      compileCalls += 1;
+      throw new Error("compile should not run for invalid canonical domain");
+    },
+    createAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        id: "session-invalid-domain",
+        created_by_agent_id: payload.created_by_agent_id ?? null,
+        poster_address: payload.poster_address ?? null,
+        state: payload.state,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
+          []) as never,
+        intent_json: payload.intent_json ?? null,
+        compilation_json: payload.compilation_json ?? null,
+        conversation_log_json: payload.conversation_log_json ?? [],
+        failure_message: payload.failure_message ?? null,
+        expires_at: payload.expires_at,
+      });
+      return storedSession;
+    },
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...(storedSession ?? createSession({ id: "session-invalid-domain" })),
+        state: payload.state ?? storedSession?.state ?? "awaiting_input",
+        authoring_ir_json:
+          payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
+        uploaded_artifacts_json:
+          (payload.uploaded_artifacts_json as never) ??
+          storedSession?.uploaded_artifacts_json ??
+          [],
+        intent_json: payload.intent_json ?? storedSession?.intent_json ?? null,
+        compilation_json:
+          payload.compilation_json ?? storedSession?.compilation_json ?? null,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession?.conversation_log_json ??
+          [],
+        failure_message:
+          payload.failure_message ?? storedSession?.failure_message ?? null,
+        expires_at:
+          payload.expires_at ??
+          storedSession?.expires_at ??
+          "2026-03-23T00:00:00.000Z",
+        updated_at: "2026-03-22T00:05:00.000Z",
+      });
+      return storedSession;
+    },
+  });
+
+  const response = await router.request("http://localhost/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      intent: {
+        ...createIntent(),
+        domain: "biology",
+      },
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(compileCalls, 0);
+  const payload = await response.json();
+  assert.equal(payload.data.state, "awaiting_input");
+  assert.deepEqual(payload.data.validation.missing_fields, []);
+  assert.equal(payload.data.validation.invalid_fields[0].field, "domain");
+  assert.deepEqual(payload.data.validation.invalid_fields[0].candidate_values, [
+    ...CHALLENGE_DOMAINS,
+  ]);
+});
+
+test("GET /sessions/:id returns the persisted validation snapshot directly", async () => {
+  const validationSnapshot = {
+    missing_fields: [],
+    invalid_fields: [
+      createValidationIssue({
+        field: "domain",
+        code: "AUTHORING_INVALID_FIELD",
+        message:
+          "Invalid enum value. Expected 'longevity' | 'drug_discovery' | 'protein_design' | 'omics' | 'neuroscience' | 'other', received 'biology'",
+        nextAction: "Provide one of the supported domain values and retry.",
+        candidateValues: [...CHALLENGE_DOMAINS],
+      }),
+    ],
+    dry_run_failure: null,
+    unsupported_reason: null,
+  };
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () =>
+      createSession({
+        created_by_agent_id: "agent-abc",
+        poster_address: null,
+        intent_json: null,
+        authoring_ir_json: buildAuthoringIr({
+          intent: createIntent({ domain: undefined }),
+          uploadedArtifacts: createArtifacts(),
+          sourceTitle: "Docking challenge",
+          sourceMessages: [],
+          origin: {
+            provider: "direct",
+            ingested_at: "2026-03-22T00:00:00.000Z",
+          },
+          assessmentOutcome: "awaiting_input",
+          missingFields: [],
+          validationSnapshot,
+        }),
+      }),
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-123",
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.data.validation, validationSnapshot);
 });
 
 test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessions", async () => {
@@ -723,6 +913,19 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
           rejectionReasons: ["unsupported_task"],
           assessmentOutcome: "rejected",
           assessmentReasonCodes: ["unsupported_task"],
+          validationSnapshot: {
+            missing_fields: [],
+            invalid_fields: [],
+            dry_run_failure: null,
+            unsupported_reason: createValidationIssue({
+              field: "task",
+              code: "unsupported_task",
+              message:
+                "Agora requires deterministic scoring for table-scored challenges.",
+              nextAction:
+                "Create a new session with a supported deterministic table-scoring challenge.",
+            }),
+          },
         }),
       }),
   });
@@ -791,6 +994,22 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
           },
           assessmentOutcome: "awaiting_input",
           missingFields: ["evaluation_artifact"],
+          validationSnapshot: {
+            missing_fields: [
+              createValidationIssue({
+                field: "evaluation_artifact",
+                code: "AUTHORING_EVALUATION_ARTIFACT_MISSING",
+                message:
+                  "Agora could not find the selected evaluation artifact. Next step: upload the evaluation file or use one of the current artifact IDs and retry.",
+                nextAction:
+                  "upload the evaluation file or use one of the current artifact IDs and retry.",
+                candidateValues: ["candidates", "reference"],
+              }),
+            ],
+            invalid_fields: [],
+            dry_run_failure: null,
+            unsupported_reason: null,
+          },
         }),
       }),
   });
@@ -862,6 +1081,22 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
           },
           assessmentOutcome: "awaiting_input",
           missingFields: [],
+          validationSnapshot: {
+            missing_fields: [],
+            invalid_fields: [
+              createValidationIssue({
+                field: "metric",
+                code: "AUTHORING_PLATFORM_UNAVAILABLE",
+                message:
+                  "Unknown official scorer template official_table_metric_v1. Next step: choose a supported template and retry.",
+                nextAction:
+                  "retry later or choose a supported metric and retry.",
+                blockingLayer: "platform",
+              }),
+            ],
+            dry_run_failure: null,
+            unsupported_reason: null,
+          },
         }),
       }),
   });

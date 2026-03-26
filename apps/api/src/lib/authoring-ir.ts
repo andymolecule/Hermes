@@ -1,6 +1,7 @@
 import {
   type AuthoringArtifactOutput,
   type AuthoringValidationFieldOutput,
+  type AuthoringValidationSnapshotOutput,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentInput,
   challengeAuthoringIrSchema,
@@ -77,7 +78,13 @@ export function buildAuthoringIr(input: {
   };
   template?: string | null;
   metric?: string | null;
-  comparator?: "maximize" | "minimize" | "closest_match" | "pass_fail" | "custom" | null;
+  comparator?:
+    | "maximize"
+    | "minimize"
+    | "closest_match"
+    | "pass_fail"
+    | "custom"
+    | null;
   evaluationArtifactId?: string | null;
   visibleArtifactIds?: string[];
   evaluationIdColumn?: string | null;
@@ -94,6 +101,7 @@ export function buildAuthoringIr(input: {
   assessmentReasonCodes?: string[];
   assessmentWarnings?: string[];
   missingFields?: AuthoringValidationFieldOutput[];
+  validationSnapshot?: AuthoringValidationSnapshotOutput | null;
 }) {
   const effectiveIntent = deriveAuthoringIntentCandidate({
     intent: input.intent,
@@ -103,7 +111,7 @@ export function buildAuthoringIr(input: {
     input.missingFields ?? extractMissingIntentFields(effectiveIntent);
 
   return challengeAuthoringIrSchema.parse({
-    version: 4,
+    version: 5,
     origin: {
       provider: input.origin?.provider ?? "direct",
       external_id: input.origin?.external_id ?? null,
@@ -112,7 +120,8 @@ export function buildAuthoringIr(input: {
       raw_context: input.origin?.raw_context ?? null,
     },
     source: {
-      title: trimmed(input.sourceTitle) ?? trimmed(effectiveIntent.title) ?? null,
+      title:
+        trimmed(input.sourceTitle) ?? trimmed(effectiveIntent.title) ?? null,
       poster_messages: (input.sourceMessages ?? []).map((message) => ({
         id: message.id,
         role: message.role,
@@ -132,6 +141,7 @@ export function buildAuthoringIr(input: {
       warnings: input.assessmentWarnings ?? [],
       missing_fields: missingFields,
     },
+    validation_snapshot: input.validationSnapshot ?? null,
     execution: {
       template: input.template ?? null,
       metric: input.metric ?? null,
