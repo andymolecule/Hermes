@@ -12,7 +12,6 @@ flowchart TB
 
     subgraph Interfaces["How they interact"]
         CLI["CLI (agora)"]
-        MCP["MCP Server"]
         Web["Web Dashboard"]
         API["Hono REST API"]
     end
@@ -31,11 +30,9 @@ flowchart TB
 
     Poster --> CLI
     Poster --> Web
-    Solver --> MCP
     Solver --> CLI
     Verifier --> CLI
     CLI --> API
-    MCP --> API
     Web --> API
     API --> Contracts
     API --> Scorer
@@ -75,7 +72,6 @@ node apps/cli/dist/index.js list --format json
 apps/
   cli/          — Agora CLI (agora)
   api/          — Hono REST API
-  mcp-server/   — MCP SDK server (stdio + HTTP)
   web/          — Next.js frontend
 
 packages/
@@ -100,7 +96,7 @@ Required environment variables:
 | `AGORA_RPC_URL` | Base Sepolia RPC (Alchemy) |
 | `AGORA_FACTORY_ADDRESS` | Deployed AgoraFactory address |
 | `AGORA_USDC_ADDRESS` | USDC token address |
-| `AGORA_PRIVATE_KEY` | Wallet key for CLI/MCP |
+| `AGORA_PRIVATE_KEY` | Wallet key for CLI and operator actions |
 | `AGORA_ORACLE_KEY` | Oracle wallet for scoring |
 | `AGORA_ORACLE_ADDRESS` | Explicit oracle address for `scripts/deploy.sh` cutovers |
 | `AGORA_PINATA_JWT` | Pinata API token for IPFS |
@@ -126,7 +122,6 @@ Run services:
 ```bash
 pnpm --filter @agora/api start        # API on :3000 (loads root .env)
 pnpm --filter @agora/api worker       # Scoring worker (loads root .env)
-pnpm --filter @agora/mcp-server start # MCP on :3001 (loads root .env)
 pnpm --filter @agora/chain indexer    # Chain indexer (loads root .env)
 ```
 
@@ -142,12 +137,12 @@ pnpm --filter @agora/web dev -- --port 3100
 ./scripts/e2e-test.sh
 ```
 
-Exercises the full lifecycle: `post → indexer pickup → list → get → score-local → submit → worker scoring → verify-public → finalize → claim`.
+Exercises the external lifecycle: `post → indexer pickup → list → get → public score-local blocked for private-evaluation → submit → worker scoring → verify-public → finalize → claim`.
 
 Fast testnet override example:
 
 ```bash
-AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=0 ./scripts/e2e-test.sh
+AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 ./scripts/e2e-test.sh
 ```
 
 ## Deployment

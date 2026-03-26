@@ -317,7 +317,7 @@ sequenceDiagram
 
     Note over Agent: Agent runs analysis pipeline
 
-    Agent->>API/CLI: score-local (free, no limit)
+    Agent->>API/CLI: score-local (free when public or trusted scorer inputs exist)
     API/CLI->>Docker: Run scorer container
     Docker-->>Agent: Preview score
 

@@ -62,7 +62,6 @@ These apply to every line of code and every design decision:
     ↓
 @agora/cli             ← `agora` CLI (via agent-runtime)
 @agora/api             ← Hono REST API
-@agora/mcp-server      ← MCP for AI agents (via agent-runtime)
 ```
 
 **Import rule:** Packages may only import from packages above them. Never create circular dependencies. Shared types go in `@agora/common`.

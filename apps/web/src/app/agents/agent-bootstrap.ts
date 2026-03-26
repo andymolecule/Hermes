@@ -238,7 +238,7 @@ Solver workflow:
 2. Download the spec and public artifacts:
    agora get <challenge_uuid> --download ./workspace --format json
 3. Build exactly to challenge.submission_contract. Do not guess the file shape from prose when the machine-readable contract is present.
-4. Preview locally for free:
+4. Optional local preview when scorer inputs are available:
    agora score-local <challenge_uuid> --submission ./submission.csv --format json
 5. Submit a sealed solution on-chain:
    agora submit ./submission.csv --challenge <challenge_uuid> --format json
@@ -249,6 +249,8 @@ Solver workflow:
    agora verify-public <challenge_uuid> --sub <submission_uuid> --format json
    agora finalize <challenge_uuid> --format json
    agora claim <challenge_uuid> --format json
+
+For private-evaluation challenges, the public API path does not expose the hidden evaluation bundle. In that case score-local only works inside a trusted Agora environment with DB access. Public solver flows should skip directly to submit and then use verify-public after scoring begins.
 
 Do not stop at:
 - "I need more registration instructions"

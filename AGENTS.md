@@ -59,8 +59,9 @@ These apply to every line of code and every design decision:
 @agora/scorer-runtime  ← Docker execution + workspace utilities
     ↓
 @agora/scorer          ← Docker scorer orchestration
+@agora/agent-runtime   ← shared submit/score/verify/claim workflows
     ↓
-@agora/cli             ← `agora` CLI
+@agora/cli             ← `agora` CLI (via agent-runtime)
 @agora/api             ← Hono REST API
 ```
 
@@ -152,7 +153,7 @@ See @.env.example for the full documented list.
 - **AgoraChallenge** — submissions, scoring, dispute flow, payouts
 - Status flow: Open → Scoring → Finalized | Disputed → Finalized | Cancelled
 - Distribution types: WinnerTakeAll, TopThree (60/25/15), Proportional
-- Dispute window: poster-configurable, 0–2160 hours on testnet; target 168–2160 hours (7–90 days) before mainnet
+- Dispute window: poster-configurable, 168–2160 hours (7–90 days)
 - See @docs/architecture.md for full contract diagrams
 
 ## When You're Stuck

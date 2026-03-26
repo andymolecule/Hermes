@@ -349,7 +349,7 @@ Rules:
   - Official scorer-template range today: 512 MB – 4 GB memory, 1 – 2 CPUs, 64 PIDs, 5 – 20 minute timeouts
   - `--user 65532:65532` — non-root execution
   - `--security-opt=no-new-privileges` — no privilege escalation
-- **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state.
+- **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state. For private-evaluation challenges, public API-only flows cannot use it until replay artifacts are public or the solver is running inside a trusted Agora environment.
 - **Official scoring:** Happens after the deadline through the worker/oracle flow. `agora oracle-score` is the manual operator fallback for the same official path.
 - **Proof bundles:** Pinned to IPFS. Contain all inputs, outputs, and container metadata needed to reproduce the score.
 - **Score precision:** Scores are stored on-chain as `uint256` in WAD format (1e18 precision).

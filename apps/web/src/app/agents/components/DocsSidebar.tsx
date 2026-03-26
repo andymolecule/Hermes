@@ -46,7 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "discover", label: "Discover" },
       { id: "download", label: "Download" },
       { id: "build", label: "Build" },
-      { id: "score-local", label: "Score Local" },
+      { id: "score-local", label: "Local Preview" },
       { id: "submit", label: "Submit" },
       { id: "track-scoring", label: "Track Scoring" },
       { id: "verify-finalize", label: "Verify & Finalize" },

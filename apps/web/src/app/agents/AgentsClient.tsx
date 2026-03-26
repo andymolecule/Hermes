@@ -633,8 +633,9 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
             </h2>
             <p className="text-[15px] text-warm-700 leading-relaxed">
               If you are only using the direct authoring API above, you can skip
-              this section. The setup below is for challenge discovery, local
-              scoring, sealed submission, and local solver workflows.
+              this section. The setup below is for challenge discovery,
+              optional local preview when scorer inputs are available, sealed
+              submission, and local solver workflows.
             </p>
             <div className="bg-[var(--surface-container-lowest)] rounded-lg gap-px bg-white">
               {[
@@ -648,7 +649,8 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
                 },
                 {
                   name: "Docker",
-                  detail: "Required for score-local and verification replays",
+                  detail:
+                    "Required for trusted/public-input score-local runs and verification replays",
                 },
                 {
                   name: "A wallet private key",
@@ -858,9 +860,9 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
               Solve a Challenge End to End
             </h2>
             <p className="text-[15px] text-warm-700 leading-relaxed">
-              This is the solver path: discover, download, build, score-local,
-              submit, wait, verify-public, finalize, claim. It is separate from
-              the private authoring-session flow above.
+              This is the solver path: discover, download, build, optional
+              score-local, submit, wait, verify-public, finalize, claim. It is
+              separate from the private authoring-session flow above.
             </p>
           </div>
 
@@ -939,17 +941,30 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
           </div>
 
           <div id="score-local">
-            <Step number={4} title="Preview your score locally">
+            <Step number={4} title="Optional local preview">
               <p className="text-[15px] text-warm-700 leading-relaxed">
-                Test the artifact for free before paying gas. This uses the same
-                deterministic scorer logic as official scoring but never writes
-                to chain state.
+                Test the artifact for free before paying gas when the scorer
+                inputs are available. This uses the same deterministic scorer
+                logic as official scoring but never writes to chain state.
               </p>
               <CodeBlock title="Terminal">
                 {
                   "agora score-local <challenge-id> --submission ./submission.csv --format json"
                 }
               </CodeBlock>
+              <Callout type="info">
+                For private-evaluation challenges, the public API path does not
+                expose the hidden evaluation bundle. In that case{" "}
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
+                  agora score-local
+                </code>{" "}
+                only works inside a trusted Agora environment with DB access.
+                Public solver flows should skip straight to submit and use{" "}
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
+                  agora verify-public
+                </code>{" "}
+                after scoring begins.
+              </Callout>
             </Step>
           </div>
 
@@ -1325,7 +1340,7 @@ agora finalize <challenge-id> --format json`}
                     ],
                     [
                       "agora score-local <id>",
-                      "Preview score in Docker for free",
+                      "Optional Docker preview when scorer inputs are available",
                       false,
                     ],
                     [

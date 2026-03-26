@@ -43,7 +43,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **Execution template** (`OfficialScorerCatalogEntry`) | Official scorer config in `official-scorer-catalog.ts`: pinned image, resource limits, mount layout, policies, and supported metrics. |
 | **Template** (`ChallengeTypeTemplate`) | Authoring defaults for a challenge family in `templates.ts`: domain, suggested metric, and posting defaults. Used by the posting UI. |
 | **Mount config** (`ScoringMountConfig`) | Filenames for Docker `/input` directory (evaluation bundle name + submission file name). Driven by the execution template. |
-| **`score-local`** | Free, unlimited preview scoring. Runs the Docker scorer locally. No chain writes, no proof bundle, no payout effect. |
+| **`score-local`** | Free, unlimited preview scoring. Runs the Docker scorer locally. No chain writes, no proof bundle, no payout effect. Public API-only flows cannot use it for private-evaluation challenges unless replay artifacts are already public. |
 | **Official scoring** | Canonical scoring path after the deadline. Worker runs scorer, pins proof bundle, posts score on-chain. `agora oracle-score` is the manual operator fallback. |
 | **Evaluation bundle** | Hidden labels or reference data mounted into the scorer container at runtime. Stored as an IPFS CID, not inside the scorer image. |
 | **`engine_id`** | Optional descriptive metadata field in the challenge YAML `eval_spec`. Identifies the scoring family for provenance. Not used for runtime dispatch. |
