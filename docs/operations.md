@@ -290,6 +290,15 @@ Steady-state flow:
 6. The executor runs the scorer container locally and returns `score.json`
 7. The orchestrator persists proof data and posts scores on-chain
 
+Release prerequisites:
+
+- `RAILWAY_TOKEN` must be valid for the target Railway workspace
+- `AGORA_RAILWAY_PROJECT_ID` and `AGORA_RAILWAY_ENVIRONMENT` must point at the intended runtime
+- service identifiers must match the deployed Railway services
+
+The release gate now checks Railway auth and project/service access before it
+starts build/test/schema work.
+
 ---
 
 ## Smoke Test

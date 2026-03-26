@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      AGORA_RAILWAY_PROJECT_ID: ${{ secrets.AGORA_RAILWAY_PROJECT_ID }}
+      AGORA_RAILWAY_ENVIRONMENT: ${{ secrets.AGORA_RAILWAY_ENVIRONMENT }}
       AGORA_SUPABASE_DB_URL: ${{ secrets.AGORA_SUPABASE_DB_URL }}
       AGORA_SUPABASE_URL: ${{ secrets.AGORA_SUPABASE_URL }}
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}

@@ -34,6 +34,8 @@ EOF
 }
 
 required_env=(
+  AGORA_RAILWAY_PROJECT_ID
+  AGORA_RAILWAY_ENVIRONMENT
   AGORA_SUPABASE_DB_URL
   AGORA_SUPABASE_URL
   AGORA_SUPABASE_ANON_KEY
@@ -94,6 +96,29 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing required command: $cmd"
 }
 
+check_railway_auth_and_access() {
+  echo "[STEP] Verify Railway authentication and project access"
+  railway whoami >/dev/null 2>&1 || fail "Invalid RAILWAY_TOKEN. Next step: update the GitHub Actions or local operator secret with a valid Railway token."
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d -t agora-railway-link-XXXXXX)"
+  (
+    cd "$tmp_dir"
+    railway link \
+      --project "$AGORA_RAILWAY_PROJECT_ID" \
+      --environment "$AGORA_RAILWAY_ENVIRONMENT" >/dev/null 2>&1 \
+      || fail "Railway token cannot access project ${AGORA_RAILWAY_PROJECT_ID} or environment ${AGORA_RAILWAY_ENVIRONMENT}. Next step: verify the project/environment ids and token workspace access."
+
+    railway service link "$AGORA_RAILWAY_API_SERVICE" >/dev/null 2>&1 \
+      || fail "Railway service ${AGORA_RAILWAY_API_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the API service name/id."
+    railway service link "$AGORA_RAILWAY_INDEXER_SERVICE" >/dev/null 2>&1 \
+      || fail "Railway service ${AGORA_RAILWAY_INDEXER_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the indexer service name/id."
+    railway service link "$AGORA_RAILWAY_WORKER_SERVICE" >/dev/null 2>&1 \
+      || fail "Railway service ${AGORA_RAILWAY_WORKER_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the worker service name/id."
+  )
+  rm -rf "$tmp_dir"
+}
+
 wait_for_deploy_verify() {
   local attempts=40
   local sleep_seconds=15
@@ -134,7 +159,11 @@ reload_postgrest_schema_cache() {
 deploy_runtime_service() {
   local service="$1"
   echo "[STEP] Deploying Railway service: ${service}"
-  railway up --service "$service" --detach
+  railway up \
+    --project "$AGORA_RAILWAY_PROJECT_ID" \
+    --environment "$AGORA_RAILWAY_ENVIRONMENT" \
+    --service "$service" \
+    --detach
 }
 
 echo "== Agora Testnet Release Gate (${RELEASE_MODE}) =="
@@ -146,6 +175,8 @@ done
 for cmd in "${required_cmds[@]}"; do
   require_cmd "$cmd"
 done
+
+check_railway_auth_and_access
 
 echo "[STEP] Build workspace"
 pnpm turbo build

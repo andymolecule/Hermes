@@ -78,6 +78,18 @@ non-destructive `runtime` mode. The matching manual GitHub Actions trigger is
 which accepts the same `runtime` vs `clean` choice when operators need to run
 it manually.
 
+Both the local script and the GitHub workflow require explicit Railway
+targeting:
+
+- `AGORA_RAILWAY_PROJECT_ID`
+- `AGORA_RAILWAY_ENVIRONMENT`
+- `AGORA_RAILWAY_API_SERVICE`
+- `AGORA_RAILWAY_INDEXER_SERVICE`
+- `AGORA_RAILWAY_WORKER_SERVICE`
+
+The release gate now validates `RAILWAY_TOKEN` plus Railway project/service
+access before it starts build/test/schema work.
+
 Notes:
 
 - `pnpm scorers:verify` requires a running Docker daemon.
