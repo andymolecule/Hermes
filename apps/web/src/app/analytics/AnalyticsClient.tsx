@@ -317,7 +317,7 @@ function DollarFlowBand({
   }>;
 }) {
   return (
-    <div className="rounded-3xl bg-[var(--surface-container)] p-4 md:p-5">
+    <div className="overflow-hidden rounded-3xl bg-[var(--surface-container)] p-4 md:p-5">
       <p className={eyebrowClass}>Capital path</p>
       <p className="mt-2 max-w-[48ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         Posted USDC moves into live escrow, solver payouts, and protocol fees.
@@ -571,22 +571,6 @@ function ProgressRail({
   );
 }
 
-function TableCell({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <td
-      className={`bg-[var(--surface-container-lowest)] px-4 py-4 align-top transition-colors group-hover:bg-[var(--surface-container-low)] ${className}`}
-    >
-      {children}
-    </td>
-  );
-}
-
 function RecentChallengesTable({
   challenges,
 }: {
@@ -608,48 +592,31 @@ function RecentChallengesTable({
           </p>
         </div>
       ) : (
-        <div className="mt-5 flex-1 overflow-x-auto">
-          <table className="min-w-[680px] w-full border-separate border-spacing-y-3 text-sm">
-            <thead>
-              <tr>
-                <th className="px-4 pb-1 text-left font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Challenge
-                </th>
-                <th className="px-4 pb-1 text-left font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Domain
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Status
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Reward
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Created
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {challenges.map((challenge) => {
-                const statusStyle = getStatusStyle(challenge.status);
+        <div className="mt-5 grid gap-3">
+          {challenges.map((challenge) => {
+            const statusStyle = getStatusStyle(challenge.status);
 
-                return (
-                  <tr key={challenge.id} className="group">
-                    <TableCell className="rounded-l-3xl">
-                      <Link
-                        href={`/challenges/${challenge.id}`}
-                        className="inline-flex items-start gap-2 font-medium text-[var(--text-primary)]"
-                      >
-                        <span className="leading-6">{challenge.title}</span>
-                        <ExternalLink className="mt-1 h-3 w-3 shrink-0 opacity-50" />
-                      </Link>
-                    </TableCell>
-                    <TableCell>
+            return (
+              <div
+                key={challenge.id}
+                className="rounded-3xl bg-[var(--surface-container-lowest)] px-4 py-4 md:px-5"
+              >
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/challenges/${challenge.id}`}
+                      className="inline-flex max-w-full items-start gap-2 font-medium text-[var(--text-primary)]"
+                    >
+                      <span className="min-w-0 break-words text-balance leading-6">
+                        {challenge.title}
+                      </span>
+                      <ExternalLink className="mt-1 h-3 w-3 shrink-0 opacity-50" />
+                    </Link>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span className="inline-flex rounded-full bg-[var(--surface-container-low)] px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-secondary)]">
                         {formatKeyLabel(challenge.domain)}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right">
                       <span
                         className="inline-flex rounded-full px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
                         style={{
@@ -659,22 +626,21 @@ function RecentChallengesTable({
                       >
                         {challenge.status}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {formatUsdc(challenge.reward_amount)} USDC
-                      </span>
-                    </TableCell>
-                    <TableCell className="rounded-r-3xl text-right">
-                      <span className="font-mono text-xs text-[var(--text-secondary)]">
-                        {formatDate(challenge.created_at)}
-                      </span>
-                    </TableCell>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 md:flex-col md:items-end md:text-right">
+                    <span className="font-mono text-base font-semibold text-[var(--text-primary)]">
+                      {formatUsdc(challenge.reward_amount)} USDC
+                    </span>
+                    <span className="font-mono text-xs text-[var(--text-secondary)]">
+                      {formatDate(challenge.created_at)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
@@ -702,59 +668,42 @@ function RecentSubmissionsTable({
           </p>
         </div>
       ) : (
-        <div className="mt-5 flex-1 overflow-x-auto">
-          <table className="min-w-[560px] w-full border-separate border-spacing-y-3 text-sm">
-            <thead>
-              <tr>
-                <th className="px-4 pb-1 text-left font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Solver
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Score
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Status
-                </th>
-                <th className="px-4 pb-1 text-right font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  Submitted
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {submissions.map((submission) => {
-                const explorerUrl = getExplorerAddressUrl(
-                  submission.solver_address,
-                );
+        <div className="mt-5 grid gap-3">
+          {submissions.map((submission) => {
+            const explorerUrl = getExplorerAddressUrl(
+              submission.solver_address,
+            );
 
-                return (
-                  <tr key={submission.id} className="group">
-                    <TableCell className="rounded-l-3xl">
-                      {explorerUrl ? (
-                        <a
-                          href={explorerUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 font-mono text-sm text-[var(--text-primary)]"
-                          title={submission.solver_address}
-                        >
-                          <span>{shortAddress(submission.solver_address)}</span>
-                          <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
-                        </a>
-                      ) : (
-                        <span
-                          className="font-mono text-sm text-[var(--text-primary)]"
-                          title={submission.solver_address}
-                        >
+            return (
+              <div
+                key={submission.id}
+                className="rounded-3xl bg-[var(--surface-container-lowest)] px-4 py-4 md:px-5"
+              >
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <div className="min-w-0">
+                    {explorerUrl ? (
+                      <a
+                        href={explorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex max-w-full items-center gap-2 font-mono text-sm text-[var(--text-primary)]"
+                        title={submission.solver_address}
+                      >
+                        <span className="truncate">
                           {shortAddress(submission.solver_address)}
                         </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className="font-mono text-sm font-semibold text-[var(--text-primary)]">
-                        {formatWadToScore(submission.score)}
+                        <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                      </a>
+                    ) : (
+                      <span
+                        className="font-mono text-sm text-[var(--text-primary)]"
+                        title={submission.solver_address}
+                      >
+                        {shortAddress(submission.solver_address)}
                       </span>
-                    </TableCell>
-                    <TableCell className="text-right">
+                    )}
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <span
                         className="inline-flex rounded-full px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
                         style={{
@@ -768,17 +717,21 @@ function RecentSubmissionsTable({
                       >
                         {submission.scored ? "Scored" : "Pending"}
                       </span>
-                    </TableCell>
-                    <TableCell className="rounded-r-3xl text-right">
-                      <span className="font-mono text-xs text-[var(--text-secondary)]">
-                        {formatDate(submission.submitted_at)}
+                      <span className="inline-flex rounded-full bg-[var(--surface-container-low)] px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+                        Score {formatWadToScore(submission.score)}
                       </span>
-                    </TableCell>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between gap-4 md:block md:text-right">
+                    <span className="font-mono text-xs text-[var(--text-secondary)]">
+                      {formatDate(submission.submitted_at)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
@@ -813,7 +766,7 @@ function ProjectionFootnote({
 
 function AnalyticsSkeleton() {
   return (
-    <div className="space-y-6 md:space-y-8">
+    <div className="space-y-6 overflow-x-hidden md:space-y-8">
       <div className={sectionShellClass}>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)]">
           <div>
@@ -933,7 +886,7 @@ export function AnalyticsClient() {
     : "Waiting for analytics snapshot";
 
   return (
-    <div className="space-y-6 md:space-y-8">
+    <div className="space-y-6 overflow-x-hidden md:space-y-8">
       <motion.section
         className={sectionShellClass}
         initial={{ opacity: 0, y: 16 }}
@@ -1248,15 +1201,15 @@ export function AnalyticsClient() {
             </div>
           </motion.section>
 
-          <motion.section
-            className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]"
+          <motion.div
+            className="space-y-4"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...revealTransition, delay: 0.16 }}
           >
             <RecentChallengesTable challenges={data.recentChallenges} />
             <RecentSubmissionsTable submissions={data.recentSubmissions} />
-          </motion.section>
+          </motion.div>
 
           <ProjectionFootnote freshness={data.freshness} />
         </>
