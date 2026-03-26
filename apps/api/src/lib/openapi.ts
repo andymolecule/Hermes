@@ -45,7 +45,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               },
             },
             "503": {
-              description: "Service is live but runtime dependencies are not ready.",
+              description:
+                "Service is live but runtime dependencies are not ready.",
               content: {
                 "application/json": {
                   schema: {
@@ -106,7 +107,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               },
             },
             "403": {
-              description: "Verification is not yet available for this challenge.",
+              description:
+                "Verification is not yet available for this challenge.",
               content: {
                 "application/json": {
                   schema: {
@@ -530,6 +532,22 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 },
               },
             },
+            "400": {
+              description: "Invalid submission intent id.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+            "404": {
+              description: "Submission intent not found.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
           },
         },
       },
@@ -553,6 +571,22 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   schema: {
                     $ref: "#/components/schemas/SubmissionStatusResponse",
                   },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid submission id.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+            "404": {
+              description: "Submission not found.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },
@@ -613,6 +647,22 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   schema: {
                     $ref: "#/components/schemas/SubmissionWaitResponse",
                   },
+                },
+              },
+            },
+            "400": {
+              description: "Invalid submission id or timeout.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
+                },
+              },
+            },
+            "404": {
+              description: "Submission not found.",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Error" },
                 },
               },
             },

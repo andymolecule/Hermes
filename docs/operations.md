@@ -140,7 +140,7 @@ Architecture boundary:
 The worker treats scorer availability as a runtime readiness problem, not a crash condition.
 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
-2. The API writes the active scoring runtime version into `worker_runtime_control` on startup.
+2. While the runtime schema is healthy, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`.
 3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
 4. It checks the configured scorer execution backend:
    - `local_docker`: verify local Docker health and preflight official images directly
@@ -236,7 +236,7 @@ Current production is intentionally split across hosts:
 - Railway: `@agora/api`, `agora-indexer`, `agora-worker-orchestrator`
 - Docker-capable host or service: `agora-executor`
 
-Vercel redeploys directly from GitHub `main` via its native integration. Railway API, indexer, and worker orchestrator should also redeploy natively from GitHub `main`. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
+Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should only roll forward through the gated deployment flow from [Deployment](deployment.md): reset schema, apply baseline, reload PostgREST cache, verify schema, then deploy API/indexer/worker together. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
 
 Vercel-specific proxy rule:
 
@@ -250,7 +250,7 @@ Recommended steady-state settings:
 
 - `Source Repo`: `andymolecule/Agora`
 - `Branch connected to production`: `main`
-- Native Railway auto-deploy: enabled
+- Native Railway auto-deploy: disabled
 - No dashboard watch-path filtering
 - Build/start commands:
   - API build: `pnpm turbo build --filter=@agora/api`
@@ -263,10 +263,7 @@ Recommended steady-state settings:
 Operational rule:
 
 - Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
-- If native Railway auto-deploy stops advancing, first reset the dashboard integration by disconnecting and reconnecting:
-  - `Source Repo`
-  - `Branch connected to production`
-  then redeploy latest once and verify the next push advances production.
+- Do not redeploy runtime services directly from a repository push. Use the gated release sequence from [Deployment](deployment.md) so schema reset, baseline apply, cache reload, verification, and service rollout stay in one order.
 
 ### Remote Executor Service
 
@@ -285,7 +282,7 @@ Expected executor host configuration:
 
 Steady-state flow:
 
-1. Railway deploys API, indexer, and worker orchestrator from `main`
+1. Operators deploy API, indexer, and worker orchestrator only after the schema reset/apply/cache-reload/verify gate is green
 2. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
 3. The orchestrator checks executor health and preflights official images
 4. When a job is claimed, the orchestrator stages inputs and sends them to the executor

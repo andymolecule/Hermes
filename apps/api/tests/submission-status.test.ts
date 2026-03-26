@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSubmissionStatusPayload } from "../src/lib/submission-status.js";
+import {
+  submissionIdParamSchema,
+  submissionIntentIdParamSchema,
+} from "../src/routes/submissions.js";
 
 test("buildSubmissionStatusPayload returns onchain_seen when an unmatched on-chain submission is tracked", () => {
   const payload = buildSubmissionStatusPayload({
@@ -59,4 +63,24 @@ test("buildSubmissionStatusPayload returns intent_created when no tracked on-cha
   assert.equal(payload.phase, "intent_created");
   assert.equal(payload.refs.onChainSubmissionId, null);
   assert.equal(payload.submission, null);
+});
+
+test("submission status boundary schema rejects invalid submission ids", () => {
+  const result = submissionIdParamSchema.safeParse({
+    id: "not-a-uuid",
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.error.issues[0]?.code, "invalid_string");
+  assert.deepEqual(result.error.issues[0]?.path, ["id"]);
+});
+
+test("submission status by-intent boundary schema rejects invalid intent ids", () => {
+  const result = submissionIntentIdParamSchema.safeParse({
+    intentId: "not-a-uuid",
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.error.issues[0]?.code, "invalid_string");
+  assert.deepEqual(result.error.issues[0]?.path, ["intentId"]);
 });

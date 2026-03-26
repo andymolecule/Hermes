@@ -24,8 +24,7 @@ export const CHALLENGE_LIMITS = {
   rewardMinUsdc: 1,
   rewardMaxUsdc: 30,
   rewardDecimals: 6,
-  /** @todo Restore to 168 when the deployed factory enforces MIN_DISPUTE_WINDOW_HOURS=168 */
-  disputeWindowMinHours: 0,
+  disputeWindowMinHours: 168,
   disputeWindowMaxHours: 2160,
   defaultDisputeWindowHours: 168,
 } as const;

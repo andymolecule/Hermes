@@ -1,4 +1,45 @@
-import {
+function printUsage() {
+  console.log(`Usage: pnpm recover:authoring-publishes -- [--stale-minutes=<minutes>] [--draft-id=<uuid>]
+
+Reconcile stale sponsor-budget reservations for authoring publishes.
+
+Options:
+  --stale-minutes=<minutes>  Treat reservations older than this many minutes as stale. Default: 30
+  --draft-id=<uuid>          Limit reconciliation to one draft id
+  --help                     Show this help and exit`);
+}
+
+function parseArgs(argv) {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return { help: true };
+  }
+
+  const staleMinutesArg = argv.find((arg) =>
+    arg.startsWith("--stale-minutes="),
+  );
+  const draftIdArg = argv.find((arg) => arg.startsWith("--draft-id="));
+  const staleMinutes = Number(staleMinutesArg?.split("=")[1] ?? "30");
+
+  if (!Number.isFinite(staleMinutes) || staleMinutes <= 0) {
+    throw new Error(
+      "stale-minutes must be a positive number. Next step: pass --stale-minutes=<minutes> and retry.",
+    );
+  }
+
+  return {
+    help: false,
+    staleMinutes,
+    draftId: draftIdArg?.split("=")[1] ?? null,
+  };
+}
+
+const parsedArgs = parseArgs(process.argv.slice(2));
+if (parsedArgs.help) {
+  printUsage();
+  process.exit(0);
+}
+
+const {
   REQUIRED_RUNTIME_SCHEMA_CHECKS,
   assertRuntimeDatabaseSchema,
   consumeAuthoringSponsorBudgetReservation,
@@ -7,21 +48,7 @@ import {
   getPublishedDraftMetadataByDraftId,
   listStaleAuthoringSponsorBudgetReservations,
   releaseAuthoringSponsorBudgetReservation,
-} from "../packages/db/src/index.ts";
-
-const staleMinutesArg = process.argv.find((arg) =>
-  arg.startsWith("--stale-minutes="),
-);
-const draftIdArg = process.argv.find((arg) => arg.startsWith("--draft-id="));
-
-const staleMinutes = Number(staleMinutesArg?.split("=")[1] ?? "30");
-const draftId = draftIdArg?.split("=")[1] ?? null;
-
-if (!Number.isFinite(staleMinutes) || staleMinutes <= 0) {
-  throw new Error(
-    "stale-minutes must be a positive number. Next step: pass --stale-minutes=<minutes> and retry.",
-  );
-}
+} = await import("../packages/db/src/index.ts");
 
 const db = createSupabaseClient(true);
 await assertRuntimeDatabaseSchema(
@@ -35,14 +62,16 @@ await assertRuntimeDatabaseSchema(
   ),
 );
 
-const cutoffIso = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
+const cutoffIso = new Date(
+  Date.now() - parsedArgs.staleMinutes * 60 * 1000,
+).toISOString();
 const reservations = await listStaleAuthoringSponsorBudgetReservations(
   db,
   cutoffIso,
 );
 
-const rows = draftId
-  ? reservations.filter((row) => row.draft_id === draftId)
+const rows = parsedArgs.draftId
+  ? reservations.filter((row) => row.draft_id === parsedArgs.draftId)
   : reservations;
 
 const consumed = [];
@@ -105,8 +134,8 @@ for (const row of rows) {
 console.log(
   JSON.stringify(
     {
-      staleMinutes,
-      draftId,
+      staleMinutes: parsedArgs.staleMinutes,
+      draftId: parsedArgs.draftId,
       scanned: rows.length,
       consumed,
       released,

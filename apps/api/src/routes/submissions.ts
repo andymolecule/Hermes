@@ -26,6 +26,7 @@ import { pinFile } from "@agora/ipfs";
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
+import { z } from "zod";
 import { jsonError } from "../lib/api-error.js";
 import {
   getAgentFromAuthorizationHeader,
@@ -60,6 +61,12 @@ import { requireSiweSession } from "../middleware/siwe.js";
 import type { ApiEnv } from "../types.js";
 
 const SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS = 30;
+export const submissionIdParamSchema = z.object({
+  id: z.string().uuid(),
+});
+export const submissionIntentIdParamSchema = z.object({
+  intentId: z.string().uuid(),
+});
 
 export {
   buildSubmissionStatusEventStream,
@@ -329,18 +336,34 @@ router.get("/by-onchain/:challengeAddress/:subId/status", async (c) => {
   return jsonWithEtag(c, { data });
 });
 
-router.get("/by-intent/:intentId/status", async (c) => {
-  const data = await getSubmissionStatusDataByIntentId(c.req.param("intentId"));
-  if (!data) {
-    return jsonError(c, {
-      status: 404,
-      code: "SUBMISSION_NOT_FOUND",
-      message:
-        "Submission intent not found. Next step: confirm the intent id and retry.",
-    });
-  }
-  return jsonWithEtag(c, { data });
-});
+router.get(
+  "/by-intent/:intentId/status",
+  zValidator("param", submissionIntentIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_INTENT_ID",
+        message:
+          "Invalid submission intent id. Next step: provide a valid UUID intent id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const data = await getSubmissionStatusDataByIntentId(
+      c.req.valid("param").intentId,
+    );
+    if (!data) {
+      return jsonError(c, {
+        status: 404,
+        code: "SUBMISSION_NOT_FOUND",
+        message:
+          "Submission intent not found. Next step: confirm the intent id and retry.",
+      });
+    }
+    return jsonWithEtag(c, { data });
+  },
+);
 
 router.get("/by-onchain/:challengeAddress/:subId/public", async (c) => {
   const challengeAddress = c.req.param("challengeAddress");
@@ -388,95 +411,171 @@ router.get("/by-onchain/:challengeAddress/:subId/public", async (c) => {
   }
 });
 
-router.get("/:id/status", async (c) => {
-  const data = await getSubmissionStatusData(c.req.param("id"));
-  return jsonWithEtag(c, { data });
-});
-
-router.get("/:id/wait", async (c) => {
-  const rawTimeoutSeconds = c.req.query("timeout_seconds");
-  const timeoutSeconds = rawTimeoutSeconds
-    ? Number(rawTimeoutSeconds)
-    : SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS;
-  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
-    return jsonError(c, {
-      status: 400,
-      code: "INVALID_TIMEOUT",
-      message:
-        "Invalid timeout_seconds. Next step: provide a positive integer up to 60 seconds.",
-    });
-  }
-
-  const data = await waitForSubmissionStatusDataWithReader({
-    submissionId: c.req.param("id"),
-    timeoutSeconds,
-    readStatus: getSubmissionStatusData,
-  });
-  return c.json({ data });
-});
-
-router.get("/:id/events", async (c) => {
-  const stream = buildSubmissionStatusEventStream({
-    submissionId: c.req.param("id"),
-    signal: c.req.raw.signal,
-  });
-  return new Response(stream, {
-    headers: {
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "content-type": "text/event-stream; charset=utf-8",
-      "x-accel-buffering": "no",
-      "x-request-id": getRequestId(c),
-    },
-  });
-});
-
-router.get("/:id/public", async (c) => {
-  const submissionId = c.req.param("id");
-  const db = createSupabaseClient(true);
-  const submission = await getSubmissionById(db, submissionId);
-  const challenge = await getChallengeById(db, submission.challenge_id);
-  try {
-    const data = await buildPublicSubmissionVerification(submission, challenge);
+router.get(
+  "/:id/status",
+  zValidator("param", submissionIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_ID",
+        message:
+          "Invalid submission id. Next step: provide a valid UUID submission id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const data = await getSubmissionStatusData(c.req.valid("param").id);
     return jsonWithEtag(c, { data });
-  } catch (error) {
+  },
+);
+
+router.get(
+  "/:id/wait",
+  zValidator("param", submissionIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_ID",
+        message:
+          "Invalid submission id. Next step: provide a valid UUID submission id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const rawTimeoutSeconds = c.req.query("timeout_seconds");
+    const timeoutSeconds = rawTimeoutSeconds
+      ? Number(rawTimeoutSeconds)
+      : SUBMISSION_WAIT_DEFAULT_TIMEOUT_SECONDS;
+    if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_TIMEOUT",
+        message:
+          "Invalid timeout_seconds. Next step: provide a positive integer up to 60 seconds.",
+      });
+    }
+
+    const data = await waitForSubmissionStatusDataWithReader({
+      submissionId: c.req.valid("param").id,
+      timeoutSeconds,
+      readStatus: getSubmissionStatusData,
+    });
+    return c.json({ data });
+  },
+);
+
+router.get(
+  "/:id/events",
+  zValidator("param", submissionIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_ID",
+        message:
+          "Invalid submission id. Next step: provide a valid UUID submission id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const submissionId = c.req.valid("param").id;
+    await getSubmissionStatusData(submissionId);
+    const stream = buildSubmissionStatusEventStream({
+      submissionId,
+      signal: c.req.raw.signal,
+    });
+    return new Response(stream, {
+      headers: {
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "content-type": "text/event-stream; charset=utf-8",
+        "x-accel-buffering": "no",
+        "x-request-id": getRequestId(c),
+      },
+    });
+  },
+);
+
+router.get(
+  "/:id/public",
+  zValidator("param", submissionIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_ID",
+        message:
+          "Invalid submission id. Next step: provide a valid UUID submission id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const submissionId = c.req.valid("param").id;
+    const db = createSupabaseClient(true);
+    const submission = await getSubmissionById(db, submissionId);
+    const challenge = await getChallengeById(db, submission.challenge_id);
+    try {
+      const data = await buildPublicSubmissionVerification(
+        submission,
+        challenge,
+      );
+      return jsonWithEtag(c, { data });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === getPublicSubmissionVerificationUnavailableMessage()
+      ) {
+        return jsonError(c, {
+          status: 403,
+          code: "PUBLIC_VERIFICATION_UNAVAILABLE",
+          message: error.message,
+        });
+      }
+      throw error;
+    }
+  },
+);
+
+router.get(
+  "/:id",
+  requireSiweSession,
+  zValidator("param", submissionIdParamSchema, (result, c) => {
+    if (!result.success) {
+      return jsonError(c, {
+        status: 400,
+        code: "INVALID_SUBMISSION_ID",
+        message:
+          "Invalid submission id. Next step: provide a valid UUID submission id in the route and retry.",
+        extras: { issues: result.error.issues },
+      });
+    }
+  }),
+  async (c) => {
+    const submissionId = c.req.valid("param").id;
+    const db = createSupabaseClient(true);
+    const submission = await getSubmissionById(db, submissionId);
     if (
-      error instanceof Error &&
-      error.message === getPublicSubmissionVerificationUnavailableMessage()
+      submission.solver_address.toLowerCase() !==
+      c.get("sessionAddress").toLowerCase()
     ) {
       return jsonError(c, {
         status: 403,
-        code: "PUBLIC_VERIFICATION_UNAVAILABLE",
-        message: error.message,
+        code: "FORBIDDEN",
+        message:
+          "Submission belongs to a different solver. Next step: sign in with the solver wallet that created this submission and retry.",
       });
     }
-    throw error;
-  }
-});
-
-router.get("/:id", requireSiweSession, async (c) => {
-  const submissionId = c.req.param("id");
-  const db = createSupabaseClient(true);
-  const submission = await getSubmissionById(db, submissionId);
-  if (
-    submission.solver_address.toLowerCase() !==
-    c.get("sessionAddress").toLowerCase()
-  ) {
-    return jsonError(c, {
-      status: 403,
-      code: "FORBIDDEN",
-      message:
-        "Submission belongs to a different solver. Next step: sign in with the solver wallet that created this submission and retry.",
+    const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
+    return c.json({
+      data: toPrivateSubmissionPayload({
+        submission,
+        proofBundle,
+      }),
     });
-  }
-  const proofBundle = await getProofBundleBySubmissionId(db, submissionId);
-  return c.json({
-    data: toPrivateSubmissionPayload({
-      submission,
-      proofBundle,
-    }),
-  });
-});
+  },
+);
 
 router.post(
   "/intent",

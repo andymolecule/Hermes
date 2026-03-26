@@ -1,3 +1,4 @@
+import { AgoraError } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 import { executeExactCount } from "../query-helpers.js";
 
@@ -144,16 +145,28 @@ export async function deleteSubmissionsFromOnChainSubId(
   }
 }
 
-export async function getSubmissionById(db: AgoraDbClient, id: string) {
+export async function getSubmissionByIdOrNull(db: AgoraDbClient, id: string) {
   const { data, error } = await db
     .from("submissions")
     .select("*")
     .eq("id", id)
-    .single();
-  if (error) {
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") {
     throw new Error(`Failed to fetch submission by id: ${error.message}`);
   }
-  return data;
+  return data ?? null;
+}
+
+export async function getSubmissionById(db: AgoraDbClient, id: string) {
+  const submission = await getSubmissionByIdOrNull(db, id);
+  if (!submission) {
+    throw new AgoraError("Submission not found.", {
+      code: "SUBMISSION_NOT_FOUND",
+      status: 404,
+      nextAction: "Confirm the submission id and retry.",
+    });
+  }
+  return submission;
 }
 
 export async function getSubmissionByIntentId(
@@ -194,7 +207,9 @@ export async function attachSubmissionTraceIdIfMissing(
     throw new Error(`Failed to attach submission trace id: ${error.message}`);
   }
 
-  return (data as Awaited<ReturnType<typeof getSubmissionById>> | null) ?? null;
+  return (
+    (data as Awaited<ReturnType<typeof getSubmissionByIdOrNull>> | null) ?? null
+  );
 }
 
 export async function listSubmissionsForChallenge(

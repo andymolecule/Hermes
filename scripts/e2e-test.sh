@@ -5,9 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 AGORA_CMD=(node "apps/cli/dist/index.js")
-## The deployed testnet factory (0x7a78…) was built with MIN_DISPUTE_WINDOW_HOURS=0.
-## Restore to 168 when a fresh factory with the 7-day Solidity minimum is deployed.
-MIN_DISPUTE_WINDOW_HOURS=0
+MIN_DISPUTE_WINDOW_HOURS="$(node --import tsx -e '
+import { CHALLENGE_LIMITS } from "./packages/common/src/constants.ts";
+process.stdout.write(String(CHALLENGE_LIMITS.disputeWindowMinHours));
+')"
 if [[ -n "${AGORA_E2E_SCORER_IMAGE:-}" ]]; then
   E2E_SCORER_IMAGE="$AGORA_E2E_SCORER_IMAGE"
 else

@@ -1,9 +1,7 @@
 import type { AgoraDbClient } from "./index";
 
-const BASELINE_SCHEMA_NEXT_STEP =
-  "Reset the Supabase schema or apply packages/db/supabase/migrations/001_baseline.sql, then reload the PostgREST schema cache before restarting services.";
-const SUBMISSION_CID_RENAME_NEXT_STEP =
-  "Apply packages/db/supabase/migrations/004_rename_submission_result_cid.sql, then reload the PostgREST schema cache before restarting services.";
+export const BASELINE_SCHEMA_NEXT_STEP =
+  "Reset the Supabase schema, apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, then restart the affected services.";
 
 export interface RuntimeSchemaCheck {
   id: string;
@@ -24,17 +22,22 @@ export interface RuntimeSchemaFailure {
   nextStep: string;
 }
 
+export interface RuntimeDatabaseSchemaStatus {
+  ok: boolean;
+  checkedAt: string;
+  failures: RuntimeSchemaFailure[];
+  nextStep: string | null;
+}
+
 export function formatRuntimeSchemaFailure(failure: RuntimeSchemaFailure) {
   const target =
     failure.operation === "delete"
       ? `delete ${JSON.stringify(failure.filters ?? {})}`
-      : failure.select ?? "*";
+      : (failure.select ?? "*");
   return `- ${failure.checkId} (${failure.table}.${target}): ${failure.message}. Next step: ${failure.nextStep}`;
 }
 
-export function formatRuntimeSchemaNextSteps(
-  failures: RuntimeSchemaFailure[],
-) {
+export function formatRuntimeSchemaNextSteps(failures: RuntimeSchemaFailure[]) {
   return [...new Set(failures.map((failure) => failure.nextStep.trim()))].join(
     " ",
   );
@@ -62,7 +65,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     table: "submission_intents",
     operation: "select",
     select: "trace_id,submitted_by_agent_id,submission_cid",
-    nextStep: SUBMISSION_CID_RENAME_NEXT_STEP,
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
     id: "unmatched_submissions_table",
@@ -70,8 +73,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     operation: "select",
     select:
       "challenge_id,on_chain_sub_id,solver_address,result_hash,tx_hash,scored,first_seen_at,last_seen_at",
-    nextStep:
-      "Apply packages/db/supabase/migrations/002_unmatched_submissions.sql, then reload the PostgREST schema cache before restarting services.",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
     id: "unmatched_submissions_cleanup_path",
@@ -81,15 +83,14 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
       challenge_id: "00000000-0000-0000-0000-000000000000",
       on_chain_sub_id: -1,
     },
-    nextStep:
-      "Apply packages/db/supabase/migrations/002_unmatched_submissions.sql, then reload the PostgREST schema cache before restarting services.",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
     id: "submissions_registration_columns",
     table: "submissions",
     operation: "select",
     select: "submission_intent_id,trace_id,submission_cid",
-    nextStep: SUBMISSION_CID_RENAME_NEXT_STEP,
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
     id: "score_jobs_trace_id_column",
@@ -152,7 +153,8 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     id: "auth_agent_keys_table",
     table: "auth_agent_keys",
     operation: "select",
-    select: "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
+    select:
+      "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
@@ -229,13 +231,28 @@ export async function verifyRuntimeDatabaseSchema(
   return failures;
 }
 
+export async function readRuntimeDatabaseSchemaStatus(
+  db: AgoraDbClient,
+  checks: RuntimeSchemaCheck[] = REQUIRED_RUNTIME_SCHEMA_CHECKS,
+): Promise<RuntimeDatabaseSchemaStatus> {
+  const failures = await verifyRuntimeDatabaseSchema(db, checks);
+
+  return {
+    ok: failures.length === 0,
+    checkedAt: new Date().toISOString(),
+    failures,
+    nextStep:
+      failures.length > 0 ? formatRuntimeSchemaNextSteps(failures) : null,
+  };
+}
+
 export async function assertRuntimeDatabaseSchema(
   db: AgoraDbClient,
   checks: RuntimeSchemaCheck[] = REQUIRED_RUNTIME_SCHEMA_CHECKS,
 ) {
-  const failures = await verifyRuntimeDatabaseSchema(db, checks);
-  if (failures.length === 0) {
+  const status = await readRuntimeDatabaseSchemaStatus(db, checks);
+  if (status.ok) {
     return;
   }
-  throw new Error(buildRuntimeSchemaErrorMessage(failures));
+  throw new Error(buildRuntimeSchemaErrorMessage(status.failures));
 }

@@ -12,10 +12,10 @@ import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
   type: "json",
 };
 import {
-  assertRuntimeDatabaseSchema,
   createSupabaseClient,
   getIndexerCursor,
   listChallengesForIndexing,
+  readRuntimeDatabaseSchemaStatus,
   setIndexerCursor,
 } from "@agora/db";
 import { type Abi, parseEventLogs } from "viem";
@@ -52,7 +52,22 @@ export async function runIndexer() {
   const pollingConfig = resolveIndexerPollingConfig(config);
   const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
-  await assertRuntimeDatabaseSchema(db);
+
+  while (true) {
+    const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
+    if (schemaStatus.ok) {
+      break;
+    }
+
+    indexerLogger.warn(
+      {
+        event: "indexer.startup_parked",
+        failures: schemaStatus.failures,
+      },
+      "Indexer startup parked until database schema is healthy",
+    );
+    await sleep(POLL_INTERVAL_MS);
+  }
 
   const factoryAddress = config.AGORA_FACTORY_ADDRESS;
   const chainId = config.AGORA_CHAIN_ID;
@@ -102,20 +117,19 @@ export async function runIndexer() {
     try {
       const now = Date.now();
       if (now - lastSchemaCheckAt >= INDEXER_SCHEMA_RECHECK_MS) {
-        try {
-          await assertRuntimeDatabaseSchema(db);
-          lastSchemaCheckAt = now;
-        } catch (error) {
+        const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
+        if (!schemaStatus.ok) {
           indexerLogger.error(
             {
               event: "indexer.schema_incompatible",
-              error: error instanceof Error ? error.message : String(error),
+              failures: schemaStatus.failures,
             },
             "Indexer runtime schema is incompatible; skipping poll until schema recovers",
           );
           await sleep(POLL_INTERVAL_MS);
           continue;
         }
+        lastSchemaCheckAt = now;
       }
 
       const chainHead = await publicClient.getBlockNumber();

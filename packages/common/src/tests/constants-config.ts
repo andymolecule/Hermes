@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  CHALLENGE_LIMITS,
   CHALLENGE_STATUS,
   DEFAULT_CHAIN_ID,
   DEFAULT_X402_NETWORK,
@@ -18,10 +19,10 @@ import {
   readAuthoringOperatorRuntimeConfig,
   readAuthoringSponsorRuntimeConfig,
   readCliRuntimeConfig,
-  readLifecycleE2ERuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
+  readLifecycleE2ERuntimeConfig,
   readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readSolverWalletRuntimeConfig,
@@ -121,6 +122,11 @@ assert.equal(
   getPublicRpcUrlForChainId(999999),
   null,
   "unknown chains should not guess a public RPC URL",
+);
+assert.equal(
+  CHALLENGE_LIMITS.disputeWindowMinHours,
+  168,
+  "challenge limits should enforce the on-chain dispute window minimum",
 );
 assert.equal(
   readLifecycleE2ERuntimeConfig({}).disputeWindowHours,

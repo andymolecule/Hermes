@@ -1,7 +1,7 @@
 import {
-  createSupabaseClient,
   type RuntimeSchemaFailure,
-  verifyRuntimeDatabaseSchema,
+  createSupabaseClient,
+  readRuntimeDatabaseSchemaStatus,
 } from "@agora/db";
 
 const READINESS_CACHE_TTL_MS = 5_000;
@@ -29,14 +29,17 @@ function toRuntimeReadinessFailure(message: string): RuntimeSchemaFailure {
   };
 }
 
-export function createApiRuntimeReadinessProbe(dependencies: {
-  createSupabaseClientImpl?: typeof createSupabaseClient;
-  verifyRuntimeDatabaseSchemaImpl?: typeof verifyRuntimeDatabaseSchema;
-} = {}) {
+export function createApiRuntimeReadinessProbe(
+  dependencies: {
+    createSupabaseClientImpl?: typeof createSupabaseClient;
+    readRuntimeDatabaseSchemaStatusImpl?: typeof readRuntimeDatabaseSchemaStatus;
+  } = {},
+) {
   const createDb =
     dependencies.createSupabaseClientImpl ?? createSupabaseClient;
-  const verifySchema =
-    dependencies.verifyRuntimeDatabaseSchemaImpl ?? verifyRuntimeDatabaseSchema;
+  const readSchemaStatus =
+    dependencies.readRuntimeDatabaseSchemaStatusImpl ??
+    readRuntimeDatabaseSchemaStatus;
 
   let cached: ApiRuntimeReadiness | null = null;
   let cachedAt = 0;
@@ -55,7 +58,7 @@ export function createApiRuntimeReadinessProbe(dependencies: {
       let failures: RuntimeSchemaFailure[] = [];
       try {
         const db = createDb(true);
-        failures = await verifySchema(db);
+        failures = (await readSchemaStatus(db)).failures;
       } catch (error) {
         failures = [
           toRuntimeReadinessFailure(

@@ -18,16 +18,14 @@ import {
 } from "@agora/common";
 import {
   WORKER_RUNTIME_TYPE,
-  assertRuntimeDatabaseSchema,
-  formatRuntimeSchemaNextSteps,
   claimNextJob,
   createSupabaseClient,
   getActiveWorkerRuntimeVersion,
   heartbeatScoreJobLease,
   heartbeatWorkerRuntimeState,
   pruneWorkerRuntimeStates,
+  readRuntimeDatabaseSchemaStatus,
   upsertWorkerRuntimeState,
-  verifyRuntimeDatabaseSchema,
 } from "@agora/db";
 import {
   ensureScoringBackendReady,
@@ -346,16 +344,10 @@ async function refreshWorkerRuntimeReadiness(
   },
   log: WorkerLogFn,
 ) {
-  if (
-    !(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))
-  ) {
-    return 0;
-  }
-
-  const schemaFailures = await verifyRuntimeDatabaseSchema(db);
-  if (schemaFailures.length > 0) {
+  const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
+  if (!schemaStatus.ok) {
     const nextAction =
-      formatRuntimeSchemaNextSteps(schemaFailures) ||
+      schemaStatus.nextStep ??
       "Restore database schema compatibility and reload the PostgREST schema cache before restarting the worker.";
     const message = `Worker runtime database schema is incompatible. Next step: ${nextAction}`;
     const changed = await updateRuntimeStateAndPersist(
@@ -371,9 +363,15 @@ async function refreshWorkerRuntimeReadiness(
     if (changed) {
       log("warn", "Worker runtime degraded", {
         reason: "database_schema_incompatible",
-        failures: schemaFailures,
+        failures: schemaStatus.failures,
       });
     }
+    return 0;
+  }
+
+  if (
+    !(await ensureWorkerRuntimeIsActive(db, runtimeWorkerId, runtimeState, log))
+  ) {
     return 0;
   }
 
@@ -489,7 +487,18 @@ export async function startWorker() {
   }
 
   const db = createSupabaseClient(true);
-  await assertRuntimeDatabaseSchema(db);
+  while (true) {
+    const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
+    if (schemaStatus.ok) {
+      break;
+    }
+
+    log("warn", "Worker startup parked until database schema is healthy", {
+      failures: schemaStatus.failures,
+      nextStep: schemaStatus.nextStep,
+    });
+    await sleep(WORKER_READINESS_RECHECK_MS);
+  }
   const runtimeWorkerId = resolveWorkerRuntimeId(config);
   const prunedRuntimeRows = await pruneWorkerRuntimeStates(db, {
     workerType: WORKER_RUNTIME_TYPE.scoring,

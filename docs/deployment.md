@@ -66,7 +66,7 @@ Railway deployment checks before production cutover:
 
 - Railway API, indexer, and worker orchestrator are dashboard-managed, not config-as-code.
 - Keep each service connected to repo `andymolecule/Agora`, branch `main`.
-- Keep native Railway auto-deploy enabled for all three services.
+- Disable native Railway auto-deploy for API, indexer, and worker orchestrator.
 - Do not use repo-local `railway.toml` files for these services.
 - Do not use dashboard watch-path filtering unless you have a measured need for it. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
 - Keep the dashboard build/start commands stable:
@@ -76,10 +76,14 @@ Railway deployment checks before production cutover:
   - Indexer start: `pnpm --filter @agora/chain indexer`
   - Worker build: `pnpm turbo build --filter=@agora/api`
   - Worker start: `pnpm --filter @agora/api worker`
-- If Railway stops auto-deploying after a config change, the first recovery step is to disconnect and reconnect:
-  - `Source Repo`
-  - `Branch connected to production`
-  then redeploy latest once and verify the next push advances production.
+- The only supported runtime rollout is gated and explicit:
+  1. reset the target schema
+  2. apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql)
+  3. reload the PostgREST schema cache
+  4. run `pnpm schema:verify`
+  5. deploy API, indexer, and worker
+  6. run `pnpm deploy:verify`
+  7. run smoke
 
 ---
 
@@ -103,12 +107,14 @@ flowchart TB
     C --> D["4. Deploy fresh v2 factory<br/>(scripts/deploy.sh)"]
     D --> E["5. Update canonical tuple everywhere<br/>(chain_id, factory, USDC)"]
     E --> F["6. Set AGORA_INDEXER_START_BLOCK<br/>to factory deploy block"]
-    F --> G["7. Restart all services<br/>(API, Indexer, Worker Orchestrator, Executor)"]
-    G --> H["8. Run preflight<br/>(scripts/preflight-testnet.sh)"]
-    H --> I["9. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
-    I --> J{"All checks pass?"}
-    J -->|Yes| K["✓ Live"]
-    J -->|No| L["Rollback:<br/>restore DB snapshot,<br/>redeploy previous release"]
+    F --> G["7. Reload PostgREST schema cache"]
+    G --> H["8. Verify schema<br/>(pnpm schema:verify)"]
+    H --> I["9. Deploy runtime services<br/>(API, Indexer, Worker)"]
+    I --> J["10. Run preflight + deploy verify"]
+    J --> K["11. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
+    K --> L{"All checks pass?"}
+    L -->|Yes| M["✓ Live"]
+    L -->|No| N["Rollback:<br/>reset schema again,<br/>reapply baseline,<br/>redeploy previous release"]
 ```
 
 ### Contract Deployment
@@ -152,7 +158,7 @@ This section covers non-code work for deployment across hosted systems.
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
 - `AGORA_RUNTIME_VERSION` is optional. API, worker orchestrator, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use platform commit metadata when available and otherwise fall back to the local git SHA.
-- On startup, the API writes the active scoring runtime version into `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit even though API and worker orchestrator now roll forward together on Railway.
+- While the runtime schema is healthy, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit even though API and worker orchestrator now roll forward together.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.

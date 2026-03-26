@@ -3,14 +3,18 @@ import {
   REQUIRED_RUNTIME_SCHEMA_CHECKS,
   type RuntimeSchemaCheck,
   assertRuntimeDatabaseSchema,
+  readRuntimeDatabaseSchemaStatus,
   verifyRuntimeDatabaseSchema,
 } from "../schema-compatibility";
 
 type MockResponse = { error: { message: string } | null };
 
 function createMockDb(results: Record<string, MockResponse>) {
-  const selectCalls: Array<{ table: string; select: string; options: unknown }> =
-    [];
+  const selectCalls: Array<{
+    table: string;
+    select: string;
+    options: unknown;
+  }> = [];
   const deleteCalls: Array<{
     table: string;
     filters: Record<string, string | number | boolean>;
@@ -126,7 +130,8 @@ const checks: RuntimeSchemaCheck[] = [
   {
     id: "auth_agent_keys_table",
     table: "auth_agent_keys",
-    select: "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
+    select:
+      "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
     nextStep: "apply migration",
   },
   {
@@ -183,6 +188,14 @@ const failures = await verifyRuntimeDatabaseSchema(failingDb as never, checks);
 assert.equal(failures.length, 1);
 assert.equal(failures[0]?.checkId, "worker_executor_ready_column");
 
+const failingStatus = await readRuntimeDatabaseSchemaStatus(
+  failingDb as never,
+  checks,
+);
+assert.equal(failingStatus.ok, false);
+assert.equal(failingStatus.failures.length, 1);
+assert.equal(failingStatus.nextStep, "apply migration");
+
 const deleteFailingDb = createMockDb({
   'unmatched_submissions:delete:{"challenge_id":"00000000-0000-0000-0000-000000000000","on_chain_sub_id":-1}':
     {
@@ -222,7 +235,8 @@ assert.equal(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
     (check) =>
       check.id === "auth_agents_table" &&
-      check.select === "telegram_bot_id,agent_name,description,created_at,updated_at",
+      check.select ===
+        "telegram_bot_id,agent_name,description,created_at,updated_at",
   ),
   true,
   "runtime schema checks should guard the auth_agents identity columns",
