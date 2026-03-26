@@ -438,6 +438,57 @@ Acceptance gates:
 - the codebase has one clear semantic authority for authoring and challenge
   discovery
 
+#### 6E. Add authoring telemetry for pilot agent rollouts
+
+Objective:
+- make authoring interactions queryable across agents and requests without
+  storing raw chain-of-thought
+
+Primary files:
+- `docs/specs/authoring-observability.md`
+- `packages/common/src/schemas/authoring-observability.ts`
+- `packages/db/supabase/migrations/`
+- `packages/db/src/queries/authoring-sessions.ts`
+- `packages/db/src/queries/` (new authoring event queries)
+- `apps/api/src/lib/authoring-session-observability.ts`
+- `apps/api/src/lib/observability.ts`
+- `apps/api/src/routes/authoring-sessions.ts`
+- `apps/api/src/routes/internal-authoring.ts`
+- `apps/api/tests/authoring-sessions-route.test.ts`
+- `apps/api/tests/internal-authoring-route.test.ts`
+
+Changes:
+- keep `conversation_log_json` as the per-session replay surface, but stop
+  treating it as the only durable authoring telemetry store
+- add one append-only internal `authoring_events` ledger that captures:
+  - uploads
+  - create / patch turns
+  - publish / confirm-publish phases
+  - registration phases
+  - auth or ingress failures that happen before a session exists
+- propagate one stable `trace_id` from the first authoring request through the
+  rest of the session lifecycle
+- accept optional internal caller telemetry via headers only:
+  - `X-Agora-Trace-Id`
+  - `X-Agora-Client-Name`
+  - `X-Agora-Client-Version`
+  - `X-Agora-Decision-Summary`
+- enrich structured request logs with `traceId`, `agentId`, `sessionId`,
+  `challengeId`, and `txHash` when known
+- add one internal filtered event read surface for operators, while keeping the
+  existing session timeline route
+
+Acceptance gates:
+- every authenticated authoring request from an agent produces a durable
+  telemetry event, even if the request fails before a session is created
+- operators can query authoring telemetry by `agent_id`, `session_id`,
+  `trace_id`, `phase`, `code`, and time window
+- publish telemetry distinguishes chain write, receipt confirmation, and
+  registration
+- session replay and cross-session telemetry use the same event names and
+  blocker codes
+- no secrets or raw provider chain-of-thought are stored
+
 ### Primary files
 
 - `packages/common/src/schemas/authoring-session-api.ts`

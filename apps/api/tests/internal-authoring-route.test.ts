@@ -8,6 +8,7 @@ function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringS
     id: overrides.id ?? "session-123",
     poster_address: overrides.poster_address ?? null,
     created_by_agent_id: overrides.created_by_agent_id ?? "agent-abc",
+    trace_id: overrides.trace_id ?? "trace-session-123",
     state: overrides.state ?? "awaiting_input",
     intent_json: overrides.intent_json ?? null,
     authoring_ir_json: overrides.authoring_ir_json ?? null,
@@ -131,9 +132,82 @@ test("GET /sessions/:id/timeline returns the session conversation log", async ()
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.session_id, "session-123");
+    assert.equal(payload.trace_id, "trace-session-123");
     assert.equal(payload.state, "awaiting_input");
     assert.equal(payload.entries.length, 2);
     assert.equal(payload.entries[1]?.actor, "agora");
+  } finally {
+    process.env.AGORA_AUTHORING_OPERATOR_TOKEN = previousToken;
+  }
+});
+
+test("GET /events returns filtered authoring telemetry", async () => {
+  const previousToken = process.env.AGORA_AUTHORING_OPERATOR_TOKEN;
+  process.env.AGORA_AUTHORING_OPERATOR_TOKEN = "operator-token";
+  let capturedFilters: Record<string, unknown> | null = null;
+
+  try {
+    const router = createInternalAuthoringRoutes({
+      createSupabaseClient: () => ({}) as never,
+      listAuthoringEvents: async (_db, filters) => {
+        capturedFilters = filters;
+        return [
+          {
+            id: "event-1",
+            timestamp: "2026-03-23T10:00:00.000Z",
+            request_id: "req-1",
+            trace_id: "trace-session-123",
+            session_id: "session-123",
+            agent_id: "agent-abc",
+            poster_address: null,
+            route: "create",
+            event: "turn.output.recorded",
+            phase: "semantic",
+            actor: "agora",
+            outcome: "accepted",
+            http_status: 200,
+            code: null,
+            state_before: "created",
+            state_after: "awaiting_input",
+            summary: "Agora assessed the initial session input.",
+            refs: {},
+            validation: null,
+            client: {
+              client_name: "agent-sdk",
+              client_version: "1.2.3",
+              decision_summary: "retry with canonical fields",
+            },
+            payload: null,
+          },
+        ];
+      },
+    });
+
+    const response = await router.request(
+      "http://localhost/events?agent_id=agent-abc&trace_id=trace-session-123&phase=semantic&limit=5",
+      {
+        headers: {
+          authorization: "Bearer operator-token",
+        },
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(capturedFilters, {
+      agent_id: "agent-abc",
+      session_id: undefined,
+      trace_id: "trace-session-123",
+      route: undefined,
+      phase: "semantic",
+      code: undefined,
+      since: undefined,
+      until: undefined,
+      limit: 5,
+    });
+    assert.equal(payload.events.length, 1);
+    assert.equal(payload.events[0]?.trace_id, "trace-session-123");
+    assert.equal(payload.events[0]?.client?.client_name, "agent-sdk");
   } finally {
     process.env.AGORA_AUTHORING_OPERATOR_TOKEN = previousToken;
   }

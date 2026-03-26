@@ -20,6 +20,7 @@ function createSession(): AuthoringSessionRow {
     id: "68dff5c6-336a-47fa-a4de-41e6386bd2e4",
     poster_address: null,
     created_by_agent_id: "agent-abc",
+    trace_id: "trace-authoring-1",
     state: "ready",
     intent_json: {
       title: "Drug response challenge",

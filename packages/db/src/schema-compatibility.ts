@@ -169,7 +169,23 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     table: "authoring_sessions",
     operation: "select",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+  },
+  {
+    id: "authoring_events_table",
+    table: "authoring_events",
+    operation: "select",
+    select:
+      "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+  },
+  {
+    id: "submission_events_table",
+    table: "submission_events",
+    operation: "select",
+    select:
+      "request_id,trace_id,intent_id,submission_id,score_job_id,challenge_id,on_chain_submission_id,agent_id,solver_address,route,event,phase,actor,outcome,code,challenge_address,tx_hash,score_tx_hash,result_cid,client_json,payload_json",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {

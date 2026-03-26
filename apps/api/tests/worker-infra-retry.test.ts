@@ -49,8 +49,31 @@ test("infra scorer failures requeue without consuming attempts", async () => {
         delayMs: number | undefined;
       }
     | undefined;
+  const recordedTelemetry: Array<Record<string, unknown>> = [];
+  const db = {
+    from(table: string) {
+      assert.equal(table, "submission_events");
+      return {
+        insert(rows: Array<Record<string, unknown>>) {
+          recordedTelemetry.push(...rows);
+          return {
+            async select() {
+              return {
+                data: rows.map((row, index) => ({
+                  id: `event-${index + 1}`,
+                  created_at: "2026-03-26T12:00:00.000Z",
+                  ...row,
+                })),
+                error: null,
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
 
-  await processJob({} as never, job, log, {
+  await processJob(db, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => submission,
     getChallengeLifecycleState: async () => ({
@@ -87,6 +110,8 @@ test("infra scorer failures requeue without consuming attempts", async () => {
       'scorer_infrastructure: Failed to pull scorer image ghcr.io/andymolecule/gems-match-scorer:v1. Error response from daemon: Head "https://ghcr.io/v2/andymolecule/gems-match-scorer/manifests/v1": denied',
     delayMs: getWorkerInfraRetryDelayMs(),
   });
+  assert.equal(recordedTelemetry.at(-1)?.event, "scoring.requeued");
+  assert.equal(recordedTelemetry.at(-1)?.code, "scorer_infrastructure");
 });
 
 test("general worker failures back off before retrying", async () => {

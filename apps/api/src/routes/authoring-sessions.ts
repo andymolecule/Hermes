@@ -1,6 +1,10 @@
 import {
+  AGORA_TRACE_ID_HEADER,
   AGORA_ERROR_CODES,
   AgoraError,
+  type AuthoringClientTelemetryOutput,
+  type AuthoringConversationLogEntryOutput,
+  type AuthoringEventInput,
   type AuthoringSessionCreatorOutput,
   CHALLENGE_LIMITS,
   SUBMISSION_LIMITS,
@@ -18,6 +22,7 @@ import {
   walletPublishPreparationSchema,
 } from "@agora/common";
 import {
+  createAuthoringEvents,
   type AuthoringSessionRow,
   AuthoringSessionWriteConflictError,
   appendAuthoringSessionConversationLog,
@@ -47,8 +52,11 @@ import {
   appendConversationLog,
   buildLoggedArtifacts,
   buildLoggedFileInputs,
+  createAuthoringEvent,
   createConversationLogEntry,
+  logAuthoringEvents,
   logConversationEntries,
+  readAuthoringClientTelemetry,
 } from "../lib/authoring-session-observability.js";
 import {
   buildAuthoringSessionListItemPayload,
@@ -62,7 +70,12 @@ import {
   type ChallengeRegistrationError,
   registerChallengeFromTxHash,
 } from "../lib/challenge-registration.js";
-import { getRequestId, getRequestLogger } from "../lib/observability.js";
+import {
+  bindRequestLogger,
+  getRequestId,
+  getRequestLogger,
+  getTraceId,
+} from "../lib/observability.js";
 import { requireAuthoringPrincipal } from "../middleware/authoring-principal.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
@@ -80,6 +93,7 @@ const DISTRIBUTION_TO_ENUM = {
 type AuthoringSessionRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthoringSession?: typeof createAuthoringSession;
+  createAuthoringEvents?: typeof createAuthoringEvents;
   appendAuthoringSessionConversationLog?: typeof appendAuthoringSessionConversationLog;
   getAuthoringSessionById?: typeof getAuthoringSessionById;
   listAuthoringSessionsByCreator?: typeof listAuthoringSessionsByCreator;
@@ -232,6 +246,7 @@ function buildTurnOutputSummary(
 
 function buildTurnInputLogEntry(input: {
   route: "create" | "patch";
+  traceId: string | null;
   requestId: string | null;
   stateBefore: string | null;
   intent?: unknown;
@@ -239,6 +254,7 @@ function buildTurnInputLogEntry(input: {
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
 }) {
   return createConversationLogEntry({
+    trace_id: input.traceId,
     request_id: input.requestId,
     route: input.route,
     event: "turn.input.recorded",
@@ -257,6 +273,7 @@ function buildTurnInputLogEntry(input: {
 
 function buildTurnOutputLogEntry(input: {
   route: "create" | "patch";
+  traceId: string | null;
   requestId: string | null;
   stateBefore: string | null;
   session: AuthoringSessionRow;
@@ -265,6 +282,7 @@ function buildTurnOutputLogEntry(input: {
   const response = buildAuthoringSessionPayload(input.session);
 
   return createConversationLogEntry({
+    trace_id: input.traceId,
     request_id: input.requestId,
     route: input.route,
     event: "turn.output.recorded",
@@ -340,6 +358,177 @@ function creatorListFilter(principal: AuthoringSessionCreatorOutput) {
     type: "web" as const,
     address: principal.address,
   };
+}
+
+function resolveAuthoringTraceId(
+  c: Pick<import("hono").Context<ApiEnv>, "get">,
+  session?: Pick<AuthoringSessionRow, "trace_id"> | null,
+) {
+  return session?.trace_id ?? getTraceId(c) ?? getRequestId(c) ?? null;
+}
+
+function telemetryIdentity(
+  principal?: AuthoringSessionCreatorOutput | null,
+  session?: Pick<AuthoringSessionRow, "created_by_agent_id" | "poster_address"> | null,
+) {
+  if (principal?.type === "agent") {
+    return {
+      agent_id: principal.agent_id,
+      poster_address: null,
+    };
+  }
+  if (principal?.type === "web") {
+    return {
+      agent_id: null,
+      poster_address: principal.address,
+    };
+  }
+  return {
+    agent_id: session?.created_by_agent_id ?? null,
+    poster_address: session?.poster_address ?? null,
+  };
+}
+
+function payloadFromConversationEntry(entry: AuthoringEventInput["payload"]) {
+  return entry ?? null;
+}
+
+function refsFromConversationPublish(
+  publish?: AuthoringConversationLogEntryOutput["publish"],
+): AuthoringEventInput["refs"] {
+  if (!publish) {
+    return {};
+  }
+  return {
+    challenge_id: publish.challenge_id ?? null,
+    contract_address: publish.contract_address ?? null,
+    tx_hash: publish.tx_hash ?? null,
+    spec_cid: publish.spec_cid ?? null,
+  };
+}
+
+function createTelemetryEventFromConversationEntry(input: {
+  c: import("hono").Context<ApiEnv>;
+  session?: AuthoringSessionRow | null;
+  principal?: AuthoringSessionCreatorOutput | null;
+  entry: AuthoringConversationLogEntryOutput;
+  phase: AuthoringEventInput["phase"];
+  outcome: AuthoringEventInput["outcome"];
+  httpStatus?: number | null;
+  code?: string | null;
+  refs?: AuthoringEventInput["refs"];
+}) {
+  const traceId = input.entry.trace_id ?? resolveAuthoringTraceId(input.c, input.session);
+  const identity = telemetryIdentity(input.principal, input.session);
+  return createAuthoringEvent({
+    request_id: input.entry.request_id ?? getRequestId(input.c) ?? "unknown-request",
+    trace_id: traceId ?? "unknown-trace",
+    session_id: input.session?.id ?? null,
+    agent_id: identity.agent_id,
+    poster_address: identity.poster_address,
+    route: input.entry.route,
+    event: input.entry.event,
+    phase: input.phase,
+    actor: input.entry.actor,
+    outcome: input.outcome,
+    http_status: input.httpStatus ?? input.entry.error?.status ?? null,
+    code: input.code ?? input.entry.error?.code ?? null,
+    state_before: input.entry.state_before,
+    state_after: input.entry.state_after,
+    summary: input.entry.summary,
+    refs: input.refs ?? refsFromConversationPublish(input.entry.publish),
+    validation: input.entry.validation ?? null,
+    client: readAuthoringClientTelemetry(input.c.req) ?? null,
+    payload: payloadFromConversationEntry({
+      ...(input.entry.intent ? { intent: input.entry.intent } : {}),
+      ...(input.entry.execution ? { execution: input.entry.execution } : {}),
+      ...(input.entry.files ? { files: input.entry.files } : {}),
+      ...(input.entry.resolved ? { resolved: input.entry.resolved } : {}),
+      ...(input.entry.validation ? { validation: input.entry.validation } : {}),
+      ...(input.entry.artifacts ? { artifacts: input.entry.artifacts } : {}),
+      ...(input.entry.publish ? { publish: input.entry.publish } : {}),
+      ...(input.entry.error ? { error: input.entry.error } : {}),
+    }),
+  });
+}
+
+async function recordAuthoringTelemetryEvents(input: {
+  db: ReturnType<typeof createSupabaseClient>;
+  events: AuthoringEventInput[];
+  createAuthoringEventsImpl: typeof createAuthoringEvents;
+  logger: ReturnType<typeof getRequestLogger>;
+}) {
+  if (input.events.length === 0) {
+    return;
+  }
+  try {
+    await input.createAuthoringEventsImpl(input.db, input.events);
+    logAuthoringEvents(input.logger, input.events);
+  } catch (error) {
+    input.logger?.warn(
+      {
+        event: "authoring.telemetry.write_failed",
+        error: error instanceof Error ? error.message : String(error),
+        traceId: input.events[0]?.trace_id ?? null,
+        sessionId: input.events[0]?.session_id ?? null,
+      },
+      "Failed to write authoring telemetry events",
+    );
+  }
+}
+
+async function recordRouteTelemetryEvent(input: {
+  c: import("hono").Context<ApiEnv>;
+  db: ReturnType<typeof createSupabaseClient>;
+  createAuthoringEventsImpl: typeof createAuthoringEvents;
+  principal?: AuthoringSessionCreatorOutput | null;
+  session?: AuthoringSessionRow | null;
+  route: string;
+  event: AuthoringEventInput["event"];
+  phase: AuthoringEventInput["phase"];
+  actor: AuthoringEventInput["actor"];
+  outcome: AuthoringEventInput["outcome"];
+  summary: string;
+  httpStatus?: number | null;
+  code?: string | null;
+  stateBefore?: string | null;
+  stateAfter?: string | null;
+  refs?: AuthoringEventInput["refs"];
+  validation?: AuthoringEventInput["validation"] | null;
+  payload?: AuthoringEventInput["payload"] | null;
+}) {
+  const identity = telemetryIdentity(input.principal, input.session);
+  await recordAuthoringTelemetryEvents({
+    db: input.db,
+    events: [
+      createAuthoringEvent({
+        request_id: getRequestId(input.c) ?? "unknown-request",
+        trace_id:
+          resolveAuthoringTraceId(input.c, input.session) ??
+          getRequestId(input.c) ??
+          "unknown-trace",
+        session_id: input.session?.id ?? null,
+        agent_id: identity.agent_id,
+        poster_address: identity.poster_address,
+        route: input.route,
+        event: input.event,
+        phase: input.phase,
+        actor: input.actor,
+        outcome: input.outcome,
+        http_status: input.httpStatus ?? null,
+        code: input.code ?? null,
+        state_before: input.stateBefore ?? null,
+        state_after: input.stateAfter ?? null,
+        summary: input.summary,
+        refs: input.refs ?? {},
+        validation: input.validation ?? null,
+        client: readAuthoringClientTelemetry(input.c.req) ?? null,
+        payload: input.payload ?? null,
+      }),
+    ],
+    createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+    logger: getRequestLogger(input.c),
+  });
 }
 
 function toOriginProvider(value?: string | null) {
@@ -476,6 +665,7 @@ async function ensureSessionVisibility(
     const logger = getRequestLogger(c);
     const stateBefore = getSessionPublicState(session);
     const expiredEntry = createConversationLogEntry({
+      trace_id: resolveAuthoringTraceId(c, session),
       request_id: requestId,
       route: input?.route ?? "session_lookup",
       event: "session.expired",
@@ -505,12 +695,20 @@ async function ensureSessionVisibility(
       sessionId: expiredWithLog.id,
       entries: [expiredEntry],
     });
+    bindRequestLogger(c, {
+      sessionId: expiredWithLog.id,
+      traceId: expiredWithLog.trace_id ?? resolveAuthoringTraceId(c, expiredWithLog),
+    });
     return {
       ok: true as const,
       session: expiredWithLog,
     };
   }
 
+  bindRequestLogger(c, {
+    sessionId: session.id,
+    traceId: session.trace_id ?? resolveAuthoringTraceId(c, session),
+  });
   return {
     ok: true as const,
     session,
@@ -547,7 +745,9 @@ async function appendValidationFailureLog(input: {
   session: AuthoringSessionRow;
   updateAuthoringSessionImpl: typeof updateAuthoringSession;
   appendAuthoringSessionConversationLogImpl: typeof appendAuthoringSessionConversationLog;
+  createAuthoringEventsImpl: typeof createAuthoringEvents;
   route: string;
+  phase: AuthoringEventInput["phase"];
   status: number;
   code: string;
   message: string;
@@ -557,6 +757,7 @@ async function appendValidationFailureLog(input: {
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
 }) {
   const entry = createConversationLogEntry({
+    trace_id: resolveAuthoringTraceId(input.c, input.session),
     request_id: getRequestId(input.c) ?? null,
     route: input.route,
     event: "turn.validation_failed",
@@ -586,6 +787,23 @@ async function appendValidationFailureLog(input: {
       updateAuthoringSessionImpl: input.updateAuthoringSessionImpl,
       appendAuthoringSessionConversationLogImpl:
         input.appendAuthoringSessionConversationLogImpl,
+    });
+    await recordAuthoringTelemetryEvents({
+      db: input.db,
+      events: [
+        createTelemetryEventFromConversationEntry({
+          c: input.c,
+          session: input.session,
+          principal: input.c.get("authoringPrincipal"),
+          entry,
+          phase: input.phase,
+          outcome: "blocked",
+          httpStatus: input.status,
+          code: input.code,
+        }),
+      ],
+      createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+      logger: getRequestLogger(input.c),
     });
   } catch {
     // Best-effort only. The API response should still succeed.
@@ -623,11 +841,14 @@ function nextEditableStateError(
 }
 
 async function persistAssessmentResult(input: {
+  c: import("hono").Context<ApiEnv>;
   db: ReturnType<typeof createSupabaseClient>;
   session: AuthoringSessionRow | null;
   route: "create" | "patch";
+  traceId: string | null;
   requestId: string | null;
   principal: AuthoringSessionCreatorOutput;
+  createAuthoringEventsImpl: typeof createAuthoringEvents;
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
   intentPatch?: z.input<typeof createAuthoringSessionRequestSchema>["intent"];
   intentCandidate: Record<string, unknown>;
@@ -661,6 +882,7 @@ async function persistAssessmentResult(input: {
   });
   const inputEntry = buildTurnInputLogEntry({
     route: input.route,
+    traceId: input.traceId,
     requestId: input.requestId,
     stateBefore: input.session ? getSessionPublicState(input.session) : null,
     intent: input.intentPatch,
@@ -711,6 +933,7 @@ async function persistAssessmentResult(input: {
       });
       const outputEntry = buildTurnOutputLogEntry({
         route: input.route,
+        traceId: session.trace_id ?? input.traceId,
         requestId: input.requestId,
         stateBefore: getSessionPublicState(input.session),
         session,
@@ -725,6 +948,34 @@ async function persistAssessmentResult(input: {
           input.appendAuthoringSessionConversationLogImpl,
         expectedUpdatedAt: session.updated_at,
       });
+      await recordAuthoringTelemetryEvents({
+        db: input.db,
+        events: [
+          createTelemetryEventFromConversationEntry({
+            c: input.c,
+            session: sessionWithLog,
+            principal: input.principal,
+            entry: inputEntry,
+            phase: "ingress",
+            outcome: "accepted",
+          }),
+          createTelemetryEventFromConversationEntry({
+            c: input.c,
+            session: sessionWithLog,
+            principal: input.principal,
+            entry: outputEntry,
+            phase: "semantic",
+            outcome: "completed",
+            code:
+              sessionWithLog.state === "rejected"
+                ? sessionWithLog.authoring_ir_json?.validation_snapshot
+                    ?.unsupported_reason?.code ?? null
+                : null,
+          }),
+        ],
+        createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+        logger: getRequestLogger(input.c),
+      });
       return {
         session: sessionWithLog,
         logEntries: [inputEntry, outputEntry],
@@ -733,6 +984,7 @@ async function persistAssessmentResult(input: {
 
     const session = await input.createAuthoringSessionImpl(input.db, {
       ...creatorInsertFields(input.principal),
+      trace_id: input.traceId,
       state: "awaiting_input",
       authoring_ir_json: authoringIr,
       uploaded_artifacts_json: input.uploadedArtifacts,
@@ -740,6 +992,7 @@ async function persistAssessmentResult(input: {
     });
     const outputEntry = buildTurnOutputLogEntry({
       route: input.route,
+      traceId: session.trace_id ?? input.traceId,
       requestId: input.requestId,
       stateBefore: null,
       session,
@@ -753,6 +1006,29 @@ async function persistAssessmentResult(input: {
       appendAuthoringSessionConversationLogImpl:
         input.appendAuthoringSessionConversationLogImpl,
       expectedUpdatedAt: session.updated_at,
+    });
+    await recordAuthoringTelemetryEvents({
+      db: input.db,
+      events: [
+        createTelemetryEventFromConversationEntry({
+          c: input.c,
+          session: sessionWithLog,
+          principal: input.principal,
+          entry: inputEntry,
+          phase: "ingress",
+          outcome: "accepted",
+        }),
+        createTelemetryEventFromConversationEntry({
+          c: input.c,
+          session: sessionWithLog,
+          principal: input.principal,
+          entry: outputEntry,
+          phase: "semantic",
+          outcome: "completed",
+        }),
+      ],
+      createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+      logger: getRequestLogger(input.c),
     });
     return {
       session: sessionWithLog,
@@ -805,6 +1081,7 @@ async function persistAssessmentResult(input: {
     });
     const outputEntry = buildTurnOutputLogEntry({
       route: input.route,
+      traceId: session.trace_id ?? input.traceId,
       requestId: input.requestId,
       stateBefore: getSessionPublicState(input.session),
       session,
@@ -819,6 +1096,39 @@ async function persistAssessmentResult(input: {
         input.appendAuthoringSessionConversationLogImpl,
       expectedUpdatedAt: session.updated_at,
     });
+    await recordAuthoringTelemetryEvents({
+      db: input.db,
+      events: [
+        createTelemetryEventFromConversationEntry({
+          c: input.c,
+          session: sessionWithLog,
+          principal: input.principal,
+          entry: inputEntry,
+          phase: "ingress",
+          outcome: "accepted",
+        }),
+        createTelemetryEventFromConversationEntry({
+          c: input.c,
+          session: sessionWithLog,
+          principal: input.principal,
+          entry: outputEntry,
+          phase:
+            sessionWithLog.state === "ready"
+              ? "compile"
+              : sessionWithLog.state === "rejected"
+                ? "compile"
+                : "semantic",
+          outcome: "completed",
+          code:
+            sessionWithLog.state === "rejected"
+              ? sessionWithLog.authoring_ir_json?.validation_snapshot
+                  ?.unsupported_reason?.code ?? null
+              : null,
+        }),
+      ],
+      createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+      logger: getRequestLogger(input.c),
+    });
     return {
       session: sessionWithLog,
       logEntries: [inputEntry, outputEntry],
@@ -827,6 +1137,7 @@ async function persistAssessmentResult(input: {
 
   const session = await input.createAuthoringSessionImpl(input.db, {
     ...creatorInsertFields(input.principal),
+    trace_id: input.traceId,
     state,
     intent_json: assessedIntent.parsedIntent,
     authoring_ir_json: outcome.authoringIr,
@@ -838,6 +1149,7 @@ async function persistAssessmentResult(input: {
   });
   const outputEntry = buildTurnOutputLogEntry({
     route: input.route,
+    traceId: session.trace_id ?? input.traceId,
     requestId: input.requestId,
     stateBefore: null,
     session,
@@ -852,6 +1164,39 @@ async function persistAssessmentResult(input: {
       input.appendAuthoringSessionConversationLogImpl,
     expectedUpdatedAt: session.updated_at,
   });
+  await recordAuthoringTelemetryEvents({
+    db: input.db,
+    events: [
+      createTelemetryEventFromConversationEntry({
+        c: input.c,
+        session: sessionWithLog,
+        principal: input.principal,
+        entry: inputEntry,
+        phase: "ingress",
+        outcome: "accepted",
+      }),
+      createTelemetryEventFromConversationEntry({
+        c: input.c,
+        session: sessionWithLog,
+        principal: input.principal,
+        entry: outputEntry,
+        phase:
+          sessionWithLog.state === "ready"
+            ? "compile"
+            : sessionWithLog.state === "rejected"
+              ? "compile"
+              : "semantic",
+        outcome: "completed",
+        code:
+          sessionWithLog.state === "rejected"
+            ? sessionWithLog.authoring_ir_json?.validation_snapshot
+                ?.unsupported_reason?.code ?? null
+            : null,
+      }),
+    ],
+    createAuthoringEventsImpl: input.createAuthoringEventsImpl,
+    logger: getRequestLogger(input.c),
+  });
   return {
     session: sessionWithLog,
     logEntries: [inputEntry, outputEntry],
@@ -865,6 +1210,7 @@ export function createAuthoringSessionRoutes(
   const {
     createSupabaseClient: createSupabaseClientImpl = createSupabaseClient,
     createAuthoringSession: createAuthoringSessionImpl = createAuthoringSession,
+    createAuthoringEvents: createAuthoringEventsImpl = createAuthoringEvents,
     appendAuthoringSessionConversationLog:
       appendAuthoringSessionConversationLogImpl = appendAuthoringSessionConversationLog,
     getAuthoringSessionById:
@@ -939,6 +1285,20 @@ export function createAuthoringSessionRoutes(
         createAuthoringSessionRequestSchema,
       );
       if (!parsed.ok) {
+        await recordRouteTelemetryEvent({
+          c,
+          db: createSupabaseClientImpl(true),
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "create",
+          event: "turn.validation_failed",
+          phase: "ingress",
+          actor: "system",
+          outcome: "blocked",
+          summary: "Agora rejected the create request before session assessment.",
+          httpStatus: 400,
+          code: "invalid_request",
+        });
         return parsed.response;
       }
 
@@ -952,6 +1312,33 @@ export function createAuthoringSessionRoutes(
           : [];
       } catch (error) {
         if (error instanceof AgoraError && error.code === "invalid_request") {
+          await recordRouteTelemetryEvent({
+            c,
+            db,
+            createAuthoringEventsImpl,
+            principal: c.get("authoringPrincipal"),
+            route: "create",
+            event: "turn.validation_failed",
+            phase: "upload",
+            actor: "system",
+            outcome: "blocked",
+            summary: "Agora rejected the create request file inputs.",
+            httpStatus: 400,
+            code: "invalid_request",
+            payload: {
+              ...(parsed.data.intent ? { intent: parsed.data.intent } : {}),
+              ...(parsed.data.execution ? { execution: parsed.data.execution } : {}),
+              ...(parsed.data.files ? { files: buildLoggedFileInputs(parsed.data.files) } : {}),
+              error: {
+                status: 400,
+                code: "invalid_request",
+                message: error.message,
+                next_action:
+                  error.nextAction ??
+                  "Fix the file references or upload payload and retry.",
+              },
+            },
+          });
           return jsonAuthoringSessionApiError(c, {
             status: 400,
             code: "invalid_request",
@@ -967,11 +1354,14 @@ export function createAuthoringSessionRoutes(
 
       try {
         const result = await persistAssessmentResult({
+          c,
           db,
           session: null,
           route: "create",
+          traceId: getTraceId(c) ?? getRequestId(c) ?? null,
           requestId: getRequestId(c) ?? null,
           principal: c.get("authoringPrincipal"),
+          createAuthoringEventsImpl,
           files: parsed.data.files,
           intentPatch: parsed.data.intent,
           intentCandidate,
@@ -998,6 +1388,11 @@ export function createAuthoringSessionRoutes(
             parsed.data.execution?.submission_id_column ?? null,
           submissionValueColumnOverride:
             parsed.data.execution?.submission_value_column ?? null,
+        });
+        bindRequestLogger(c, {
+          sessionId: result.session.id,
+          traceId:
+            result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
@@ -1036,6 +1431,20 @@ export function createAuthoringSessionRoutes(
     async (c) => {
       const parsed = await parseJsonBody(c, patchAuthoringSessionRequestSchema);
       if (!parsed.ok) {
+        await recordRouteTelemetryEvent({
+          c,
+          db: createSupabaseClientImpl(true),
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "patch",
+          event: "turn.validation_failed",
+          phase: "ingress",
+          actor: "system",
+          outcome: "blocked",
+          summary: "Agora rejected the patch request before session lookup.",
+          httpStatus: 400,
+          code: "invalid_request",
+        });
         return parsed.response;
       }
 
@@ -1060,7 +1469,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "patch",
+          phase: "semantic",
           status: 409,
           code: "session_expired",
           message: "This session has expired.",
@@ -1089,7 +1500,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "patch",
+          phase: "semantic",
           status: 400,
           code: "invalid_request",
           message:
@@ -1121,7 +1534,9 @@ export function createAuthoringSessionRoutes(
             session: visible.session,
             updateAuthoringSessionImpl,
             appendAuthoringSessionConversationLogImpl,
+            createAuthoringEventsImpl,
             route: "patch",
+            phase: "upload",
             status: 400,
             code: "invalid_request",
             message: error.message,
@@ -1180,11 +1595,14 @@ export function createAuthoringSessionRoutes(
         null;
       try {
         const result = await persistAssessmentResult({
+          c,
           db,
           session: visible.session,
           route: "patch",
+          traceId: resolveAuthoringTraceId(c, visible.session),
           requestId: getRequestId(c) ?? null,
           principal: c.get("authoringPrincipal"),
+          createAuthoringEventsImpl,
           files: parsed.data.files,
           intentPatch: parsed.data.intent,
           intentCandidate,
@@ -1200,6 +1618,11 @@ export function createAuthoringSessionRoutes(
           evaluationValueColumnOverride,
           submissionIdColumnOverride,
           submissionValueColumnOverride,
+        });
+        bindRequestLogger(c, {
+          sessionId: result.session.id,
+          traceId:
+            result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
@@ -1225,7 +1648,9 @@ export function createAuthoringSessionRoutes(
             session: visible.session,
             updateAuthoringSessionImpl,
             appendAuthoringSessionConversationLogImpl,
+            createAuthoringEventsImpl,
             route: "patch",
+            phase: "compile",
             status: 400,
             code: "invalid_request",
             message: error.message,
@@ -1256,6 +1681,20 @@ export function createAuthoringSessionRoutes(
         publishAuthoringSessionRequestSchema,
       );
       if (!parsed.ok) {
+        await recordRouteTelemetryEvent({
+          c,
+          db: createSupabaseClientImpl(true),
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "publish",
+          event: "turn.validation_failed",
+          phase: "ingress",
+          actor: "system",
+          outcome: "blocked",
+          summary: "Agora rejected the publish request before session lookup.",
+          httpStatus: 400,
+          code: "invalid_request",
+        });
         return parsed.response;
       }
 
@@ -1280,7 +1719,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "publish",
+          phase: "publish",
           status: 409,
           code: "session_expired",
           message: "This session has expired.",
@@ -1305,7 +1746,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "publish",
+          phase: "publish",
           status: 400,
           code: "invalid_request",
           message: "This session is not ready to publish.",
@@ -1329,7 +1772,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "publish",
+          phase: "publish",
           status: 400,
           code: "invalid_request",
           message:
@@ -1352,7 +1797,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "publish",
+          phase: "publish",
           status: 400,
           code: "invalid_request",
           message: "Web sessions currently publish with wallet funding only.",
@@ -1372,6 +1819,7 @@ export function createAuthoringSessionRoutes(
           pinJsonImpl,
         });
         const requestEntry = createConversationLogEntry({
+          trace_id: resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "publish",
           event: "publish.requested",
@@ -1389,6 +1837,7 @@ export function createAuthoringSessionRoutes(
           specCid,
         });
         const preparedEntry = createConversationLogEntry({
+          trace_id: resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "publish",
           event: "publish.prepared",
@@ -1412,6 +1861,29 @@ export function createAuthoringSessionRoutes(
           sessionId: preparedSession.id,
           entries: [requestEntry, preparedEntry],
         });
+        await recordAuthoringTelemetryEvents({
+          db,
+          events: [
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: preparedSession,
+              principal,
+              entry: requestEntry,
+              phase: "publish",
+              outcome: "accepted",
+            }),
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: preparedSession,
+              principal,
+              entry: preparedEntry,
+              phase: "publish",
+              outcome: "completed",
+            }),
+          ],
+          createAuthoringEventsImpl,
+          logger: getRequestLogger(c),
+        });
         return c.json({ data: preparation });
       }
 
@@ -1427,7 +1899,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "publish",
+          phase: "publish",
           status: 503,
           code: "invalid_request",
           message:
@@ -1445,6 +1919,7 @@ export function createAuthoringSessionRoutes(
         });
       }
       const publishRequestedEntry = createConversationLogEntry({
+        trace_id: resolveAuthoringTraceId(c, visible.session),
         request_id: getRequestId(c) ?? null,
         route: "publish",
         event: "publish.requested",
@@ -1468,9 +1943,39 @@ export function createAuthoringSessionRoutes(
         sessionId: publishPreparedSession.id,
         entries: [publishRequestedEntry],
       });
+      await recordAuthoringTelemetryEvents({
+        db,
+        events: [
+          createTelemetryEventFromConversationEntry({
+            c,
+            session: publishPreparedSession,
+            principal,
+            entry: publishRequestedEntry,
+            phase: "publish",
+            outcome: "accepted",
+          }),
+        ],
+        createAuthoringEventsImpl,
+        logger: getRequestLogger(c),
+      });
       const compiledSpec =
         publishPreparedSession.compilation_json?.challenge_spec;
       if (!compiledSpec) {
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: publishPreparedSession,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
+          route: "publish",
+          phase: "publish",
+          status: 400,
+          code: "invalid_request",
+          message:
+            "This session is missing a compiled challenge spec. Next step: recompile the session before publishing.",
+          nextAction: "Recompile the session before publishing.",
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1483,6 +1988,98 @@ export function createAuthoringSessionRoutes(
       let result: Awaited<
         ReturnType<typeof sponsorAndPublishAuthoringSessionImpl>
       >;
+      let publishSessionForProgress = publishPreparedSession;
+      const recordSponsorProgress = async (progress: {
+        event:
+          | "publish.chain_submitted"
+          | "publish.chain_confirmed"
+          | "registration.completed"
+          | "registration.failed";
+        summary: string;
+        txHash?: `0x${string}` | null;
+        challengeId?: string | null;
+        challengeAddress?: `0x${string}` | null;
+        specCid?: string | null;
+        errorMessage?: string | null;
+      }) => {
+        const progressEntry = createConversationLogEntry({
+          trace_id:
+            publishSessionForProgress.trace_id ??
+            resolveAuthoringTraceId(c, publishSessionForProgress),
+          request_id: getRequestId(c) ?? null,
+          route: "publish",
+          event: progress.event,
+          actor: "publish",
+          summary: progress.summary,
+          state_before: getSessionPublicState(publishSessionForProgress),
+          state_after: getSessionPublicState(publishSessionForProgress),
+          ...(progress.event.startsWith("publish.")
+            ? {
+                publish: {
+                  funding: "sponsor",
+                  tx_hash: progress.txHash ?? null,
+                  spec_cid: progress.specCid ?? specCid,
+                },
+              }
+            : {
+                publish: {
+                  funding: "sponsor",
+                  challenge_id: progress.challengeId ?? null,
+                  contract_address: progress.challengeAddress ?? null,
+                  tx_hash: progress.txHash ?? null,
+                  spec_cid: progress.specCid ?? specCid,
+                },
+              }),
+          ...(progress.errorMessage
+            ? {
+                error: {
+                  message: progress.errorMessage,
+                },
+              }
+            : {}),
+        });
+        publishSessionForProgress = await appendConversationEntries({
+          db,
+          session: publishSessionForProgress,
+          entries: [progressEntry],
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+        }).catch(() => publishSessionForProgress);
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: publishSessionForProgress.id,
+          entries: [progressEntry],
+        });
+        await recordAuthoringTelemetryEvents({
+          db,
+          events: [
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: publishSessionForProgress,
+              principal,
+              entry: progressEntry,
+              phase:
+                progress.event === "registration.completed" ||
+                progress.event === "registration.failed"
+                  ? "registration"
+                  : "publish",
+              outcome:
+                progress.event === "publish.chain_submitted"
+                  ? "accepted"
+                  : progress.event === "registration.failed"
+                    ? "failed"
+                    : "completed",
+              refs: {
+                challenge_id: progress.challengeId ?? null,
+                contract_address: progress.challengeAddress ?? null,
+                tx_hash: progress.txHash ?? null,
+                spec_cid: progress.specCid ?? specCid,
+              },
+            }),
+          ],
+          createAuthoringEventsImpl,
+          logger: getRequestLogger(c),
+        });
+      };
       try {
         result = await sponsorAndPublishAuthoringSessionImpl({
           db,
@@ -1491,6 +2088,7 @@ export function createAuthoringSessionRoutes(
           specCid,
           sponsorPrivateKey: sponsorRuntime.privateKey,
           expiresInMs: TERMINAL_TTL_MS,
+          onProgress: recordSponsorProgress,
         });
       } catch (error) {
         const publishError = ensureAgoraError(error, {
@@ -1514,6 +2112,7 @@ export function createAuthoringSessionRoutes(
           | 500
           | 503;
         const failedEntry = createConversationLogEntry({
+          trace_id: resolveAuthoringTraceId(c, publishPreparedSession),
           request_id: getRequestId(c) ?? null,
           route: "publish",
           event: "publish.failed",
@@ -1543,6 +2142,23 @@ export function createAuthoringSessionRoutes(
           sessionId: publishPreparedSession.id,
           entries: [failedEntry],
         });
+        await recordAuthoringTelemetryEvents({
+          db,
+          events: [
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: publishPreparedSession,
+              principal,
+              entry: failedEntry,
+              phase: "publish",
+              outcome: "failed",
+              httpStatus: publishErrorStatus,
+              code: publishError.code,
+            }),
+          ],
+          createAuthoringEventsImpl,
+          logger: getRequestLogger(c),
+        });
         return jsonAuthoringSessionApiError(c, {
           status: publishErrorStatus,
           code: authoringErrorCode,
@@ -1554,6 +2170,7 @@ export function createAuthoringSessionRoutes(
         });
       }
       const publishCompletedEntry = createConversationLogEntry({
+        trace_id: result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
         request_id: getRequestId(c) ?? null,
         route: "publish",
         event: "publish.completed",
@@ -1580,6 +2197,36 @@ export function createAuthoringSessionRoutes(
         sessionId: resultSessionWithLog.id,
         entries: [publishCompletedEntry],
       });
+      bindRequestLogger(c, {
+        sessionId: resultSessionWithLog.id,
+        traceId:
+          resultSessionWithLog.trace_id ??
+          resolveAuthoringTraceId(c, resultSessionWithLog),
+        challengeId: result.challenge.challengeId,
+        contractAddress: result.challenge.challengeAddress,
+        txHash: result.txHash,
+      });
+      await recordAuthoringTelemetryEvents({
+        db,
+        events: [
+          createTelemetryEventFromConversationEntry({
+            c,
+            session: resultSessionWithLog,
+            principal,
+            entry: publishCompletedEntry,
+            phase: "publish",
+            outcome: "completed",
+            refs: {
+              challenge_id: result.challenge.challengeId,
+              contract_address: result.challenge.challengeAddress,
+              tx_hash: result.txHash,
+              spec_cid: specCid,
+            },
+          }),
+        ],
+        createAuthoringEventsImpl,
+        logger: getRequestLogger(c),
+      });
 
       const challenge = await maybeReadChallenge(
         getChallengeByIdImpl,
@@ -1602,6 +2249,21 @@ export function createAuthoringSessionRoutes(
         confirmPublishAuthoringSessionRequestSchema,
       );
       if (!parsed.ok) {
+        await recordRouteTelemetryEvent({
+          c,
+          db: createSupabaseClientImpl(true),
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "confirm_publish",
+          event: "turn.validation_failed",
+          phase: "ingress",
+          actor: "system",
+          outcome: "blocked",
+          summary:
+            "Agora rejected the confirm-publish request before session lookup.",
+          httpStatus: 400,
+          code: "invalid_request",
+        });
         return parsed.response;
       }
 
@@ -1626,7 +2288,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "confirm_publish",
+          phase: "registration",
           status: 409,
           code: "session_expired",
           message: "This session has expired.",
@@ -1651,7 +2315,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "confirm_publish",
+          phase: "registration",
           status: 400,
           code: "invalid_request",
           message: "This session is not ready to confirm publish.",
@@ -1675,7 +2341,9 @@ export function createAuthoringSessionRoutes(
           session: visible.session,
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
           route: "confirm_publish",
+          phase: "registration",
           status: 400,
           code: "invalid_request",
           message:
@@ -1707,18 +2375,58 @@ export function createAuthoringSessionRoutes(
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to confirm publish.";
-        await appendValidationFailureLog({
-          c,
+        const failedEntry = createConversationLogEntry({
+          trace_id:
+            visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
+          request_id: getRequestId(c) ?? null,
+          route: "confirm_publish",
+          event: "registration.failed",
+          actor: "publish",
+          summary: "Agora could not register the wallet publish transaction.",
+          state_before: getSessionPublicState(visible.session),
+          state_after: getSessionPublicState(visible.session),
+          publish: {
+            funding: "wallet",
+            tx_hash: parsed.data.tx_hash,
+          },
+          error: {
+            status: 400,
+            code: "invalid_request",
+            message,
+            next_action:
+              "Verify the wallet transaction hash belongs to this session publish, then retry confirm-publish.",
+          },
+        });
+        await appendConversationEntries({
           db,
           session: visible.session,
+          entries: [failedEntry],
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
-          route: "confirm_publish",
-          status: 400,
-          code: "invalid_request",
-          message,
-          nextAction:
-            "Verify the wallet transaction hash belongs to this session publish, then retry confirm-publish.",
+        }).catch(() => null);
+        logConversationEntries(getRequestLogger(c), {
+          sessionId: visible.session.id,
+          entries: [failedEntry],
+        });
+        await recordAuthoringTelemetryEvents({
+          db,
+          events: [
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: visible.session,
+              principal,
+              entry: failedEntry,
+              phase: "registration",
+              outcome: "failed",
+              httpStatus: 400,
+              code: "invalid_request",
+              refs: {
+                tx_hash: parsed.data.tx_hash,
+              },
+            }),
+          ],
+          createAuthoringEventsImpl,
+          logger: getRequestLogger(c),
         });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
@@ -1730,7 +2438,26 @@ export function createAuthoringSessionRoutes(
       }
 
       try {
+        const registrationCompletedEntry = createConversationLogEntry({
+          trace_id:
+            visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
+          request_id: getRequestId(c) ?? null,
+          route: "confirm_publish",
+          event: "registration.completed",
+          actor: "publish",
+          summary: "Agora registered the wallet publish transaction.",
+          state_before: getSessionPublicState(visible.session),
+          state_after: getSessionPublicState(visible.session),
+          publish: {
+            funding: "wallet",
+            challenge_id: registration.challengeRow.id,
+            contract_address: registration.challengeAddress,
+            tx_hash: parsed.data.tx_hash,
+            spec_cid: registration.specCid,
+          },
+        });
         const publishCompletedEntry = createConversationLogEntry({
+          trace_id: visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "confirm_publish",
           event: "publish.completed",
@@ -1762,14 +2489,58 @@ export function createAuthoringSessionRoutes(
         const publishedWithLog = await appendConversationEntries({
           db,
           session: published,
-          entries: [publishCompletedEntry],
+          entries: [registrationCompletedEntry, publishCompletedEntry],
           updateAuthoringSessionImpl,
           appendAuthoringSessionConversationLogImpl,
           expectedUpdatedAt: published.updated_at,
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: publishedWithLog.id,
-          entries: [publishCompletedEntry],
+          entries: [registrationCompletedEntry, publishCompletedEntry],
+        });
+        bindRequestLogger(c, {
+          sessionId: publishedWithLog.id,
+          traceId:
+            publishedWithLog.trace_id ??
+            resolveAuthoringTraceId(c, publishedWithLog),
+          challengeId: registration.challengeRow.id,
+          contractAddress: registration.challengeAddress,
+          txHash: parsed.data.tx_hash,
+        });
+        await recordAuthoringTelemetryEvents({
+          db,
+          events: [
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: publishedWithLog,
+              principal,
+              entry: registrationCompletedEntry,
+              phase: "registration",
+              outcome: "completed",
+              refs: {
+                challenge_id: registration.challengeRow.id,
+                contract_address: registration.challengeAddress,
+                tx_hash: parsed.data.tx_hash,
+                spec_cid: registration.specCid,
+              },
+            }),
+            createTelemetryEventFromConversationEntry({
+              c,
+              session: publishedWithLog,
+              principal,
+              entry: publishCompletedEntry,
+              phase: "registration",
+              outcome: "completed",
+              refs: {
+                challenge_id: registration.challengeRow.id,
+                contract_address: registration.challengeAddress,
+                tx_hash: parsed.data.tx_hash,
+                spec_cid: registration.specCid,
+              },
+            }),
+          ],
+          createAuthoringEventsImpl,
+          logger: getRequestLogger(c),
         });
 
         return c.json({
@@ -1800,11 +2571,27 @@ export function createAuthoringSessionRoutes(
     requireAuthoringPrincipalMiddleware,
     requireWriteQuotaImpl("/api/authoring/uploads"),
     async (c) => {
+      const db = createSupabaseClientImpl(true);
       const directUpload = await readDirectUpload(c);
       if (directUpload) {
         const artifact = await createDirectAuthoringSessionArtifactImpl({
           bytes: directUpload.bytes,
           fileName: normalizeFileName(directUpload.fileName),
+        });
+        await recordRouteTelemetryEvent({
+          c,
+          db,
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "upload",
+          event: "upload.recorded",
+          phase: "upload",
+          actor: "caller",
+          outcome: "completed",
+          summary: "Caller uploaded an authoring artifact.",
+          payload: {
+            artifacts: [toAuthoringSessionArtifactPayload(artifact)],
+          },
         });
         return c.json({
           data: toAuthoringSessionArtifactPayload(artifact),
@@ -1813,6 +2600,20 @@ export function createAuthoringSessionRoutes(
 
       const parsed = await parseJsonBody(c, uploadUrlRequestSchema);
       if (!parsed.ok) {
+        await recordRouteTelemetryEvent({
+          c,
+          db: createSupabaseClientImpl(true),
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "upload",
+          event: "upload.failed",
+          phase: "ingress",
+          actor: "system",
+          outcome: "blocked",
+          summary: "Agora rejected the upload request body.",
+          httpStatus: 400,
+          code: "invalid_request",
+        });
         return parsed.response;
       }
 
@@ -1820,6 +2621,29 @@ export function createAuthoringSessionRoutes(
         files: [{ type: "url", url: parsed.data.url }],
       });
       if (!artifact) {
+        await recordRouteTelemetryEvent({
+          c,
+          db,
+          createAuthoringEventsImpl,
+          principal: c.get("authoringPrincipal"),
+          route: "upload",
+          event: "upload.failed",
+          phase: "upload",
+          actor: "system",
+          outcome: "blocked",
+          summary: "Agora could not produce an artifact from the upload request.",
+          httpStatus: 400,
+          code: "invalid_request",
+          payload: {
+            files: [{ type: "url", url: parsed.data.url }],
+            error: {
+              status: 400,
+              code: "invalid_request",
+              message: "Upload request did not produce an artifact.",
+              next_action: "Provide a valid file upload or URL and retry.",
+            },
+          },
+        });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
@@ -1827,6 +2651,22 @@ export function createAuthoringSessionRoutes(
           nextAction: "Provide a valid file upload or URL and retry.",
         });
       }
+      await recordRouteTelemetryEvent({
+        c,
+        db,
+        createAuthoringEventsImpl,
+        principal: c.get("authoringPrincipal"),
+        route: "upload",
+        event: "upload.recorded",
+        phase: "upload",
+        actor: "caller",
+        outcome: "completed",
+        summary: "Caller uploaded an authoring artifact by URL.",
+        payload: {
+          files: [{ type: "url", url: parsed.data.url }],
+          artifacts: [toAuthoringSessionArtifactPayload(artifact)],
+        },
+      });
       return c.json({
         data: toAuthoringSessionArtifactPayload(artifact),
       });

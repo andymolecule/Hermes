@@ -7,6 +7,7 @@ export interface ApiEnv {
     agentId: string;
     authoringPrincipal: AuthoringSessionCreatorOutput;
     requestId: string;
+    traceId: string;
     logger: AgoraLogger;
   };
 }

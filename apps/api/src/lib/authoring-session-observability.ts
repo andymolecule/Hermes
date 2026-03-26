@@ -1,11 +1,16 @@
 import {
   authoringConversationLogEntrySchema,
+  authoringClientTelemetrySchema,
+  authoringEventInputSchema,
   type AuthoringSessionArtifactOutput,
+  type AuthoringClientTelemetryOutput,
   type AuthoringConversationLogEntryOutput,
+  type AuthoringEventInput,
   type AuthoringSessionFileInputOutput,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import type { AuthoringSessionRow } from "@agora/db";
+import { readAgoraClientTelemetry } from "./client-telemetry.js";
 import {
   type StoredAuthoringSessionArtifact,
   toAuthoringSessionArtifactPayload,
@@ -71,6 +76,24 @@ export function createConversationLogEntry(
   });
 }
 
+export function createAuthoringEvent(
+  input: Omit<AuthoringEventInput, "timestamp"> & {
+    timestamp?: string;
+  },
+) {
+  return authoringEventInputSchema.parse({
+    ...input,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+  });
+}
+
+export function readAuthoringClientTelemetry(input: {
+  header(name: string): string | undefined;
+}): AuthoringClientTelemetryOutput | null {
+  const client = readAgoraClientTelemetry(input);
+  return client ? authoringClientTelemetrySchema.parse(client) : null;
+}
+
 export function appendConversationLog(
   session: Pick<AuthoringSessionRow, "conversation_log_json"> | null,
   entries: AuthoringConversationLogEntryOutput[],
@@ -93,6 +116,7 @@ export function logConversationEntries(
       {
         event: "authoring.session.timeline_entry",
         sessionId: input.sessionId,
+        traceId: entry.trace_id,
         requestId: entry.request_id,
         route: entry.route,
         timelineEvent: entry.event,
@@ -101,6 +125,35 @@ export function logConversationEntries(
         stateAfter: entry.state_after,
       },
       entry.summary,
+    );
+  }
+}
+
+export function logAuthoringEvents(
+  logger: AgoraLogger | undefined,
+  events: AuthoringEventInput[],
+) {
+  if (!logger) {
+    return;
+  }
+  for (const event of events) {
+    logger.info(
+      {
+        event: "authoring.telemetry.recorded",
+        requestId: event.request_id,
+        traceId: event.trace_id,
+        sessionId: event.session_id,
+        agentId: event.agent_id,
+        route: event.route,
+        authoringEvent: event.event,
+        phase: event.phase,
+        outcome: event.outcome,
+        code: event.code,
+        challengeId: event.refs.challenge_id,
+        contractAddress: event.refs.contract_address,
+        txHash: event.refs.tx_hash,
+      },
+      event.summary,
     );
   }
 }

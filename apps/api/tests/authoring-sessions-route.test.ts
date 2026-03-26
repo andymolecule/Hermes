@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AGORA_CLIENT_NAME_HEADER,
+  AGORA_DECISION_SUMMARY_HEADER,
+  AGORA_TRACE_ID_HEADER,
   AgoraError,
   CHALLENGE_DOMAINS,
   authoringSessionErrorEnvelopeSchema,
@@ -11,9 +14,12 @@ import {
   resolveOfficialScorerImage,
 } from "@agora/common";
 import type { AuthoringSessionRow } from "@agora/db";
+import { Hono } from "hono";
 import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
+import { createApiRequestObservabilityMiddleware } from "../src/lib/observability.js";
 import { encodeAuthoringSessionArtifactId } from "../src/lib/authoring-session-artifacts.js";
 import { createAuthoringSessionRoutes } from "../src/routes/authoring-sessions.js";
+import type { ApiEnv } from "../src/types.js";
 
 function withPrincipal(
   principal:
@@ -199,6 +205,7 @@ function createSession(
     poster_address:
       overrides.poster_address ?? "0x00000000000000000000000000000000000000aa",
     created_by_agent_id: overrides.created_by_agent_id ?? null,
+    trace_id: overrides.trace_id ?? "trace-session-123",
     state: overrides.state ?? "awaiting_input",
     intent_json: intent,
     authoring_ir_json:
@@ -318,6 +325,102 @@ test("POST /sessions creates a new awaiting-input session", async () => {
   assert.equal(payload.data.validation.missing_fields[0]?.field, "description");
   assert.ok(storedSession);
   assert.equal(storedSession?.conversation_log_json.length, 2);
+});
+
+test("POST /sessions propagates trace and client telemetry into the session events", async () => {
+  let storedSession: AuthoringSessionRow | null = null;
+  const recordedEvents: Array<Record<string, unknown>> = [];
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    createAuthoringEvents: async (_db, events) => {
+      recordedEvents.push(...(events as Array<Record<string, unknown>>));
+      return [] as never;
+    },
+    normalizeAuthoringSessionFileInputs: async () => [],
+    createAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        id: "session-trace",
+        created_by_agent_id: payload.created_by_agent_id ?? null,
+        poster_address: payload.poster_address ?? null,
+        trace_id: payload.trace_id ?? null,
+        state: payload.state,
+        authoring_ir_json: payload.authoring_ir_json ?? null,
+        uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
+          []) as never,
+        intent_json: payload.intent_json ?? null,
+        compilation_json: payload.compilation_json ?? null,
+        conversation_log_json: payload.conversation_log_json ?? [],
+        failure_message: payload.failure_message ?? null,
+        expires_at: payload.expires_at,
+      });
+      return storedSession;
+    },
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...(storedSession ?? createSession({ id: "session-trace" })),
+        trace_id: payload.trace_id ?? storedSession?.trace_id ?? null,
+        state: payload.state ?? storedSession?.state ?? "awaiting_input",
+        authoring_ir_json:
+          payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
+        uploaded_artifacts_json:
+          (payload.uploaded_artifacts_json as never) ??
+          storedSession?.uploaded_artifacts_json ??
+          [],
+        intent_json: payload.intent_json ?? storedSession?.intent_json ?? null,
+        compilation_json:
+          payload.compilation_json ?? storedSession?.compilation_json ?? null,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession?.conversation_log_json ??
+          [],
+        failure_message:
+          payload.failure_message ?? storedSession?.failure_message ?? null,
+        expires_at:
+          payload.expires_at ??
+          storedSession?.expires_at ??
+          "2026-03-23T00:00:00.000Z",
+        updated_at: "2026-03-22T00:05:00.000Z",
+      });
+      return storedSession;
+    },
+  });
+  const app = new Hono<ApiEnv>();
+  app.use("*", createApiRequestObservabilityMiddleware());
+  app.route("/", router);
+
+  const response = await app.request("http://localhost/sessions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [AGORA_TRACE_ID_HEADER]: "trace-create-123",
+      [AGORA_CLIENT_NAME_HEADER]: "agent-sdk",
+      [AGORA_DECISION_SUMMARY_HEADER]:
+        "retry using canonical authoring fields",
+    },
+    body: JSON.stringify({
+      intent: {
+        title: "Need a KRAS docking challenge",
+      },
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(storedSession?.trace_id, "trace-create-123");
+  assert.equal(recordedEvents.length, 2);
+  assert.equal(recordedEvents[0]?.trace_id, "trace-create-123");
+  assert.equal(recordedEvents[0]?.agent_id, "agent-abc");
+  assert.equal(recordedEvents[0]?.client?.client_name, "agent-sdk");
+  assert.equal(
+    recordedEvents[0]?.client?.decision_summary,
+    "retry using canonical authoring fields",
+  );
+  assert.equal(recordedEvents[1]?.session_id, "session-trace");
 });
 
 test("POST /sessions accepts structured intent and execution", async () => {
@@ -1124,6 +1227,7 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
       agent_id: "agent-abc",
     }),
     requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
     normalizeAuthoringSessionFileInputs: async () => [
       {
         id: "agora_artifact_v1_dGVzdA",

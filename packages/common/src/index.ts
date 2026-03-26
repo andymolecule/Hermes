@@ -8,6 +8,7 @@ export * from "./schemas/challenge-spec.js";
 export * from "./schemas/agent-auth.js";
 export * from "./schemas/authoring-session-api.js";
 export * from "./schemas/authoring-observability.js";
+export * from "./schemas/submission-observability.js";
 export * from "./schemas/authoring-source.js";
 export * from "./schemas/execution-contract.js";
 export * from "./schemas/authoring-core.js";

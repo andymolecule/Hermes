@@ -138,7 +138,21 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_sessions_table",
     table: "authoring_sessions",
     select:
-      "state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+    nextStep: "apply migration",
+  },
+  {
+    id: "authoring_events_table",
+    table: "authoring_events",
+    select:
+      "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+    nextStep: "apply migration",
+  },
+  {
+    id: "submission_events_table",
+    table: "submission_events",
+    select:
+      "request_id,trace_id,intent_id,submission_id,score_job_id,challenge_id,on_chain_submission_id,agent_id,solver_address,route,event,phase,actor,outcome,code,challenge_address,tx_hash,score_tx_hash,result_cid,client_json,payload_json",
     nextStep: "apply migration",
   },
   {
@@ -250,6 +264,35 @@ assert.equal(
   ),
   true,
   "runtime schema checks should guard the auth_agent_keys table",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "authoring_sessions_table" &&
+      check.select?.startsWith("trace_id,state,intent_json"),
+  ),
+  true,
+  "runtime schema checks should guard authoring session trace propagation",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "authoring_events_table" &&
+      check.select ===
+        "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+  ),
+  true,
+  "runtime schema checks should guard the authoring events ledger",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "submission_events_table" &&
+      check.select ===
+        "request_id,trace_id,intent_id,submission_id,score_job_id,challenge_id,on_chain_submission_id,agent_id,solver_address,route,event,phase,actor,outcome,code,challenge_address,tx_hash,score_tx_hash,result_cid,client_json,payload_json",
+  ),
+  true,
+  "runtime schema checks should guard the submission events ledger",
 );
 assert.equal(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.some(

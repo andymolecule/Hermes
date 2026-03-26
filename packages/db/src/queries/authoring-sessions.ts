@@ -19,6 +19,7 @@ export type AuthoringSessionState =
 export interface AuthoringSessionInsert {
   poster_address?: string | null;
   created_by_agent_id?: string | null;
+  trace_id?: string | null;
   state: AuthoringSessionState;
   intent_json?: ChallengeIntentOutput | null;
   authoring_ir_json?: ChallengeAuthoringIrOutput | null;
@@ -37,6 +38,7 @@ export interface AuthoringSessionRow {
   id: string;
   poster_address: string | null;
   created_by_agent_id: string | null;
+  trace_id: string | null;
   state: AuthoringSessionState;
   intent_json: ChallengeIntentOutput | null;
   authoring_ir_json: ChallengeAuthoringIrOutput | null;
@@ -76,6 +78,7 @@ export async function createAuthoringSession(
     .insert({
       poster_address: normalizeAddress(payload.poster_address),
       created_by_agent_id: payload.created_by_agent_id ?? null,
+      trace_id: payload.trace_id ?? null,
       state: payload.state,
       intent_json: payload.intent_json ?? null,
       authoring_ir_json: payload.authoring_ir_json ?? null,
@@ -124,6 +127,7 @@ export async function updateAuthoringSession(
     expected_updated_at?: string;
     poster_address?: string | null;
     created_by_agent_id?: string | null;
+    trace_id?: string | null;
     state?: AuthoringSessionState;
     intent_json?: ChallengeIntentOutput | null;
     authoring_ir_json?: ChallengeAuthoringIrOutput | null;
@@ -147,6 +151,9 @@ export async function updateAuthoringSession(
   }
   if (input.created_by_agent_id !== undefined) {
     patch.created_by_agent_id = input.created_by_agent_id;
+  }
+  if (input.trace_id !== undefined) {
+    patch.trace_id = input.trace_id;
   }
   if (input.state !== undefined) {
     patch.state = input.state;

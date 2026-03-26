@@ -1,4 +1,5 @@
 import {
+  AGORA_TRACE_ID_HEADER,
   type AgoraObservabilityRuntimeConfig,
   readObservabilityRuntimeConfig,
 } from "@agora/common";
@@ -9,6 +10,7 @@ import {
   buildAgoraSentryInitOptions,
   buildErrorLogFields,
   createAgoraLogger,
+  normalizeRequestId,
   resolveRequestId,
 } from "@agora/common/server-observability";
 import * as Sentry from "@sentry/node";
@@ -63,20 +65,38 @@ export function getRequestLogger(c: Pick<Context<ApiEnv>, "get">) {
   return c.get("logger");
 }
 
+export function getTraceId(c: Pick<Context<ApiEnv>, "get">) {
+  return c.get("traceId");
+}
+
+export function bindRequestLogger(
+  c: Pick<Context<ApiEnv>, "get" | "set">,
+  bindings: AgoraLogBindings,
+): AgoraLogger {
+  const logger = (c.get("logger") ?? apiLogger).child(bindings);
+  c.set("logger", logger);
+  return logger;
+}
+
 export function createApiRequestObservabilityMiddleware(): MiddlewareHandler<ApiEnv> {
   return async (c, next) => {
     const requestId = resolveRequestId(c.req.header(AGORA_REQUEST_ID_HEADER));
+    const traceId =
+      normalizeRequestId(c.req.header(AGORA_TRACE_ID_HEADER)) ?? requestId;
     const path = new URL(c.req.url).pathname;
     const logger = apiLogger.child({
       requestId,
+      traceId,
       method: c.req.method,
       path,
     });
     const startedAt = Date.now();
 
     c.set("requestId", requestId);
+    c.set("traceId", traceId);
     c.set("logger", logger);
     c.header(AGORA_REQUEST_ID_HEADER, requestId);
+    c.header(AGORA_TRACE_ID_HEADER, traceId);
 
     await next();
 

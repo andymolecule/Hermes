@@ -11,6 +11,7 @@ const appendedRow = {
   id: "session-1",
   poster_address: null,
   created_by_agent_id: "agent-1",
+  trace_id: "trace-1",
   state: "awaiting_input",
   intent_json: null,
   authoring_ir_json: null,

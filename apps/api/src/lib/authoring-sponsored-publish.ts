@@ -253,6 +253,19 @@ export async function sponsorAndPublishAuthoringSession(input: {
   sponsorMonthlyBudgetUsdc?: number | null;
   expiresInMs: number;
   updateAuthoringSessionImpl?: typeof updateAuthoringSession;
+  onProgress?: (progress: {
+    event:
+      | "publish.chain_submitted"
+      | "publish.chain_confirmed"
+      | "registration.completed"
+      | "registration.failed";
+    summary: string;
+    txHash?: `0x${string}` | null;
+    challengeId?: string | null;
+    challengeAddress?: `0x${string}` | null;
+    specCid?: string | null;
+    errorMessage?: string | null;
+  }) => Promise<void>;
 }) {
   if (!input.session.compilation_json) {
     throw new Error(
@@ -397,6 +410,14 @@ export async function sponsorAndPublishAuthoringSession(input: {
         txHash: createTxHash,
       });
     }
+    await input
+      .onProgress?.({
+        event: "publish.chain_submitted",
+        summary: "Agora submitted the sponsor publish transaction.",
+        txHash: createTxHash,
+        specCid: input.specCid,
+      })
+      .catch(() => null);
 
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: createTxHash,
@@ -407,12 +428,44 @@ export async function sponsorAndPublishAuthoringSession(input: {
       );
     }
     challengeCreationConfirmed = true;
-    const registration = await registerChallengeFromTxHash({
-      db: input.db,
-      txHash: createTxHash,
-      expectedSpec: input.spec,
-      createdByAgentId: input.session.created_by_agent_id ?? null,
-    });
+    await input
+      .onProgress?.({
+        event: "publish.chain_confirmed",
+        summary: "Agora confirmed the sponsor publish transaction.",
+        txHash: createTxHash,
+        specCid: input.specCid,
+      })
+      .catch(() => null);
+    let registration: Awaited<ReturnType<typeof registerChallengeFromTxHash>>;
+    try {
+      registration = await registerChallengeFromTxHash({
+        db: input.db,
+        txHash: createTxHash,
+        expectedSpec: input.spec,
+        createdByAgentId: input.session.created_by_agent_id ?? null,
+      });
+    } catch (error) {
+      await input
+        .onProgress?.({
+          event: "registration.failed",
+          summary: "Agora could not register the sponsor publish transaction.",
+          txHash: createTxHash,
+          specCid: input.specCid,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        })
+        .catch(() => null);
+      throw error;
+    }
+    await input
+      .onProgress?.({
+        event: "registration.completed",
+        summary: "Agora registered the sponsor publish transaction.",
+        txHash: createTxHash,
+        challengeId: registration.challengeRow.id,
+        challengeAddress: registration.challengeAddress,
+        specCid: input.specCid,
+      })
+      .catch(() => null);
     challengeRow = registration.challengeRow;
 
     const publishedSession = await (

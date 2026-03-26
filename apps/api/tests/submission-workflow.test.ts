@@ -63,10 +63,33 @@ test("cleanupSubmissionArtifact unpins orphaned results when nothing references 
 
 test("reconcileTrackedSubmissionsForIntent reprojects tracked unmatched rows after the intent arrives", async () => {
   const projected: Array<Record<string, unknown>> = [];
+  const recordedTelemetry: Array<Record<string, unknown>> = [];
+  const db = {
+    from(table: string) {
+      assert.equal(table, "submission_events");
+      return {
+        insert(rows: Array<Record<string, unknown>>) {
+          recordedTelemetry.push(...rows);
+          return {
+            async select() {
+              return {
+                data: rows.map((row, index) => ({
+                  id: `event-${index + 1}`,
+                  created_at: "2026-03-26T12:00:00.000Z",
+                  ...row,
+                })),
+                error: null,
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
 
   const result = await reconcileTrackedSubmissionsForIntent(
     {
-      db: {} as never,
+      db,
       challenge: {
         id: "challenge-1",
         contract_address: "0x1111111111111111111111111111111111111111",
@@ -130,6 +153,10 @@ test("reconcileTrackedSubmissionsForIntent reprojects tracked unmatched rows aft
     projected[0]?.txHash,
     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   );
+  assert.equal(recordedTelemetry.length, 1);
+  assert.equal(recordedTelemetry[0]?.event, "intent.reconciled_unmatched");
+  assert.equal(recordedTelemetry[0]?.challenge_address,
+    "0x1111111111111111111111111111111111111111");
 });
 
 test("toSubmissionRegistrationResponse returns the canonical envelope and warning", () => {

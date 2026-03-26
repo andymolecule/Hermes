@@ -28,6 +28,10 @@ import {
   isWorkerInfrastructureError,
 } from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
+import {
+  createSubmissionEvent,
+  recordSubmissionEvents,
+} from "../lib/submission-observability.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
@@ -75,6 +79,68 @@ const defaultProcessJobDeps: ProcessJobDeps = {
   upsertProofBundle,
 };
 
+async function recordWorkerSubmissionEvent(input: {
+  db: DbClient;
+  job: ScoreJobRow;
+  challenge?: Pick<ChallengeRow, "id" | "contract_address"> | null;
+  submission?: Pick<
+    SubmissionRow,
+    "id" | "challenge_id" | "on_chain_sub_id" | "solver_address" | "trace_id" | "submission_cid"
+  > | null;
+  event: "scoring.started" | "scoring.requeued" | "scoring.skipped" | "scoring.failed" | "scoring.completed";
+  outcome: "accepted" | "blocked" | "failed" | "completed";
+  code?: string | null;
+  summary: string;
+  retryDelayMs?: number;
+  errorMessage?: string | null;
+}) {
+  const traceId =
+    input.job.trace_id ?? input.submission?.trace_id ?? input.job.id;
+  await recordSubmissionEvents({
+    db: input.db,
+    events: [
+      createSubmissionEvent({
+        request_id: input.job.id,
+        trace_id: traceId,
+        intent_id: null,
+        submission_id: input.submission?.id ?? input.job.submission_id,
+        score_job_id: input.job.id,
+        challenge_id: input.challenge?.id ?? input.submission?.challenge_id ?? input.job.challenge_id,
+        on_chain_submission_id: input.submission?.on_chain_sub_id ?? null,
+        agent_id: null,
+        solver_address: input.submission?.solver_address ?? null,
+        route: "worker",
+        event: input.event,
+        phase: "scoring",
+        actor: "worker",
+        outcome: input.outcome,
+        http_status: null,
+        code: input.code ?? null,
+        summary: input.summary,
+        refs: {
+          challenge_address: input.challenge?.contract_address ?? null,
+          tx_hash: null,
+          score_tx_hash: input.job.score_tx_hash ?? null,
+          result_cid: input.submission?.submission_cid ?? null,
+        },
+        client: null,
+        payload: {
+          on_chain_submission_id: input.submission?.on_chain_sub_id ?? null,
+          retry_delay_ms: input.retryDelayMs ?? null,
+          error: input.errorMessage
+            ? {
+                status: null,
+                code: input.code ?? null,
+                message: input.errorMessage,
+                next_action: null,
+              }
+            : null,
+        },
+      }),
+    ],
+  });
+}
+
 async function ensureChallengeIsScoreable(input: {
   db: DbClient;
   job: ScoreJobRow;
@@ -110,6 +176,18 @@ async function ensureChallengeIsScoreable(input: {
       reason,
       getWorkerPostTxRetryDelayMs(),
     );
+    await recordWorkerSubmissionEvent({
+      db: input.db,
+      job: input.job,
+      challenge: input.challenge,
+      submission: input.submission,
+      event: "scoring.requeued",
+      outcome: "blocked",
+      code: reason,
+      summary:
+        "Worker requeued the score job because the challenge has not entered scoring yet.",
+      retryDelayMs: getWorkerPostTxRetryDelayMs(),
+    });
     return false;
   }
 
@@ -127,6 +205,17 @@ async function ensureChallengeIsScoreable(input: {
     },
     reason,
   );
+  await recordWorkerSubmissionEvent({
+    db: input.db,
+    job: input.job,
+    challenge: input.challenge,
+    submission: input.submission,
+    event: "scoring.skipped",
+    outcome: "completed",
+    code: reason,
+    summary:
+      "Worker skipped the score job because the challenge is no longer scoreable.",
+  });
   return false;
 }
 
@@ -159,6 +248,15 @@ export async function processJob(
       challengeId: challenge.id,
       traceId,
     };
+    await recordWorkerSubmissionEvent({
+      db,
+      job,
+      challenge,
+      submission,
+      event: "scoring.started",
+      outcome: "accepted",
+      summary: "Worker started processing the submission scoring job.",
+    });
     const shouldAbortForLeaseLoss = (phase: string) => {
       if (!leaseGuard?.hasLostLease()) return false;
       log("warn", "Worker lost the score job lease; aborting remaining work", {
@@ -186,6 +284,16 @@ export async function processJob(
           traceId,
         },
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        challenge,
+        submission,
+        event: "scoring.completed",
+        outcome: "completed",
+        summary:
+          "Worker detected that the submission was already scored on-chain and completed reconciliation.",
+      });
       return;
     }
 
@@ -199,6 +307,16 @@ export async function processJob(
         log,
       )
     ) {
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        challenge,
+        submission,
+        event: "scoring.completed",
+        outcome: "completed",
+        summary:
+          "Worker reconciled a previously posted score transaction and completed the job.",
+      });
       return;
     }
 
@@ -235,6 +353,17 @@ export async function processJob(
         },
         SUBMISSION_CID_MISSING_ERROR,
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        challenge,
+        submission,
+        event: "scoring.skipped",
+        outcome: "completed",
+        code: SUBMISSION_CID_MISSING_ERROR,
+        summary:
+          "Worker skipped scoring because the submission metadata was missing the pinned result CID.",
+      });
       return;
     }
 
@@ -266,6 +395,17 @@ export async function processJob(
           },
           scoringOutcome.reason,
         );
+        await recordWorkerSubmissionEvent({
+          db,
+          job,
+          challenge,
+          submission,
+          event: "scoring.skipped",
+          outcome: "completed",
+          code: scoringOutcome.reason,
+          summary:
+            "Worker skipped scoring because the configured submission limits blocked this job.",
+        });
         return;
       }
 
@@ -284,6 +424,18 @@ export async function processJob(
         },
         `invalid_submission: ${scoringOutcome.reason}`,
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        challenge,
+        submission,
+        event: "scoring.skipped",
+        outcome: "completed",
+        code: "invalid_submission",
+        summary:
+          "Worker skipped scoring because the submission was invalid for deterministic evaluation.",
+        errorMessage: scoringOutcome.reason,
+      });
       return;
     }
 
@@ -311,6 +463,16 @@ export async function processJob(
           traceId,
         },
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        challenge,
+        submission,
+        event: "scoring.completed",
+        outcome: "completed",
+        summary:
+          "Worker observed that the submission became scored before posting and completed without reposting.",
+      });
       return;
     }
 
@@ -362,6 +524,19 @@ export async function processJob(
     });
 
     await resolvedDeps.completeJob(db, job.id, txHash);
+    await recordWorkerSubmissionEvent({
+      db,
+      job: {
+        ...job,
+        score_tx_hash: txHash,
+      },
+      challenge,
+      submission,
+      event: "scoring.completed",
+      outcome: "completed",
+      summary:
+        "Worker posted the score on-chain, stored the proof bundle, and completed the job.",
+    });
     log("info", `✓ Job complete for submission ${submission.id}`, {
       txHash,
       score: scoringOutcome.score,
@@ -386,6 +561,17 @@ export async function processJob(
         `scorer_infrastructure: ${message}`,
         getWorkerInfraRetryDelayMs(),
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        event: "scoring.requeued",
+        outcome: "failed",
+        code: "scorer_infrastructure",
+        summary:
+          "Worker requeued the score job because the scorer infrastructure was unavailable.",
+        retryDelayMs: getWorkerInfraRetryDelayMs(),
+        errorMessage: message,
+      });
       return;
     }
     if (isTerminalScoreJobError(message)) {
@@ -404,6 +590,16 @@ export async function processJob(
         },
         message,
       );
+      await recordWorkerSubmissionEvent({
+        db,
+        job,
+        event: "scoring.skipped",
+        outcome: "completed",
+        code: "terminal_score_job_error",
+        summary:
+          "Worker skipped the score job because the failure was terminal and non-retriable.",
+        errorMessage: message,
+      });
       return;
     }
     log("error", `Job failed for submission ${job.submission_id}`, {
@@ -422,5 +618,16 @@ export async function processJob(
       job.max_attempts,
       getWorkerGeneralRetryDelayMs(job.attempts),
     );
+    await recordWorkerSubmissionEvent({
+      db,
+      job,
+      event: "scoring.failed",
+      outcome: "failed",
+      code: "job_failed",
+      summary:
+        "Worker failed the score job and scheduled a retry with backoff.",
+      retryDelayMs: getWorkerGeneralRetryDelayMs(job.attempts),
+      errorMessage: message,
+    });
   }
 }

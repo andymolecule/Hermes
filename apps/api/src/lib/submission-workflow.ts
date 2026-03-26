@@ -14,6 +14,7 @@ import {
 import {
   CHALLENGE_STATUS,
   DEFAULT_SUBMISSION_PRIVACY_MODE,
+  type AgoraClientTelemetryOutput,
   type SubmissionResultFormat,
   computeSubmissionResultHash,
   getRequiredSubmissionResultFormat,
@@ -45,6 +46,10 @@ import {
   getSubmissionReadRetryMessage,
   isInvalidOnChainSubmissionReadError,
 } from "./submission-status.js";
+import {
+  createSubmissionEvent,
+  recordSubmissionEvents,
+} from "./submission-observability.js";
 
 const SUBMISSION_INTENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45 * 1000;
@@ -214,6 +219,10 @@ export async function reconcileTrackedSubmissionsForIntent(
       trace_id?: string | null;
     };
     requestId: string;
+    traceId?: string | null;
+    route?: string;
+    agentId?: string | null;
+    clientTelemetry?: AgoraClientTelemetryOutput | null;
     logger: AgoraLogger;
   },
   dependencies: {
@@ -241,6 +250,7 @@ export async function reconcileTrackedSubmissionsForIntent(
   });
 
   let reconciled = 0;
+  const traceId = input.traceId ?? input.intent.trace_id ?? input.requestId;
   for (const unmatched of unmatchedRows) {
     const onChainSubmission = await getOnChainSubmissionForIntent(
       input.challenge.contract_address as `0x${string}`,
@@ -269,10 +279,46 @@ export async function reconcileTrackedSubmissionsForIntent(
         challengeId: input.challenge.id,
         intentId: input.intent.id,
         onChainSubmissionId: unmatched.on_chain_sub_id,
-        traceId: input.intent.trace_id ?? input.requestId,
+        traceId,
       },
       "Recovered a tracked unmatched submission after intent creation",
     );
+    await recordSubmissionEvents({
+      db: input.db,
+      logger: input.logger,
+      events: [
+        createSubmissionEvent({
+          request_id: input.requestId,
+          trace_id: traceId,
+          intent_id: input.intent.id,
+          submission_id: projected.id,
+          score_job_id: null,
+          challenge_id: input.challenge.id,
+          on_chain_submission_id: unmatched.on_chain_sub_id,
+          agent_id: input.agentId ?? null,
+          solver_address: input.intent.solver_address,
+          route: input.route ?? "intent",
+          event: "intent.reconciled_unmatched",
+          phase: "intent",
+          actor: "agora",
+          outcome: "completed",
+          http_status: 200,
+          code: null,
+          summary:
+            "Agora reconciled an unmatched on-chain submission after the matching intent arrived.",
+          refs: {
+            challenge_address: input.challenge.contract_address,
+            tx_hash: unmatched.tx_hash,
+            score_tx_hash: null,
+            result_cid: null,
+          },
+          client: input.clientTelemetry ?? null,
+          payload: {
+            on_chain_submission_id: unmatched.on_chain_sub_id,
+          },
+        }),
+      ],
+    });
   }
 
   return {
@@ -290,9 +336,13 @@ export async function createSubmissionIntentWorkflow(input: {
   resultFormat: SubmissionResultFormat;
   optionalSessionAddress: string | null;
   requestId: string;
+  traceId?: string;
+  route?: string;
+  clientTelemetry?: AgoraClientTelemetryOutput | null;
   logger: AgoraLogger;
 }) {
   const normalizedResultCid = input.resultCid.trim();
+  const traceId = input.traceId ?? input.requestId;
   if (!isValidPinnedSpecCid(normalizedResultCid)) {
     throw new SubmissionWorkflowError(
       400,
@@ -381,7 +431,7 @@ export async function createSubmissionIntentWorkflow(input: {
       expires_at: getSubmissionIntentExpiry({
         deadlineMs: window.deadlineMs,
       }),
-      trace_id: input.requestId,
+      trace_id: traceId,
     }));
 
   input.logger.info(
@@ -390,10 +440,56 @@ export async function createSubmissionIntentWorkflow(input: {
       challengeId: challenge.id,
       intentId: intent.id,
       solverAddress: normalizedSolverAddress,
-      traceId: input.requestId,
+      traceId,
     },
     "Submission intent created",
   );
+  await recordSubmissionEvents({
+    db,
+    logger: input.logger,
+    events: [
+      createSubmissionEvent({
+        request_id: input.requestId,
+        trace_id: traceId,
+        intent_id: intent.id,
+        submission_id: null,
+        score_job_id: null,
+        challenge_id: challenge.id,
+        on_chain_submission_id: null,
+        agent_id: input.submittedByAgentId ?? null,
+        solver_address: normalizedSolverAddress,
+        route: input.route ?? "intent",
+        event: "intent.created",
+        phase: "intent",
+        actor: "agora",
+        outcome: "accepted",
+        http_status: 200,
+        code: existingIntent ? "existing_intent_reused" : null,
+        summary: existingIntent
+          ? "Agora reused the existing active submission intent for this solver payload."
+          : "Agora created a submission intent.",
+        refs: {
+          challenge_address: challenge.contract_address,
+          tx_hash: null,
+          score_tx_hash: null,
+          result_cid: normalizedResultCid,
+        },
+        client: input.clientTelemetry ?? null,
+        payload: {
+          intent: {
+            ...(input.challengeId ? { challengeId: input.challengeId } : {}),
+            ...(input.challengeAddress
+              ? { challengeAddress: input.challengeAddress }
+              : {}),
+            solverAddress: input.solverAddress,
+            resultCid: normalizedResultCid,
+            resultFormat: input.resultFormat,
+          },
+          result_format: input.resultFormat,
+        },
+      }),
+    ],
+  });
 
   try {
     await reconcileTrackedSubmissionsForIntent({
@@ -401,6 +497,10 @@ export async function createSubmissionIntentWorkflow(input: {
       challenge,
       intent,
       requestId: input.requestId,
+      traceId,
+      route: input.route ?? "intent",
+      agentId: input.submittedByAgentId ?? null,
+      clientTelemetry: input.clientTelemetry ?? null,
       logger: input.logger,
     });
   } catch (error) {
@@ -409,7 +509,7 @@ export async function createSubmissionIntentWorkflow(input: {
         event: "submission.intent.reconcile_unmatched_failed",
         challengeId: challenge.id,
         intentId: intent.id,
-        traceId: input.requestId,
+        traceId,
         error: error instanceof Error ? error.message : String(error),
       },
       "Failed to reconcile tracked unmatched submissions after intent creation",
@@ -477,14 +577,19 @@ export async function registerSubmissionWorkflow(input: {
   challengeId?: string;
   challengeAddress?: string;
   intentId: string;
+  submittedByAgentId?: string | null;
   resultCid: string;
   resultFormat: SubmissionResultFormat;
   txHash: string;
   optionalSessionAddress: string | null;
   requestId: string;
+  traceId?: string;
+  route?: string;
+  clientTelemetry?: AgoraClientTelemetryOutput | null;
   logger: AgoraLogger;
 }) {
   const normalizedResultCid = input.resultCid.trim();
+  const traceId = input.traceId ?? input.requestId;
   if (!isValidPinnedSpecCid(normalizedResultCid)) {
     throw new SubmissionWorkflowError(
       400,
@@ -702,7 +807,7 @@ export async function registerSubmissionWorkflow(input: {
       registration: {
         submission_intent_id: intent.id,
         submission_cid: intent.submission_cid,
-        trace_id: input.requestId,
+        trace_id: traceId,
       },
       onChainSubmissionId: Number(subId),
       onChainSubmission: onChain,
@@ -735,11 +840,59 @@ export async function registerSubmissionWorkflow(input: {
         submissionId: submissionRow.id,
         onChainSubmissionId: submissionRow.on_chain_sub_id,
         txHash: input.txHash,
-        traceId: submissionRow.trace_id ?? intent.trace_id ?? input.requestId,
+        traceId: submissionRow.trace_id ?? intent.trace_id ?? traceId,
         error: warning.message,
       },
       "Submission registration cleanup failed after success",
     );
+    await recordSubmissionEvents({
+      db,
+      logger: input.logger,
+      events: [
+        createSubmissionEvent({
+          request_id: input.requestId,
+          trace_id: submissionRow.trace_id ?? intent.trace_id ?? traceId,
+          intent_id: intent.id,
+          submission_id: submissionRow.id,
+          score_job_id: null,
+          challenge_id: challenge.id,
+          on_chain_submission_id: submissionRow.on_chain_sub_id,
+          agent_id: input.submittedByAgentId ?? null,
+          solver_address: submissionRow.solver_address,
+          route: input.route ?? "register",
+          event: "registration.cleanup_failed",
+          phase: "registration",
+          actor: "agora",
+          outcome: "failed",
+          http_status: 202,
+          code: warning.code,
+          summary:
+            "Agora registered the submission but could not complete post-registration cleanup.",
+          refs: {
+            challenge_address: challenge.contract_address,
+            tx_hash: input.txHash,
+            score_tx_hash: null,
+            result_cid: normalizedResultCid,
+          },
+          client: input.clientTelemetry ?? null,
+          payload: {
+            on_chain_submission_id: submissionRow.on_chain_sub_id,
+            registration: {
+              ...(input.challengeId ? { challengeId: input.challengeId } : {}),
+              ...(input.challengeAddress
+                ? { challengeAddress: input.challengeAddress }
+                : {}),
+              intentId: input.intentId,
+              resultCid: normalizedResultCid,
+              resultFormat: input.resultFormat,
+              txHash: input.txHash,
+            },
+            result_format: input.resultFormat,
+            warning,
+          },
+        }),
+      ],
+    });
   }
 
   const replayedRegistration = Boolean(existingSubmissionForIntent);
@@ -754,6 +907,43 @@ export async function registerSubmissionWorkflow(input: {
       },
       "Submission registration replay returned the existing row",
     );
+    await recordSubmissionEvents({
+      db,
+      logger: input.logger,
+      events: [
+        createSubmissionEvent({
+          request_id: input.requestId,
+          trace_id: submissionRow.trace_id ?? intent.trace_id ?? traceId,
+          intent_id: intent.id,
+          submission_id: submissionRow.id,
+          score_job_id: null,
+          challenge_id: challenge.id,
+          on_chain_submission_id: submissionRow.on_chain_sub_id,
+          agent_id: input.submittedByAgentId ?? null,
+          solver_address: submissionRow.solver_address,
+          route: input.route ?? "register",
+          event: "registration.replayed",
+          phase: "registration",
+          actor: "agora",
+          outcome: "completed",
+          http_status: 200,
+          code: "existing_submission_replayed",
+          summary:
+            "Agora replayed submission registration and returned the existing stored submission row.",
+          refs: {
+            challenge_address: challenge.contract_address,
+            tx_hash: input.txHash,
+            score_tx_hash: null,
+            result_cid: normalizedResultCid,
+          },
+          client: input.clientTelemetry ?? null,
+          payload: {
+            on_chain_submission_id: submissionRow.on_chain_sub_id,
+            result_format: input.resultFormat,
+          },
+        }),
+      ],
+    });
   }
 
   input.logger.info(
@@ -764,7 +954,7 @@ export async function registerSubmissionWorkflow(input: {
       onChainSubmissionId: submissionRow.on_chain_sub_id,
       txHash: input.txHash,
       scoreJobAction: scoreJob.action,
-      traceId: submissionRow.trace_id ?? intent.trace_id ?? input.requestId,
+      traceId: submissionRow.trace_id ?? intent.trace_id ?? traceId,
     },
     "Submission registration confirmed",
   );
@@ -777,6 +967,55 @@ export async function registerSubmissionWorkflow(input: {
           message: scoreJob.warning,
         }
       : null);
+
+  await recordSubmissionEvents({
+    db,
+    logger: input.logger,
+    events: [
+      createSubmissionEvent({
+        request_id: input.requestId,
+        trace_id: submissionRow.trace_id ?? intent.trace_id ?? traceId,
+        intent_id: intent.id,
+        submission_id: submissionRow.id,
+        score_job_id: null,
+        challenge_id: challenge.id,
+        on_chain_submission_id: submissionRow.on_chain_sub_id,
+        agent_id: input.submittedByAgentId ?? null,
+        solver_address: submissionRow.solver_address,
+        route: input.route ?? "register",
+        event: "registration.confirmed",
+        phase: "registration",
+        actor: "agora",
+        outcome: responseWarning ? "completed" : "accepted",
+        http_status: responseWarning ? 202 : 200,
+        code: responseWarning?.code ?? null,
+        summary: "Agora confirmed submission registration and updated scoring state.",
+        refs: {
+          challenge_address: challenge.contract_address,
+          tx_hash: input.txHash,
+          score_tx_hash: null,
+          result_cid: normalizedResultCid,
+        },
+        client: input.clientTelemetry ?? null,
+        payload: {
+          on_chain_submission_id: submissionRow.on_chain_sub_id,
+          registration: {
+            ...(input.challengeId ? { challengeId: input.challengeId } : {}),
+            ...(input.challengeAddress
+              ? { challengeAddress: input.challengeAddress }
+              : {}),
+            intentId: input.intentId,
+            resultCid: normalizedResultCid,
+            resultFormat: input.resultFormat,
+            txHash: input.txHash,
+          },
+          result_format: input.resultFormat,
+          score_job_action: scoreJob.action,
+          warning: responseWarning,
+        },
+      }),
+    ],
+  });
 
   return {
     submission: submissionRow,

@@ -387,10 +387,107 @@ alter table submission_intents
   add constraint submission_intents_submitted_by_agent_id_fkey
   foreign key (submitted_by_agent_id) references auth_agents(id);
 
+create table submission_events (
+  id uuid primary key default gen_random_uuid(),
+  request_id text not null,
+  trace_id text not null,
+  intent_id uuid references submission_intents(id) on delete set null,
+  submission_id uuid references submissions(id) on delete set null,
+  score_job_id uuid references score_jobs(id) on delete set null,
+  challenge_id uuid references challenges(id) on delete set null,
+  on_chain_submission_id integer,
+  agent_id uuid references auth_agents(id) on delete set null,
+  solver_address text,
+  route text not null,
+  event text not null,
+  phase text not null,
+  actor text not null,
+  outcome text not null,
+  http_status integer,
+  code text,
+  summary text not null,
+  challenge_address text,
+  tx_hash text,
+  score_tx_hash text,
+  result_cid text,
+  client_json jsonb,
+  payload_json jsonb,
+  created_at timestamptz not null default now(),
+  constraint submission_events_phase_check
+    check (
+      phase in (
+        'upload',
+        'cleanup',
+        'ingress',
+        'intent',
+        'registration',
+        'scoring',
+        'system'
+      )
+    ),
+  constraint submission_events_actor_check
+    check (
+      actor in (
+        'caller',
+        'agora',
+        'worker',
+        'system'
+      )
+    ),
+  constraint submission_events_outcome_check
+    check (
+      outcome in (
+        'accepted',
+        'blocked',
+        'failed',
+        'completed'
+      )
+    ),
+  constraint submission_events_solver_address_lowercase_check
+    check (
+      solver_address is null
+      or solver_address = lower(solver_address)
+    ),
+  constraint submission_events_challenge_address_lowercase_check
+    check (
+      challenge_address is null
+      or challenge_address = lower(challenge_address)
+    )
+);
+
+create index idx_submission_events_created_at
+  on submission_events(created_at desc);
+
+create index idx_submission_events_agent_created_at
+  on submission_events(agent_id, created_at desc);
+
+create index idx_submission_events_intent_created_at
+  on submission_events(intent_id, created_at desc);
+
+create index idx_submission_events_submission_created_at
+  on submission_events(submission_id, created_at desc);
+
+create index idx_submission_events_score_job_created_at
+  on submission_events(score_job_id, created_at desc);
+
+create index idx_submission_events_trace_created_at
+  on submission_events(trace_id, created_at desc);
+
+create index idx_submission_events_challenge_created_at
+  on submission_events(challenge_id, created_at desc);
+
+create index idx_submission_events_phase_created_at
+  on submission_events(phase, created_at desc);
+
+create index idx_submission_events_code_created_at
+  on submission_events(code, created_at desc)
+  where code is not null;
+
 create table authoring_sessions (
   id uuid primary key default gen_random_uuid(),
   poster_address text,
   created_by_agent_id uuid references auth_agents(id),
+  trace_id text,
   state text not null,
   intent_json jsonb,
   authoring_ir_json jsonb,
@@ -443,6 +540,10 @@ create index idx_authoring_sessions_published_challenge
 create index idx_authoring_sessions_created_by_agent_id
   on authoring_sessions(created_by_agent_id);
 
+create index idx_authoring_sessions_trace_id
+  on authoring_sessions(trace_id)
+  where trace_id is not null;
+
 create or replace function append_authoring_session_conversation_log(
   p_session_id uuid,
   p_entries jsonb,
@@ -467,6 +568,94 @@ begin
   returning *;
 end;
 $$;
+
+create table authoring_events (
+  id uuid primary key default gen_random_uuid(),
+  request_id text not null,
+  trace_id text not null,
+  session_id uuid references authoring_sessions(id) on delete set null,
+  agent_id uuid references auth_agents(id) on delete set null,
+  poster_address text,
+  route text not null,
+  event text not null,
+  phase text not null,
+  actor text not null,
+  outcome text not null,
+  http_status integer,
+  code text,
+  state_before text,
+  state_after text,
+  summary text not null,
+  challenge_id uuid references challenges(id) on delete set null,
+  contract_address text,
+  tx_hash text,
+  spec_cid text,
+  validation_json jsonb,
+  client_json jsonb,
+  payload_json jsonb,
+  created_at timestamptz not null default now(),
+  constraint authoring_events_phase_check
+    check (
+      phase in (
+        'auth',
+        'upload',
+        'ingress',
+        'semantic',
+        'compile',
+        'dry_run',
+        'publish',
+        'registration',
+        'system'
+      )
+    ),
+  constraint authoring_events_actor_check
+    check (
+      actor in (
+        'caller',
+        'agora',
+        'system',
+        'publish'
+      )
+    ),
+  constraint authoring_events_outcome_check
+    check (
+      outcome in (
+        'accepted',
+        'blocked',
+        'failed',
+        'completed'
+      )
+    ),
+  constraint authoring_events_poster_address_lowercase_check
+    check (
+      poster_address is null
+      or poster_address = lower(poster_address)
+    ),
+  constraint authoring_events_contract_address_lowercase_check
+    check (
+      contract_address is null
+      or contract_address = lower(contract_address)
+    )
+);
+
+create index idx_authoring_events_created_at
+  on authoring_events(created_at desc);
+
+create index idx_authoring_events_agent_created_at
+  on authoring_events(agent_id, created_at desc);
+
+create index idx_authoring_events_session_created_at
+  on authoring_events(session_id, created_at desc);
+
+create index idx_authoring_events_trace_created_at
+  on authoring_events(trace_id, created_at desc);
+
+create index idx_authoring_events_code_created_at
+  on authoring_events(code, created_at desc)
+  where code is not null;
+
+create index idx_authoring_events_phase_created_at
+  on authoring_events(phase, created_at desc);
 
 create table authoring_sponsor_budget_reservations (
   id uuid primary key default gen_random_uuid(),
