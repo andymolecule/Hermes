@@ -131,7 +131,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A["⏰ Dispute window passes<br/>(testnet allows short debugging windows;<br/>production policy targets 7–90 days)"] --> B{"Any disputes?"}
+    A["⏰ Dispute window passes<br/>(current runtime policy is 7–90 days)"] --> B{"Any disputes?"}
     B -->|No| C["Anyone can call<br/>finalize()"]
     B -->|Yes| D["Oracle resolves<br/>the dispute"]
     D --> C
@@ -298,7 +298,7 @@ flowchart TB
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | Protocol fee | 10% | Only on successful finalization |
-| Dispute window | 0–2160 hours on testnet | Production policy targets 168–2160 hours (7–90 days) |
+| Dispute window | 168–2160 hours (7–90 days) | Matches current deployed contract policy |
 | Official scorer timeout | 5–20 minutes | Base runner fallback is 30 minutes when no execution-template override applies |
 | Container memory | 512 MB – 4 GB | Execution-template-dependent; base runner fallback is 256 MB |
 | Container CPUs | 1 – 2 | Execution-template-dependent; base runner fallback is 0.5 CPU |

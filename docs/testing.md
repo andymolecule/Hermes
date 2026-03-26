@@ -243,7 +243,7 @@ AGORA_FORK_BLOCK=""
 
 For the full post-deadline path, run `pnpm smoke:lifecycle:local` against local Anvil with `AGORA_CHAIN_ID=31337` and `AGORA_E2E_ENABLE_TIME_TRAVEL=1`.
 The local lifecycle config enforces the hardened 168 hour dispute window.
-`pnpm smoke:lifecycle:testnet` is the external/manual lane and may still target an older deployed testnet factory while you finish the fresh factory cutover.
+`pnpm smoke:lifecycle:testnet` is the external/manual lane against the currently deployed factory generation.
 
 ### Running
 

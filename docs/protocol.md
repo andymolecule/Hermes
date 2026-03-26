@@ -23,7 +23,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 - Challenges follow a strict state machine: Open → Scoring → Finalized (or Disputed → Finalized, or Cancelled).
 - 10% protocol fee (hardcoded, 1000 bps) flows to treasury on finalization.
 - Scoring is deterministic Docker execution; proof bundles are pinned to IPFS with hashes stored on-chain.
-- Dispute window is poster-configurable (0–2160 hours on testnet; 168–2160 hours (7–90 days) before mainnet).
+- Dispute window is poster-configurable within the deployed contract bounds (currently 168–2160 hours / 7–90 days).
 - Anyone can independently verify scores by re-running the scorer container.
 - Contract generation: one active v2 factory at a time; `contractVersion()` for diagnostics.
 
@@ -234,7 +234,7 @@ The authoritative schema for challenge specification files.
 | `artifacts[].description` | string | Optional human-facing artifact description. |
 | `tags` | string[] | Freeform tags for discovery. |
 | `minimum_score` | decimal | Minimum score threshold for payout eligibility. |
-| `dispute_window_hours` | integer | Dispute window in hours (0–2160 on testnet; 168–2160 before mainnet). |
+| `dispute_window_hours` | integer | Dispute window in hours (currently 168–2160 / 7–90 days). |
 | `lab_tba` | address | Optional Molecule Protocol lab TBA address. |
 | `max_submissions_total` | integer | Maximum submissions per challenge (1–10000). |
 | `max_submissions_per_solver` | integer | Maximum submissions per solver per challenge (1–1000). |

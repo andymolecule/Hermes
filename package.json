@@ -16,6 +16,7 @@
     "scorers:update-digests": "node --import tsx scripts/update-scorer-digests.ts",
     "schema:verify": "node scripts/run-node-with-root-env.mjs --import tsx scripts/verify-runtime-schema.mjs",
     "deploy:verify": "node scripts/run-node-with-root-env.mjs scripts/verify-deploy-sync.mjs",
+    "release:testnet": "bash scripts/release-testnet.sh",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",
     "recover:authoring-publishes": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-authoring-publishes.mjs",
     "smoke:lifecycle": "pnpm smoke:lifecycle:local",

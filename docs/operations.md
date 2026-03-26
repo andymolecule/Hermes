@@ -282,7 +282,7 @@ Expected executor host configuration:
 
 Steady-state flow:
 
-1. Operators deploy API, indexer, and worker orchestrator only after the schema reset/apply/cache-reload/verify gate is green
+1. Operators trigger runtime releases with `pnpm release:testnet` or the manual `Release Runtime` GitHub workflow
 2. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
 3. The orchestrator checks executor health and preflights official images
 4. When a job is claimed, the orchestrator stages inputs and sends them to the executor

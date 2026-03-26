@@ -34,7 +34,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **Result hash** | `keccak256` of the submission CID. Stored on-chain as tamper-proof record. |
 | **Proof bundle** | IPFS-pinned package of all inputs, outputs, and container metadata needed to reproduce a score. Hash stored on-chain. |
 | **Distribution type** | How rewards are split: `WinnerTakeAll` (100%), `TopThree` (60/25/15), or `Proportional` (score-weighted). |
-| **Dispute window** | Poster-configurable period after scoring during which disputes can be raised. 0–2160 hours on testnet; 168–2160 hours before mainnet. |
+| **Dispute window** | Poster-configurable period after scoring during which disputes can be raised. Current deployed policy is 168–2160 hours (7–90 days). |
 
 ## Scoring
 

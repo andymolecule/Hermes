@@ -55,6 +55,18 @@ pnpm schema:verify
 pnpm scorers:verify
 ```
 
+Recommended runtime release trigger:
+
+```bash
+pnpm release:testnet
+```
+
+This is the smallest repo-owned runtime release gate. It resets the Supabase
+schema, reapplies the single baseline, reloads the PostgREST cache, verifies
+schema/scorers, deploys the Railway runtime services, verifies deploy
+alignment, and runs the external lifecycle smoke. The matching manual GitHub
+Actions trigger is [`.github/workflows/release-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/release-runtime.yml).
+
 Notes:
 
 - `pnpm scorers:verify` requires a running Docker daemon.
@@ -84,6 +96,7 @@ Railway deployment checks before production cutover:
   5. deploy API, indexer, and worker
   6. run `pnpm deploy:verify`
   7. run smoke
+  8. Prefer `pnpm release:testnet` or the manual `Release Runtime` workflow instead of ad hoc dashboard redeploys
 
 ---
 
