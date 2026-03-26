@@ -1,14 +1,14 @@
-name: Bootstrap Testnet
+name: Reset Bomb Testnet
 
 on:
   workflow_dispatch:
 
 concurrency:
-  group: bootstrap-testnet-main
+  group: reset-bomb-testnet-main
   cancel-in-progress: false
 
 jobs:
-  bootstrap-testnet:
+  reset-bomb-testnet:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -46,5 +46,5 @@ jobs:
       - name: Build workspace
         run: pnpm turbo build
 
-      - name: Run destructive bootstrap
-        run: pnpm bootstrap:testnet
+      - name: Run destructive reset bomb
+        run: pnpm reset-bomb:testnet

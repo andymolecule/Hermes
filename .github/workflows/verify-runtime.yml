@@ -6,10 +6,10 @@ on:
       - main
     paths:
       - ".github/workflows/verify-runtime.yml"
-      - ".github/workflows/bootstrap-testnet.yml"
+      - ".github/workflows/reset-bomb-testnet.yml"
       - ".github/workflows/hosted-smoke.yml"
       - "scripts/verify-runtime.sh"
-      - "scripts/bootstrap-testnet.sh"
+      - "scripts/reset-bomb-testnet.sh"
       - "scripts/hosted-smoke.sh"
       - "scripts/local-lifecycle-smoke.mjs"
       - "scripts/runtime-env.mjs"

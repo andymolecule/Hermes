@@ -26,7 +26,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Railway owns runtime deployment for API, indexer, and worker orchestrator
 - GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
-- `bootstrap:testnet` is the destructive admin-only lane; `verify:runtime` is the read-only hosted gate
+- `reset-bomb:testnet` is the destructive admin-only lane; `verify:runtime` is the read-only hosted gate
 - `smoke:cli:local` is the deterministic local CLI parity lane
 - `smoke:hosted` is the separate funded operator lane
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
@@ -65,7 +65,7 @@ Recommended runtime release trigger:
 
 ```bash
 pnpm verify:runtime
-pnpm bootstrap:testnet
+pnpm reset-bomb:testnet
 pnpm smoke:hosted
 ```
 
@@ -75,7 +75,7 @@ This repo now ships four explicit runtime lanes:
   is rolling out the current `main` change through its native deploy path,
   waits for `/api/health` to be healthy and `/api/worker-health` to show
   healthy workers on the active API runtime, and stops there.
-- `pnpm bootstrap:testnet`: destructive admin lane. Uses
+- `pnpm reset-bomb:testnet`: destructive admin lane. Uses
   `AGORA_SUPABASE_ADMIN_DB_URL` to reset the Supabase schema, reapplies the
   single baseline, reloads the PostgREST cache, then runs the same read-only
   hosted verification gate.
@@ -100,8 +100,8 @@ runtime verification workflow.
 The matching manual GitHub Actions trigger is
 [`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)
 for read-only hosted verification,
-[`.github/workflows/bootstrap-testnet.yml`](/Users/changyuesin/Agora/.github/workflows/bootstrap-testnet.yml)
-for destructive bootstrap, and
+[`.github/workflows/reset-bomb-testnet.yml`](/Users/changyuesin/Agora/.github/workflows/reset-bomb-testnet.yml)
+for destructive reset bomb, and
 [`.github/workflows/hosted-smoke.yml`](/Users/changyuesin/Agora/.github/workflows/hosted-smoke.yml)
 for funded hosted smoke.
 
@@ -111,7 +111,7 @@ The current runtime verification path requires:
 - `AGORA_SUPABASE_URL`
 - `AGORA_SUPABASE_ANON_KEY`
 - `AGORA_SUPABASE_SERVICE_KEY`
-- `AGORA_SUPABASE_ADMIN_DB_URL` only for destructive bootstrap
+- `AGORA_SUPABASE_ADMIN_DB_URL` only for destructive reset bomb
 
 The funded hosted smoke lane additionally requires:
 
@@ -148,7 +148,7 @@ Railway deployment checks before production cutover:
      readiness
   5. run `pnpm smoke:hosted` only when you intentionally want the funded
      hosted smoke lane
-  6. use `pnpm bootstrap:testnet` only when a destructive reset is explicitly
+  6. use `pnpm reset-bomb:testnet` only when a destructive reset is explicitly
      required
 
 ---
@@ -174,7 +174,7 @@ flowchart TB
     D --> E["5. Optional funded hosted smoke<br/>(pnpm smoke:hosted)"]
     E --> F{"All checks pass?"}
     F -->|Yes| G["✓ Live"]
-    F -->|No| H["Rollback:<br/>redeploy previous main revision<br/>or run explicit bootstrap if schema reset is required"]
+    F -->|No| H["Rollback:<br/>redeploy previous main revision<br/>or run explicit reset bomb if schema reset is required"]
 ```
 
 ### Contract Deployment

@@ -256,7 +256,7 @@ Recommended steady-state settings:
 Operational rule:
 
 - Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
-- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the gated release sequence from [Deployment](deployment.md) for verification and explicit bootstrap when needed.
+- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the gated release sequence from [Deployment](deployment.md) for verification and explicit reset bomb when needed.
 
 ### Remote Executor Service
 
@@ -277,7 +277,7 @@ Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
 2. The GitHub Actions workflow and `pnpm verify:runtime` verify hosted runtime readiness; they do not deploy runtime services
-3. Operators use `pnpm bootstrap:testnet` only when they need an explicit destructive rebuild
+3. Operators use `pnpm reset-bomb:testnet` only when they need an explicit destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
 5. Deterministic local CLI parity stays local-only: `pnpm smoke:cli:local`
 6. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
@@ -292,7 +292,7 @@ Release prerequisites:
 - `/api/health` must be healthy and report a runtime version before the release gate passes
 - `/api/worker-health` must report healthy workers on the active API runtime before the release gate passes
 - `gitSha` on Railway is best-effort provenance, not a hard hosted release gate
-- `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive bootstrap
+- `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive reset bomb
 
 ---
 

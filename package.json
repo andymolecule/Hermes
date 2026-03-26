@@ -17,7 +17,7 @@
     "schema:verify": "node scripts/run-node-with-root-env.mjs --import tsx scripts/verify-runtime-schema.mjs",
     "deploy:verify": "node scripts/run-node-with-root-env.mjs scripts/verify-deploy-sync.mjs",
     "verify:runtime": "bash scripts/verify-runtime.sh",
-    "bootstrap:testnet": "bash scripts/bootstrap-testnet.sh",
+    "reset-bomb:testnet": "bash scripts/reset-bomb-testnet.sh",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",
     "smoke:lifecycle": "pnpm smoke:lifecycle:local",
     "smoke:lifecycle:local": "bash scripts/local-lifecycle-smoke.sh",

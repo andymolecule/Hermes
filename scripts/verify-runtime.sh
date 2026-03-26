@@ -96,7 +96,7 @@ echo "[STEP] Keep live runtime schema in place"
 
 echo "[STEP] Verify runtime schema compatibility"
 if ! pnpm schema:verify; then
-  fail "Live runtime schema is incompatible with the current code. Next step: run pnpm bootstrap:testnet after confirming the target environment is ready for a destructive reset."
+  fail "Live runtime schema is incompatible with the current code. Next step: run pnpm reset-bomb:testnet after confirming the target environment is ready for a destructive reset."
 fi
 
 echo "[STEP] Verify official scorers"

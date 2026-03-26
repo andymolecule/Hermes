@@ -2,7 +2,7 @@
 
 > Status: LOCKED
 > Scope: Runtime deploy ownership, release identity, hosted health, ingress
-> defaults, and the destructive bootstrap boundary.
+> defaults, and the destructive reset bomb boundary.
 
 Read after:
 
@@ -33,7 +33,7 @@ This document locks the simpler model so runtime operations stop drifting.
 
 - the canonical identity of a hosted runtime release
 - the boundary between Railway-native runtime deploys and GitHub verification
-- the destructive bootstrap boundary
+- the destructive reset bomb boundary
 - the canonical hosted API health contract
 - the ingress split between browser traffic and agent/CLI traffic
 - which artifact discipline remains mandatory for scorer containers
@@ -141,7 +141,7 @@ This design assumes:
 
 ### 3.5 Bootstrap Boundary
 
-- `bootstrap-testnet` is destructive and rare.
+- `reset-bomb-testnet` is destructive and rare.
 - Normal runtime release verification is non-destructive.
 - Destructive bootstrap must use `AGORA_SUPABASE_ADMIN_DB_URL`.
 - Runtime services must not require `AGORA_SUPABASE_ADMIN_DB_URL`.
@@ -221,7 +221,7 @@ Rules:
 - `verify` is read-only.
 - funded hosted smoke is intentionally stateful and must stay separate from the
   push-time runtime gate.
-- `bootstrap-testnet` may reset shared state before `verify`, but it must not
+- `reset-bomb-testnet` may reset shared state before `verify`, but it must not
   become the default day-to-day path.
 
 ### 4.3 Service Deployment Ownership
@@ -273,16 +273,16 @@ Caller defaults:
 
 ### 4.6 Bootstrap Flow
 
-`bootstrap-testnet` exists for destructive environment reset only.
+`reset-bomb-testnet` exists for destructive environment reset only.
 
 Flow:
 
 1. operator confirms the target environment is ready for destructive reset
-2. bootstrap uses `AGORA_SUPABASE_ADMIN_DB_URL`
-3. bootstrap wipes the public schema
-4. bootstrap reapplies `001_baseline.sql`
-5. bootstrap reloads the PostgREST schema cache
-6. bootstrap runs the same read-only hosted verification lane as normal deploys
+2. reset bomb uses `AGORA_SUPABASE_ADMIN_DB_URL`
+3. reset bomb wipes the public schema
+4. reset bomb reapplies `001_baseline.sql`
+5. reset bomb reloads the PostgREST schema cache
+6. reset bomb runs the same read-only hosted verification lane as normal deploys
 
 ### 4.7 Verify-Only Runtime Flow
 
@@ -323,7 +323,7 @@ Normal runtime release verification works like this:
 Target command set:
 
 - `pnpm verify:runtime`
-- `pnpm bootstrap:testnet`
+- `pnpm reset-bomb:testnet`
 - `pnpm schema:verify`
 - `pnpm scorers:verify`
 - `pnpm deploy:verify`
@@ -334,12 +334,12 @@ Target command set:
 Rules:
 
 - `pnpm verify:runtime` is verify-only
-- `pnpm bootstrap:testnet` is destructive
+- `pnpm reset-bomb:testnet` is destructive
 - `pnpm smoke:lifecycle` is the deterministic local settlement lane
 - `pnpm smoke:cli:local` is the deterministic local CLI parity lane
 - `pnpm smoke:hosted` is the funded hosted operational lane
 - runtime verification defaults to API + worker, not web
-- bootstrap uses the admin DB URL and then runs the same verification gate
+- reset bomb uses the admin DB URL and then runs the same verification gate
 - funded hosted smoke must not be coupled back into the push-time runtime gate
 - local deterministic smoke uses isolated local Supabase + Anvil state, not
   shared hosted runtime state
@@ -408,7 +408,7 @@ Objective:
 Actions:
 
 1. keep `AGORA_SUPABASE_ADMIN_DB_URL` bootstrap-only
-2. keep destructive SQL inside `bootstrap-testnet` only
+2. keep destructive SQL inside `reset-bomb-testnet` only
 3. keep `verify:runtime` read-only and verify-only
 4. make deploy retries an explicit Railway concern; verify retries rerun health
    only

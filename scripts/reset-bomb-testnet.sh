@@ -15,9 +15,9 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/bootstrap-testnet.sh
+Usage: bash scripts/reset-bomb-testnet.sh
 
-Runs the destructive testnet bootstrap lane:
+Runs the destructive testnet reset bomb lane:
 1. reset the Supabase public schema from the single baseline
 2. reload the PostgREST schema cache
 3. run the read-only hosted runtime verification lane
@@ -76,7 +76,7 @@ done
 require_env "AGORA_SUPABASE_ADMIN_DB_URL"
 require_cmd "psql"
 
-echo "== Agora Testnet Bootstrap =="
+echo "== Agora Testnet Reset Bomb =="
 echo "[STEP] Reset Supabase public schema"
 reset_runtime_schema
 
