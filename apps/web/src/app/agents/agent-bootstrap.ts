@@ -1,4 +1,4 @@
-import { CHALLENGE_LIMITS } from "@agora/common";
+import { CHALLENGE_LIMITS, formatRewardLimitUsdc } from "@agora/common";
 import {
   API_BASE_URL,
   CHAIN_ID,
@@ -63,7 +63,7 @@ export const AGENT_BOOTSTRAP_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api
     "url": "https://example.com/evaluation.csv"
   }'`;
 
-const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
+const REWARD_RANGE_TEXT = `${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc)}-${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMaxUsdc)} USDC`;
 
 export function getAgentBootstrapText() {
   return `Agora Agent Bootstrap Contract

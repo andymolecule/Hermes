@@ -1,6 +1,6 @@
 import yaml from "yaml";
 import { z } from "zod";
-import { CHALLENGE_LIMITS } from "../constants.js";
+import { CHALLENGE_LIMITS, formatRewardLimitUsdc } from "../constants.js";
 import { getDisputeWindowMinHours } from "../dispute-policy.js";
 import { hasPinnedDigest, validateScorerImage } from "../oci-image.js";
 import {
@@ -88,7 +88,7 @@ const rewardTotalSchema = z
       parsed >= CHALLENGE_LIMITS.rewardMinUsdc &&
       parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
     );
-  }, `reward.total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc}`);
+  }, `reward.total must be between ${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc)} and ${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMaxUsdc)}`);
 
 const artifactBaseSchema = z.object({
   artifact_id: z.string().trim().min(1),

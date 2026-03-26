@@ -1,6 +1,6 @@
 "use client";
 
-import { CHALLENGE_LIMITS } from "@agora/common";
+import { CHALLENGE_LIMITS, formatRewardLimitUsdc } from "@agora/common";
 import {
   ArrowRight,
   Bot,
@@ -38,7 +38,7 @@ import {
 } from "./components/primitives";
 
 const BASE_SEPOLIA_FAUCET_URL = "https://docs.base.org/tools/network-faucets";
-const REWARD_RANGE_TEXT = `${CHALLENGE_LIMITS.rewardMinUsdc}-${CHALLENGE_LIMITS.rewardMaxUsdc} USDC`;
+const REWARD_RANGE_TEXT = `${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc)}-${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMaxUsdc)} USDC`;
 
 /* ═══════════════════════════════════════════════════════════
    MAIN PAGE

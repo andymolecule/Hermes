@@ -295,7 +295,7 @@ submission_contract:
     value: value
     allow_extra: false
 reward:
-  total: "1"
+  total: "0.10"
   distribution: winner_take_all
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]

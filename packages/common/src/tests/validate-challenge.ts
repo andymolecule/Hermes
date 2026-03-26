@@ -80,6 +80,32 @@ const sample = {
 const result = trustedChallengeSpecSchema.safeParse(sample);
 assert.equal(result.success, true, "sample spec should validate");
 
+const minimumRewardSpec = trustedChallengeSpecSchema.safeParse({
+  ...sample,
+  reward: {
+    ...sample.reward,
+    total: "0.10",
+  },
+});
+assert.equal(
+  minimumRewardSpec.success,
+  true,
+  "trusted challenge specs should accept the low-cost testnet reward floor",
+);
+
+const belowMinimumRewardSpec = trustedChallengeSpecSchema.safeParse({
+  ...sample,
+  reward: {
+    ...sample.reward,
+    total: "0.09",
+  },
+});
+assert.equal(
+  belowMinimumRewardSpec.success,
+  false,
+  "trusted challenge specs should reject rewards below the low-cost floor",
+);
+
 const chainValidated = validateTrustedChallengeSpec(sample, 84532);
 assert.equal(chainValidated.success, true, "chain validation should succeed");
 

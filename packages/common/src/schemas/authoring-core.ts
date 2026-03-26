@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CHALLENGE_LIMITS } from "../constants.js";
+import { CHALLENGE_LIMITS, formatRewardLimitUsdc } from "../constants.js";
 import { CHALLENGE_DOMAINS } from "../types/challenge.js";
 import {
   authoringSourceRawContextSchema,
@@ -219,7 +219,7 @@ export const challengeIntentSchema = z.object({
         parsed >= CHALLENGE_LIMITS.rewardMinUsdc &&
         parsed <= CHALLENGE_LIMITS.rewardMaxUsdc
       );
-    }, `reward_total must be between ${CHALLENGE_LIMITS.rewardMinUsdc} and ${CHALLENGE_LIMITS.rewardMaxUsdc} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
+    }, `reward_total must be between ${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc)} and ${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMaxUsdc)} USDC on the current testnet. Next step: choose an in-range amount and retry.`),
   distribution: challengeRewardDistributionSchema,
   deadline: z.string().datetime({ offset: true }),
   dispute_window_hours: z

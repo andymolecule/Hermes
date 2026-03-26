@@ -6,6 +6,7 @@ import {
   DEFAULT_X402_NETWORK,
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
+  formatRewardLimitUsdc,
   getEffectiveChallengeStatus,
   getPublicRpcUrlForChainId,
   isMetadataBlockedScoreJobError,
@@ -123,6 +124,16 @@ assert.equal(
   getPublicRpcUrlForChainId(999999),
   null,
   "unknown chains should not guess a public RPC URL",
+);
+assert.equal(
+  CHALLENGE_LIMITS.rewardMinUsdc,
+  0.1,
+  "challenge limits should allow low-cost testnet rewards",
+);
+assert.equal(
+  formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc),
+  "0.10",
+  "reward limit formatting should keep sub-dollar bounds explicit",
 );
 assert.equal(
   CHALLENGE_LIMITS.disputeWindowMinHours,

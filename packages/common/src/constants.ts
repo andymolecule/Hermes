@@ -21,13 +21,17 @@ export const PROTOCOL_FEE_BPS = 1_000 as const;
 export const PROTOCOL_FEE_PERCENT = PROTOCOL_FEE_BPS / 100;
 
 export const CHALLENGE_LIMITS = {
-  rewardMinUsdc: 1,
+  rewardMinUsdc: 0.1,
   rewardMaxUsdc: 30,
   rewardDecimals: 6,
   disputeWindowMinHours: 168,
   disputeWindowMaxHours: 2160,
   defaultDisputeWindowHours: 168,
 } as const;
+
+export function formatRewardLimitUsdc(value: number) {
+  return value < 1 ? value.toFixed(2) : String(value);
+}
 
 export const SUBMISSION_LIMITS = {
   maxPerChallenge: 100,
