@@ -4,9 +4,7 @@ import {
   AGORA_CLIENT_NAME_HEADER,
   AGORA_DECISION_SUMMARY_HEADER,
   AGORA_TRACE_ID_HEADER,
-  AgoraError,
   CHALLENGE_DOMAINS,
-  authoringSessionErrorEnvelopeSchema,
   challengeSpecSchema,
   createChallengeExecution,
   createCsvTableEvaluationContract,
@@ -1304,7 +1302,6 @@ test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           confirm_publish: true,
-          funding: "wallet",
         }),
       },
     );
@@ -1332,99 +1329,154 @@ test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish
   }
 });
 
-test("POST /sessions/:id/publish returns the canonical authoring error envelope on sponsor reverts", async () => {
-  const previousSponsorKey = process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY;
-  process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY = `0x${"11".repeat(32)}`;
-
+test("POST /sessions/:id/publish binds poster_address for agent publish", async () => {
   let storedSession = createSession({
-    id: "session-publish",
+    id: "session-agent-publish",
     created_by_agent_id: "agent-abc",
-    poster_address: null,
     state: "ready",
     published_spec_cid: "ipfs://stale-buggy-cid",
     compilation_json: createCompilation(),
   });
+  storedSession = {
+    ...storedSession,
+    poster_address: null,
+  };
   let pinnedSpec: Record<string, unknown> | null = null;
 
-  try {
-    const router = createAuthoringSessionRoutes({
-      requireAuthoringPrincipalMiddleware: withPrincipal({
-        type: "agent",
-        agent_id: "agent-abc",
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () => storedSession,
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...storedSession,
+        poster_address: payload.poster_address ?? storedSession.poster_address,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession.conversation_log_json ??
+          [],
+        updated_at: "2026-03-22T00:05:00.000Z",
+      });
+      return storedSession;
+    },
+    pinJsonImpl: async (_name, payload) => {
+      pinnedSpec = payload;
+      return "ipfs://sanitized-agent-spec";
+    },
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-agent-publish/publish",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        confirm_publish: true,
+        poster_address: "0x00000000000000000000000000000000000000bb",
       }),
-      requireWriteQuotaImpl: allowQuota(),
-      createSupabaseClient: () => ({}) as never,
-      getAuthoringSessionById: async () => storedSession,
-      updateAuthoringSession: async (_db, payload) => {
-        storedSession = createSession({
-          ...storedSession,
-          conversation_log_json:
-            payload.conversation_log_json ??
-            storedSession.conversation_log_json ??
-            [],
-          failure_message:
-            payload.failure_message ?? storedSession.failure_message ?? null,
-          updated_at: "2026-03-22T00:05:00.000Z",
-        });
-        return storedSession;
-      },
-      pinJsonImpl: async (_name, payload) => {
-        pinnedSpec = payload;
-        return "ipfs://sanitized-sponsor-spec";
-      },
-      sponsorAndPublishAuthoringSession: async ({ specCid }) => {
-        assert.equal(specCid, "ipfs://sanitized-sponsor-spec");
-        throw new AgoraError(
-          "Authoring sponsor challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
-          {
-            code: "TX_REVERTED",
-            retriable: false,
-            nextAction:
-              "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
-            details: {
-              funding: "sponsor",
-              phase: "simulate",
-              operation: "createChallenge",
-              revertErrorName: "InvalidSubmissionLimits",
-              rawMessage: "execution reverted",
-            },
-          },
-        );
-      },
-    });
+    },
+  );
 
-    const response = await router.request(
-      "http://localhost/sessions/session-publish/publish",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          confirm_publish: true,
-          funding: "sponsor",
-        }),
-      },
-    );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.data.spec_cid, "ipfs://sanitized-agent-spec");
+  assert.equal(
+    storedSession.poster_address,
+    "0x00000000000000000000000000000000000000bb",
+  );
+  assert.ok(pinnedSpec);
+  const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
+  assert.equal(
+    parsedPinnedSpec.execution.evaluation_artifact_id,
+    "artifact-hidden",
+  );
+});
 
-    assert.equal(response.status, 500);
-    const payload = authoringSessionErrorEnvelopeSchema.parse(
-      await response.json(),
-    );
-    assert.ok(pinnedSpec);
-    const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
-    assert.equal(
-      parsedPinnedSpec.execution.evaluation_artifact_id,
-      "artifact-hidden",
-    );
-    assert.equal(payload.error.code, "TX_REVERTED");
-    assert.equal(payload.error.state, "ready");
-    assert.equal(payload.error.details?.funding, "sponsor");
-    assert.equal(payload.error.details?.phase, "simulate");
-    assert.equal(payload.error.details?.operation, "createChallenge");
-    assert.equal(
-      payload.error.details?.revertErrorName,
-      "InvalidSubmissionLimits",
-    );
-  } finally {
-    process.env.AGORA_AUTHORING_SPONSOR_PRIVATE_KEY = previousSponsorKey;
-  }
+test("POST /sessions/:id/confirm-publish registers an agent-funded publish", async () => {
+  let storedSession = createSession({
+    id: "session-agent-confirm",
+    created_by_agent_id: "agent-abc",
+    poster_address: "0x00000000000000000000000000000000000000bb",
+    state: "ready",
+    compilation_json: createCompilation(),
+  });
+  let capturedCreatedByAgentId: string | null | undefined;
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringPrincipalMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () => storedSession,
+    updateAuthoringSession: async (_db, payload) => {
+      storedSession = createSession({
+        ...storedSession,
+        state: payload.state ?? storedSession.state,
+        published_challenge_id:
+          payload.published_challenge_id ?? storedSession.published_challenge_id,
+        published_spec_json:
+          payload.published_spec_json ?? storedSession.published_spec_json,
+        published_spec_cid:
+          payload.published_spec_cid ?? storedSession.published_spec_cid,
+        published_at: payload.published_at ?? storedSession.published_at,
+        failure_message:
+          payload.failure_message ?? storedSession.failure_message ?? null,
+        expires_at: payload.expires_at ?? storedSession.expires_at,
+        conversation_log_json:
+          payload.conversation_log_json ??
+          storedSession.conversation_log_json ??
+          [],
+        updated_at: "2026-03-22T00:07:00.000Z",
+      });
+      return storedSession;
+    },
+    registerChallengeFromTxHashImpl: async ({
+      createdByAgentId,
+      expectedPosterAddress,
+      txHash,
+    }) => {
+      capturedCreatedByAgentId = createdByAgentId;
+      assert.equal(
+        expectedPosterAddress,
+        "0x00000000000000000000000000000000000000bb",
+      );
+      assert.equal(txHash, "0xabc123");
+      return {
+        challengeRow: {
+          id: "challenge-123",
+        } as never,
+        challengeAddress: "0x00000000000000000000000000000000000000cc",
+        factoryChallengeId: 7,
+        posterAddress: "0x00000000000000000000000000000000000000bb",
+        specCid: "ipfs://published-spec",
+        publicSpec: createCompilation().challenge_spec,
+        trustedSpec: createCompilation().challenge_spec,
+      };
+    },
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-agent-confirm/confirm-publish",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tx_hash: "0xabc123",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.data.state, "published");
+  assert.equal(payload.data.challenge_id, "challenge-123");
+  assert.equal(payload.data.contract_address, "0x00000000000000000000000000000000000000cc");
+  assert.equal(payload.data.tx_hash, "0xabc123");
+  assert.equal(capturedCreatedByAgentId, "agent-abc");
 });

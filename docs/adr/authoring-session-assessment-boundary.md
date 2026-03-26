@@ -195,7 +195,7 @@ top-level error envelope, whenever the request envelope itself is valid.
 ## Implementation Order
 
 1. Fix authoring semantic authority first.
-2. Unify sponsor publish with shared challenge registration.
+2. Unify wallet-funded publish with shared challenge registration.
 3. Tighten canonical semantic schemas across `@agora/common`.
 4. Finish smaller cleanup such as query-schema tightening and advisory client
    preflight alignment.

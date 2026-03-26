@@ -1,6 +1,5 @@
 import {
   AGORA_TRACE_ID_HEADER,
-  AGORA_ERROR_CODES,
   AgoraError,
   type AuthoringClientTelemetryOutput,
   type AuthoringConversationLogEntryOutput,
@@ -11,12 +10,10 @@ import {
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   defaultMinimumScoreForExecution,
-  ensureAgoraError,
   loadConfig,
   partialChallengeIntentTransportSchema,
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
-  readAuthoringSponsorRuntimeConfig,
   sanitizeChallengeSpecForPublish,
   uploadUrlRequestSchema,
   walletPublishPreparationSchema,
@@ -64,10 +61,9 @@ import {
   buildSessionIntentCandidate,
   isAuthoringSessionExpired,
 } from "../lib/authoring-session-payloads.js";
-import { sponsorAndPublishAuthoringSession } from "../lib/authoring-sponsored-publish.js";
 import { assessAuthoringIntentCandidate } from "../lib/authoring-validation.js";
 import {
-  type ChallengeRegistrationError,
+  ChallengeRegistrationError,
   registerChallengeFromTxHash,
 } from "../lib/challenge-registration.js";
 import {
@@ -102,7 +98,6 @@ type AuthoringSessionRouteDependencies = {
   compileAuthoringSessionOutcome?: typeof compileAuthoringSessionOutcome;
   requireAuthoringPrincipalMiddleware?: MiddlewareHandler<ApiEnv>;
   requireWriteQuotaImpl?: typeof requireWriteQuota;
-  sponsorAndPublishAuthoringSession?: typeof sponsorAndPublishAuthoringSession;
   createDirectAuthoringSessionArtifact?: typeof createDirectAuthoringSessionArtifact;
   normalizeAuthoringSessionFileInputs?: typeof normalizeAuthoringSessionFileInputs;
   pinJsonImpl?: typeof pinJSON;
@@ -1223,8 +1218,6 @@ export function createAuthoringSessionRoutes(
       compileAuthoringSessionOutcomeImpl = compileAuthoringSessionOutcome,
     requireAuthoringPrincipalMiddleware = requireAuthoringPrincipal,
     requireWriteQuotaImpl = requireWriteQuota,
-    sponsorAndPublishAuthoringSession:
-      sponsorAndPublishAuthoringSessionImpl = sponsorAndPublishAuthoringSession,
     createDirectAuthoringSessionArtifact:
       createDirectAuthoringSessionArtifactImpl = createDirectAuthoringSessionArtifact,
     normalizeAuthoringSessionFileInputs:
@@ -1765,7 +1758,72 @@ export function createAuthoringSessionRoutes(
       }
 
       const principal = c.get("authoringPrincipal");
-      if (principal.type === "agent" && parsed.data.funding !== "sponsor") {
+      let boundPosterAddress: `0x${string}`;
+      if (principal.type === "agent") {
+        if (!parsed.data.poster_address) {
+          await appendValidationFailureLog({
+            c,
+            db,
+            session: visible.session,
+            updateAuthoringSessionImpl,
+            appendAuthoringSessionConversationLogImpl,
+            createAuthoringEventsImpl,
+            route: "publish",
+            phase: "publish",
+            status: 400,
+            code: "invalid_request",
+            message: "Agent publish requires poster_address.",
+            nextAction:
+              "Retry publish with the wallet address that will send createChallenge.",
+          });
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: "Agent publish requires poster_address.",
+            nextAction:
+              "Retry publish with the wallet address that will send createChallenge.",
+          });
+        }
+        boundPosterAddress = parsed.data.poster_address as `0x${string}`;
+      } else {
+        if (
+          parsed.data.poster_address &&
+          parsed.data.poster_address.toLowerCase() !==
+            principal.address.toLowerCase()
+        ) {
+          await appendValidationFailureLog({
+            c,
+            db,
+            session: visible.session,
+            updateAuthoringSessionImpl,
+            appendAuthoringSessionConversationLogImpl,
+            createAuthoringEventsImpl,
+            route: "publish",
+            phase: "publish",
+            status: 400,
+            code: "invalid_request",
+            message:
+              "poster_address must match the authenticated wallet for web publish.",
+            nextAction:
+              "Omit poster_address or retry with the connected SIWE wallet address.",
+          });
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message:
+              "poster_address must match the authenticated wallet for web publish.",
+            nextAction:
+              "Omit poster_address or retry with the connected SIWE wallet address.",
+          });
+        }
+        boundPosterAddress = principal.address as `0x${string}`;
+      }
+
+      const existingPosterAddress = visible.session.poster_address?.toLowerCase();
+      if (
+        existingPosterAddress &&
+        existingPosterAddress !== boundPosterAddress.toLowerCase()
+      ) {
         await appendValidationFailureLog({
           c,
           db,
@@ -1775,467 +1833,102 @@ export function createAuthoringSessionRoutes(
           createAuthoringEventsImpl,
           route: "publish",
           phase: "publish",
-          status: 400,
+          status: 409,
           code: "invalid_request",
           message:
-            "Agent sessions currently publish with sponsor funding only.",
-          nextAction: "Retry publish with funding set to sponsor.",
+            "This session is already bound to a different poster wallet.",
+          nextAction:
+            "Retry publish and confirm-publish with the bound wallet, or create a new session.",
         });
         return jsonAuthoringSessionApiError(c, {
-          status: 400,
+          status: 409,
           code: "invalid_request",
           message:
-            "Agent sessions currently publish with sponsor funding only.",
-          nextAction: "Retry publish with funding set to sponsor.",
+            "This session is already bound to a different poster wallet.",
+          nextAction:
+            "Retry publish and confirm-publish with the bound wallet, or create a new session.",
+          state: getSessionPublicState(visible.session),
         });
       }
 
-      if (principal.type === "web" && parsed.data.funding !== "wallet") {
-        await appendValidationFailureLog({
-          c,
-          db,
-          session: visible.session,
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-          createAuthoringEventsImpl,
-          route: "publish",
-          phase: "publish",
-          status: 400,
-          code: "invalid_request",
-          message: "Web sessions currently publish with wallet funding only.",
-          nextAction: "Retry publish with funding set to wallet.",
-        });
-        return jsonAuthoringSessionApiError(c, {
-          status: 400,
-          code: "invalid_request",
-          message: "Web sessions currently publish with wallet funding only.",
-          nextAction: "Retry publish with funding set to wallet.",
-        });
-      }
-
-      if (parsed.data.funding === "wallet") {
-        const specCid = await pinPublicChallengeSpecForSession({
-          session: visible.session,
-          pinJsonImpl,
-        });
-        const requestEntry = createConversationLogEntry({
-          trace_id: resolveAuthoringTraceId(c, visible.session),
-          request_id: getRequestId(c) ?? null,
-          route: "publish",
-          event: "publish.requested",
-          actor: "publish",
-          summary: "Caller requested wallet publish preparation.",
-          state_before: getSessionPublicState(visible.session),
-          state_after: getSessionPublicState(visible.session),
-          publish: {
-            funding: "wallet",
-            spec_cid: specCid,
-          },
-        });
-        const preparation = buildWalletPublishPreparation({
-          session: visible.session,
-          specCid,
-        });
-        const preparedEntry = createConversationLogEntry({
-          trace_id: resolveAuthoringTraceId(c, visible.session),
-          request_id: getRequestId(c) ?? null,
-          route: "publish",
-          event: "publish.prepared",
-          actor: "publish",
-          summary: "Agora prepared wallet publish parameters.",
-          state_before: getSessionPublicState(visible.session),
-          state_after: getSessionPublicState(visible.session),
-          publish: {
-            funding: "wallet",
-            spec_cid: preparation.spec_cid,
-          },
-        });
-        const preparedSession = await appendConversationEntries({
-          db,
-          session: visible.session,
-          entries: [requestEntry, preparedEntry],
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-        });
-        logConversationEntries(getRequestLogger(c), {
-          sessionId: preparedSession.id,
-          entries: [requestEntry, preparedEntry],
-        });
-        await recordAuthoringTelemetryEvents({
-          db,
-          events: [
-            createTelemetryEventFromConversationEntry({
-              c,
-              session: preparedSession,
-              principal,
-              entry: requestEntry,
-              phase: "publish",
-              outcome: "accepted",
-            }),
-            createTelemetryEventFromConversationEntry({
-              c,
-              session: preparedSession,
-              principal,
-              entry: preparedEntry,
-              phase: "publish",
-              outcome: "completed",
-            }),
-          ],
-          createAuthoringEventsImpl,
-          logger: getRequestLogger(c),
-        });
-        return c.json({ data: preparation });
-      }
+      const publishSession =
+        existingPosterAddress === boundPosterAddress.toLowerCase()
+          ? visible.session
+          : await updateAuthoringSessionImpl(db, {
+              id: visible.session.id,
+              expected_updated_at: visible.session.updated_at,
+              poster_address: boundPosterAddress,
+            });
 
       const specCid = await pinPublicChallengeSpecForSession({
-        session: visible.session,
+        session: publishSession,
         pinJsonImpl,
       });
-      const sponsorRuntime = readAuthoringSponsorRuntimeConfig();
-      if (!sponsorRuntime.privateKey) {
-        await appendValidationFailureLog({
-          c,
-          db,
-          session: visible.session,
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-          createAuthoringEventsImpl,
-          route: "publish",
-          phase: "publish",
-          status: 503,
-          code: "invalid_request",
-          message:
-            "Agora sponsor publishing is not configured on this API runtime.",
-          nextAction:
-            "Configure the Agora sponsor private key, then retry publish.",
-        });
-        return jsonAuthoringSessionApiError(c, {
-          status: 503,
-          code: "invalid_request",
-          message:
-            "Agora sponsor publishing is not configured on this API runtime.",
-          nextAction:
-            "Configure the Agora sponsor private key, then retry publish.",
-        });
-      }
-      const publishRequestedEntry = createConversationLogEntry({
-        trace_id: resolveAuthoringTraceId(c, visible.session),
+      const requestEntry = createConversationLogEntry({
+        trace_id: resolveAuthoringTraceId(c, publishSession),
         request_id: getRequestId(c) ?? null,
         route: "publish",
         event: "publish.requested",
         actor: "publish",
-        summary: "Caller requested sponsor publish.",
-        state_before: getSessionPublicState(visible.session),
-        state_after: getSessionPublicState(visible.session),
+        summary: "Caller requested wallet publish preparation.",
+        state_before: getSessionPublicState(publishSession),
+        state_after: getSessionPublicState(publishSession),
         publish: {
-          funding: "sponsor",
           spec_cid: specCid,
         },
       });
-      const publishPreparedSession = await appendConversationEntries({
+      const preparation = buildWalletPublishPreparation({
+        session: publishSession,
+        specCid,
+      });
+      const preparedEntry = createConversationLogEntry({
+        trace_id: resolveAuthoringTraceId(c, publishSession),
+        request_id: getRequestId(c) ?? null,
+        route: "publish",
+        event: "publish.prepared",
+        actor: "publish",
+        summary: "Agora prepared wallet publish parameters.",
+        state_before: getSessionPublicState(publishSession),
+        state_after: getSessionPublicState(publishSession),
+        publish: {
+          spec_cid: preparation.spec_cid,
+        },
+      });
+      const preparedSession = await appendConversationEntries({
         db,
-        session: visible.session,
-        entries: [publishRequestedEntry],
+        session: publishSession,
+        entries: [requestEntry, preparedEntry],
         updateAuthoringSessionImpl,
         appendAuthoringSessionConversationLogImpl,
       });
       logConversationEntries(getRequestLogger(c), {
-        sessionId: publishPreparedSession.id,
-        entries: [publishRequestedEntry],
+        sessionId: preparedSession.id,
+        entries: [requestEntry, preparedEntry],
       });
       await recordAuthoringTelemetryEvents({
         db,
         events: [
           createTelemetryEventFromConversationEntry({
             c,
-            session: publishPreparedSession,
+            session: preparedSession,
             principal,
-            entry: publishRequestedEntry,
+            entry: requestEntry,
             phase: "publish",
             outcome: "accepted",
           }),
-        ],
-        createAuthoringEventsImpl,
-        logger: getRequestLogger(c),
-      });
-      const compiledSpec =
-        publishPreparedSession.compilation_json?.challenge_spec;
-      if (!compiledSpec) {
-        await appendValidationFailureLog({
-          c,
-          db,
-          session: publishPreparedSession,
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-          createAuthoringEventsImpl,
-          route: "publish",
-          phase: "publish",
-          status: 400,
-          code: "invalid_request",
-          message:
-            "This session is missing a compiled challenge spec. Next step: recompile the session before publishing.",
-          nextAction: "Recompile the session before publishing.",
-        });
-        return jsonAuthoringSessionApiError(c, {
-          status: 400,
-          code: "invalid_request",
-          message:
-            "This session is missing a compiled challenge spec. Next step: recompile the session before publishing.",
-          nextAction: "Recompile the session before publishing.",
-          state: getSessionPublicState(publishPreparedSession),
-        });
-      }
-      let result: Awaited<
-        ReturnType<typeof sponsorAndPublishAuthoringSessionImpl>
-      >;
-      let publishSessionForProgress = publishPreparedSession;
-      const recordSponsorProgress = async (progress: {
-        event:
-          | "publish.chain_submitted"
-          | "publish.chain_confirmed"
-          | "registration.completed"
-          | "registration.failed";
-        summary: string;
-        txHash?: `0x${string}` | null;
-        challengeId?: string | null;
-        challengeAddress?: `0x${string}` | null;
-        specCid?: string | null;
-        errorMessage?: string | null;
-      }) => {
-        const progressEntry = createConversationLogEntry({
-          trace_id:
-            publishSessionForProgress.trace_id ??
-            resolveAuthoringTraceId(c, publishSessionForProgress),
-          request_id: getRequestId(c) ?? null,
-          route: "publish",
-          event: progress.event,
-          actor: "publish",
-          summary: progress.summary,
-          state_before: getSessionPublicState(publishSessionForProgress),
-          state_after: getSessionPublicState(publishSessionForProgress),
-          ...(progress.event.startsWith("publish.")
-            ? {
-                publish: {
-                  funding: "sponsor",
-                  tx_hash: progress.txHash ?? null,
-                  spec_cid: progress.specCid ?? specCid,
-                },
-              }
-            : {
-                publish: {
-                  funding: "sponsor",
-                  challenge_id: progress.challengeId ?? null,
-                  contract_address: progress.challengeAddress ?? null,
-                  tx_hash: progress.txHash ?? null,
-                  spec_cid: progress.specCid ?? specCid,
-                },
-              }),
-          ...(progress.errorMessage
-            ? {
-                error: {
-                  message: progress.errorMessage,
-                },
-              }
-            : {}),
-        });
-        publishSessionForProgress = await appendConversationEntries({
-          db,
-          session: publishSessionForProgress,
-          entries: [progressEntry],
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-        }).catch(() => publishSessionForProgress);
-        logConversationEntries(getRequestLogger(c), {
-          sessionId: publishSessionForProgress.id,
-          entries: [progressEntry],
-        });
-        await recordAuthoringTelemetryEvents({
-          db,
-          events: [
-            createTelemetryEventFromConversationEntry({
-              c,
-              session: publishSessionForProgress,
-              principal,
-              entry: progressEntry,
-              phase:
-                progress.event === "registration.completed" ||
-                progress.event === "registration.failed"
-                  ? "registration"
-                  : "publish",
-              outcome:
-                progress.event === "publish.chain_submitted"
-                  ? "accepted"
-                  : progress.event === "registration.failed"
-                    ? "failed"
-                    : "completed",
-              refs: {
-                challenge_id: progress.challengeId ?? null,
-                contract_address: progress.challengeAddress ?? null,
-                tx_hash: progress.txHash ?? null,
-                spec_cid: progress.specCid ?? specCid,
-              },
-            }),
-          ],
-          createAuthoringEventsImpl,
-          logger: getRequestLogger(c),
-        });
-      };
-      try {
-        result = await sponsorAndPublishAuthoringSessionImpl({
-          db,
-          session: publishPreparedSession,
-          spec: compiledSpec,
-          specCid,
-          sponsorPrivateKey: sponsorRuntime.privateKey,
-          expiresInMs: TERMINAL_TTL_MS,
-          onProgress: recordSponsorProgress,
-        });
-      } catch (error) {
-        const publishError = ensureAgoraError(error, {
-          code: "invalid_request",
-          status: 500,
-          nextAction: "Inspect the publish failure and retry.",
-        });
-        const authoringErrorCode =
-          publishError.code === AGORA_ERROR_CODES.txReverted
-            ? "TX_REVERTED"
-            : "invalid_request";
-        const publishErrorStatus = (publishError.status ?? 500) as
-          | 400
-          | 401
-          | 403
-          | 404
-          | 409
-          | 410
-          | 422
-          | 429
-          | 500
-          | 503;
-        const failedEntry = createConversationLogEntry({
-          trace_id: resolveAuthoringTraceId(c, publishPreparedSession),
-          request_id: getRequestId(c) ?? null,
-          route: "publish",
-          event: "publish.failed",
-          actor: "publish",
-          summary: "Agora sponsor publish failed.",
-          state_before: getSessionPublicState(publishPreparedSession),
-          state_after: getSessionPublicState(publishPreparedSession),
-          error: {
-            status: publishErrorStatus,
-            code: publishError.code,
-            message: publishError.message,
-            next_action: publishError.nextAction,
-          },
-          publish: {
-            funding: "sponsor",
-            spec_cid: specCid,
-          },
-        });
-        await appendConversationEntries({
-          db,
-          session: publishPreparedSession,
-          entries: [failedEntry],
-          updateAuthoringSessionImpl,
-          appendAuthoringSessionConversationLogImpl,
-        }).catch(() => null);
-        logConversationEntries(getRequestLogger(c), {
-          sessionId: publishPreparedSession.id,
-          entries: [failedEntry],
-        });
-        await recordAuthoringTelemetryEvents({
-          db,
-          events: [
-            createTelemetryEventFromConversationEntry({
-              c,
-              session: publishPreparedSession,
-              principal,
-              entry: failedEntry,
-              phase: "publish",
-              outcome: "failed",
-              httpStatus: publishErrorStatus,
-              code: publishError.code,
-            }),
-          ],
-          createAuthoringEventsImpl,
-          logger: getRequestLogger(c),
-        });
-        return jsonAuthoringSessionApiError(c, {
-          status: publishErrorStatus,
-          code: authoringErrorCode,
-          message: publishError.message,
-          nextAction:
-            publishError.nextAction ?? "Inspect the publish failure and retry.",
-          state: getSessionPublicState(publishPreparedSession),
-          details: publishError.details,
-        });
-      }
-      const publishCompletedEntry = createConversationLogEntry({
-        trace_id: result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
-        request_id: getRequestId(c) ?? null,
-        route: "publish",
-        event: "publish.completed",
-        actor: "publish",
-        summary: "Agora sponsor publish completed.",
-        state_before: "ready",
-        state_after: getSessionPublicState(result.session),
-        publish: {
-          funding: "sponsor",
-          challenge_id: result.challenge.challengeId,
-          contract_address: result.challenge.challengeAddress,
-          tx_hash: result.txHash,
-          spec_cid: specCid,
-        },
-      });
-      const resultSessionWithLog = await appendConversationEntries({
-        db,
-        session: result.session,
-        entries: [publishCompletedEntry],
-        updateAuthoringSessionImpl,
-        appendAuthoringSessionConversationLogImpl,
-      });
-      logConversationEntries(getRequestLogger(c), {
-        sessionId: resultSessionWithLog.id,
-        entries: [publishCompletedEntry],
-      });
-      bindRequestLogger(c, {
-        sessionId: resultSessionWithLog.id,
-        traceId:
-          resultSessionWithLog.trace_id ??
-          resolveAuthoringTraceId(c, resultSessionWithLog),
-        challengeId: result.challenge.challengeId,
-        contractAddress: result.challenge.challengeAddress,
-        txHash: result.txHash,
-      });
-      await recordAuthoringTelemetryEvents({
-        db,
-        events: [
           createTelemetryEventFromConversationEntry({
             c,
-            session: resultSessionWithLog,
+            session: preparedSession,
             principal,
-            entry: publishCompletedEntry,
+            entry: preparedEntry,
             phase: "publish",
             outcome: "completed",
-            refs: {
-              challenge_id: result.challenge.challengeId,
-              contract_address: result.challenge.challengeAddress,
-              tx_hash: result.txHash,
-              spec_cid: specCid,
-            },
           }),
         ],
         createAuthoringEventsImpl,
         logger: getRequestLogger(c),
       });
-
-      const challenge = await maybeReadChallenge(
-        getChallengeByIdImpl,
-        db,
-        resultSessionWithLog,
-      );
-      return c.json({
-        data: buildAuthoringSessionPayload(resultSessionWithLog, { challenge }),
-      });
+      return c.json({ data: preparation });
     },
   );
 
@@ -2334,7 +2027,7 @@ export function createAuthoringSessionRoutes(
       }
 
       const principal = c.get("authoringPrincipal");
-      if (principal.type !== "web" || !visible.session.poster_address) {
+      if (!visible.session.poster_address) {
         await appendValidationFailureLog({
           c,
           db,
@@ -2347,17 +2040,17 @@ export function createAuthoringSessionRoutes(
           status: 400,
           code: "invalid_request",
           message:
-            "Confirm-publish is only available for wallet-funded web sessions.",
+            "This session does not have a bound poster wallet yet.",
           nextAction:
-            "Use sponsor publish for agent-owned sessions, or confirm from the session creator wallet.",
+            "Prepare publish from this ready session first to bind the poster wallet, then retry confirm-publish.",
         });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
           message:
-            "Confirm-publish is only available for wallet-funded web sessions.",
+            "This session does not have a bound poster wallet yet.",
           nextAction:
-            "Use sponsor publish for agent-owned sessions, or confirm from the session creator wallet.",
+            "Prepare publish from this ready session first to bind the poster wallet, then retry confirm-publish.",
         });
       }
 
@@ -2371,10 +2064,18 @@ export function createAuthoringSessionRoutes(
           expectedPosterAddress: visible.session
             .poster_address as `0x${string}`,
           expectedSpec: visible.session.compilation_json.challenge_spec,
+          createdByAgentId: visible.session.created_by_agent_id ?? null,
         });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unable to confirm publish.";
+        const status =
+          error instanceof ChallengeRegistrationError ? error.status : 400;
+        const code =
+          error instanceof ChallengeRegistrationError &&
+          error.code === "TRANSACTION_FAILED"
+            ? "TX_REVERTED"
+            : "invalid_request";
         const failedEntry = createConversationLogEntry({
           trace_id:
             visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
@@ -2386,12 +2087,11 @@ export function createAuthoringSessionRoutes(
           state_before: getSessionPublicState(visible.session),
           state_after: getSessionPublicState(visible.session),
           publish: {
-            funding: "wallet",
             tx_hash: parsed.data.tx_hash,
           },
           error: {
-            status: 400,
-            code: "invalid_request",
+            status,
+            code,
             message,
             next_action:
               "Verify the wallet transaction hash belongs to this session publish, then retry confirm-publish.",
@@ -2418,8 +2118,8 @@ export function createAuthoringSessionRoutes(
               entry: failedEntry,
               phase: "registration",
               outcome: "failed",
-              httpStatus: 400,
-              code: "invalid_request",
+              httpStatus: status,
+              code,
               refs: {
                 tx_hash: parsed.data.tx_hash,
               },
@@ -2429,8 +2129,9 @@ export function createAuthoringSessionRoutes(
           logger: getRequestLogger(c),
         });
         return jsonAuthoringSessionApiError(c, {
-          status: 400,
-          code: "invalid_request",
+          status:
+            status as 400 | 401 | 403 | 404 | 409 | 410 | 422 | 429 | 500 | 503,
+          code,
           message,
           nextAction:
             "Verify the wallet transaction hash belongs to this session publish, then retry confirm-publish.",
@@ -2449,7 +2150,6 @@ export function createAuthoringSessionRoutes(
           state_before: getSessionPublicState(visible.session),
           state_after: getSessionPublicState(visible.session),
           publish: {
-            funding: "wallet",
             challenge_id: registration.challengeRow.id,
             contract_address: registration.challengeAddress,
             tx_hash: parsed.data.tx_hash,
@@ -2466,7 +2166,6 @@ export function createAuthoringSessionRoutes(
           state_before: getSessionPublicState(visible.session),
           state_after: "published",
           publish: {
-            funding: "wallet",
             challenge_id: registration.challengeRow.id,
             contract_address: registration.challengeAddress,
             tx_hash: parsed.data.tx_hash,

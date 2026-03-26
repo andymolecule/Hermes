@@ -19,7 +19,6 @@
     "release:testnet": "bash scripts/release-testnet.sh --mode runtime",
     "release:testnet:clean": "bash scripts/release-testnet.sh --mode clean",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",
-    "recover:authoring-publishes": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-authoring-publishes.mjs",
     "smoke:lifecycle": "pnpm smoke:lifecycle:local",
     "smoke:lifecycle:local": "node scripts/run-node-with-root-env.mjs --import tsx scripts/smoke-lifecycle.mjs",
     "smoke:lifecycle:testnet": "bash scripts/e2e-test.sh",

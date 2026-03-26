@@ -259,7 +259,7 @@ duplicate publish logic, and hardcoded template assumptions.
 ### Tightening order
 
 1. Fix authoring semantic authority first.
-2. Unify sponsor publish with shared challenge registration.
+2. Unify wallet-funded publish with shared challenge registration.
 3. Tighten canonical semantic schemas across `@agora/common`.
 4. Then do smaller cleanup like query-schema tightening and
    non-authoritative client preflight cleanup.
@@ -269,8 +269,7 @@ duplicate publish logic, and hardcoded template assumptions.
 - `/api/authoring/sessions/*` as the only public authoring route family
 - one canonical session shape and the locked state machine
 - semantic-only public session payloads
-- sponsor-funded and wallet-funded publish as funding variants of the same
-  public publish flow
+- one wallet-funded publish flow shared by web and agent callers
 - agent-runtime preflights as advisory helpers, not as the source of truth
 
 ### Delete
@@ -279,8 +278,8 @@ duplicate publish logic, and hardcoded template assumptions.
   `authoring_ir_json.execution.compile_error_codes`,
   `compile_error_message`, or similar heuristics
 - caller-derived hard throws on the create/patch assessment path
-- duplicate sponsor-publish registration logic that re-verifies challenge
-  creation separately from the shared registration helper
+- any server-side challenge-create orchestration or duplicate publish
+  registration logic outside the shared registration helper
 - free-text modeling for canonical finite semantics where
   `@agora/common` already owns the enum/union
 
@@ -291,8 +290,8 @@ duplicate publish logic, and hardcoded template assumptions.
   snapshot`
 - public `validation` to come from the persisted assessment result, not from
   compile-error reconstruction
-- sponsor publish to reuse the shared challenge-registration helper after the
-  chain write succeeds
+- wallet-funded publish confirm to reuse the shared challenge-registration
+  helper after the chain write succeeds
 - canonical finite semantic schemas to be shared across authoring input,
   session output, challenge queries, and challenge summaries
 
@@ -352,30 +351,32 @@ Acceptance gates:
 - create, patch, and get return the same validation classification
 - caller-correctable input no longer escapes as an unhandled `500`
 
-#### 6B. Unify sponsor publish with shared challenge registration
+#### 6B. Unify wallet-funded publish with shared challenge registration
 
 Objective:
 - remove duplicate publish/registration verification logic and keep one
   canonical post-transaction registration path
 
 Primary files:
-- `apps/api/src/lib/authoring-sponsored-publish.ts`
 - `apps/api/src/lib/challenge-registration.ts`
 - `apps/api/src/routes/authoring-sessions.ts`
 - `apps/api/tests/authoring-sessions-route.test.ts`
 - `apps/api/tests/challenge-registration.test.ts`
 
 Changes:
-- keep sponsor pre-simulation, funding checks, and tx broadcast in the sponsor
-  publish helper
-- move post-broadcast challenge registration and shared verification into the
-  existing `registerChallengeFromTxHash(...)` path
-- remove duplicate challenge-creation registration branches from sponsor
-  publish once the shared helper covers the needed assertions
+- keep `POST /api/authoring/sessions/:id/publish` as a pure prepare step that
+  binds the poster wallet and returns canonical wallet tx inputs
+- make `POST /api/authoring/sessions/:id/confirm-publish` the only path that
+  registers a completed `createChallenge` transaction
+- move challenge registration and shared verification into the existing
+  `registerChallengeFromTxHash(...)` path
+- delete any server-side tx broadcast helper and any duplicate
+  challenge-registration branches once the shared helper covers the needed
+  assertions
 
 Acceptance gates:
-- sponsor-funded publish and tx-hash registration use the same registration
-  helper
+- all authoring publish confirmation and tx-hash registration use the same
+  registration helper
 - challenge identity, spec CID, and contract-address verification happen in
   one place
 - publish failures still return the locked authoring error envelope
@@ -585,8 +586,8 @@ The migration is complete only when all of the following are true:
 7. Agent auth supports unattended workflows without surprise key invalidation.
 8. Layer 1 is the single source of truth for executable scorer templates.
 9. Authoring create, patch, and get share one persisted validation truth.
-10. Sponsor-funded publish and tx-hash registration use one shared challenge
-    registration path.
+10. Wallet-funded publish confirmation and tx-hash registration use one shared
+    challenge registration path.
 11. Closed semantic fields such as `domain` have one canonical shared schema
     across authoring and challenge discovery contracts.
 12. Agent-runtime preflights are advisory only and cannot override API

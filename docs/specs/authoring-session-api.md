@@ -69,8 +69,9 @@ Beach.science is an agent-facing social platform, not a Telegram relay or Agora 
 For this spec:
 - the non-web caller should be modeled as an **OpenClaw agent**
 - Beach should be treated as optional provenance/source context, not as a required middleman
-- Agora's existing sponsor-funded publish path remains in scope for agent-created sessions
-- future agent-controlled wallet flows or wallet-authorization flows are explicitly out of scope for this spec revision unless reopened later
+- Agora never funds or signs challenge creation on behalf of a caller
+- agent-controlled wallet publish is the canonical non-web publish path in scope for this revision
+- older alternate publish-path assumptions are deleted rather than preserved for compatibility
 - previous Beach-specific partner-route and callback assumptions must be treated as reopened wherever they still appear below
 
 ### 0.8 Privacy Default
@@ -108,7 +109,7 @@ Spec-worthy questions include:
 - request/response data shapes that external callers depend on
 - public naming (nouns, route paths, state names)
 - hard invariants and behavioral rules
-- funding and money flow
+- wallet-backed publish and money flow
 
 Questions that should usually be left to implementation unless they become externally binding include:
 - pagination mechanics
@@ -292,7 +293,7 @@ Public names in this table are permanent. Internal names can change freely.
 8. **No provenance-based refresh.** Source provenance is not used to look up and refresh a previous session. Each `POST /sessions` creates a new session unconditionally.
 9. **`ready` sessions are frozen.** Once a session reaches `ready`, it cannot be edited. The only valid next actions are publish, expire, or abandon and start a new session.
 10. **Public session responses are snapshots, not transcripts.** The API exposes current state, resolved fields, validation blockers, artifacts, and outputs. Conversation-turn history is not part of the core public session shape.
-11. **One canonical session shape, with one wallet-publish exception.** `create`, `get by id`, `patch`, sponsor-funded `publish`, and `confirm-publish` all return the canonical session object. Wallet-funded `publish` is the only exception and returns a wallet publish preparation object instead.
+11. **One canonical session shape, with one publish-preparation exception.** `create`, `get by id`, `patch`, and `confirm-publish` all return the canonical session object. `publish` returns a wallet publish preparation object instead.
 12. **List is the only read-summary exception.** `GET /sessions` returns a lighter self-scoped list-item shape for browsing, not the full canonical session object.
 13. **Canonical session responses are grouped by concern.** The full session object centers `resolved`, `validation`, `checklist`, `compilation`, and `artifacts` rather than a flat conversational payload.
 14. **Canonical fields always exist.** Arrays default to `[]`. `resolved` and `validation` always exist as objects. Other objects and scalar outputs default to `null` when not yet applicable.
@@ -311,9 +312,9 @@ Public names in this table are permanent. Internal names can change freely.
 27. **Validation issues classify the blocking layer.** Each validation issue carries `blocking_layer = input | dry_run | platform` so callers can distinguish missing poster input from Agora runtime/dependency outages.
 28. **Validation issues may include candidate values.** When Agora can name valid recovery choices, such as current artifact IDs, it returns them in `candidate_values` instead of forcing callers to guess.
 29. **Canonical session responses include readiness.** The canonical session object includes a compact `readiness` snapshot for `spec`, `artifact_binding`, `scorer`, and `dry_run`, plus a derived `publishable` boolean.
-30. **`ready` is an authoring gate, not a chain guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but publish still performs live chain checks against the active factory immediately before broadcast.
-31. **Sponsor-funded publish pre-simulates factory creation.** Before Agora broadcasts a sponsor-funded `createChallenge` transaction, it must simulate the exact factory call from the sponsor account against the active factory.
-32. **Publish reverts surface decoded contract diagnostics when available.** If sponsor-funded publish simulation or broadcast reverts, Agora returns `TX_REVERTED` in the canonical authoring error envelope and should include decoded revert details such as `revertErrorName` and `revertReason` in the optional `error.details` payload when the underlying viem error exposes them.
+30. **`ready` is an authoring gate, not a publish guarantee.** A `ready` session has passed Agora's authoring compile and dry-run gates, but the caller wallet transaction must still succeed on-chain and match the compiled session during `confirm-publish`.
+31. **Challenge creation is always caller-wallet funded.** Agora never funds or server-signs challenge creation.
+32. **`confirm-publish` validates the supplied transaction against the active factory and compiled session.** If the tx reverted or mismatched the session, Agora returns the canonical authoring error envelope and includes decoded chain diagnostics in `error.details` when available.
 33. **Well-formed semantic mistakes stay in the session object.** Unsupported values inside a valid create/patch envelope return `awaiting_input` with `validation.invalid_fields`; they do not become top-level `invalid_request` errors.
 34. **Create, patch, and get share one validation truth.** Public `validation` comes from the persisted assessment result, not from read-time heuristics over compile error codes.
 35. **Closed semantic fields reuse canonical shared schemas.** Fields such as `domain` must reuse the same `@agora/common` enum/union definitions across authoring input, session output, challenge queries, and challenge summaries.
@@ -358,8 +359,8 @@ The auth middleware determines whether the caller is a web poster or an OpenClaw
 | `POST` | `/sessions` | Create a new validation session from structured intent/execution/files |
 | `GET` | `/sessions/:id` | Read current session state |
 | `PATCH` | `/sessions/:id` | Submit structured corrections or additional files |
-| `POST` | `/sessions/:id/publish` | Confirm sponsor publish immediately, or prepare wallet publish when funding = `wallet` |
-| `POST` | `/sessions/:id/confirm-publish` | Confirm a completed wallet-funded browser publish using the on-chain transaction hash |
+| `POST` | `/sessions/:id/publish` | Prepare caller-wallet tx inputs from a ready session and bind the poster wallet |
+| `POST` | `/sessions/:id/confirm-publish` | Confirm a completed wallet-funded publish using the on-chain transaction hash |
 | `POST` | `/uploads` | Upload a file, pin to IPFS, return artifact ref |
 
 `GET /sessions` is the only endpoint that returns a lighter list-item shape instead of the full canonical session object.
@@ -370,7 +371,7 @@ Locked success response envelope rule:
 - authoring success responses use the machine-wide `data` envelope
 - `GET /sessions` returns `{ "data": [ ... ] }`
 - `POST /sessions`, `GET /sessions/:id`, `PATCH /sessions/:id`, and `POST /sessions/:id/confirm-publish` return `{ "data": session }`
-- `POST /sessions/:id/publish` returns `{ "data": session }` for sponsor publish or `{ "data": wallet_preparation }` for wallet publish
+- `POST /sessions/:id/publish` returns `{ "data": wallet_preparation }`
 - `POST /uploads` returns `{ "data": artifact }`
 
 Locked file item shape:
@@ -517,13 +518,15 @@ Locked publish request envelope:
 ```json
 {
   "confirm_publish": true,
-  "funding": "sponsor"
+  "poster_address": "0x1234567890abcdef1234567890abcdef12345678"
 }
 ```
 
 Rules:
 - `confirm_publish` must be present and `true`
-- `funding` must be present and explicit
+- there is no `funding` field; all challenge creation is caller-wallet funded
+- `poster_address` is optional for web callers whose authenticated SIWE wallet already defines the on-chain poster
+- `poster_address` is required for agent callers and becomes the frozen poster wallet for `confirm-publish`
 - no extra publish metadata fields are part of the request in the current scoped design
 
 **Agent auth note:**
@@ -611,29 +614,20 @@ Rules:
 - `status` is machine-readable and indicates whether the call created a new agent identity or issued a new key for an existing one
 - re-registering the same `telegram_bot_id` returns the same `agent_id`, a new `key_id`, and `status = "existing_key_issued"`
 
-### 1.11 Funding Models
+### 1.11 Wallet-Funded Publish Only
 
 | Model | Who pays on-chain | How it works |
 |-------|-------------------|-------------|
-| **Wallet-funded** | Poster's own wallet | Poster approves USDC, signs tx, factory deploys challenge |
-| **Sponsor-funded** | Agora sponsor wallet | Agora's pre-configured sponsor key signs tx on the server for authorized agent-created sessions, with budget tracked via `authoring_sponsor_budget_reservations` |
+| **Caller-funded** | The wallet that sends `createChallenge` | Caller approves USDC, signs tx, factory deploys challenge, API confirms the resulting transaction |
 
-Both models go through the same publish gate. The funding source is a publish-time decision, not a session-level concept.
-
-Sponsor-funded publish hard rule:
-- immediately before broadcast, Agora simulates the exact `createChallenge` call from the sponsor account against the active factory
-- if that simulation reverts, Agora must fail the publish attempt before broadcast and return the decoded revert diagnostics when available
-- if the later broadcast/write still reverts, Agora should preserve the same decoded revert diagnostics and return a sponsor-create-specific `next_action`
-
-Locked publish rule:
-- web callers send `funding: "wallet"` or `funding: "sponsor"` explicitly
-- agent callers also send `funding` explicitly
-- in the current scoped design, agent-created sessions use `funding: "sponsor"`
-- keeping `funding` explicit avoids a future contract break if agent wallet funding is added later
-
-Current scope note:
-- Agora already has a sponsor-funded authoring publish path for agent-native flows.
-- Future agent-controlled wallet funding or wallet-authorization flows may exist later, but they are outside the current spec-clarification scope unless explicitly reopened.
+Rules:
+- every challenge is funded by the caller wallet that sends `createChallenge`
+- Agora never maintains any server-side challenge-create path
+- web callers usually derive `poster_address` from the authenticated SIWE wallet
+- agent callers bind `poster_address` during `POST /sessions/:id/publish`
+- once a ready session has a bound `poster_address`, later `publish` retries and `confirm-publish` must reuse that address
+- `confirm-publish` validates the tx receipt, emitted poster address, and compiled spec before marking the session `published`
+- agent wallets are expected to be stable wallets with Base gas and USDC, following the same continuity rule Agora already uses for solver wallets
 
 ### 1.12 Callbacks (Webhooks)
 
@@ -655,7 +649,7 @@ Locked rule:
 | Caller tries to `GET`, `PATCH`, or `publish` another principal's session | Return `404 not_found`. Do not reveal whether the session exists. |
 | Dry-run fails after all required fields are supplied | State stays `awaiting_input` with a concrete `validation.dry_run_failure`. Caller may need to change a field, mapping, or artifact. |
 | Publish called when state is not `ready` | Reject with current state and what's still needed. |
-| Sponsor-funded publish passes `ready` but factory simulation or tx broadcast reverts | Return `TX_REVERTED` in the canonical authoring error envelope, with a sponsor-create-specific `next_action` and decoded revert details in optional `error.details` when viem exposes them. |
+| Caller-signed publish tx reverts or confirms with mismatched chain data | Return `TX_REVERTED` or `invalid_request` in the canonical authoring error envelope, with decoded chain diagnostics in optional `error.details` when available. |
 
 ### 1.14 Response Transparency
 
@@ -790,20 +784,20 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q7 | When Layer 3 fails, what makes the session return to `awaiting_input` versus move to terminal `rejected`? | Prevents state drift and inconsistent recovery behavior | Prefer: recoverable caller fix = `awaiting_input`; unsupported task = `rejected` | `LOCKED: if the caller can fix it, state = awaiting_input; if the task is fundamentally unsupported, state = rejected` |
 | Q8 | Is any backward compatibility period required for existing `/drafts/*` clients? | Determines whether we ship aliases or cut over directly | Prefer `no` unless a hard dependency is identified | `LOCKED: no compatibility period; cut directly to /sessions/* with zero public aliases` |
 | Q9 | Do `card` and `assessment` remain in the public contract? | Prevents two different response models from surviving indefinitely | Prefer `no` | `LOCKED: delete card and assessment as public API concepts; expose one canonical session shape only` |
-| Q10 | Is funding source an explicit field on publish for both web and agent callers? | Prevents funding behavior from becoming implicit or caller-specific | Prefer `yes` | `LOCKED: publish requests must explicitly declare funding source for both web and agent callers` |
+| Q10 | Is challenge publish always caller-wallet funded for both web and agent callers? | Prevents a hidden second money path from reappearing in the contract | Prefer `yes` | `LOCKED: all authoring publish is caller-wallet funded; no alternate server-side publish path exists` |
 | Q11 | Do non-web callers need any callback/webhook contract in the current scope? | Reassesses the old Beach-backend callback assumption now that the non-web caller is the agent itself | Prefer no callbacks unless a real external host requirement exists | `LOCKED: no callbacks/webhooks in scope; synchronous mutation responses plus GET polling are sufficient` |
 | Q12 | What are the TTL rules for `created`, `awaiting_input`, and `ready` sessions? | Prevents hidden product behavior from leaking out of implementation defaults | Prefer explicit per-state TTLs in the contract | `LOCKED: created = 15 minutes; awaiting_input = 24 hours; ready = 2 hours` |
 | Q13 | Should the internal persistence layer also be renamed from `authoring_drafts` to `authoring_sessions`? | Separates public contract clarity from storage/migration cost | No default; requires explicit product + migration choice | `LOCKED: rename internal persistence and code to authoring_sessions / AuthoringSession` |
 | Q14 | Are create/patch calls synchronous or asynchronous from the caller's perspective? | Determines whether callers get final blocking state immediately or must always poll/background wait | Prefer synchronous best-effort | `LOCKED: create/patch are synchronous best-effort; created is mostly internal/transient` |
 | Q15 | What can `PATCH /sessions/:id` contain? | Determines the exact machine patch shape callers must send after create | Prefer one structured patch payload | `LOCKED: patch may include any combination of intent, execution, and files. File inputs must be fetchable URLs or Agora artifact refs, not platform-specific file handles` |
 | Q16 | Should the API expose reasoning for validation blockers, and in what form? | Determines whether callers get precise machine-readable failure context without prose-heavy conversation scaffolding | Prefer structured validation issues only | `LOCKED: expose blocker reasoning only through structured validation objects; no separate question or chain-of-thought surface exists in the default contract` |
-| Q17 | What must `POST /sessions/:id/publish` include? | Determines whether publish is stale-safe by freezing ready sessions or by requiring freshness tokens | Prefer explicit confirm + funding only if ready sessions are immutable | `LOCKED: publish requires confirm_publish plus explicit funding; no freshness token because ready sessions are frozen` |
+| Q17 | What must `POST /sessions/:id/publish` include? | Determines how the contract binds the poster wallet before the chain write while keeping `ready` sessions immutable | Prefer explicit confirm plus poster wallet binding only when needed | `LOCKED: publish requires confirm_publish. Agent callers must also provide poster_address; web callers may omit it because the authenticated SIWE wallet already defines the poster address. No freshness token is required because ready sessions are frozen` |
 | Q18 | Should create/get/patch all return the same full canonical session shape? | Prevents endpoint-specific payload drift and client branching | Prefer one response shape everywhere | `LOCKED: create, get, and patch all return the same full canonical session shape` |
 | Q19 | Should the public API expose conversation history or only the latest merged session snapshot? | Controls whether the core contract stays narrow or expands into turn-by-turn replay semantics | Prefer latest snapshot only | `LOCKED: public API exposes only the current merged session snapshot; history is internal/out-of-scope for now` |
 | Q20 | What happens if a caller tries to patch a non-editable session? | Prevents hidden forks/reopens and keeps session semantics deterministic | Prefer explicit error with guidance | `LOCKED: patch on ready/published/rejected/expired returns an error with current state and guidance to create a new session` |
 | Q21 | Is polling via GET enough for the locked contract, or is SSE/streaming in scope now? | Prevents the core contract from expanding into transport-specific streaming behavior prematurely | Prefer polling only for now | `LOCKED: GET /sessions/:id polling is sufficient; SSE/streaming is out-of-scope for now` |
 | Q22 | Should the contract specify any conversational batching concept in the default path? | Separates the machine contract from the old human-assistant orchestration model | Prefer no | `LOCKED: no question-batch concept exists in the default machine contract` |
-| Q23 | What should `POST /sessions/:id/publish` return? | Prevents publish from introducing endpoint-specific drift while still respecting the browser-wallet signing boundary | Prefer canonical session shape except where browser-wallet publish requires a preparation object | `LOCKED: sponsor-funded publish returns SessionSchema. Wallet-funded publish returns a wallet publish preparation object and keeps the session in ready until confirm-publish succeeds` |
+| Q23 | What should `POST /sessions/:id/publish` return? | Prevents publish from pretending the server completed the chain write and keeps one transport-neutral wallet flow | Prefer a preparation object only | `LOCKED: publish always returns WalletPublishPreparationSchema and keeps the session in ready until confirm-publish succeeds` |
 | Q24 | What artifact shape should session responses expose? | Determines whether outputs are canonicalized or mirror messy caller inputs | Prefer normalized Agora artifact objects with provenance metadata | `LOCKED: session responses return normalized Agora artifacts with stable IDs/refs; original source URLs are provenance metadata only` |
 | Q25 | Should the default machine contract include question IDs at all? | Determines whether callers must implement a conversational turn protocol or a direct state-patch protocol | Prefer no | `LOCKED: question IDs are not part of the default machine contract` |
 | Q26 | What shape should validation blockers have? | Determines whether callers can distinguish missing data, invalid data, dry-run mismatches, and terminal unsupported reasons without overloading one field | Prefer a structured validation object | `LOCKED: validation is a structured object with missing_fields, invalid_fields, dry_run_failure, and unsupported_reason. It is always present in the canonical session object` |
@@ -822,7 +816,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q37 | Should the canonical session object expose expiration explicitly? | Determines whether callers can reason about expiry without reproducing TTL math client-side | Prefer absolute expiration timestamps | `LOCKED: expose expires_at as an absolute timestamp; it refreshes when the session enters a state with a new TTL window` |
 | Q38 | Should the canonical session object include an explicit schema version field? | Determines whether versioning is embedded in payloads or handled at the route/docs boundary | Prefer no payload-level version field for now | `LOCKED: do not include schema_version on the session object; versioning lives at the API path/docs level if needed later` |
 | Q39 | Should the canonical session object expose created/updated timestamps? | Determines whether callers get operational transparency about session recency and change timing | Prefer exposing both timestamps | `LOCKED: expose created_at and updated_at on the canonical session object` |
-| Q40 | Should the canonical session object expose publish-permission metadata? | Determines whether authorization semantics live on the session object or remain part of publish-time validation | Prefer publish-time validation only | `LOCKED: do not expose publish-permission metadata on the session object; validate caller + funding combination at publish time` |
+| Q40 | Should the canonical session object expose publish-permission metadata? | Determines whether authorization semantics live on the session object or remain part of publish-time validation | Prefer publish-time validation only | `LOCKED: do not expose publish-permission metadata on the session object; validate caller + poster_address binding at publish time` |
 | Q41 | How should an OpenClaw agent authenticate directly to Agora in this scoped design? | Replaces the old Beach-partner auth assumption with the real non-web caller model | No default; must be explicitly locked | `LOCKED: agent registers directly with Agora using telegram_bot_id as its stable technical identity, receives an Agora-issued API key, and uses it as bearer auth for future session calls; no KYC or real-world identity is required` |
 | Q42 | What is the registration route path for agent auth? | Prevents auth endpoints from drifting between general agent auth and authoring-specific auth | Prefer a general Agora agent registration route | `LOCKED: POST /api/agents/register; registration is a general Agora capability, not scoped under /authoring` |
 | Q43 | How is the agent API key sent on authenticated requests? | Prevents auth middleware drift between standard bearer auth and custom headers | Prefer standard bearer auth | `LOCKED: agent requests use Authorization: Bearer <api_key>; no custom API key headers` |
@@ -835,7 +829,7 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q50 | What exact fields belong in each list item? | Prevents the list endpoint from drifting back into a partial full-session payload | Prefer a minimal browse-only shape | `LOCKED: each list item contains exactly id, state, summary, created_at, updated_at, and expires_at` |
 | Q51 | What is the exact create request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions | Prefer one agent-native structured envelope | `LOCKED: create accepts intent?, execution?, files?, and provenance?; at least one of intent, execution, or files must be present` |
 | Q52 | What is the exact patch request envelope? | Defines the top-level request shape external callers must code against for PATCH /api/authoring/sessions/:id | Prefer one direct structured patch envelope | `LOCKED: patch accepts intent?, execution?, and files?; at least one must be present. Those fields are authoritative structured inputs` |
-| Q53 | What is the exact publish request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions/:id/publish | Prefer a minimal explicit confirm + funding payload | `LOCKED: publish accepts exactly confirm_publish and funding; confirm_publish must be true and funding must be explicit` |
+| Q53 | What is the exact publish request envelope? | Defines the top-level request shape external callers must code against for POST /api/authoring/sessions/:id/publish | Prefer a minimal explicit confirm payload with wallet binding only when needed | `LOCKED: publish accepts confirm_publish and optional poster_address. confirm_publish must be true. poster_address is required for agent callers and optional for web callers` |
 | Q54 | What is the exact file item shape in create/patch payloads? | Defines how callers represent file URLs vs existing Agora artifacts without ambiguity | Prefer typed file items | `LOCKED: files is an array of typed objects; use { type: "url", url } for fetchable URLs and { type: "artifact", artifact_id } for existing Agora artifacts` |
 | Q55 | Should the canonical full session object be mostly flat or grouped into nested sections? | Determines the structural shape every caller will code against for single-session operations | Prefer grouped by concern for machine clarity | `LOCKED: the canonical full session object is grouped into resolved, validation, checklist, compilation, and artifacts sections rather than a flat conversational shape` |
 | Q56 | Where should validation explanations live in the canonical response? | Prevents the contract from duplicating the same explanation in multiple top-level fields | Prefer one source of truth inside validation issues | `LOCKED: validation explanations live only inside validation.missing_fields, validation.invalid_fields, validation.dry_run_failure, and validation.unsupported_reason` |
@@ -845,14 +839,14 @@ These should stay out of scope unless explicitly re-approved after the session c
 | Q60 | Should compilation expose the exact submission contract for solvers? | Determines whether solvers can know the required submission format without guessing from prose or external docs | Prefer an explicit machine-readable submission contract | `LOCKED: compilation includes submission_contract as a machine-readable object describing the expected submission format, limits, and structural requirements` |
 | Q61 | What is the bundled compilation preview contract? | Defines the exact semantic preview object callers receive inside a private authoring session | Prefer one explicit semantic preview object | `LOCKED: compilation includes exactly metric, objective, evaluation_contract, submission_contract, reward, deadline, dispute_window_hours, and minimum_score. Runtime mechanics remain internal.` |
 | Q62 | What is the public upload endpoint contract? | Defines how callers turn either local files or remote URLs into normalized Agora artifacts without building divergent file flows | Prefer one endpoint with two input modes and one output shape | `LOCKED: POST /api/authoring/uploads supports both direct file upload and URL ingestion, and both return the same normalized artifact object` |
-| Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, unsupported_task, or TX_REVERTED. Sponsor publish reverts use TX_REVERTED; specific diagnostics belong in error.details rather than a larger enum` |
+| Q63 | What is the machine-readable error code set for the public contract? | Prevents callers from branching on ad hoc endpoint-specific error codes and keeps failure handling stable across auth, access, validation, and terminal-state cases | Prefer a small stable category set | `LOCKED: error.code is one of unauthorized, not_found, invalid_request, session_expired, unsupported_task, or TX_REVERTED. Publish-path chain reverts use TX_REVERTED; specific diagnostics belong in error.details rather than a larger enum` |
 | Q64 | What is the legal state transition table for the public session lifecycle? | Prevents implementation drift around reopen behavior, terminal states, and which transitions are permitted after create/patch/publish/TTL events | Prefer a strict no-reopen lifecycle | `LOCKED: internal created may transition only to awaiting_input, ready, or rejected; awaiting_input may transition only to awaiting_input, ready, rejected, or expired; ready may transition only to published or expired; published, rejected, and expired are terminal and never reopen. If a caller wants to try again, they must create a new session` |
 | Q65 | What is the shared normalized artifact schema? | Prevents upload responses and session artifacts from drifting into different shapes and keeps artifact classification semantics explicit | Prefer one stable artifact object with nullable role until classified | `LOCKED: the normalized artifact object contains exactly artifact_id, uri, file_name, role, and source_url. role is null until Agora classifies the artifact during session processing, and the same object shape is used in upload responses and session responses` |
 | Q66 | What is the exact bundled agent registration contract? | Prevents agent onboarding and key rotation from drifting across partial auth decisions and removes ambiguity about optional metadata at the registration boundary | Prefer one minimal required field with optional profile metadata | `LOCKED: POST /api/agents/register accepts telegram_bot_id as the only required field and may also accept optional agent_name and description. It returns exactly agent_id, api_key, and status, where status is created or rotated. The response shape is the same whether optional metadata is provided or not` |
 | Q67 | What is the success response envelope rule for the public API? | Prevents endpoint-specific wrapper drift and keeps client parsing rules uniform across registration, uploads, and single-session operations | Prefer one machine-wide response shape | `LOCKED: authoring success responses use the machine-wide data envelope. Collections return { "data": [...] } and single-resource results return { "data": ... }.` |
 | Q68 | How narrow should the public submission_contract schema be in v1? | Prevents speculative generic abstractions from leaking into the solver-facing contract before Agora actually supports more submission kinds | Prefer a current-scope schema only | `LOCKED: submission_contract stays narrow and explicit for the current scoped design. It contains version, kind, extension, mime, max_bytes, and columns. kind refers to the concrete submission kind Agora supports now, not a speculative future abstraction` |
 | Q69 | What is the bundled public checklist schema? | Defines the final confirmation object callers render before publish and prevents it from drifting into either a loose prose summary or a second typed compilation object | Prefer a concise human-facing summary object | `LOCKED: checklist is a concise confirmation summary object containing exactly title, domain, type, reward, distribution, deadline, metric, objective, and artifacts_count. It is optimized for human confirmation, while detailed typed challenge semantics live in compilation.` |
-| Q70 | How should wallet-funded web publish work when the signer lives in the browser? | Prevents the contract from pretending the server can complete a browser-wallet transaction and keeps sponsor vs wallet publish paths explicit | Prefer one publish URL with funding-dependent behavior plus one confirm step | `LOCKED: POST /sessions/:id/publish remains the single publish URL. funding = sponsor performs one-call publish and returns SessionSchema. funding = wallet prepares the browser transaction, keeps the session in ready, and returns a wallet publish preparation object. POST /sessions/:id/confirm-publish then validates the wallet tx_hash and transitions the session to published` |
+| Q70 | How should wallet-funded publish work when the signer may live in a browser or an agent runtime? | Prevents transport-specific forks while keeping one wallet continuity rule for all callers | Prefer one publish-prepare step plus one confirm step | `LOCKED: POST /sessions/:id/publish remains the single publish URL and always returns wallet tx preparation. POST /sessions/:id/confirm-publish validates the supplied tx_hash for both web and agent callers and transitions the session to published on success` |
 | Q71 | How should Layer 2's natural-language turn surface in the public contract? | Determines whether the default session API is validation-first or conversation-first | Prefer no Layer 2 prose in the default path | `LOCKED: the default /sessions contract is structured and deterministic. It does not include assistant_message. If Agora later exposes an explicit assist path, that surface is separate and out of scope here.` |
 
 ### 4.3 Remaining High-Risk Contract Decisions
@@ -876,7 +870,10 @@ const PublicSessionStateSchema = z.enum([
   "expired",
 ]);
 
-const FundingSchema = z.enum(["wallet", "sponsor"]);
+const PublishSessionRequestSchema = z.object({
+  confirm_publish: z.literal(true),
+  poster_address: z.string().trim().min(1).optional(),
+});
 const ObjectiveSchema = z.enum(["maximize", "minimize"]);
 const ChallengeDomainSchema = z.enum([
   "longevity",
@@ -1779,7 +1776,7 @@ Request schema:
 ```ts
 const PublishSessionRequestSchema = z.object({
   confirm_publish: z.literal(true),
-  funding: FundingSchema,
+  poster_address: z.string().min(1).optional(),
 });
 ```
 
@@ -1788,11 +1785,11 @@ Example request:
 ```json
 {
   "confirm_publish": true,
-  "funding": "wallet"
+  "poster_address": "0x1234567890abcdef1234567890abcdef12345678"
 }
 ```
 
-Success response schemas:
+Success response schema:
 
 ```ts
 const WalletPublishPreparationSchema = z.object({
@@ -1810,134 +1807,7 @@ const WalletPublishPreparationSchema = z.object({
 });
 ```
 
-Sponsor-funded example success response:
-
-```json
-{
-  "id": "session-123",
-  "state": "published",
-  "creator": {
-    "type": "agent",
-    "agent_id": "agent-abc"
-  },
-  "resolved": {
-    "intent": {
-      "title": "Rank ligands for KRAS binding affinity",
-      "description": "Solvers rank ligands by predicted binding affinity against a hidden reference.",
-      "payout_condition": "Highest Spearman correlation wins.",
-      "reward_total": "30",
-      "distribution": "winner_take_all",
-      "deadline": "2026-04-01T23:59:59Z"
-    },
-    "execution": {
-      "metric": "spearman",
-      "objective": "maximize",
-      "evaluation_artifact_id": "art-456",
-      "evaluation_id_column": "ligand_id",
-      "evaluation_value_column": "reference_score",
-      "submission_id_column": "ligand_id",
-      "submission_value_column": "docking_score"
-    }
-  },
-  "validation": {
-    "missing_fields": [],
-    "invalid_fields": [],
-    "dry_run_failure": null,
-    "unsupported_reason": null
-  },
-  "readiness": {
-    "spec": {
-      "status": "pass",
-      "code": "spec_ready",
-      "message": "Agora compiled the canonical challenge spec."
-    },
-    "artifact_binding": {
-      "status": "pass",
-      "code": "artifact_binding_ready",
-      "message": "The hidden evaluation artifact and column mappings are resolved."
-    },
-    "scorer": {
-      "status": "pass",
-      "code": "scorer_ready",
-      "message": "The scoring configuration is resolved."
-    },
-    "dry_run": {
-      "status": "pass",
-      "code": "dry_run_ready",
-      "message": "Dry-run validation passed."
-    },
-    "publishable": true
-  },
-  "checklist": {
-    "title": "Rank ligands for KRAS binding affinity",
-    "domain": "drug_discovery",
-    "type": "docking",
-    "reward": "30 USDC",
-    "distribution": "winner_take_all",
-    "deadline": "2026-04-01T23:59:59Z",
-    "metric": "spearman",
-    "objective": "maximize",
-    "artifacts_count": 3
-  },
-  "compilation": {
-    "metric": "spearman",
-    "objective": "maximize",
-    "evaluation_contract": {
-      "kind": "csv_table",
-      "columns": {
-        "required": ["ligand_id", "reference_score"],
-        "id": "ligand_id",
-        "value": "reference_score",
-        "allow_extra": true
-      }
-    },
-    "submission_contract": {
-      "version": "v1",
-      "kind": "csv_table",
-      "extension": ".csv",
-      "mime": "text/csv",
-      "max_bytes": 26214400,
-      "columns": {
-        "required": ["ligand_id", "docking_score"],
-        "id": "ligand_id",
-        "value": "docking_score",
-        "allow_extra": true
-      }
-    },
-    "reward": {
-      "total": "30",
-      "currency": "USDC",
-      "distribution": "winner_take_all",
-      "protocol_fee_bps": 1000
-    },
-    "deadline": "2026-04-01T23:59:59Z",
-    "dispute_window_hours": 168,
-    "minimum_score": null
-  },
-  "artifacts": [
-    {
-      "artifact_id": "art-123",
-      "uri": "ipfs://QmXyz...",
-      "file_name": "ligands.csv",
-      "role": "ligand_library",
-      "source_url": "https://example.com/ligands.csv"
-    }
-  ],
-  "provenance": {
-    "source": "beach",
-    "external_id": "thread-abc"
-  },
-  "challenge_id": "challenge-456",
-  "contract_address": "0x1234",
-  "spec_cid": "QmSpecCid",
-  "tx_hash": "0xdeadbeef",
-  "created_at": "2026-03-21T18:00:00Z",
-  "updated_at": "2026-03-21T18:12:00Z",
-  "expires_at": "2026-03-21T20:10:00Z"
-}
-```
-
-Wallet-funded example success response:
+Example success response:
 
 ```json
 {
@@ -1956,15 +1826,15 @@ Wallet-funded example success response:
 ```
 
 State transition effects:
-- when `funding = "sponsor"`: `ready` -> `published`
-- when `funding = "wallet"`: session remains `ready`; publish is prepared but not completed
+- session remains `ready`; publish is prepared but not completed
 
 Validation rules:
 - session must be in `ready`
 - `ready` sessions are frozen; no freshness token is required
-- funding must be explicit even for agent-created sessions
-- `funding = "wallet"` prepares the browser-wallet transaction only; it does not publish the session by itself
-- `funding = "sponsor"` performs the full publish and returns `SessionSchema`
+- `publish` always prepares a caller-wallet transaction; it does not publish the session by itself
+- web callers may omit `poster_address`; the server derives it from the authenticated SIWE wallet
+- agent callers must provide `poster_address`
+- once `poster_address` is bound on a ready session, repeated publish calls must reuse it
 - wallet publish preparation returns exact contract-call inputs; callers must treat `reward_units` as already scaled USDC base units and `minimum_score_wad` as already scaled 18-decimal units, not recompute them from human-readable values
 - `lab_tba` is included because the factory call requires it; in the current scoped design it defaults to the zero address for standalone bounties unless an explicit Molecule lab linkage is introduced later
 
@@ -2002,7 +1872,8 @@ Success response:
 
 Validation rules:
 - session must be in `ready`
-- this endpoint is used only for wallet-funded browser publish flows
+- this endpoint is used for all wallet-funded publish flows, including agent-owned wallets
+- the supplied transaction must match the session's bound `poster_address`
 - the server validates the supplied on-chain transaction before marking the session as published
 
 Error cases:
@@ -2100,8 +1971,7 @@ Notes:
 | `PATCH /sessions/:id` | `awaiting_input` | `ready` | Returns `SessionSchema` with `checklist` and `compilation` |
 | `PATCH /sessions/:id` | `awaiting_input` | `rejected` | Returns `SessionSchema` with terminal `rejected` state and non-null `validation.unsupported_reason` |
 | TTL elapsed | `awaiting_input` | `expired` | Future mutation attempts return `session_expired` |
-| `POST /sessions/:id/publish` with `funding = "sponsor"` | `ready` | `published` | Returns `SessionSchema` with challenge refs populated |
-| `POST /sessions/:id/publish` with `funding = "wallet"` | `ready` | `ready` | Returns `WalletPublishPreparationSchema`; browser signs and submits the on-chain transaction |
+| `POST /sessions/:id/publish` | `ready` | `ready` | Returns `WalletPublishPreparationSchema`; caller signs and submits the on-chain transaction |
 | `POST /sessions/:id/confirm-publish` | `ready` | `published` | Validates the supplied wallet `tx_hash` and returns `SessionSchema` with challenge refs populated |
 | TTL elapsed | `ready` | `expired` | Future mutation attempts return `session_expired` |
 
@@ -2130,7 +2000,7 @@ No implementation work should start from prose alone.
 ### 5.1 Tightening Order
 
 1. Fix authoring semantic authority first
-2. Unify sponsor publish with shared challenge registration
+2. Unify wallet-funded authoring confirm-publish with shared challenge registration
 3. Tighten canonical semantic schemas across `@agora/common`
 4. Then do smaller cleanup like query-schema tightening and non-authoritative client preflight cleanup
 
@@ -2139,15 +2009,14 @@ No implementation work should start from prose alone.
 - one public authoring route family: `/api/authoring/sessions/*`
 - one canonical session shape and state machine
 - semantic-only public payloads
-- sponsor-funded and wallet-funded publish as funding variants of the same
-  public publish flow
+- one wallet-funded publish flow for both web and agent callers
 - client-side preflight as advisory only; API assessment remains authoritative
 
 ### 5.3 Delete Or Stop Doing
 
 - read-time validation reconstruction from generic compile error codes
 - caller-derived hard throws in create/patch assessment
-- duplicate sponsor-publish registration logic
+- duplicate publish registration logic
 - loose free-text modeling for closed semantic fields that already have shared
   canonical enums
 
@@ -2156,8 +2025,8 @@ No implementation work should start from prose alone.
 - one authoritative assessment boundary for `POST /sessions` and
   `PATCH /sessions/:id`
 - one persisted validation snapshot that `GET /sessions/:id` returns unchanged
-- one shared challenge-registration path used by sponsor publish and tx-hash
-  registration
+- one shared challenge-registration path used by confirm-publish and direct
+  tx-hash registration
 - one set of canonical finite semantic schemas in `@agora/common`
 
 ### 5.5 Concrete Code Plan

@@ -76,12 +76,6 @@ export const configSchema = z.object({
     )
     .optional(),
   AGORA_AUTHORING_OPERATOR_TOKEN: z.string().min(1).optional(),
-  AGORA_AUTHORING_SPONSOR_PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/, "must be a 32-byte hex private key")
-    .transform((value) => value as `0x${string}`)
-    .optional(),
-  AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: z.string().optional(),
   AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: z
     .preprocess(
       (value) => (typeof value === "string" ? Number(value) : value),

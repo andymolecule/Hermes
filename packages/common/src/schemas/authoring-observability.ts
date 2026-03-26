@@ -52,7 +52,6 @@ export const authoringConversationLogErrorSchema = z
 
 export const authoringConversationLogPublishSchema = z
   .object({
-    funding: z.string().trim().min(1).nullable().optional(),
     challenge_id: z.string().trim().min(1).nullable().optional(),
     contract_address: z.string().trim().min(1).nullable().optional(),
     tx_hash: z.string().trim().min(1).nullable().optional(),

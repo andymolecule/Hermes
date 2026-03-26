@@ -1185,7 +1185,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "publishAuthoringSession",
           summary:
-            "Publish immediately for sponsor funding, or prepare wallet transaction inputs for wallet funding",
+            "Prepare wallet transaction inputs from a ready authoring session",
           security: authoringSecurity,
           parameters: [
             {
@@ -1207,19 +1207,11 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           responses: {
             "200": {
-              description:
-                "Published session for sponsor funding, or wallet preparation bundle for wallet funding.",
+              description: "Wallet publish preparation bundle.",
               content: {
                 "application/json": {
                   schema: {
-                    oneOf: [
-                      {
-                        $ref: "#/components/schemas/AuthoringSessionResponse",
-                      },
-                      {
-                        $ref: "#/components/schemas/WalletPublishPreparationResponse",
-                      },
-                    ],
+                    $ref: "#/components/schemas/WalletPublishPreparationResponse",
                   },
                 },
               },
@@ -1231,7 +1223,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "confirmAuthoringSessionPublish",
           summary:
-            "Confirm a wallet-funded publish after the browser transaction succeeds",
+            "Confirm a wallet-funded publish after the caller transaction succeeds",
           security: authoringSecurity,
           parameters: [
             {
@@ -1913,9 +1905,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             confirm_publish: { type: "boolean", enum: [true] },
-            funding: { type: "string", enum: ["wallet", "sponsor"] },
+            poster_address: addressSchema(),
           },
-          required: ["confirm_publish", "funding"],
+          required: ["confirm_publish"],
         },
         AuthoringSessionConfirmPublishRequest: {
           type: "object",

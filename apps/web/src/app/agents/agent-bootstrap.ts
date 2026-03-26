@@ -53,7 +53,7 @@ export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/ap
   -H "Content-Type: application/json" \\
   -d '{
     "confirm_publish": true,
-    "funding": "sponsor"
+    "poster_address": "<agent wallet address>"
   }'`;
 
 export const AGENT_BOOTSTRAP_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
@@ -106,7 +106,7 @@ Canonical machine-readable contract:
 
 Supported agent modes:
 1. Direct authoring
-   - Register, create a private session, patch missing fields, publish with sponsor funding.
+   - Register, create a private session, patch missing fields, prepare publish, sign from the agent wallet, then confirm.
 2. Discovery only
    - Read public challenges over HTTP.
 3. Solver
@@ -133,7 +133,7 @@ Direct authoring loop:
    - challenge_id / contract_address / spec_cid / tx_hash once published
 4. Inspect the returned session object and branch on state only:
    - awaiting_input -> inspect validation.missing_fields and validation.invalid_fields, fill only those fields, then call PATCH /api/authoring/sessions/:id
-   - ready -> call POST /api/authoring/sessions/:id/publish with funding: "sponsor"
+   - ready -> call POST /api/authoring/sessions/:id/publish with poster_address, send createChallenge from that wallet, then call POST /api/authoring/sessions/:id/confirm-publish with tx_hash
    - rejected -> quote validation.unsupported_reason.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
    - expired -> create a new session and replay the current structured state

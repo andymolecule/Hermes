@@ -109,7 +109,7 @@ Useful focused API regression slices:
 
 ```bash
 cd apps/api
-node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-artifacts.test.ts tests/authoring-sponsored-publish.test.ts tests/authoring-ir.test.ts tests/authoring-compiler.test.ts
+node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-artifacts.test.ts tests/challenge-registration.test.ts tests/authoring-ir.test.ts tests/authoring-compiler.test.ts
 ```
 
 ---
@@ -142,13 +142,6 @@ Validates that all official scorer images are:
 - Anonymously pullable with Docker (public access)
 
 Requires a running Docker daemon.
-
-### `pnpm recover:authoring-publishes -- --stale-minutes=30`
-
-Reconciles stale authoring sponsor-budget reservations after API/indexer interruptions:
-- consumes reservations when a published link or challenge projection already exists
-- releases reservations only when no challenge transaction was ever attached
-- leaves tx-backed reservations pending for operator review if the challenge projection is still missing
 
 ### `pnpm smoke:lifecycle`
 

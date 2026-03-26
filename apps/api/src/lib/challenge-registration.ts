@@ -249,7 +249,7 @@ export async function registerChallengeFromTxHash(input: {
       status: 400,
       code: "POSTER_ADDRESS_MISMATCH",
       message:
-        "The transaction poster address does not match the session creator wallet. Next step: publish from the same wallet that owns the session and retry confirm-publish.",
+        "The transaction poster address does not match the wallet bound to this session. Next step: publish from the same wallet used during prepare-publish and retry confirm-publish.",
     });
   }
 

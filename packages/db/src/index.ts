@@ -41,5 +41,4 @@ export * from "./queries/auth.js";
 export * from "./queries/authoring-sessions.js";
 export * from "./queries/authoring-events.js";
 export * from "./queries/submission-events.js";
-export * from "./queries/authoring-sponsor-budget-reservations.js";
 export * from "./schema-compatibility.js";

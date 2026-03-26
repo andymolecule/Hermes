@@ -284,7 +284,8 @@ These principles imply the following near-term design decisions:
 7. Agent auth gains explicit introspection and stops forcing brittle
    re-registration flows.
 8. Authoring create/patch gain one authoritative assessment boundary.
-9. Sponsor-funded publish reuses the shared challenge-registration path.
+9. Wallet-funded publish confirmation reuses the shared
+   challenge-registration path.
 10. Closed semantic enums in `@agora/common` are tightened before smaller
     endpoint-specific cleanup.
 11. Client-side preflights remain advisory; API validation stays authoritative.

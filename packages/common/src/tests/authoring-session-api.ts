@@ -131,11 +131,10 @@ const errorEnvelope = authoringSessionErrorEnvelopeSchema.parse({
   error: {
     code: "TX_REVERTED",
     message:
-      "Authoring sponsor challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
+      "Authoring challenge creation cannot be submitted because preflight simulation reverted. InvalidSubmissionLimits.",
     next_action:
-      "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+      "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then retry publish from the bound wallet.",
     details: {
-      funding: "sponsor",
       phase: "simulate",
       operation: "createChallenge",
       revertErrorName: "InvalidSubmissionLimits",

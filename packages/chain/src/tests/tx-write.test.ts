@@ -133,12 +133,11 @@ test("classifyWriteError surfaces decoded custom revert details", () => {
   const error = classifyWriteError(
     createCustomRevertError("InvalidSubmissionLimits"),
     {
-      label: "Authoring sponsor challenge creation",
+      label: "Authoring challenge creation",
       phase: "simulate",
       revertNextAction:
-        "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+        "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then retry publish from the bound wallet.",
       details: {
-        funding: "sponsor",
         phase: "simulate",
         operation: "createChallenge",
       },
@@ -151,7 +150,7 @@ test("classifyWriteError surfaces decoded custom revert details", () => {
   assert.match(error.message, /InvalidSubmissionLimits/);
   assert.equal(
     error.nextAction,
-    "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then inspect the Agora sponsor wallet's USDC funding and allowance before retrying.",
+    "Confirm the compiled reward, deadline, dispute window, minimum score, and submission limits fit the active factory constraints, then retry publish from the bound wallet.",
   );
   assert.equal(error.details?.revertErrorName, "InvalidSubmissionLimits");
   assert.equal(error.details?.phase, "simulate");
@@ -165,10 +164,9 @@ test("classifyWriteError decodes raw ERC20 custom errors", () => {
     args: ["0x00000000000000000000000000000000000000aa", 5n, 10n],
   });
   const error = classifyWriteError(createRawSignatureRevertError(raw), {
-    label: "Authoring sponsor challenge creation",
+    label: "Authoring challenge creation",
     phase: "simulate",
     details: {
-      funding: "sponsor",
       phase: "simulate",
       operation: "createChallenge",
     },

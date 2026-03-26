@@ -66,7 +66,6 @@ export async function prepareAuthoringPublish(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         confirm_publish: true,
-        funding: "wallet",
       }),
     },
   );
