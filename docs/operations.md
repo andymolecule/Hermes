@@ -221,14 +221,6 @@ pnpm --filter @agora/api worker
 pnpm --filter @agora/executor start  # only when AGORA_SCORER_EXECUTOR_BACKEND=remote_http
 ```
 
-### PM2 (legacy local ops only)
-
-```bash
-pm2 start scripts/ops/ecosystem.config.cjs
-pm2 save
-pm2 status   # should show 3 processes: agora-api, agora-indexer, agora-worker (executor is separately managed)
-```
-
 ### Split Hosted Production
 
 Current production is intentionally split across hosts:

@@ -385,29 +385,58 @@ Actions:
 2. stop rewriting Railway service config from GitHub Actions
 3. keep Railway-native runtime deploys enabled
 
-### 6.5 Phase 4: Split Bootstrap From Release Verification
+### 6.5 Phase 4: Steady-State Runtime Releases
 
 Objective:
 
-- keep destructive reset explicit and admin-only
+- make normal hosted runtime releases non-destructive, rerunnable, and
+  Railway-native
 
 Actions:
 
-1. introduce `AGORA_SUPABASE_ADMIN_DB_URL`
-2. move destructive SQL to `bootstrap-testnet`
-3. make `release:testnet` read-only
+1. keep `AGORA_SUPABASE_ADMIN_DB_URL` bootstrap-only
+2. keep destructive SQL inside `bootstrap-testnet` only
+3. keep `release:testnet` read-only and verify-only
+4. make deploy retries an explicit Railway concern; verify retries rerun health
+   and smoke only
+5. do not add speculative forward-migration or reset orchestration to the
+   normal release path for this phase
+
+Acceptance:
+
+1. normal releases never reset the shared DB
+2. `pnpm release:testnet` retries do not redeploy runtime services
+3. `pnpm deploy:verify` and smoke remain read-only and rerunnable
+4. Railway remains the only normal deploy path for API, indexer, and worker
 
 ### 6.6 Phase 5: Legacy Cleanup
 
 Objective:
 
-- remove compatibility language that would reintroduce drift
+- remove compatibility paths that would reintroduce a second deploy or
+  verification model
 
 Actions:
 
-1. remove hosted `/healthz` guidance from docs
-2. remove runtime manifest references from scripts and docs
-3. keep only scorer artifact publication under GHCR
+1. remove hosted API `/healthz` guidance from docs and monitors; keep it only
+   as a local alias where needed
+2. delete or quarantine legacy worker-host deploy scripts if Railway remains
+   the canonical worker deploy owner
+3. collapse hosted runtime verification onto `deploy:verify` plus
+   `release:testnet`
+4. keep only scorer artifact publication under GHCR
+
+Acceptance:
+
+1. one normal hosted runtime release path remains:
+   push or merge to `main` -> Railway deploy -> verify -> smoke
+2. one canonical hosted health contract remains:
+   `/api/health`, with detail routes under `/api/worker-health` and
+   `/api/indexer-health`
+3. one canonical observable runtime identity contract remains:
+   `releaseId` and `runtimeVersion` on `/api/health`, with `gitSha`
+   best-effort only
+4. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
 
 ---
 
