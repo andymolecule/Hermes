@@ -24,6 +24,7 @@ broadcast/
 
 # Supabase
 supabase/.temp/
+supabase/.branches/
 /packages/db/supabase/.temp/
 .next.bak*
 submission-seal-private.pem

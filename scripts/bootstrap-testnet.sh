@@ -5,10 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env"
-  set +a
+  if [[ "${AGORA_LOAD_DOTENV:-1}" != "0" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ".env"
+    set +a
+  fi
 fi
 
 usage() {

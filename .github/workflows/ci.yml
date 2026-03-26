@@ -38,7 +38,7 @@ jobs:
       - name: Verify runtime lane scripts parse
         run: |
           set -euo pipefail
-          bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh scripts/local-cli-smoke.sh
+          bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh scripts/local-cli-smoke.sh scripts/local-lifecycle-smoke.sh scripts/local-smoke-common.sh
           node --check scripts/local-lifecycle-smoke.mjs
           node --check scripts/assert-local-smoke-env.mjs
 

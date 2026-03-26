@@ -341,6 +341,8 @@ Rules:
 - runtime verification defaults to API + worker, not web
 - bootstrap uses the admin DB URL and then runs the same verification gate
 - funded hosted smoke must not be coupled back into the push-time runtime gate
+- local deterministic smoke uses isolated local Supabase + Anvil state, not
+  shared hosted runtime state
 
 ---
 
@@ -445,8 +447,9 @@ Acceptance:
    verify first -> run `pnpm smoke:hosted` only when an operator wants the
    external write-path check
 3. one deterministic local CLI parity lane remains:
-   run `pnpm smoke:cli:local` on local Anvil when the exact CLI
-   `post -> finalize -> claim` path needs deterministic coverage
+   run `pnpm smoke:cli:local` on the isolated local Supabase + Anvil stack
+   when the exact CLI `post -> finalize -> claim` path needs deterministic
+   coverage
 4. one canonical hosted health contract remains:
    `/api/health`, with detail routes under `/api/worker-health` and
    `/api/indexer-health`

@@ -10,10 +10,12 @@ CIRCLE_BASE_SEPOLIA_USDC="0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 lc() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
 if [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env"
-  set +a
+  if [[ "${AGORA_LOAD_DOTENV:-1}" != "0" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ".env"
+    set +a
+  fi
 fi
 
 required_env=(

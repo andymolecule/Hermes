@@ -308,16 +308,17 @@ Local deterministic smoke:
 pnpm smoke:lifecycle:local
 pnpm smoke:cli:local
 
-# or, with explicit local overrides
-AGORA_CHAIN_ID=31337 \
+# hosted smoke still accepts explicit overrides
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
-pnpm smoke:cli:local
+pnpm smoke:hosted
 ```
 
 Hosted smoke flow: post -> indexer pickup -> list -> get -> public score-local blocked for private-evaluation -> submit -> worker scoring -> verify-public.
 Local deterministic flow: create -> submit -> startScoring -> score -> dispute -> resolve -> claim.
 Local CLI parity flow: post -> submit -> worker scoring -> verify-public -> finalize -> claim.
+Both local commands now provision their own isolated local Supabase + Anvil
+stack automatically before they start the lifecycle or CLI parity flow.
 
 Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Full lifecycle settlement testing belongs to the local deterministic lane, not hosted smoke.
 The smoke lanes expect the scorer image to already be published and pullable. They do not build a local official scorer fallback.

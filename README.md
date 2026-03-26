@@ -139,8 +139,8 @@ pnpm smoke:cli:local
 pnpm smoke:hosted
 ```
 
-`pnpm smoke:lifecycle` is the canonical deterministic lifecycle lane on local Anvil and exercises `create → submit → startScoring → score → dispute → resolve → claim`.
-`pnpm smoke:cli:local` is the deterministic local CLI parity lane and exercises `post → submit → worker scoring → verify-public → finalize → claim`.
+`pnpm smoke:lifecycle` is the canonical deterministic lifecycle lane and now boots an isolated local Supabase + Anvil stack before exercising `create → submit → startScoring → score → dispute → resolve → claim`.
+`pnpm smoke:cli:local` is the deterministic local CLI parity lane and now boots an isolated local Supabase + Anvil stack before exercising `post → submit → worker scoring → verify-public → finalize → claim`.
 `pnpm smoke:hosted` is the funded hosted smoke lane and exercises `post → submit → worker scoring → verify-public` against the configured external environment.
 
 Hosted smoke override example:

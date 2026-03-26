@@ -69,7 +69,7 @@ pnpm bootstrap:testnet
 pnpm smoke:hosted
 ```
 
-This repo now ships three explicit runtime lanes:
+This repo now ships four explicit runtime lanes:
 
 - `pnpm verify:runtime`: non-destructive hosted verification. Assumes Railway
   is rolling out the current `main` change through its native deploy path,
@@ -82,10 +82,15 @@ This repo now ships three explicit runtime lanes:
 - `pnpm smoke:hosted`: funded external smoke. Posts a small real challenge,
   submits a real result, waits for worker scoring, and verifies the public
   replay artifacts. It does not try to finalize or claim.
+- `pnpm smoke:lifecycle:local`: deterministic local lifecycle. Boots an
+  isolated local Supabase + Anvil stack, resets the local schema from the
+  canonical baseline, deploys local chain fixtures, then runs the direct
+  lifecycle harness.
 - `pnpm smoke:cli:local`: deterministic local CLI parity. Runs the exact
   `post -> submit -> worker scoring -> verify-public -> finalize -> claim`
-  path on local Anvil so CLI settlement coverage stays deterministic without
-  coupling funded hosted smoke back into the release gate.
+  path on the isolated local stack so CLI settlement coverage stays
+  deterministic without coupling funded hosted smoke back into the release
+  gate.
 
 Pushes to `main` now trigger the same GitHub workflow automatically in
 verify-only mode only when the commit touches runtime-affecting

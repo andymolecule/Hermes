@@ -5,10 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env"
-  set +a
+  if [[ "${AGORA_LOAD_DOTENV:-1}" != "0" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source ".env"
+    set +a
+  fi
 fi
 
 fail() {
@@ -73,10 +75,11 @@ if (!image) {
 	process.stdout.write(image);
 ')"
 fi
-E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
+E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-2}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
 E2E_MAX_SCORING_WAIT_SECONDS="${AGORA_E2E_MAX_SCORING_WAIT_SECONDS:-1200}"
+E2E_MAX_START_SCORING_WAIT_SECONDS="${AGORA_E2E_MAX_START_SCORING_WAIT_SECONDS:-900}"
 E2E_ENABLE_TIME_TRAVEL="${AGORA_E2E_ENABLE_TIME_TRAVEL:-0}"
 
 required_env=(
@@ -90,9 +93,9 @@ required_env=(
   AGORA_PINATA_JWT
   AGORA_PRIVATE_KEY
 )
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 if [[ "$FULL_SETTLEMENT" == "1" ]]; then
-  TOTAL_STEPS=12
+  TOTAL_STEPS=13
 fi
 
 for key in "${required_env[@]}"; do
@@ -163,6 +166,51 @@ JSON
     return 1
   fi
   return 0
+}
+
+read_challenge_field() {
+  local challenge_json="$1"
+  local field_name="$2"
+  printf "%s" "$challenge_json" | FIELD_NAME="$field_name" node --input-type=module -e '
+let raw = "";
+process.stdin.on("data", (chunk) => {
+  raw += chunk;
+});
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const fieldName = process.env.FIELD_NAME;
+  const value = payload?.data?.challenge?.[fieldName];
+  if (value !== undefined && value !== null) {
+    process.stdout.write(String(value));
+  }
+});
+'
+}
+
+read_epoch_seconds() {
+  local timestamp="$1"
+  TIMESTAMP_VALUE="$timestamp" node --input-type=module -e '
+const value = process.env.TIMESTAMP_VALUE;
+if (!value) process.exit(1);
+const epochMs = Date.parse(value);
+if (Number.isNaN(epochMs)) process.exit(1);
+process.stdout.write(String(Math.floor(epochMs / 1000)));
+'
+}
+
+start_challenge_scoring_tx() {
+  local challenge_address="$1"
+  CHALLENGE_ADDRESS="$challenge_address" node --import tsx -e '
+import { startChallengeScoring } from "./packages/chain/src/challenge.ts";
+
+const challengeAddress = process.env.CHALLENGE_ADDRESS;
+if (!challengeAddress) {
+  throw new Error("Missing CHALLENGE_ADDRESS for startScoring.");
+}
+
+const txHash = await startChallengeScoring(challengeAddress);
+process.stdout.write(String(txHash));
+'
 }
 
 if [[ "$FULL_SETTLEMENT" == "1" && "$E2E_ENABLE_TIME_TRAVEL" != "1" ]]; then
@@ -328,7 +376,52 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 poll_until 120 5 poll_find_submission_status || fail "submission status did not become queryable in time. Next step: inspect /api/submissions/${submission_uuid}/status and retry."
 echo "Submission ID: $submission_uuid"
 
-echo "Step 8/${TOTAL_STEPS}: Waiting for official worker scoring..."
+echo "Step 8/${TOTAL_STEPS}: Transitioning challenge into scoring..."
+challenge_detail_json="$(curl -fsS "${AGORA_API_URL%/}/api/challenges/${challenge_id}")" || fail "challenge detail lookup before startScoring"
+challenge_address="$(read_challenge_field "$challenge_detail_json" "contract_address")"
+challenge_deadline="$(read_challenge_field "$challenge_detail_json" "deadline")"
+[[ -n "$challenge_address" ]] || fail "challenge detail did not include contract_address. Next step: inspect /api/challenges/${challenge_id} and retry."
+[[ -n "$challenge_deadline" ]] || fail "challenge detail did not include deadline. Next step: inspect /api/challenges/${challenge_id} and retry."
+
+deadline_epoch="$(read_epoch_seconds "$challenge_deadline")" || fail "challenge deadline was not parseable. Next step: inspect /api/challenges/${challenge_id} and retry."
+now_epoch="$(date -u +%s)"
+if (( deadline_epoch > now_epoch )); then
+  if [[ "$FULL_SETTLEMENT" == "1" && "$E2E_ENABLE_TIME_TRAVEL" == "1" ]]; then
+    advance_seconds=$(( deadline_epoch - now_epoch + 1 ))
+    if (( advance_seconds > 0 )); then
+      rpc_time_travel "$advance_seconds" "$AGORA_RPC_URL" || fail "failed to advance the local deadline via RPC time travel. Next step: verify AGORA_RPC_URL points at Anvil and retry."
+    fi
+  else
+    deadline_passed() {
+      [[ "$(date -u +%s)" -gt "$deadline_epoch" ]]
+    }
+    poll_until "$E2E_MAX_START_SCORING_WAIT_SECONDS" 5 deadline_passed || fail "challenge deadline did not pass in time for startScoring. Next step: shorten AGORA_E2E_DEADLINE_MINUTES or inspect challenge timing."
+  fi
+fi
+
+start_scoring_tx_hash=""
+poll_start_scoring() {
+  local tx_hash
+  tx_hash="$(start_challenge_scoring_tx "$challenge_address" 2>/dev/null || true)"
+  if [[ -z "$tx_hash" ]]; then
+    return 1
+  fi
+  start_scoring_tx_hash="$tx_hash"
+  return 0
+}
+poll_until "$E2E_MAX_START_SCORING_WAIT_SECONDS" 5 poll_start_scoring || fail "startScoring did not succeed in time. Next step: inspect the challenge deadline and chain state, then retry."
+
+poll_challenge_scoring() {
+  local detail_json
+  local challenge_status
+  detail_json="$(curl -fsS "${AGORA_API_URL%/}/api/challenges/${challenge_id}")" || return 1
+  challenge_status="$(read_challenge_field "$detail_json" "status")"
+  [[ "$challenge_status" == "scoring" ]]
+}
+poll_until 120 5 poll_challenge_scoring || fail "challenge did not project to scoring in time. Next step: inspect /api/challenges/${challenge_id} and indexer health, then retry."
+echo "✔ startScoring confirmed: ${start_scoring_tx_hash}"
+
+echo "Step 9/${TOTAL_STEPS}: Waiting for official worker scoring..."
 scored_submission_json=""
 poll_scored_submission() {
   local status_json
@@ -345,7 +438,7 @@ poll_until "$E2E_MAX_SCORING_WAIT_SECONDS" 10 poll_scored_submission || fail "wo
 printf "%s" "$scored_submission_json" >"$TMP_DIR/score.json"
 echo "✔ Worker scoring completed"
 
-echo "Step 9/${TOTAL_STEPS}: Verifying public replay artifacts..."
+echo "Step 10/${TOTAL_STEPS}: Verifying public replay artifacts..."
 "${AGORA_CMD[@]}" verify-public "$challenge_id" --sub "$submission_uuid" --format json >"$TMP_DIR/verify-public.json" || fail "agora verify-public"
 
 if [[ "$FULL_SETTLEMENT" != "1" ]]; then
@@ -353,7 +446,7 @@ if [[ "$FULL_SETTLEMENT" != "1" ]]; then
   exit 0
 fi
 
-echo "Step 10/${TOTAL_STEPS}: Advancing the local dispute window..."
+echo "Step 11/${TOTAL_STEPS}: Advancing the local dispute window..."
 challenge_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || fail "agora get before finalize"
 dispute_window_seconds="$(printf "%s" "$challenge_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
@@ -367,13 +460,13 @@ if ! rpc_time_travel "$dispute_window_seconds" "$AGORA_RPC_URL"; then
 fi
 echo "Advanced chain time by ${dispute_window_seconds}s from scoring start."
 
-echo "Step 11/${TOTAL_STEPS}: Finalizing challenge..."
+echo "Step 12/${TOTAL_STEPS}: Finalizing challenge..."
 poll_finalize() {
   "${AGORA_CMD[@]}" finalize "$challenge_id" --format json >"$TMP_DIR/finalize.json"
 }
 poll_until "$E2E_MAX_FINALIZE_WAIT_SECONDS" 10 poll_finalize || fail "challenge was not finalizable within ${E2E_MAX_FINALIZE_WAIT_SECONDS}s after local time travel. Next step: inspect worker scoring completion and local chain time, then retry."
 
-echo "Step 12/${TOTAL_STEPS}: Claiming payout and verifying a positive delta..."
+echo "Step 13/${TOTAL_STEPS}: Claiming payout and verifying a positive delta..."
 claim_json="$("${AGORA_CMD[@]}" claim "$challenge_id" --format json)" || fail "agora claim"
 claimed_delta="$(printf "%s" "$claim_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{

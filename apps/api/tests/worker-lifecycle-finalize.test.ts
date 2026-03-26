@@ -133,6 +133,130 @@ test("lifecycle sweep finalizes once protocol rules allow it", async () => {
   assert.equal(finalizeCalls, 1);
 });
 
+test("lifecycle sweep starts scoring once an open challenge passes its deadline on-chain", async () => {
+  let startScoringCalls = 0;
+  const db = {
+    from(table: string) {
+      assert.equal(table, "challenges");
+      const rows = [
+        {
+          id: "challenge-open",
+          contract_address: "0x0000000000000000000000000000000000000001",
+          status: CHALLENGE_STATUS.open,
+        },
+      ];
+      const finalFilter = {
+        neq() {
+          return Promise.resolve({ data: rows, error: null });
+        },
+      };
+      const firstFilter = {
+        neq() {
+          return finalFilter;
+        },
+      };
+      return {
+        select() {
+          return firstFilter;
+        },
+      };
+    },
+  };
+
+  await sweepChallengeLifecycle(db as never, () => {}, {
+    getPublicClient: () => ({}) as never,
+    nowSeconds: () => 2_000n,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.open,
+      deadline: 1_000n,
+      disputeWindowHours: 1n,
+    }),
+    getChallengeFinalizeState: async () => {
+      throw new Error("finalize should not be read during startScoring");
+    },
+    finalizeChallenge: async () => {
+      throw new Error("finalize should not be called");
+    },
+    startChallengeScoring: async () => {
+      startScoringCalls += 1;
+      return `0x${"2".repeat(64)}` as `0x${string}`;
+    },
+    waitForTransactionReceiptWithTimeout: async () => ({
+      status: "success",
+    }),
+  });
+
+  assert.equal(startScoringCalls, 1);
+});
+
+test("lifecycle sweep does not retry startScoring when the chain is already scoring", async () => {
+  let startScoringCalls = 0;
+  let finalizeReads = 0;
+  const db = {
+    from(table: string) {
+      assert.equal(table, "challenges");
+      const rows = [
+        {
+          id: "challenge-lagging-projection",
+          contract_address: "0x0000000000000000000000000000000000000001",
+          status: CHALLENGE_STATUS.open,
+        },
+      ];
+      const finalFilter = {
+        neq() {
+          return Promise.resolve({ data: rows, error: null });
+        },
+      };
+      const firstFilter = {
+        neq() {
+          return finalFilter;
+        },
+      };
+      return {
+        select() {
+          return firstFilter;
+        },
+      };
+    },
+  };
+
+  await sweepChallengeLifecycle(db as never, () => {}, {
+    getPublicClient: () => ({}) as never,
+    nowSeconds: () => 2_000n,
+    getChallengeLifecycleState: async () => ({
+      status: CHALLENGE_STATUS.scoring,
+      deadline: 1_000n,
+      disputeWindowHours: 1n,
+    }),
+    getChallengeFinalizeState: async () => {
+      finalizeReads += 1;
+      return {
+        contractVersion: 2,
+        status: CHALLENGE_STATUS.scoring,
+        deadline: 1_000n,
+        disputeWindowHours: 1n,
+        scoringStartedAt: 1_500n,
+        scoringGracePeriod: 7_200n,
+        submissionCount: 1n,
+        scoredCount: 0n,
+      };
+    },
+    finalizeChallenge: async () => {
+      throw new Error("finalize should not be called");
+    },
+    startChallengeScoring: async () => {
+      startScoringCalls += 1;
+      return `0x${"3".repeat(64)}` as `0x${string}`;
+    },
+    waitForTransactionReceiptWithTimeout: async () => ({
+      status: "success",
+    }),
+  });
+
+  assert.equal(startScoringCalls, 0);
+  assert.equal(finalizeReads, 0);
+});
+
 test("lifecycle sweep skips challenges whose finalize-state read lacks scoringStartedAt", async () => {
   let finalizeCalls = 0;
   const logs: Array<{ level: string; message: string }> = [];

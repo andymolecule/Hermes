@@ -164,16 +164,19 @@ This command is read-only. It does not reset the DB and it does not post on-chai
 ### `pnpm smoke:lifecycle`
 
 Runs the deterministic local lifecycle smoke harness in `apps/api/src/lifecycle-smoke.ts` after first asserting runtime schema compatibility.
-This lane now fails fast unless `AGORA_RPC_URL` is local Anvil (`31337`) and
-`AGORA_SUPABASE_URL` points at a local loopback Supabase stack.
+The canonical wrapper is `scripts/local-lifecycle-smoke.sh`, which now boots an
+isolated local Supabase + Anvil stack automatically, resets the local schema
+from the canonical baseline, deploys local chain fixtures, and then runs the
+direct lifecycle harness.
 
 ### `pnpm smoke:cli:local`
 
 Runs the deterministic local CLI parity harness in `scripts/local-cli-smoke.sh`.
 This lane uses the real CLI path on local Anvil and covers `post -> submit ->
 worker scoring -> verify-public -> finalize -> claim`.
-It now fails fast unless `AGORA_RPC_URL` is local Anvil (`31337`) and
-`AGORA_API_URL` points at a local loopback API origin.
+The wrapper now boots an isolated local Supabase + Anvil stack, deploys local
+chain fixtures, starts local API/worker/indexer processes, and then runs the
+full CLI settlement path.
 
 ### `pnpm smoke:hosted`
 
@@ -217,6 +220,8 @@ Wallet/session hardening checks now live in:
 `pnpm smoke:hosted` is the funded external smoke lane against the currently configured hosted environment.
 
 `apps/api/src/lifecycle-smoke.ts` exercises the full deterministic settlement branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
+`scripts/local-lifecycle-smoke.sh` is the canonical wrapper that boots the
+isolated local stack before running the direct lifecycle harness.
 `scripts/local-cli-smoke.sh` exercises the CLI parity branch on local Anvil (`post -> submit -> worker scoring -> verify-public -> finalize -> claim`).
 `scripts/hosted-smoke.sh` exercises the hosted operational branch (`post -> submit -> worker scoring -> verify-public`).
 
@@ -275,10 +280,11 @@ AGORA_BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
 AGORA_FORK_BLOCK=""
 ```
 
-For the full post-deadline CLI path, run `pnpm smoke:cli:local` against local Anvil with `AGORA_CHAIN_ID=31337`.
+For the full post-deadline CLI path, run `pnpm smoke:cli:local`.
 For the direct deterministic contract harness, run `pnpm smoke:lifecycle:local`.
-Both local lanes intentionally fail fast when they are pointed at hosted RPC,
-hosted Supabase, or a hosted API origin.
+Both local lanes now provision their own isolated local Supabase + Anvil stack
+automatically, so they no longer depend on the root `.env` already pointing at
+local services.
 The local lifecycle config enforces the hardened 168 hour dispute window.
 `pnpm smoke:hosted` is the funded external/manual lane against the currently deployed factory generation.
 Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only readiness gate first.

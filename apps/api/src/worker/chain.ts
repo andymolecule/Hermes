@@ -296,7 +296,8 @@ export async function sweepChallengeLifecycle(
 
       if (
         challenge.status === CHALLENGE_STATUS.open &&
-        lifecycle.status === CHALLENGE_STATUS.scoring
+        lifecycle.status === CHALLENGE_STATUS.open &&
+        lifecycle.deadline <= nowSeconds
       ) {
         log("info", "Starting scoring window", {
           challengeId: challenge.id,
@@ -318,6 +319,13 @@ export async function sweepChallengeLifecycle(
           challengeId: challenge.id,
           txHash,
         });
+        continue;
+      }
+
+      if (
+        challenge.status === CHALLENGE_STATUS.open &&
+        lifecycle.status === CHALLENGE_STATUS.scoring
+      ) {
         continue;
       }
 
