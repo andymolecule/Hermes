@@ -11,6 +11,11 @@ import {
 } from "./authoring-core.js";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
+const normalizedAddressSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^0x[a-f0-9]{40}$/);
 
 export const authoringSessionPublicStateSchema = z.enum([
   "awaiting_input",
@@ -20,7 +25,6 @@ export const authoringSessionPublicStateSchema = z.enum([
   "expired",
 ]);
 
-export const authoringSessionFundingSchema = z.enum(["wallet", "sponsor"]);
 export const authoringSessionObjectiveSchema = z.enum(["maximize", "minimize"]);
 export const AUTHORING_SESSION_ERROR_CODE_VALUES = [
   "unauthorized",
@@ -334,7 +338,7 @@ export const patchAuthoringSessionRequestSchema = z
 export const publishAuthoringSessionRequestSchema = z
   .object({
     confirm_publish: z.literal(true),
-    funding: authoringSessionFundingSchema,
+    poster_address: normalizedAddressSchema.optional(),
   })
   .strict();
 

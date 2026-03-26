@@ -384,8 +384,8 @@ Manual fallback:
 - API server:
   - `apps/api/src/app.ts` (route mounting, CORS, body guardrails)
   - `apps/api/src/routes/*` (challenge/submission/auth/verification/authoring endpoints)
-  - `apps/api/src/routes/agents.ts` + `apps/api/src/routes/authoring-sessions.ts` (direct agent registration, private session authoring, sponsor publish, wallet prepare/confirm publish)
-  - `apps/api/src/lib/authoring-compiler.ts` + `apps/api/src/lib/authoring-sponsored-publish.ts` (authoring compilation, dry-run scoring, and funded publish orchestration)
+  - `apps/api/src/routes/agents.ts` + `apps/api/src/routes/authoring-sessions.ts` (direct agent registration, private session authoring, wallet publish prepare, and confirm publish)
+  - `apps/api/src/lib/authoring-compiler.ts` + `apps/api/src/lib/challenge-registration.ts` (authoring compilation, dry-run scoring, and shared publish registration)
   - `/.well-known/openapi.json` is the canonical machine-readable contract for agents
 - Indexer:
   - `packages/chain/src/indexer.ts` (poll loop and cursor coordination)
@@ -492,7 +492,7 @@ Key properties:
 
 > For detailed projection model, source-of-truth boundaries, and event-to-table mapping, see [Data and Indexing](data-and-indexing.md).
 >
-> This ERD is intentionally high-level. It omits runtime/support tables such as `authoring_sessions`, `authoring_sponsor_budget_reservations`, `auth_agents`, `auth_sessions`, `auth_nonces`, `submission_intents`, `score_jobs`, `worker_runtime_state`, and `worker_runtime_control`. Use [Data and Indexing](data-and-indexing.md) as the authoritative full schema reference.
+> This ERD is intentionally high-level. It omits runtime/support tables such as `authoring_sessions`, `auth_agents`, `auth_sessions`, `auth_nonces`, `submission_intents`, `score_jobs`, `worker_runtime_state`, and `worker_runtime_control`. Use [Data and Indexing](data-and-indexing.md) as the authoritative full schema reference.
 
 ```mermaid
 erDiagram
@@ -618,8 +618,8 @@ erDiagram
 | `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from structured intent, execution, and files |
 | `GET` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Read one private authoring session owned by the caller |
 | `PATCH` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Patch missing or invalid session fields and continue deterministic validation |
-| `POST` | `/api/authoring/sessions/:id/publish` | SIWE or agent bearer | — | Publish immediately for `sponsor`, or prepare wallet tx inputs for `wallet` |
-| `POST` | `/api/authoring/sessions/:id/confirm-publish` | SIWE | — | Finalize a wallet-funded publish after the browser transaction succeeds |
+| `POST` | `/api/authoring/sessions/:id/publish` | SIWE or agent bearer | — | Prepare wallet tx inputs from a ready session and bind the poster wallet |
+| `POST` | `/api/authoring/sessions/:id/confirm-publish` | SIWE or agent bearer | — | Finalize a wallet-funded publish after the caller transaction succeeds |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |

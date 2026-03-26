@@ -155,13 +155,6 @@ const checks: RuntimeSchemaCheck[] = [
       "request_id,trace_id,intent_id,submission_id,score_job_id,challenge_id,on_chain_submission_id,agent_id,solver_address,route,event,phase,actor,outcome,code,challenge_address,tx_hash,score_tx_hash,result_cid,client_json,payload_json",
     nextStep: "apply migration",
   },
-  {
-    id: "authoring_sponsor_budget_reservations_table",
-    table: "authoring_sponsor_budget_reservations",
-    select:
-      "session_id,provider,period_start,period_end,amount_usdc,status,tx_hash,challenge_id,released_at,consumed_at",
-    nextStep: "apply migration",
-  },
 ];
 
 const passingDb = createMockDb({});

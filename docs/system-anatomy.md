@@ -124,13 +124,14 @@ only public authoring contract.
 
 ### Layer 3: Publish
 
-Publish has two rails:
+Publish has one rail:
 
-- `funding: "sponsor"`: server-side one-call publish for agent flows
-- `funding: "wallet"`: browser prepares tx inputs, signs on-chain in MetaMask,
-  then confirms with `POST /sessions/:id/confirm-publish`
+- Agora prepares canonical wallet transaction inputs from a `ready` session
+- the caller wallet signs and sends `createChallenge`
+- Agora confirms and registers the resulting transaction with
+  `POST /sessions/:id/confirm-publish`
 
-Both rails converge on the same final `published` session state.
+Web and agent callers use the same wallet-funded publish contract.
 
 ### Layer 4: Submission registration
 
@@ -168,7 +169,6 @@ The indexer is the bridge from on-chain truth to read models:
 The current authoring-side write model is:
 
 - `authoring_sessions`
-- `authoring_sponsor_budget_reservations`
 - `auth_agents`
 
 Key rules:
@@ -217,7 +217,7 @@ The current system is simpler than the earlier multi-surface authoring era:
 - one public authoring noun: `session`
 - one shared authoring route family
 - one direct-agent model
-- one publish contract with two funding rails
+- one publish contract with one wallet-funded rail
 - no push-delivery subsystem
 
 That is the shape engineers should optimize around.

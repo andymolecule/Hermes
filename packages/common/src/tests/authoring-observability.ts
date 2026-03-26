@@ -23,7 +23,7 @@ const timelineEntry = authoringConversationLogEntrySchema.parse({
   route: "publish",
   event: "publish.chain_submitted",
   actor: "publish",
-  summary: "Agora submitted the sponsor publish transaction.",
+  summary: "Agora submitted the publish transaction.",
   state_before: "ready",
   state_after: "ready",
   publish: {

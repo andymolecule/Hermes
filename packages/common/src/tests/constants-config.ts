@@ -17,7 +17,6 @@ import {
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
   readAuthoringOperatorRuntimeConfig,
-  readAuthoringSponsorRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
@@ -311,31 +310,6 @@ try {
   });
   assert.equal(authoringOperatorRuntime.apiUrl, "https://api.agora.example");
   assert.equal(authoringOperatorRuntime.token, "operator-token");
-
-  const authoringSponsorRuntime = readAuthoringSponsorRuntimeConfig({
-    AGORA_AUTHORING_SPONSOR_PRIVATE_KEY:
-      "0x1111111111111111111111111111111111111111111111111111111111111111",
-    AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:500",
-  });
-  assert.equal(
-    authoringSponsorRuntime.privateKey,
-    "0x1111111111111111111111111111111111111111111111111111111111111111",
-  );
-  assert.equal(authoringSponsorRuntime.monthlyBudgetsUsdc.beach_science, 500);
-  assert.throws(
-    () =>
-      readAuthoringSponsorRuntimeConfig({
-        AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "beach_science:not-a-number",
-      }),
-    /positive USDC budget/i,
-  );
-  assert.throws(
-    () =>
-      readAuthoringSponsorRuntimeConfig({
-        AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS: "github:125",
-      }),
-    /Invalid AGORA_AUTHORING_SPONSOR_MONTHLY_BUDGETS source provider/,
-  );
 
   const blankCliRuntime = readCliRuntimeConfig({
     AGORA_API_URL: "",

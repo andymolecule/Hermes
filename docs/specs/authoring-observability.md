@@ -299,9 +299,6 @@ Emit durable authoring events for:
 - `POST /api/authoring/sessions/:id/publish`
   - publish requested
   - wallet publish prepared
-  - sponsor chain tx submitted
-  - sponsor chain tx confirmed
-  - registration completed or failed
   - publish completed or failed
 - `POST /api/authoring/sessions/:id/confirm-publish`
   - confirm requested

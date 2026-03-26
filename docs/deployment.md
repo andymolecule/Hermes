@@ -246,7 +246,6 @@ This section covers non-code work for deployment across hosted systems.
 ### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.
-- `pnpm recover:authoring-publishes -- --stale-minutes=30` reconciles stale sponsor-budget reservations for authoring publishes after API or indexer interruptions.
 - `agora clean-failed-jobs` skips terminal failed jobs such as invalid submissions, missing off-chain submission metadata, and invalid challenge scoring configs. It is dry-run by default.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.

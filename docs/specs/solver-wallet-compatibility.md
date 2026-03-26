@@ -29,7 +29,7 @@ This doc exists to lock the planning model before implementation work starts.
 
 ## 0.2 What This Doc Is Not For
 
-- sponsor-funded authoring publish for challenge creation
+- challenge-authoring publish flows; this document is solver-wallet specific
 - consumer checkout or commerce flows
 - API pay-per-request monetization
 - card-network agent payment rails
@@ -88,7 +88,7 @@ As of March 24, 2026, the top wallet infrastructure providers differ in implemen
 
 | Provider | Docs-visible primary model | Account shapes | Policy / controls | Natural Agora fit |
 |----------|----------------------------|----------------|-------------------|-------------------|
-| **Coinbase CDP** | Server-managed wallets and smart accounts | EOA, smart account | Spend permissions, gas sponsorship | Strong fit for agent-owned solver wallets |
+| **Coinbase CDP** | Server-managed wallets and smart accounts | EOA, smart account | Spend permissions, managed gas payment | Strong fit for agent-owned solver wallets |
 | **Privy** | Secure server wallets with auth keys, quorums, policies | EOA, smart account | Rich policy and approval controls | Strong fit for agent-owned or delegated flows |
 | **Turnkey** | Agentic wallets plus transaction policy engine | EOA and delegated control patterns | Explicit policy engine | Strong fit for agent-owned or delegated flows |
 | **Crossmint** | Wallet signers and custody architecture | Wallets with multiple signer patterns | Depends on signer configuration | Good fit for agent-owned server wallets |
@@ -234,7 +234,7 @@ This keeps the same product semantics as V1:
 The only difference is transport:
 
 - user operation instead of direct transaction
-- possibly sponsored gas
+- possibly third-party-paid gas
 - possibly bundled writes
 
 This does not justify changing solver identity semantics.
@@ -605,7 +605,7 @@ Agora must not bake provider-specific assumptions into the core workflow such as
 
 - CDP-specific account shapes
 - vendor-specific policy models
-- vendor-specific sponsorship semantics
+- vendor-specific gas-payment semantics
 - provider-specific authentication flows
 
 CDP is the first concrete provider target, not the architectural center of gravity.
@@ -861,7 +861,7 @@ The current private-key path is not a complete wallet-compatibility strategy and
 
 - Do we want to expose solver wallet mode or signer provider in public APIs, or keep that internal-only?
 - Do we want a first-party CDP adapter in the repo, or only a generic signer interface plus integration examples?
-- Do we want to support gas-sponsored submit for agents in the first smart-account milestone, or only basic user-op compatibility?
+- Do we want to support third-party-paid gas for agent submits in the first smart-account milestone, or only basic user-op compatibility?
 - At what point do we need public agent reputation or account labeling tied to solver wallets?
 - Do we need solver-wallet rotation or recovery semantics for long-lived Telegram agents?
 
