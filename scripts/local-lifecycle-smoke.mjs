@@ -3,7 +3,9 @@ import {
   assertRuntimeDatabaseSchema,
   createSupabaseClient,
 } from "../packages/db/src/index.ts";
+import { assertLocalSmokeEnv } from "./assert-local-smoke-env.mjs";
 
+await assertLocalSmokeEnv({ requireSupabase: true });
 await assertRuntimeDatabaseSchema(createSupabaseClient(true));
 
 const child = spawn(

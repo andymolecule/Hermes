@@ -40,6 +40,7 @@ jobs:
           set -euo pipefail
           bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh scripts/local-cli-smoke.sh
           node --check scripts/local-lifecycle-smoke.mjs
+          node --check scripts/assert-local-smoke-env.mjs
 
       - name: Verify ABI sync
         run: pnpm abi:check

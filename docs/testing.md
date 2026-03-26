@@ -164,12 +164,16 @@ This command is read-only. It does not reset the DB and it does not post on-chai
 ### `pnpm smoke:lifecycle`
 
 Runs the deterministic local lifecycle smoke harness in `apps/api/src/lifecycle-smoke.ts` after first asserting runtime schema compatibility.
+This lane now fails fast unless `AGORA_RPC_URL` is local Anvil (`31337`) and
+`AGORA_SUPABASE_URL` points at a local loopback Supabase stack.
 
 ### `pnpm smoke:cli:local`
 
 Runs the deterministic local CLI parity harness in `scripts/local-cli-smoke.sh`.
 This lane uses the real CLI path on local Anvil and covers `post -> submit ->
 worker scoring -> verify-public -> finalize -> claim`.
+It now fails fast unless `AGORA_RPC_URL` is local Anvil (`31337`) and
+`AGORA_API_URL` points at a local loopback API origin.
 
 ### `pnpm smoke:hosted`
 
@@ -251,6 +255,7 @@ Hosted funded smoke (`pnpm smoke:hosted` / `./scripts/hosted-smoke.sh`):
 
 ```bash
 # Required env vars
+AGORA_API_URL
 AGORA_RPC_URL
 AGORA_FACTORY_ADDRESS
 AGORA_USDC_ADDRESS
@@ -272,6 +277,8 @@ AGORA_FORK_BLOCK=""
 
 For the full post-deadline CLI path, run `pnpm smoke:cli:local` against local Anvil with `AGORA_CHAIN_ID=31337`.
 For the direct deterministic contract harness, run `pnpm smoke:lifecycle:local`.
+Both local lanes intentionally fail fast when they are pointed at hosted RPC,
+hosted Supabase, or a hosted API origin.
 The local lifecycle config enforces the hardened 168 hour dispute window.
 `pnpm smoke:hosted` is the funded external/manual lane against the currently deployed factory generation.
 Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only readiness gate first.

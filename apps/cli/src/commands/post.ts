@@ -9,6 +9,7 @@ import {
   getPublicClient,
   getWalletClient,
   parseChallengeCreatedReceipt,
+  sendWriteWithRetry,
 } from "@agora/chain";
 import {
   CHALLENGE_LIMITS,
@@ -393,14 +394,21 @@ export function buildPostCommand() {
         allowanceSpinner.succeed(
           `Allowance: ${formatUnits(allowanceAmount, 6)} USDC`,
         );
+        const publicClient = getPublicClient();
 
         if (allowanceAmount < rewardUnits) {
           const approveSpinner = createSpinner("Approving USDC...");
-          const approveHash = await approve(
-            config.factory_address as `0x${string}`,
-            rewardAmount,
-          );
-          const publicClient = getPublicClient();
+          const approveHash = await sendWriteWithRetry({
+            accountAddress: walletAddress,
+            label: "USDC approval",
+            publicClient,
+            write: () =>
+              approve(
+                config.factory_address as `0x${string}`,
+                rewardAmount,
+                walletClient,
+              ),
+          });
           await publicClient.waitForTransactionReceipt({ hash: approveHash });
           approveSpinner.succeed(`Approval confirmed: ${approveHash}`);
         }
@@ -409,26 +417,34 @@ export function buildPostCommand() {
         const minimumScoreWad = decimalToWad(
           spec.minimum_score ?? defaultMinimumScoreForSpec(spec),
         );
-        const txHash = await createChallenge({
-          specCid,
-          rewardAmount,
-          deadline: parseDeadline(spec.deadline),
-          disputeWindowHours:
-            spec.dispute_window_hours ??
-            CHALLENGE_LIMITS.defaultDisputeWindowHours,
-          minimumScore: minimumScoreWad,
-          distributionType: distributionMap[spec.reward.distribution] ?? 0,
-          labTba: (spec.lab_tba ??
-            "0x0000000000000000000000000000000000000000") as `0x${string}`,
-          maxSubmissions:
-            spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
-          maxSubmissionsPerSolver:
-            spec.max_submissions_per_solver ??
-            SUBMISSION_LIMITS.maxPerSolverPerChallenge,
+        const txHash = await sendWriteWithRetry({
+          accountAddress: walletAddress,
+          label: "Challenge creation",
+          publicClient,
+          write: () =>
+            createChallenge(
+              {
+                specCid,
+                rewardAmount,
+                deadline: parseDeadline(spec.deadline),
+                disputeWindowHours:
+                  spec.dispute_window_hours ??
+                  CHALLENGE_LIMITS.defaultDisputeWindowHours,
+                minimumScore: minimumScoreWad,
+                distributionType: distributionMap[spec.reward.distribution] ?? 0,
+                labTba: (spec.lab_tba ??
+                  "0x0000000000000000000000000000000000000000") as `0x${string}`,
+                maxSubmissions:
+                  spec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
+                maxSubmissionsPerSolver:
+                  spec.max_submissions_per_solver ??
+                  SUBMISSION_LIMITS.maxPerSolverPerChallenge,
+              },
+              walletClient,
+            ),
         });
         createSpinnerInstance.succeed(`Challenge tx sent: ${txHash}`);
 
-        const publicClient = getPublicClient();
         const receipt = await publicClient.waitForTransactionReceipt({
           hash: txHash,
         });

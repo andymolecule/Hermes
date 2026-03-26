@@ -76,9 +76,11 @@ fi
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
 E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
+E2E_MAX_SCORING_WAIT_SECONDS="${AGORA_E2E_MAX_SCORING_WAIT_SECONDS:-1200}"
 E2E_ENABLE_TIME_TRAVEL="${AGORA_E2E_ENABLE_TIME_TRAVEL:-0}"
 
 required_env=(
+  AGORA_API_URL
   AGORA_RPC_URL
   AGORA_FACTORY_ADDRESS
   AGORA_USDC_ADDRESS
@@ -293,56 +295,53 @@ echo "✔ Public score-local stayed blocked as expected"
 echo "Step 6/${TOTAL_STEPS}: Submitting on-chain..."
 submit_json="$("${AGORA_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json)" || fail "agora submit"
 echo "$submit_json" >"$TMP_DIR/submit.json"
-submit_onchain_id="$(printf "%s" "$submit_json" | node --input-type=module -e '
+submission_uuid="$(printf "%s" "$submit_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
   if (payload.submissionId !== undefined && payload.submissionId !== null) {
     process.stdout.write(String(payload.submissionId));
   }
 });')"
-result_cid="$(printf "%s" "$submit_json" | node --input-type=module -e '
+submit_onchain_id="$(printf "%s" "$submit_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
-  if (payload.resultCid) process.stdout.write(String(payload.resultCid));
+  if (payload.onChainSubmissionId !== undefined && payload.onChainSubmissionId !== null) {
+    process.stdout.write(String(payload.onChainSubmissionId));
+  }
 });')"
-[[ -n "$submit_onchain_id" ]] || fail "submit did not return on-chain submission id"
-echo "✔ On-chain submission succeeded (subId=${submit_onchain_id})"
+[[ -n "$submission_uuid" ]] || fail "submit did not return the canonical submission UUID. Next step: inspect the CLI submit output and API registration path, then retry."
+echo "✔ On-chain submission succeeded (submissionId=${submission_uuid}${submit_onchain_id:+, onChainSubId=${submit_onchain_id}})"
 
-echo "Step 7/${TOTAL_STEPS}: Waiting for submission row..."
-submission_uuid=""
-poll_find_submission() {
-  local get_json
-  get_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || return 1
-  submission_uuid="$(printf "%s" "$get_json" | node --input-type=module -e '
+echo "Step 7/${TOTAL_STEPS}: Waiting for canonical submission status..."
+submission_status_json=""
+poll_find_submission_status() {
+  local status_json
+  status_json="$(curl -fsS "${AGORA_API_URL%/}/api/submissions/${submission_uuid}/status")" || return 1
+  submission_status_json="$(printf "%s" "$status_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
-  const rows = payload.submissions ?? [];
-  const subId = Number(process.argv[1]);
-  const cid = process.argv[2];
-  const found = rows.find((s) => Number(s.on_chain_sub_id) === subId && s.result_cid === cid);
-  if (found?.id) process.stdout.write(String(found.id));
-});' "$submit_onchain_id" "$result_cid")"
-  [[ -n "$submission_uuid" ]]
+  const submission = payload?.data?.submission;
+  if (submission?.id) process.stdout.write(JSON.stringify(payload.data));
+});')"
+  [[ -n "$submission_status_json" ]]
 }
-poll_until 600 10 poll_find_submission || fail "submission did not appear in index with result_cid"
+poll_until 120 5 poll_find_submission_status || fail "submission status did not become queryable in time. Next step: inspect /api/submissions/${submission_uuid}/status and retry."
 echo "Submission ID: $submission_uuid"
 
 echo "Step 8/${TOTAL_STEPS}: Waiting for official worker scoring..."
 scored_submission_json=""
 poll_scored_submission() {
-  local get_json
-  get_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || return 1
-  scored_submission_json="$(printf "%s" "$get_json" | node --input-type=module -e '
+  local status_json
+  status_json="$(curl -fsS "${AGORA_API_URL%/}/api/submissions/${submission_uuid}/status")" || return 1
+  scored_submission_json="$(printf "%s" "$status_json" | node --input-type=module -e '
 let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
   const payload = JSON.parse(raw);
-  const rows = payload.submissions ?? [];
-  const subId = Number(process.argv[1]);
-  const found = rows.find((s) => Number(s.on_chain_sub_id) === subId && s.scored === true);
-  if (found) process.stdout.write(JSON.stringify(found));
-});' "$submit_onchain_id")"
+  const submission = payload?.data?.submission;
+  if (submission?.scored === true) process.stdout.write(JSON.stringify(submission));
+});')"
   [[ -n "$scored_submission_json" ]]
 }
-poll_until 600 10 poll_scored_submission || fail "worker did not score the submission in time (ensure the worker is running and Docker is available)"
+poll_until "$E2E_MAX_SCORING_WAIT_SECONDS" 10 poll_scored_submission || fail "worker did not score the submission in time. Next step: inspect /api/submissions/${submission_uuid}/status, /api/worker-health, and the worker logs, then retry."
 printf "%s" "$scored_submission_json" >"$TMP_DIR/score.json"
 echo "✔ Worker scoring completed"
 
