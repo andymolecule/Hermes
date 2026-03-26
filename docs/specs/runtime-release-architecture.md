@@ -208,15 +208,19 @@ The runtime release path has four stages:
    - wait for `/api/health` to return healthy release metadata
    - wait for `/api/worker-health` to show healthy workers on the active API
      runtime
-4. `smoke`
-   - run the external lifecycle smoke against the deployed runtime
+4. `funded hosted smoke`
+   - optional operator lane
+   - post a small real challenge against the deployed runtime
+   - submit, wait for scoring, and verify the public replay artifacts
 
 Rules:
 
 - Railway owns `platform deploy`.
-- GitHub Actions and local operator commands own `build`, `verify`, and
-  `smoke`.
-- `verify` and `smoke` are read-only.
+- GitHub Actions and local operator commands own `build`, `verify`, and the
+  optional funded smoke lane.
+- `verify` is read-only.
+- funded hosted smoke is intentionally stateful and must stay separate from the
+  push-time runtime gate.
 - `bootstrap-testnet` may reset shared state before `verify`, but it must not
   become the default day-to-day path.
 
@@ -278,7 +282,7 @@ Flow:
 3. bootstrap wipes the public schema
 4. bootstrap reapplies `001_baseline.sql`
 5. bootstrap reloads the PostgREST schema cache
-6. bootstrap runs schema verification, deploy verification, and smoke
+6. bootstrap runs the same read-only hosted verification lane as normal deploys
 
 ### 4.7 Verify-Only Runtime Flow
 
@@ -286,10 +290,11 @@ Normal runtime release verification works like this:
 
 1. merge or push the intended runtime change to `main`
 2. Railway deploys API, indexer, and worker through its native deploy path
-3. `pnpm release:testnet` or the GitHub workflow waits for `/api/health` to be
+3. `pnpm verify:runtime` or the GitHub workflow waits for `/api/health` to be
    healthy and `/api/worker-health` to confirm healthy workers on the active
    API runtime
-4. run smoke once deploy verification passes
+4. funded hosted smoke is a separate manual lane after verification, not part
+   of the push-time gate
 
 ### 4.8 Named Hotspots and Mitigations
 
@@ -317,19 +322,23 @@ Normal runtime release verification works like this:
 
 Target command set:
 
-- `pnpm release:testnet`
+- `pnpm verify:runtime`
 - `pnpm bootstrap:testnet`
 - `pnpm schema:verify`
 - `pnpm scorers:verify`
 - `pnpm deploy:verify`
-- `pnpm smoke:lifecycle:testnet`
+- `pnpm smoke:lifecycle`
+- `pnpm smoke:hosted`
 
 Rules:
 
-- `pnpm release:testnet` is verify-only
+- `pnpm verify:runtime` is verify-only
 - `pnpm bootstrap:testnet` is destructive
+- `pnpm smoke:lifecycle` is the deterministic local settlement lane
+- `pnpm smoke:hosted` is the funded hosted operational lane
 - runtime verification defaults to API + worker, not web
 - bootstrap uses the admin DB URL and then runs the same verification gate
+- funded hosted smoke must not be coupled back into the push-time runtime gate
 
 ---
 
@@ -396,17 +405,17 @@ Actions:
 
 1. keep `AGORA_SUPABASE_ADMIN_DB_URL` bootstrap-only
 2. keep destructive SQL inside `bootstrap-testnet` only
-3. keep `release:testnet` read-only and verify-only
+3. keep `verify:runtime` read-only and verify-only
 4. make deploy retries an explicit Railway concern; verify retries rerun health
-   and smoke only
+   only
 5. do not add speculative forward-migration or reset orchestration to the
    normal release path for this phase
 
 Acceptance:
 
 1. normal releases never reset the shared DB
-2. `pnpm release:testnet` retries do not redeploy runtime services
-3. `pnpm deploy:verify` and smoke remain read-only and rerunnable
+2. `pnpm verify:runtime` retries do not redeploy runtime services
+3. `pnpm deploy:verify` remains read-only and rerunnable
 4. Railway remains the only normal deploy path for API, indexer, and worker
 
 ### 6.6 Phase 5: Legacy Cleanup
@@ -423,20 +432,23 @@ Actions:
 2. delete or quarantine legacy worker-host deploy scripts if Railway remains
    the canonical worker deploy owner
 3. collapse hosted runtime verification onto `deploy:verify` plus
-   `release:testnet`
+   `verify:runtime`
 4. keep only scorer artifact publication under GHCR
 
 Acceptance:
 
 1. one normal hosted runtime release path remains:
-   push or merge to `main` -> Railway deploy -> verify -> smoke
-2. one canonical hosted health contract remains:
+   push or merge to `main` -> Railway deploy -> verify
+2. one separate funded hosted smoke lane remains:
+   verify first -> run `pnpm smoke:hosted` only when an operator wants the
+   external write-path check
+3. one canonical hosted health contract remains:
    `/api/health`, with detail routes under `/api/worker-health` and
    `/api/indexer-health`
-3. one canonical observable runtime identity contract remains:
+4. one canonical observable runtime identity contract remains:
    `releaseId` and `runtimeVersion` on `/api/health`, with `gitSha`
    best-effort only
-4. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
+5. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
 
 ---
 
@@ -448,7 +460,8 @@ Keep these concepts:
 - `worker_runtime_control`
 - `GET /api/health`
 - explicit `deploy:verify`
-- explicit smoke
+- deterministic local lifecycle smoke
+- funded hosted smoke
 - structured API error envelopes
 - official scorer digest pinning and GHCR publication
 

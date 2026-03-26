@@ -4,6 +4,33 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+if [[ -f ".env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env"
+  set +a
+fi
+
+fail() {
+  echo "[FAIL] $1"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/hosted-smoke.sh
+
+Runs the funded hosted smoke lane against the configured external environment:
+1. post a real challenge with a small USDC reward
+2. submit a real result
+3. wait for worker scoring
+4. verify the public replay artifacts
+
+This lane is intentionally operational. The full deterministic settlement path
+through finalize and claim belongs to pnpm smoke:lifecycle:local.
+EOF
+}
+
 AGORA_CMD=(node "apps/cli/dist/index.js")
 MIN_DISPUTE_WINDOW_HOURS="$(node --import tsx -e '
 import { CHALLENGE_LIMITS } from "./packages/common/src/constants.ts";
@@ -22,13 +49,11 @@ if (!image) {
   );
 }
 
-process.stdout.write(image);
+	process.stdout.write(image);
 ')"
 fi
 E2E_DEADLINE_MINUTES="${AGORA_E2E_DEADLINE_MINUTES:-10}"
 E2E_DISPUTE_WINDOW_HOURS="${AGORA_E2E_DISPUTE_WINDOW_HOURS:-$MIN_DISPUTE_WINDOW_HOURS}"
-E2E_MAX_FINALIZE_WAIT_SECONDS="${AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS:-600}"
-E2E_ENABLE_TIME_TRAVEL="${AGORA_E2E_ENABLE_TIME_TRAVEL:-1}"
 
 required_env=(
   AGORA_RPC_URL
@@ -40,6 +65,19 @@ required_env=(
   AGORA_PINATA_JWT
   AGORA_PRIVATE_KEY
 )
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
 
 for key in "${required_env[@]}"; do
   if [[ -z "${!key:-}" ]]; then
@@ -68,17 +106,12 @@ TMP_DIR="$(mktemp -d -t agora-e2e-XXXXXX)"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
-fail() {
-  echo "❌ E2E failed: $1"
-  exit 1
-}
-
 if ! [[ "$E2E_DISPUTE_WINDOW_HOURS" =~ ^[0-9]+$ ]]; then
   fail "AGORA_E2E_DISPUTE_WINDOW_HOURS must be an integer hour value."
 fi
 
 if (( E2E_DISPUTE_WINDOW_HOURS < MIN_DISPUTE_WINDOW_HOURS )); then
-  fail "AGORA_E2E_DISPUTE_WINDOW_HOURS must be at least ${MIN_DISPUTE_WINDOW_HOURS} to match the contract minimum. Next step: run against local Anvil with AGORA_E2E_ENABLE_TIME_TRAVEL=1 so the script can fast-forward the 7-day dispute window."
+  fail "AGORA_E2E_DISPUTE_WINDOW_HOURS must be at least ${MIN_DISPUTE_WINDOW_HOURS} to match the contract minimum. Next step: keep hosted smoke at the contract minimum and use pnpm smoke:lifecycle:local for full settlement testing."
 fi
 
 poll_until() {
@@ -97,26 +130,7 @@ poll_until() {
   done
 }
 
-rpc_time_travel() {
-  local seconds="$1"
-  local rpc_url="$2"
-  local body_inc
-  local body_mine
-  body_inc="$(cat <<JSON
-{"jsonrpc":"2.0","id":1,"method":"evm_increaseTime","params":[${seconds}]}
-JSON
-)"
-  body_mine='{"jsonrpc":"2.0","id":2,"method":"evm_mine","params":[]}'
-  local inc_res mine_res
-  inc_res="$(curl -sS -X POST "$rpc_url" -H "content-type: application/json" -d "$body_inc" || true)"
-  mine_res="$(curl -sS -X POST "$rpc_url" -H "content-type: application/json" -d "$body_mine" || true)"
-  if [[ "$inc_res" == *'"error"'* || "$mine_res" == *'"error"'* ]]; then
-    return 1
-  fi
-  return 0
-}
-
-echo "Step 1/12: Creating challenge + submission fixtures..."
+echo "Step 1/9: Creating challenge + submission fixtures..."
 cat >"$TMP_DIR/ground_truth.csv" <<'CSV'
 id,value
 1,0.20
@@ -194,7 +208,7 @@ submission_contract:
     value: value
     allow_extra: false
 reward:
-  total: "5"
+  total: "1"
   distribution: winner_take_all
 deadline: "${E2E_DEADLINE}"
 tags: ["e2e","reproducibility"]
@@ -203,11 +217,11 @@ dispute_window_hours: ${E2E_DISPUTE_WINDOW_HOURS}
 lab_tba: "0x0000000000000000000000000000000000000000"
 YAML
 
-echo "Step 2/12: Posting challenge..."
+echo "Step 2/9: Posting challenge..."
 post_json="$("${AGORA_CMD[@]}" post "$TMP_DIR/challenge.yaml" --format json)" || fail "agora post"
 echo "$post_json" >"$TMP_DIR/post.json"
 
-echo "Step 3/12: Waiting for indexer -> challenge visible in agora list..."
+echo "Step 3/9: Waiting for indexer -> challenge visible in agora list..."
 challenge_id=""
 poll_find_challenge() {
   local list_json
@@ -225,10 +239,10 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 poll_until 600 10 poll_find_challenge || fail "challenge did not appear in agora list"
 echo "Challenge ID: $challenge_id"
 
-echo "Step 4/12: Downloading challenge data..."
+echo "Step 4/9: Downloading challenge data..."
 "${AGORA_CMD[@]}" get "$challenge_id" --download "$TMP_DIR/downloaded" --format json >/dev/null || fail "agora get --download"
 
-echo "Step 5/12: Confirming public score-local stays blocked for private-evaluation challenges..."
+echo "Step 5/9: Confirming public score-local stays blocked for private-evaluation challenges..."
 if "${AGORA_CMD[@]}" score-local "$challenge_id" --submission "$TMP_DIR/submission.csv" --format json >"$TMP_DIR/score-local.log" 2>&1; then
   fail "agora score-local unexpectedly succeeded for a private-evaluation challenge"
 fi
@@ -239,7 +253,7 @@ if ! grep -qi "private-evaluation challenges" "$TMP_DIR/score-local.log"; then
 fi
 echo "✔ Public score-local stayed blocked as expected"
 
-echo "Step 6/12: Submitting on-chain..."
+echo "Step 6/9: Submitting on-chain..."
 submit_json="$("${AGORA_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json)" || fail "agora submit"
 echo "$submit_json" >"$TMP_DIR/submit.json"
 submit_onchain_id="$(printf "%s" "$submit_json" | node --input-type=module -e '
@@ -257,7 +271,7 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 [[ -n "$submit_onchain_id" ]] || fail "submit did not return on-chain submission id"
 echo "✔ On-chain submission succeeded (subId=${submit_onchain_id})"
 
-echo "Step 7/12: Waiting for submission row..."
+echo "Step 7/9: Waiting for submission row..."
 submission_uuid=""
 poll_find_submission() {
   local get_json
@@ -276,7 +290,7 @@ let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
 poll_until 600 10 poll_find_submission || fail "submission did not appear in index with result_cid"
 echo "Submission ID: $submission_uuid"
 
-echo "Step 8/12: Waiting for official worker scoring..."
+echo "Step 8/9: Waiting for official worker scoring..."
 scored_submission_json=""
 poll_scored_submission() {
   local get_json
@@ -295,45 +309,6 @@ poll_until 600 10 poll_scored_submission || fail "worker did not score the submi
 printf "%s" "$scored_submission_json" >"$TMP_DIR/score.json"
 echo "✔ Worker scoring completed"
 
-echo "Step 9/12: Verifying public replay artifacts..."
+echo "Step 9/9: Verifying public replay artifacts..."
 "${AGORA_CMD[@]}" verify-public "$challenge_id" --sub "$submission_uuid" --format json >"$TMP_DIR/verify-public.json" || fail "agora verify-public"
-
-echo "Step 10/12: Waiting for finalization window..."
-challenge_json="$("${AGORA_CMD[@]}" get "$challenge_id" --format json)" || fail "agora get before finalize"
-dispute_window_seconds="$(printf "%s" "$challenge_json" | node --input-type=module -e '
-let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
-  const payload = JSON.parse(raw);
-  const challenge = payload.challenge;
-  const disputeHours = Number(challenge.dispute_window_hours ?? 24);
-  process.stdout.write(String(Math.max(disputeHours * 3600 + 5, 0)));
-});')"
-
-if [[ "$dispute_window_seconds" -gt 0 ]] && [[ "$E2E_ENABLE_TIME_TRAVEL" == "1" ]]; then
-  if rpc_time_travel "$dispute_window_seconds" "$AGORA_RPC_URL"; then
-    echo "Advanced chain time by ${dispute_window_seconds}s via evm_increaseTime from scoring start."
-  else
-    echo "Time travel unavailable; falling back to finalize polling."
-  fi
-fi
-
-echo "Step 11/12: Finalize challenge..."
-poll_finalize() {
-  "${AGORA_CMD[@]}" finalize "$challenge_id" --format json >"$TMP_DIR/finalize.json"
-}
-
-poll_until "$E2E_MAX_FINALIZE_WAIT_SECONDS" 10 poll_finalize || fail "challenge was not finalizable within ${E2E_MAX_FINALIZE_WAIT_SECONDS}s. Next step: use local Anvil with AGORA_E2E_ENABLE_TIME_TRAVEL=1 or wait for the dispute window measured from scoring start to elapse."
-
-echo "Step 12/12: Claim payout and verify winner balance increase..."
-claim_json="$("${AGORA_CMD[@]}" claim "$challenge_id" --format json)" || fail "agora claim"
-claimed_delta="$(printf "%s" "$claim_json" | node --input-type=module -e '
-let raw=""; process.stdin.on("data",d=>raw+=d); process.stdin.on("end",()=>{
-  const payload = JSON.parse(raw);
-  process.stdout.write(String(payload.claimedDelta ?? "0"));
-});')"
-
-if node --input-type=module -e "const v = Number(process.argv[1]); if (!(v > 0)) process.exit(1);" "$claimed_delta"; then
-  echo "✅ E2E test passed!"
-  exit 0
-fi
-
-fail "claim delta was not positive (${claimed_delta})"
+echo "✅ Hosted smoke passed!"

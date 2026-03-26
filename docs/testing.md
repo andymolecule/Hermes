@@ -49,8 +49,11 @@ pnpm verify                 # = abi:check && build && test
 # Local deterministic lifecycle smoke
 pnpm smoke:lifecycle
 
-# External/testnet CLI smoke
-pnpm smoke:lifecycle:testnet
+# Read-only hosted runtime verification
+pnpm verify:runtime
+
+# Funded hosted smoke
+pnpm smoke:hosted
 ```
 
 ---
@@ -123,7 +126,9 @@ node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-
 | DB tests | `packages/db/src/tests/*.ts` |
 | Scorer tests | `packages/scorer/src/tests/*.test.ts` |
 | API tests | `apps/api/tests/*.test.ts` |
-| E2E script | `scripts/e2e-test.sh` |
+| Local lifecycle wrapper | `scripts/local-lifecycle-smoke.mjs` |
+| Local lifecycle harness | `apps/api/src/lifecycle-smoke.ts` |
+| Hosted smoke script | `scripts/hosted-smoke.sh` |
 | Preflight script | `scripts/preflight-testnet.sh` |
 | Verification scripts | `scripts/verify-*.mjs` |
 
@@ -143,9 +148,23 @@ Validates that all official scorer images are:
 
 Requires a running Docker daemon.
 
+### `pnpm verify:runtime`
+
+Runs the hosted runtime verification lane:
+- runtime schema compatibility
+- official scorer pullability
+- hosted `/api/health` and `/api/worker-health` readiness
+
+This command is read-only. It does not reset the DB and it does not post on-chain smoke traffic.
+
 ### `pnpm smoke:lifecycle`
 
-Runs the TypeScript lifecycle smoke harness in `apps/api/src/e2e-test.ts` after first asserting runtime schema compatibility.
+Runs the deterministic local lifecycle smoke harness in `apps/api/src/lifecycle-smoke.ts` after first asserting runtime schema compatibility.
+
+### `pnpm smoke:hosted`
+
+Runs the funded hosted smoke shell harness in `scripts/hosted-smoke.sh`.
+This lane uses real chain state and real USDC, but it intentionally stops after worker scoring and `verify-public`.
 
 ### `pnpm contracts:test:fork`
 
@@ -178,12 +197,12 @@ Wallet/session hardening checks now live in:
 
 ## End-to-End Test
 
-`pnpm smoke:lifecycle` is the preferred local entrypoint for the challenge lifecycle smoke test on an Anvil-backed environment. It wraps the TypeScript harness in `apps/api/src/e2e-test.ts`.
-`pnpm smoke:lifecycle:local` is the explicit alias for that same deterministic path.
-`pnpm smoke:lifecycle:testnet` runs the CLI-driven shell smoke against the currently configured external environment.
+`pnpm smoke:lifecycle` is the preferred local entrypoint for the full deterministic lifecycle smoke test on an Anvil-backed environment.
+`pnpm smoke:lifecycle:local` is the explicit alias for that same path.
+`pnpm smoke:hosted` is the funded external smoke lane against the currently configured hosted environment.
 
-`apps/api/src/e2e-test.ts` exercises the dispute branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
-`scripts/e2e-test.sh` remains available as the CLI-driven shell harness for the direct finalization branch (`post -> submit -> verify -> finalize -> claim`).
+`apps/api/src/lifecycle-smoke.ts` exercises the full deterministic settlement branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
+`scripts/hosted-smoke.sh` exercises the hosted operational branch (`post -> submit -> worker scoring -> verify-public`).
 
 Shared setup:
 
@@ -196,18 +215,17 @@ Shared setup:
 7. Wait for worker scoring
 8. Verify public replay artifacts
 
-Dispute branch (`pnpm smoke:lifecycle` / `pnpm smoke:lifecycle:local`):
+Local deterministic lifecycle (`pnpm smoke:lifecycle` / `pnpm smoke:lifecycle:local`):
 
 1. Open a dispute
 2. Resolve the dispute
 3. Claim payout
 
-Direct finalization branch (`pnpm smoke:lifecycle:testnet` / `./scripts/e2e-test.sh`):
+Hosted funded smoke (`pnpm smoke:hosted` / `./scripts/hosted-smoke.sh`):
 
 1. Confirm the public CLI cannot run `score-local` for the private-evaluation challenge
-2. Wait for the dispute window to elapse
-3. Finalize challenge
-4. Claim payout
+2. Wait for worker scoring
+3. Verify public replay artifacts
 
 ### Configuration
 
@@ -225,18 +243,17 @@ AGORA_PRIVATE_KEY
 # Optional overrides
 AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/gems-match-scorer:v1"
 AGORA_E2E_DEADLINE_MINUTES="10"
-AGORA_E2E_DISPUTE_WINDOW_HOURS="168"    # contract minimum; use Anvil time travel for fast runs
-AGORA_E2E_ENABLE_TIME_TRAVEL="1"         # allow evm_increaseTime on Anvil
-AGORA_E2E_MAX_FINALIZE_WAIT_SECONDS="600"
+AGORA_E2E_DISPUTE_WINDOW_HOURS="168"    # contract minimum
 
 # Optional fork-test vars
 AGORA_BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
 AGORA_FORK_BLOCK=""
 ```
 
-For the full post-deadline path, run `pnpm smoke:lifecycle:local` against local Anvil with `AGORA_CHAIN_ID=31337` and `AGORA_E2E_ENABLE_TIME_TRAVEL=1`.
+For the full post-deadline path, run `pnpm smoke:lifecycle:local` against local Anvil with `AGORA_CHAIN_ID=31337`.
 The local lifecycle config enforces the hardened 168 hour dispute window.
-`pnpm smoke:lifecycle:testnet` is the external/manual lane against the currently deployed factory generation.
+`pnpm smoke:hosted` is the funded external/manual lane against the currently deployed factory generation.
+Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only readiness gate first.
 
 ### Running
 
@@ -247,18 +264,20 @@ pnpm smoke:lifecycle
 # Explicit local alias
 pnpm smoke:lifecycle:local
 
-# CLI-driven external/testnet harness
-pnpm smoke:lifecycle:testnet
+# Read-only hosted runtime verification
+pnpm verify:runtime
 
-# Fast local mode (shorter deadline, minimum dispute window, Anvil time travel)
+# Funded hosted smoke
+pnpm smoke:hosted
+
+# Fast local mode (shorter deadline, minimum dispute window)
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
-AGORA_E2E_ENABLE_TIME_TRAVEL=1 \
 pnpm smoke:lifecycle:local
 ```
 
-The scorer image must already be published and pullable. The E2E script does not build local scorer images.
+The scorer image must already be published and pullable. Neither smoke lane builds local scorer images on demand.
 
 ---
 

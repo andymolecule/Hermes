@@ -276,13 +276,14 @@ Expected executor host configuration:
 Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
-2. The GitHub Actions workflow and `pnpm release:testnet` verify hosted runtime readiness; they do not deploy runtime services
-3. Operators use `pnpm bootstrap:testnet` or the manual workflow only when they need an explicit destructive rebuild
-4. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
-5. The orchestrator checks executor health and preflights official images
-6. When a job is claimed, the orchestrator stages inputs and sends them to the executor
-7. The executor runs the scorer container locally and returns `score.json`
-8. The orchestrator persists proof data and posts scores on-chain
+2. The GitHub Actions workflow and `pnpm verify:runtime` verify hosted runtime readiness; they do not deploy runtime services
+3. Operators use `pnpm bootstrap:testnet` only when they need an explicit destructive rebuild
+4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
+5. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
+6. The orchestrator checks executor health and preflights official images
+7. When a job is claimed, the orchestrator stages inputs and sends them to the executor
+8. The executor runs the scorer container locally and returns `score.json`
+9. The orchestrator persists proof data and posts scores on-chain
 
 Release prerequisites:
 
@@ -297,7 +298,7 @@ Release prerequisites:
 ## Smoke Test
 
 ```bash
-pnpm smoke:lifecycle:testnet
+pnpm smoke:hosted
 ```
 
 Local deterministic smoke:
@@ -309,14 +310,14 @@ pnpm smoke:lifecycle:local
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
-AGORA_E2E_ENABLE_TIME_TRAVEL=1 \
 pnpm smoke:lifecycle:local
 ```
 
-Expected flow: post -> indexer pickup -> list -> get -> submit -> worker scoring -> verify-public -> finalize -> claim. For private-evaluation challenges, a public `score-local` attempt should fail until Agora is running in a trusted environment with DB access.
+Hosted smoke flow: post -> indexer pickup -> list -> get -> public score-local blocked for private-evaluation -> submit -> worker scoring -> verify-public.
+Local deterministic flow: create -> submit -> startScoring -> score -> dispute -> resolve -> claim.
 
-Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Use a local Anvil RPC with `evm_increaseTime` for full lifecycle settlement testing.
-The E2E script now expects the scorer image to already be published and pullable. It no longer builds a local official scorer fallback.
+Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Full lifecycle settlement testing belongs to the local deterministic lane, not hosted smoke.
+The smoke lanes expect the scorer image to already be published and pullable. They do not build a local official scorer fallback.
 For standard local verification, official scorer images are expected to be
 multi-arch (`linux/amd64` and `linux/arm64`). A published amd64-only official
 image is a release issue, not an expected Apple Silicon limitation.

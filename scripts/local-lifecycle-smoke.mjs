@@ -8,7 +8,7 @@ await assertRuntimeDatabaseSchema(createSupabaseClient(true));
 
 const child = spawn(
   process.execPath,
-  ["--import", "tsx", "apps/api/src/e2e-test.ts"],
+  ["--import", "tsx", "apps/api/src/lifecycle-smoke.ts"],
   {
     stdio: "inherit",
     env: process.env,

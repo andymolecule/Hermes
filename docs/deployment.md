@@ -26,7 +26,8 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Railway owns runtime deployment for API, indexer, and worker orchestrator
 - GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
-- `bootstrap:testnet` is the destructive admin-only lane; `release:testnet` is verify-only
+- `bootstrap:testnet` is the destructive admin-only lane; `verify:runtime` is the read-only hosted gate
+- `smoke:hosted` is the separate funded operator lane
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
 - External cutover covers GitHub, Vercel, API/runtime services, executor runtime, chain addresses, image registry, DNS, and operator machines
 
@@ -62,20 +63,24 @@ pnpm scorers:verify
 Recommended runtime release trigger:
 
 ```bash
-pnpm release:testnet
+pnpm verify:runtime
 pnpm bootstrap:testnet
+pnpm smoke:hosted
 ```
 
-This repo now ships two explicit runtime lanes:
+This repo now ships three explicit runtime lanes:
 
-- `pnpm release:testnet`: non-destructive verification. Assumes Railway is
-  rolling out the current `main` change through its native deploy path, waits
-  for `/api/health` to be healthy and `/api/worker-health` to show healthy
-  workers on the active API runtime, then runs the external lifecycle smoke.
+- `pnpm verify:runtime`: non-destructive hosted verification. Assumes Railway
+  is rolling out the current `main` change through its native deploy path,
+  waits for `/api/health` to be healthy and `/api/worker-health` to show
+  healthy workers on the active API runtime, and stops there.
 - `pnpm bootstrap:testnet`: destructive admin lane. Uses
   `AGORA_SUPABASE_ADMIN_DB_URL` to reset the Supabase schema, reapplies the
-  single baseline, reloads the PostgREST cache, then runs the same
-  verify/smoke gate.
+  single baseline, reloads the PostgREST cache, then runs the same read-only
+  hosted verification gate.
+- `pnpm smoke:hosted`: funded external smoke. Posts a small real challenge,
+  submits a real result, waits for worker scoring, and verifies the public
+  replay artifacts. It does not try to finalize or claim.
 
 Pushes to `main` now trigger the same GitHub workflow automatically in
 verify-only mode only when the commit touches runtime-affecting
@@ -83,9 +88,12 @@ paths (API, DB, chain, scorer, shared runtime contracts, or the release
 scripts/workflow). Frontend-only and docs-only pushes do not trigger the
 runtime verification workflow.
 The matching manual GitHub Actions trigger is
-[`.github/workflows/release-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/release-runtime.yml),
-which accepts `verify-runtime` vs `bootstrap-testnet` when operators need to
-run it manually.
+[`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)
+for read-only hosted verification,
+[`.github/workflows/bootstrap-testnet.yml`](/Users/changyuesin/Agora/.github/workflows/bootstrap-testnet.yml)
+for destructive bootstrap, and
+[`.github/workflows/hosted-smoke.yml`](/Users/changyuesin/Agora/.github/workflows/hosted-smoke.yml)
+for funded hosted smoke.
 
 The current runtime verification path requires:
 
@@ -94,7 +102,11 @@ The current runtime verification path requires:
 - `AGORA_SUPABASE_ANON_KEY`
 - `AGORA_SUPABASE_SERVICE_KEY`
 - `AGORA_SUPABASE_ADMIN_DB_URL` only for destructive bootstrap
-- chain, wallet, and Pinata values required by the smoke lane
+
+The funded hosted smoke lane additionally requires:
+
+- chain, wallet, and Pinata values
+- a small real USDC balance in the smoke wallet
 
 Railway should keep its native runtime deploy path enabled for API, indexer,
 and worker orchestrator. GitHub Actions no longer updates Railway service
@@ -121,10 +133,11 @@ Railway deployment checks before production cutover:
   1. merge or push the intended runtime change to `main`
   2. let Railway deploy API, indexer, and worker natively
   3. run `pnpm schema:verify`
-  4. run `pnpm release:testnet` or the GitHub Actions workflow to wait for
+  4. run `pnpm verify:runtime` or the GitHub Actions workflow to wait for
      `/api/health` and `/api/worker-health` to report healthy hosted runtime
      readiness
-  5. run smoke
+  5. run `pnpm smoke:hosted` only when you intentionally want the funded
+     hosted smoke lane
   6. use `pnpm bootstrap:testnet` only when a destructive reset is explicitly
      required
 
@@ -147,8 +160,8 @@ Rollback if any of these occur:
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
     B --> C["3. Railway deploys API, Indexer, Worker<br/>(native deploy path)"]
-    C --> D["4. Verify hosted runtime readiness<br/>(pnpm release:testnet)"]
-    D --> E["5. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
+    C --> D["4. Verify hosted runtime readiness<br/>(pnpm verify:runtime)"]
+    D --> E["5. Optional funded hosted smoke<br/>(pnpm smoke:hosted)"]
     E --> F{"All checks pass?"}
     F -->|Yes| G["✓ Live"]
     F -->|No| H["Rollback:<br/>redeploy previous main revision<br/>or run explicit bootstrap if schema reset is required"]
@@ -251,7 +264,8 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm schema:verify` checks that the live Supabase/PostgREST schema exposes all runtime-critical columns.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm smoke:lifecycle:local` runs the deterministic Anvil-backed lifecycle smoke.
-- `pnpm smoke:lifecycle:testnet` runs the external CLI smoke against the configured deployment.
+- `pnpm verify:runtime` runs the read-only hosted runtime gate.
+- `pnpm smoke:hosted` runs the funded hosted smoke against the configured deployment.
 - `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks hosted API health, optional web version visibility, and worker readiness on the active API runtime. Use `--skip-web` for runtime-only verification. Pass `--expected`, `--expected-api`, `--expected-web`, or `--expected-git-sha` only when you intentionally want an explicit identity check.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 

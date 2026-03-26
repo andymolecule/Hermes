@@ -134,15 +134,17 @@ pnpm --filter @agora/web dev -- --port 3100
 ## End-to-End Validation
 
 ```bash
-./scripts/e2e-test.sh
+pnpm smoke:lifecycle
+pnpm smoke:hosted
 ```
 
-Exercises the external lifecycle: `post → indexer pickup → list → get → public score-local blocked for private-evaluation → submit → worker scoring → verify-public → finalize → claim`.
+`pnpm smoke:lifecycle` is the canonical deterministic lifecycle lane on local Anvil and exercises `create → submit → startScoring → score → dispute → resolve → claim`.
+`pnpm smoke:hosted` is the funded hosted smoke lane and exercises `post → submit → worker scoring → verify-public` against the configured external environment.
 
-Fast testnet override example:
+Hosted smoke override example:
 
 ```bash
-AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 ./scripts/e2e-test.sh
+AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 pnpm smoke:hosted
 ```
 
 ## Deployment

@@ -1,0 +1,50 @@
+name: Bootstrap Testnet
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: bootstrap-testnet-main
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-testnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AGORA_SUPABASE_ADMIN_DB_URL: ${{ secrets.AGORA_SUPABASE_ADMIN_DB_URL }}
+      AGORA_SUPABASE_URL: ${{ secrets.AGORA_SUPABASE_URL }}
+      AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
+      AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
+      AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm turbo build
+
+      - name: Run destructive bootstrap
+        run: pnpm bootstrap:testnet

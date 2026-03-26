@@ -5,10 +5,8 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/release-runtime.yml"
-      - "scripts/bootstrap-testnet.sh"
-      - "scripts/release-testnet.sh"
-      - "scripts/e2e-test.sh"
+      - ".github/workflows/verify-runtime.yml"
+      - "scripts/verify-runtime.sh"
       - "scripts/runtime-env.mjs"
       - "scripts/release-metadata.mjs"
       - "scripts/verify-deploy-sync.mjs"
@@ -27,15 +25,6 @@ on:
       - "turbo.json"
       - ".env.example"
   workflow_dispatch:
-    inputs:
-      release_operation:
-        description: "Runtime release operation"
-        required: true
-        default: verify-runtime
-        type: choice
-        options:
-          - verify-runtime
-          - bootstrap-testnet
 
 concurrency:
   group: verify-runtime-main
@@ -46,19 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      AGORA_SUPABASE_ADMIN_DB_URL: ${{ secrets.AGORA_SUPABASE_ADMIN_DB_URL }}
       AGORA_SUPABASE_URL: ${{ secrets.AGORA_SUPABASE_URL }}
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
       AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
       AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
-      AGORA_RPC_URL: ${{ secrets.AGORA_RPC_URL }}
-      AGORA_CHAIN_ID: ${{ secrets.AGORA_CHAIN_ID }}
-      AGORA_FACTORY_ADDRESS: ${{ secrets.AGORA_FACTORY_ADDRESS }}
-      AGORA_USDC_ADDRESS: ${{ secrets.AGORA_USDC_ADDRESS }}
-      AGORA_PRIVATE_KEY: ${{ secrets.AGORA_PRIVATE_KEY }}
-      AGORA_ORACLE_KEY: ${{ secrets.AGORA_ORACLE_KEY }}
-      AGORA_PINATA_JWT: ${{ secrets.AGORA_PINATA_JWT }}
-      AGORA_RELEASE_OPERATION: ${{ github.event_name == 'push' && 'verify-runtime' || github.event.inputs.release_operation }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,20 +59,11 @@ jobs:
         with:
           version: stable
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace
         run: pnpm turbo build
 
-      - name: Run runtime gate
-        run: |
-          set -euo pipefail
-          if [ "$AGORA_RELEASE_OPERATION" = "bootstrap-testnet" ]; then
-            bash scripts/bootstrap-testnet.sh
-          else
-            bash scripts/release-testnet.sh --mode verify
-          fi
+      - name: Run hosted runtime verification
+        run: pnpm verify:runtime
