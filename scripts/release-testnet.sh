@@ -34,8 +34,6 @@ EOF
 }
 
 required_env=(
-  AGORA_RAILWAY_PROJECT_ID
-  AGORA_RAILWAY_ENVIRONMENT
   AGORA_SUPABASE_DB_URL
   AGORA_SUPABASE_URL
   AGORA_SUPABASE_ANON_KEY
@@ -98,25 +96,9 @@ require_cmd() {
 
 check_railway_auth_and_access() {
   echo "[STEP] Verify Railway authentication and project access"
-  railway whoami >/dev/null 2>&1 || fail "Invalid RAILWAY_TOKEN. Next step: update the GitHub Actions or local operator secret with a valid Railway token."
-
-  local tmp_dir
-  tmp_dir="$(mktemp -d -t agora-railway-link-XXXXXX)"
-  (
-    cd "$tmp_dir"
-    railway link \
-      --project "$AGORA_RAILWAY_PROJECT_ID" \
-      --environment "$AGORA_RAILWAY_ENVIRONMENT" >/dev/null 2>&1 \
-      || fail "Railway token cannot access project ${AGORA_RAILWAY_PROJECT_ID} or environment ${AGORA_RAILWAY_ENVIRONMENT}. Next step: verify the project/environment ids and token workspace access."
-
-    railway service link "$AGORA_RAILWAY_API_SERVICE" >/dev/null 2>&1 \
-      || fail "Railway service ${AGORA_RAILWAY_API_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the API service name/id."
-    railway service link "$AGORA_RAILWAY_INDEXER_SERVICE" >/dev/null 2>&1 \
-      || fail "Railway service ${AGORA_RAILWAY_INDEXER_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the indexer service name/id."
-    railway service link "$AGORA_RAILWAY_WORKER_SERVICE" >/dev/null 2>&1 \
-      || fail "Railway service ${AGORA_RAILWAY_WORKER_SERVICE} is not accessible in project ${AGORA_RAILWAY_PROJECT_ID}. Next step: verify the worker service name/id."
-  )
-  rm -rf "$tmp_dir"
+  # Project-scoped tokens (from Project Settings > Tokens) work with
+  # railway status but not railway whoami. Use status as the auth gate.
+  railway status >/dev/null 2>&1 || fail "Invalid RAILWAY_TOKEN. Next step: create a project token at Railway Project Settings > Tokens and update the GitHub Actions secret."
 }
 
 wait_for_deploy_verify() {
@@ -159,11 +141,8 @@ reload_postgrest_schema_cache() {
 deploy_runtime_service() {
   local service="$1"
   echo "[STEP] Deploying Railway service: ${service}"
-  railway up \
-    --project "$AGORA_RAILWAY_PROJECT_ID" \
-    --environment "$AGORA_RAILWAY_ENVIRONMENT" \
-    --service "$service" \
-    --detach
+  # Project-scoped tokens already bind project + environment.
+  railway up --service "$service" --detach
 }
 
 echo "== Agora Testnet Release Gate (${RELEASE_MODE}) =="
