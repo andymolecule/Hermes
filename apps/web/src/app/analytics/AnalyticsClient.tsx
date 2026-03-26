@@ -16,7 +16,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { motion } from "motion/react";
-import Link from "next/link";
 import { getAnalytics } from "../../lib/api";
 import {
   formatDate,
@@ -25,7 +24,6 @@ import {
   formatWadToScore,
   shortAddress,
 } from "../../lib/format";
-import { getStatusStyle } from "../../lib/status-styles";
 import type { AnalyticsData } from "../../lib/types";
 import { getExplorerAddressUrl } from "../../lib/wallet/network";
 
@@ -50,7 +48,7 @@ const progressTransition = {
   ease: [0.16, 1, 0.3, 1] as const,
 };
 
-const pageStackClass = "space-y-5 overflow-x-hidden md:space-y-6";
+const pageStackClass = "space-y-4 overflow-x-hidden md:space-y-5";
 const sectionShellClass =
   "rounded-[1.75rem] bg-[var(--surface-container-low)] p-4 md:p-5";
 const cardShellClass =
@@ -67,6 +65,14 @@ const metricValueClass =
   "font-mono font-semibold leading-none tracking-[-0.04em] text-[var(--text-primary)]";
 const primaryMetricValueClass = `${metricValueClass} text-[clamp(2rem,5vw,2.625rem)]`;
 const secondaryMetricValueClass = `${metricValueClass} text-[clamp(1.5rem,3vw,2rem)]`;
+const domainChartColors = [
+  "var(--color-accent-600)",
+  "var(--color-accent-500)",
+  "var(--color-accent-400)",
+  "var(--color-warm-700)",
+  "var(--color-warm-600)",
+  "var(--color-warm-400)",
+];
 
 function formatCount(value: number | undefined | null) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
@@ -87,11 +93,6 @@ function clampPercent(value: number | undefined) {
 function formatOneDecimal(value: number) {
   if (!Number.isFinite(value)) return "0.0";
   return value.toFixed(1);
-}
-
-function formatRatio(numerator: number, denominator: number) {
-  if (!Number.isFinite(numerator) || denominator <= 0) return "0.0";
-  return formatOneDecimal(numerator / denominator);
 }
 
 function getMetricCount(record: Record<string, number>, key: string) {
@@ -182,7 +183,7 @@ function SectionHeader({
     <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
       <div className="max-w-3xl">
         <p className={eyebrowClass}>{eyebrow}</p>
-        <h2 className="mt-1.5 text-balance font-display text-[1.625rem] font-semibold leading-tight tracking-tight text-[var(--text-primary)] md:text-[1.875rem]">
+        <h2 className="mt-1.5 text-balance font-display text-[1.625rem] font-semibold leading-tight tracking-tight text-[var(--text-primary)] md:text-[1.875rem] xl:whitespace-nowrap">
           {title}
         </h2>
         <p className="mt-1.5 max-w-[56ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
@@ -267,7 +268,7 @@ function FlowStage({
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={eyebrowClass}>{step}</p>
-          <h3 className="mt-1.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
+          <h3 className="mt-1.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem] lg:whitespace-nowrap">
             {title}
           </h3>
         </div>
@@ -404,7 +405,7 @@ function DataPoint({
   );
 }
 
-function BreakdownPanel({
+function DomainDonutPanel({
   eyebrow,
   title,
   description,
@@ -422,10 +423,19 @@ function BreakdownPanel({
   }>;
   emptyLabel: string;
 }) {
+  const chartEntries = entries.slice(0, 6).map((entry, index) => ({
+    ...entry,
+    color: domainChartColors[index % domainChartColors.length],
+  }));
+  const totalCount = chartEntries.reduce((sum, entry) => sum + entry.count, 0);
+  const donutRadius = 48;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+  let cumulativeFraction = 0;
+
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
       <p className={eyebrowClass}>{eyebrow}</p>
-      <h3 className="mt-2.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
+      <h3 className="mt-2.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem] lg:whitespace-nowrap">
         {title}
       </h3>
       <p className="mt-1.5 max-w-[30ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
@@ -437,108 +447,89 @@ function BreakdownPanel({
           {emptyLabel}
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
-          {entries.slice(0, 4).map((entry, index) => (
-            <div key={entry.key} className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <p className="min-w-0 text-sm font-medium text-[var(--text-primary)]">
-                  {entry.label}
+        <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+          <div className="mx-auto flex w-full max-w-[220px] flex-col items-center">
+            <div className="relative h-[200px] w-[200px]">
+              <svg
+                viewBox="0 0 160 160"
+                className="h-full w-full -rotate-90 overflow-visible"
+                aria-hidden="true"
+              >
+                <circle
+                  cx="80"
+                  cy="80"
+                  r={donutRadius}
+                  fill="none"
+                  stroke="var(--surface-container-high)"
+                  strokeWidth="14"
+                />
+                {chartEntries.map((entry, index) => {
+                  const fraction =
+                    totalCount > 0 ? entry.count / totalCount : 0;
+                  const segmentLength = fraction * donutCircumference;
+                  const dashArray = `${segmentLength} ${donutCircumference - segmentLength}`;
+                  const dashOffset = -cumulativeFraction * donutCircumference;
+                  cumulativeFraction += fraction;
+
+                  return (
+                    <motion.circle
+                      key={entry.key}
+                      cx="80"
+                      cy="80"
+                      r={donutRadius}
+                      fill="none"
+                      stroke={entry.color}
+                      strokeWidth="14"
+                      strokeDasharray={dashArray}
+                      strokeDashoffset={dashOffset}
+                      initial={{ strokeDasharray: `0 ${donutCircumference}` }}
+                      animate={{ strokeDasharray: dashArray }}
+                      transition={{
+                        ...progressTransition,
+                        delay: 0.08 + index * 0.05,
+                      }}
+                    />
+                  );
+                })}
+              </svg>
+
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <p className={`${metricValueClass} text-[2rem]`}>
+                  {formatCount(totalCount)}
                 </p>
-                <div className="shrink-0 font-mono text-xs text-[var(--text-secondary)]">
+                <p className={eyebrowClass}>Challenges</p>
+              </div>
+            </div>
+
+            <p className="mt-2 text-center text-xs leading-5 text-[var(--text-tertiary)]">
+              {formatCount(chartEntries.length)} active domains indexed.
+            </p>
+          </div>
+
+          <div className="grid gap-2.5 lg:pt-1">
+            {chartEntries.map((entry) => (
+              <div
+                key={entry.key}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[1.125rem] bg-[var(--surface-container-low)] px-3.5 py-3"
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--text-primary)]">
+                    {entry.label}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right font-mono text-xs text-[var(--text-secondary)]">
                   <span>{formatCount(entry.count)}</span>
                   <span className="ml-2">{entry.share}%</span>
                 </div>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
-                <motion.div
-                  className="h-full rounded-full bg-[var(--color-warm-900)]"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.max(entry.share, 6)}%` }}
-                  transition={{
-                    ...progressTransition,
-                    delay: 0.06 + index * 0.04,
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ParticipationStat({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-[1.125rem] bg-[var(--surface-container-low)] px-3.5 py-3">
-      <div className="min-w-0">
-        <p className={eyebrowClass}>{label}</p>
-        <p className="mt-1 max-w-[16ch] text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
-          {detail}
-        </p>
-      </div>
-      <p
-        className={`${metricValueClass} shrink-0 text-[1.5rem] md:text-[1.625rem]`}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function ParticipationPanel({
-  registeredAgents,
-  uniqueSolvers,
-  submissionsPerSolver,
-  agentsPerOpenChallenge,
-  openChallenges,
-}: {
-  registeredAgents: number;
-  uniqueSolvers: number;
-  submissionsPerSolver: string;
-  agentsPerOpenChallenge: string;
-  openChallenges: number;
-}) {
-  return (
-    <div className={`${cardShellClass} flex h-full flex-col`}>
-      <p className={eyebrowClass}>Participation</p>
-      <h3 className="mt-2.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
-        Activity depth
-      </h3>
-      <p className="mt-1.5 max-w-[28ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
-        Agent supply and active solver activity.
-      </p>
-
-      <div className="mt-4 grid gap-2.5">
-        <ParticipationStat
-          label="Registered agents"
-          value={formatCount(registeredAgents)}
-          detail="Available to compete."
-        />
-        <ParticipationStat
-          label="Active solvers"
-          value={formatCount(uniqueSolvers)}
-          detail="Submitting addresses."
-        />
-        <ParticipationStat
-          label="Submissions / solver"
-          value={submissionsPerSolver}
-          detail="Average solver activity."
-        />
-        <ParticipationStat
-          label="Agents / open"
-          value={agentsPerOpenChallenge}
-          detail={`${formatCount(openChallenges)} open challenges.`}
-        />
-      </div>
     </div>
   );
 }
@@ -584,81 +575,6 @@ function ProgressRail({
         />
       </div>
     </div>
-  );
-}
-
-function RecentChallengesTable({
-  challenges,
-}: {
-  challenges: AnalyticsData["recentChallenges"];
-}) {
-  return (
-    <section className={`${sectionShellClass} flex h-full flex-col`}>
-      <SectionHeader
-        eyebrow="Challenge feed"
-        title="Latest challenges"
-        description="Newest bounties with status, domain, and reward."
-      />
-
-      {challenges.length === 0 ? (
-        <div className="mt-4 rounded-[1.375rem] bg-[var(--surface-container-lowest)] p-5">
-          <p className="text-sm leading-6 text-[var(--text-secondary)]">
-            No challenges are indexed yet. Post a challenge or refresh after the
-            next sync.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-4 grid gap-2.5">
-          {challenges.map((challenge) => {
-            const statusStyle = getStatusStyle(challenge.status);
-
-            return (
-              <div key={challenge.id} className={feedItemShellClass}>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/challenges/${challenge.id}`}
-                      className="inline-flex max-w-full items-start gap-2 font-medium text-[var(--text-primary)]"
-                    >
-                      <span className="min-w-0 break-words text-balance leading-6">
-                        {challenge.title}
-                      </span>
-                      <ExternalLink className="mt-1 h-3 w-3 shrink-0 opacity-50" />
-                    </Link>
-
-                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                      <span
-                        className={`${pillClass} bg-[var(--surface-container-low)] text-[var(--text-secondary)]`}
-                      >
-                        {formatKeyLabel(challenge.domain)}
-                      </span>
-                      <span
-                        className={pillClass}
-                        style={{
-                          backgroundColor: statusStyle.bg,
-                          color: statusStyle.text,
-                        }}
-                      >
-                        {challenge.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 md:flex-col md:items-end md:text-right">
-                    <span className="font-mono text-base font-semibold text-[var(--text-primary)]">
-                      {formatUsdc(challenge.reward_amount)} USDC
-                    </span>
-                    <span className="font-mono text-xs text-[var(--text-secondary)]">
-                      {formatDate(challenge.created_at)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -782,7 +698,7 @@ function AnalyticsSkeleton() {
   return (
     <div className={pageStackClass}>
       <div className={sectionShellClass}>
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)]">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)]">
           <div>
             <div className="skeleton h-4 w-28" />
             <div className="mt-4 skeleton h-12 w-full max-w-2xl" />
@@ -826,17 +742,13 @@ function AnalyticsSkeleton() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {[1, 2].map((item) => (
-          <div key={item} className={sectionShellClass}>
-            <div className="skeleton h-5 w-40" />
-            <div className="mt-5 space-y-3">
-              {[1, 2, 3, 4].map((row) => (
-                <div key={row} className="skeleton h-16 w-full" />
-              ))}
-            </div>
-          </div>
-        ))}
+      <div className={sectionShellClass}>
+        <div className="skeleton h-5 w-40" />
+        <div className="mt-5 space-y-3">
+          {[1, 2, 3, 4].map((row) => (
+            <div key={row} className="skeleton h-16 w-full" />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -866,14 +778,6 @@ export function AnalyticsClient() {
     data && openChallenges > 0
       ? formatOneDecimal(data.totalSubmissions / openChallenges)
       : "0.0";
-  const submissionsPerSolver =
-    data && data.uniqueSolvers > 0
-      ? formatRatio(data.totalSubmissions, data.uniqueSolvers)
-      : "0.0";
-  const agentsPerOpenChallenge =
-    data && openChallenges > 0
-      ? formatRatio(data.registeredAgents, openChallenges)
-      : "0.0";
   const capitalReturnedRate =
     data && data.totalRewardUsdc > 0
       ? clampPercent((data.distributedUsdc / data.totalRewardUsdc) * 100)
@@ -897,8 +801,8 @@ export function AnalyticsClient() {
         animate={{ opacity: 1, y: 0 }}
         transition={revealTransition}
       >
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)] lg:items-start">
-          <div className="max-w-3xl">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.95fr)] lg:items-start">
+          <div className="max-w-none">
             <p className={eyebrowClass}>Platform analytics</p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <StatusPill label={freshnessTone.label} tone={freshnessTone} />
@@ -906,10 +810,10 @@ export function AnalyticsClient() {
                 {freshnessDetail}
               </p>
             </div>
-            <h1 className="mt-4 text-balance font-display text-[2.25rem] font-semibold leading-[1.05] tracking-tight text-[var(--text-primary)] md:text-[2.75rem]">
+            <h1 className="mt-4 font-display text-[2.1rem] font-semibold leading-[1.05] tracking-tight text-[var(--text-primary)] md:text-[2.5rem] xl:whitespace-nowrap">
               Capital, participation, payout
             </h1>
-            <p className="mt-3 max-w-[44ch] text-pretty text-sm leading-6 text-[var(--text-secondary)] md:text-base md:leading-7">
+            <p className="mt-3 max-w-[48ch] text-pretty text-sm leading-6 text-[var(--text-secondary)] md:text-base md:leading-7">
               Posted rewards, solver activity, and USDC paid out through Agora.
             </p>
           </div>
@@ -1069,7 +973,7 @@ export function AnalyticsClient() {
             <SectionHeader
               eyebrow="Demand signals"
               title="Participation and demand"
-              description="Participation depth and where new challenge demand is concentrating."
+              description="Solver participation and where challenge demand is concentrating."
             />
 
             <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1099,15 +1003,8 @@ export function AnalyticsClient() {
               />
             </div>
 
-            <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-              <ParticipationPanel
-                registeredAgents={data.registeredAgents}
-                uniqueSolvers={data.uniqueSolvers}
-                submissionsPerSolver={submissionsPerSolver}
-                agentsPerOpenChallenge={agentsPerOpenChallenge}
-                openChallenges={openChallenges}
-              />
-              <BreakdownPanel
+            <div className="mt-5 w-full">
+              <DomainDonutPanel
                 eyebrow="Domain mix"
                 title="Demand by domain"
                 description="Challenge volume by domain."
@@ -1161,12 +1058,11 @@ export function AnalyticsClient() {
           </motion.section>
 
           <motion.div
-            className="grid gap-4 xl:grid-cols-2 xl:items-start"
+            className="w-full"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...revealTransition, delay: 0.16 }}
           >
-            <RecentChallengesTable challenges={data.recentChallenges} />
             <RecentSubmissionsTable submissions={data.recentSubmissions} />
           </motion.div>
 
