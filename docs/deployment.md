@@ -73,7 +73,10 @@ This repo now ships two explicit runtime release lanes:
   continues with the same deploy/verify/smoke gate.
 
 Pushes to `main` now trigger the same GitHub workflow automatically in
-non-destructive `runtime` mode. The matching manual GitHub Actions trigger is
+non-destructive `runtime` mode only when the commit touches runtime-affecting
+paths (API, DB, chain, scorer, shared runtime contracts, or the release
+scripts/workflow). Frontend-only and docs-only pushes do not redeploy runtime.
+The matching manual GitHub Actions trigger is
 [`.github/workflows/release-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/release-runtime.yml),
 which accepts the same `runtime` vs `clean` choice when operators need to run
 it manually.
@@ -119,7 +122,7 @@ Railway deployment checks before production cutover:
   5. deploy API, indexer, and worker
   6. run `pnpm deploy:verify`
   7. run smoke
-  8. Normal `main` pushes now deploy through the GitHub Actions `Release Runtime` workflow in `runtime` mode. Use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual workflow only when you need an explicit operator-triggered deploy.
+  8. Runtime-affecting `main` pushes now deploy through the GitHub Actions `Release Runtime` workflow in `runtime` mode. Use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual workflow when you need an explicit operator-triggered deploy or when a non-runtime commit still needs a runtime rollout.
 
 ---
 

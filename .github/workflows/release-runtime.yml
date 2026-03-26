@@ -4,6 +4,25 @@ on:
   push:
     branches:
       - main
+    paths:
+      - ".github/workflows/release-runtime.yml"
+      - "scripts/release-testnet.sh"
+      - "scripts/e2e-test.sh"
+      - "scripts/verify-deploy-sync.mjs"
+      - "scripts/verify-runtime-schema.mjs"
+      - "scripts/verify-official-scorers.mjs"
+      - "apps/api/**"
+      - "packages/common/**"
+      - "packages/db/**"
+      - "packages/chain/**"
+      - "packages/scorer/**"
+      - "packages/scorer-runtime/**"
+      - "packages/ipfs/**"
+      - "packages/contracts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "turbo.json"
+      - ".env.example"
   workflow_dispatch:
     inputs:
       release_mode:

@@ -282,7 +282,7 @@ Expected executor host configuration:
 
 Steady-state flow:
 
-1. Pushes to `main` trigger the GitHub Actions `Release Runtime` workflow automatically in non-destructive `runtime` mode
+1. Runtime-affecting pushes to `main` trigger the GitHub Actions `Release Runtime` workflow automatically in non-destructive `runtime` mode
 2. Operators use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual `Release Runtime` GitHub workflow when they need an explicit redeploy or a destructive rebuild
 3. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
 4. The orchestrator checks executor health and preflights official images
