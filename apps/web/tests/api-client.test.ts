@@ -166,7 +166,7 @@ test("getApiHealth uses the proxied api health route in the browser", async () =
       JSON.stringify({
         ok: true,
         service: "api",
-        releaseId: "rt_2026_03_26_sha-test",
+        releaseId: "sha-test",
         gitSha: "sha-testsha-testsha-testsha-testsha-test12",
         runtimeVersion: "sha-test",
         checkedAt: "2026-03-15T12:00:00.000Z",
@@ -182,7 +182,7 @@ test("getApiHealth uses the proxied api health route in the browser", async () =
     const health = await getApiHealth();
     assert.equal(health.ok, true);
     assert.equal(health.service, "api");
-    assert.equal(health.releaseId, "rt_2026_03_26_sha-test");
+    assert.equal(health.releaseId, "sha-test");
     assert.equal(health.runtimeVersion, "sha-test");
     assert.deepEqual(calls, ["/api/health"]);
   } finally {

@@ -1,17 +1,12 @@
-name: Release Runtime
+name: Verify Runtime
 
 on:
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/build-runtime-artifacts.yml"
       - ".github/workflows/release-runtime.yml"
-      - "containers/runtime/**"
       - "scripts/bootstrap-testnet.sh"
-      - "scripts/deploy-runtime-manifest.ts"
-      - "scripts/runtime-build.ts"
-      - "scripts/runtime-manifest.ts"
       - "scripts/release-testnet.sh"
       - "scripts/e2e-test.sh"
       - "scripts/runtime-env.mjs"
@@ -36,44 +31,26 @@ on:
       release_operation:
         description: "Runtime release operation"
         required: true
-        default: release-runtime
+        default: verify-runtime
         type: choice
         options:
-          - release-runtime
+          - verify-runtime
           - bootstrap-testnet
-      release_id:
-        description: "Optional runtime release id override"
-        required: false
-        type: string
 
 concurrency:
-  group: release-runtime-main
+  group: verify-runtime-main
   cancel-in-progress: false
 
 jobs:
-  build-runtime-artifacts:
-    uses: ./.github/workflows/build-runtime-artifacts.yml
-    with:
-      release_id: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_id || '' }}
-      schema_plan: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_operation == 'bootstrap-testnet' && 'bootstrap' || 'noop' }}
-    secrets: inherit
-
-  release-testnet:
-    needs: build-runtime-artifacts
+  verify-runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      AGORA_RAILWAY_PROJECT_ID: ${{ secrets.AGORA_RAILWAY_PROJECT_ID }}
-      AGORA_RAILWAY_ENVIRONMENT: ${{ secrets.AGORA_RAILWAY_ENVIRONMENT }}
-      AGORA_SUPABASE_DB_URL: ${{ secrets.AGORA_SUPABASE_DB_URL }}
+      AGORA_SUPABASE_ADMIN_DB_URL: ${{ secrets.AGORA_SUPABASE_ADMIN_DB_URL }}
       AGORA_SUPABASE_URL: ${{ secrets.AGORA_SUPABASE_URL }}
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
       AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
       AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
-      AGORA_WEB_URL: ${{ secrets.AGORA_WEB_URL }}
-      AGORA_RAILWAY_API_SERVICE: ${{ secrets.AGORA_RAILWAY_API_SERVICE }}
-      AGORA_RAILWAY_INDEXER_SERVICE: ${{ secrets.AGORA_RAILWAY_INDEXER_SERVICE }}
-      AGORA_RAILWAY_WORKER_SERVICE: ${{ secrets.AGORA_RAILWAY_WORKER_SERVICE }}
       AGORA_RPC_URL: ${{ secrets.AGORA_RPC_URL }}
       AGORA_CHAIN_ID: ${{ secrets.AGORA_CHAIN_ID }}
       AGORA_FACTORY_ADDRESS: ${{ secrets.AGORA_FACTORY_ADDRESS }}
@@ -81,13 +58,7 @@ jobs:
       AGORA_PRIVATE_KEY: ${{ secrets.AGORA_PRIVATE_KEY }}
       AGORA_ORACLE_KEY: ${{ secrets.AGORA_ORACLE_KEY }}
       AGORA_PINATA_JWT: ${{ secrets.AGORA_PINATA_JWT }}
-      AGORA_CORS_ORIGINS: ${{ secrets.AGORA_CORS_ORIGINS }}
-      AGORA_ORACLE_ADDRESS: ${{ secrets.AGORA_ORACLE_ADDRESS }}
-      AGORA_TREASURY_ADDRESS: ${{ secrets.AGORA_TREASURY_ADDRESS }}
-      AGORA_RELEASE_OPERATION: ${{ github.event_name == 'push' && 'release-runtime' || github.event.inputs.release_operation }}
-      AGORA_RUNTIME_REGISTRY_USERNAME: ${{ secrets.GHCR_USERNAME }}
-      AGORA_RUNTIME_REGISTRY_PASSWORD: ${{ secrets.GHCR_PAT }}
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      AGORA_RELEASE_OPERATION: ${{ github.event_name == 'push' && 'verify-runtime' || github.event.inputs.release_operation }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,31 +82,17 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Materialize runtime release manifest
-        env:
-          AGORA_RELEASE_ID: ${{ needs.build-runtime-artifacts.outputs.release_id }}
-          AGORA_RELEASE_GIT_SHA: ${{ needs.build-runtime-artifacts.outputs.git_sha }}
-          AGORA_RELEASE_CREATED_AT: ${{ needs.build-runtime-artifacts.outputs.created_at }}
-          AGORA_RUNTIME_SCHEMA_PLAN: ${{ needs.build-runtime-artifacts.outputs.schema_plan }}
-          AGORA_RUNTIME_API_IMAGE: ${{ needs.build-runtime-artifacts.outputs.api_image }}
-          AGORA_RUNTIME_INDEXER_IMAGE: ${{ needs.build-runtime-artifacts.outputs.indexer_image }}
-          AGORA_RUNTIME_WORKER_IMAGE: ${{ needs.build-runtime-artifacts.outputs.worker_image }}
-          AGORA_RUNTIME_MANIFEST_OUTPUT: artifacts/runtime/${{ needs.build-runtime-artifacts.outputs.release_id }}/manifest.json
-        run: pnpm runtime:build
+      - name: Build workspace
+        run: pnpm turbo build
 
-      - name: Run gated runtime release
-        env:
-          AGORA_RUNTIME_MANIFEST_PATH: artifacts/runtime/${{ needs.build-runtime-artifacts.outputs.release_id }}/manifest.json
+      - name: Run runtime gate
         run: |
           set -euo pipefail
           if [ "$AGORA_RELEASE_OPERATION" = "bootstrap-testnet" ]; then
-            bash scripts/bootstrap-testnet.sh --manifest "$AGORA_RUNTIME_MANIFEST_PATH"
+            bash scripts/bootstrap-testnet.sh
           else
-            bash scripts/release-testnet.sh --mode runtime --manifest "$AGORA_RUNTIME_MANIFEST_PATH"
+            bash scripts/release-testnet.sh --mode verify
           fi

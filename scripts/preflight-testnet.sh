@@ -31,7 +31,7 @@ required_env=(
   AGORA_CORS_ORIGINS
 )
 
-required_cmds=(node pnpm docker forge cast curl)
+required_cmds=(node pnpm docker forge cast)
 
 failures=0
 
@@ -62,6 +62,38 @@ check_docker_daemon() {
     echo "[FAIL] Docker daemon is not reachable"
     failures=$((failures + 1))
   fi
+}
+
+http_get_json() {
+  local url="$1"
+  local outfile="$2"
+  REQUEST_URL="$url" RESPONSE_FILE="$outfile" node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const response = await fetch(process.env.REQUEST_URL);
+const body = await response.text();
+fs.writeFileSync(process.env.RESPONSE_FILE, body);
+process.stdout.write(String(response.status));
+EOF
+}
+
+http_get_json_with_service_role() {
+  local url="$1"
+  local outfile="$2"
+  REQUEST_URL="$url" RESPONSE_FILE="$outfile" AGORA_SUPABASE_SERVICE_KEY="$AGORA_SUPABASE_SERVICE_KEY" node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+const serviceKey = process.env.AGORA_SUPABASE_SERVICE_KEY;
+const response = await fetch(process.env.REQUEST_URL, {
+  headers: {
+    apikey: serviceKey,
+    Authorization: `Bearer ${serviceKey}`,
+  },
+});
+const body = await response.text();
+fs.writeFileSync(process.env.RESPONSE_FILE, body);
+process.stdout.write(String(response.status));
+EOF
 }
 
 echo "== Agora Testnet Preflight =="
@@ -100,7 +132,7 @@ node apps/cli/dist/index.js doctor --format table
 
 echo "[STEP] Checking API health endpoint"
 API_HEALTH_URL="${AGORA_API_URL%/}/api/health"
-http_status=$(curl -s -o /tmp/agora_preflight_healthz.json -w "%{http_code}" "$API_HEALTH_URL" || true)
+http_status="$(http_get_json "$API_HEALTH_URL" /tmp/agora_preflight_healthz.json || true)"
 if [[ "$http_status" != "200" ]]; then
   echo "[FAIL] API health check failed ($API_HEALTH_URL => HTTP $http_status)"
   echo "Response:"
@@ -174,10 +206,9 @@ tables=(
 )
 
 for table in "${tables[@]}"; do
-  table_status="$(curl -s -o "/tmp/agora_preflight_${table}.json" -w "%{http_code}" \
+  table_status="$(http_get_json_with_service_role \
     "${AGORA_SUPABASE_URL%/}/rest/v1/${table}?select=*&limit=1" \
-    -H "apikey: ${AGORA_SUPABASE_SERVICE_KEY}" \
-    -H "Authorization: Bearer ${AGORA_SUPABASE_SERVICE_KEY}" || true)"
+    "/tmp/agora_preflight_${table}.json" || true)"
   if [[ "$table_status" != "200" ]]; then
     echo "[FAIL] Supabase table check failed for ${table} (HTTP ${table_status})"
     cat "/tmp/agora_preflight_${table}.json" || true
@@ -194,7 +225,7 @@ check_api_json() {
   local url="$2"
   local outfile="$3"
   local http_status
-  http_status=$(curl -s -o "$outfile" -w "%{http_code}" "$url" || true)
+  http_status="$(http_get_json "$url" "$outfile" || true)"
   if [[ "$http_status" != "200" ]]; then
     echo "[FAIL] ${name} check failed ($url => HTTP $http_status)"
     echo "Response:"

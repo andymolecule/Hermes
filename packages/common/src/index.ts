@@ -13,7 +13,6 @@ export * from "./schemas/authoring-source.js";
 export * from "./schemas/execution-contract.js";
 export * from "./schemas/authoring-core.js";
 export * from "./schemas/agent-api.js";
-export * from "./schemas/runtime-release-manifest.js";
 export * from "./schemas/scorer-executor.js";
 export * from "./schemas/scorer-runtime.js";
 export * from "./schemas/submission-contract.js";

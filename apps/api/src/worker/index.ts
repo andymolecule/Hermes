@@ -138,11 +138,13 @@ function startWorkerRuntimeHeartbeat(
   const tick = async () => {
     if (stopped) return;
     try {
-      const refreshed = await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
-        ...runtimeState,
-      });
-      if (!refreshed && !stopped) {
-        log("warn", "Worker runtime heartbeat lost registration", {
+      const syncState = await syncWorkerRuntimeStateRegistration(
+        db,
+        runtimeWorkerId,
+        runtimeState,
+      );
+      if (syncState === "re-registered" && !stopped) {
+        log("warn", "Worker runtime heartbeat restored missing registration", {
           workerId: runtimeWorkerId,
           host: WORKER_HOST,
         });
@@ -167,6 +169,35 @@ function startWorkerRuntimeHeartbeat(
     stopped = true;
     clearInterval(timer);
   };
+}
+
+export async function syncWorkerRuntimeStateRegistration(
+  db: ReturnType<typeof createSupabaseClient>,
+  runtimeWorkerId: string,
+  runtimeState: {
+    ready: boolean;
+    executor_ready: boolean;
+    seal_enabled: boolean;
+    seal_key_id: string | null;
+    seal_self_check_ok: boolean;
+    runtime_version: string;
+    last_error: string | null;
+  },
+) {
+  const refreshed = await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
+    ...runtimeState,
+  });
+  if (refreshed) {
+    return "heartbeat";
+  }
+
+  await upsertWorkerRuntimeState(db, {
+    worker_id: runtimeWorkerId,
+    worker_type: WORKER_RUNTIME_TYPE.scoring,
+    host: WORKER_HOST,
+    ...runtimeState,
+  });
+  return "re-registered";
 }
 
 function resolveWorkerRuntimeId(config: ReturnType<typeof loadConfig>) {
@@ -253,7 +284,7 @@ async function persistRuntimeState(
     last_error: string | null;
   },
 ) {
-  await heartbeatWorkerRuntimeState(db, runtimeWorkerId, {
+  await syncWorkerRuntimeStateRegistration(db, runtimeWorkerId, {
     runtime_version: runtimeState.runtime_version,
     ready: runtimeState.ready,
     executor_ready: runtimeState.executor_ready,

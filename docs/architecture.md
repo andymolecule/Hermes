@@ -577,7 +577,7 @@ erDiagram
 
 | Method | Path | Auth | x402 | Description |
 |--------|------|------|------|-------------|
-| `GET` | `/healthz` | — | — | Health check |
+| `GET` | `/api/health` | — | — | Canonical hosted health check |
 | `GET` | `/.well-known/openapi.json` | — | — | OpenAPI document |
 | `GET` | `/.well-known/x402` | — | — | x402 pricing metadata |
 | `GET` | `/api/auth/nonce` | — | — | SIWE nonce |

@@ -29,7 +29,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via /healthz, /api/indexer-health, /api/worker-health, and agora doctor
+- Health monitoring via `/api/health`, `/api/indexer-health`, `/api/worker-health`, and `agora doctor`
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -181,7 +181,7 @@ Key handling rules:
 Verification checklist:
 
 ```bash
-curl -sS http://localhost:3000/healthz
+curl -sS http://localhost:3000/api/health
 curl -sS http://localhost:3000/api/worker-health
 curl -sS http://localhost:3000/api/submissions/public-key
 pnpm schema:verify
@@ -190,7 +190,7 @@ pnpm scorers:verify
 
 Expected results:
 
-- `/healthz` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
+- `/api/health` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
 - Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
@@ -283,24 +283,20 @@ Expected executor host configuration:
 
 Steady-state flow:
 
-1. Runtime-affecting pushes to `main` trigger the GitHub Actions `Release Runtime` workflow automatically in non-destructive `runtime` mode
-2. Operators use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual `Release Runtime` GitHub workflow when they need an explicit redeploy or a destructive rebuild
-3. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
-4. The orchestrator checks executor health and preflights official images
-5. When a job is claimed, the orchestrator stages inputs and sends them to the executor
-6. The executor runs the scorer container locally and returns `score.json`
-7. The orchestrator persists proof data and posts scores on-chain
+1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
+2. The GitHub Actions workflow and `pnpm release:testnet` verify the deployed runtime revision; they do not deploy runtime services
+3. Operators use `pnpm bootstrap:testnet` or the manual workflow only when they need an explicit destructive rebuild
+4. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
+5. The orchestrator checks executor health and preflights official images
+6. When a job is claimed, the orchestrator stages inputs and sends them to the executor
+7. The executor runs the scorer container locally and returns `score.json`
+8. The orchestrator persists proof data and posts scores on-chain
 
 Release prerequisites:
 
-- `RAILWAY_TOKEN` must be a valid Railway project token for the target environment
-- `AGORA_RAILWAY_PROJECT_ID` and `AGORA_RAILWAY_ENVIRONMENT` must point at the target Railway environment for manifest-driven deploys
-- service identifiers must match the deployed Railway services
-- runtime registry credentials must be available unless the runtime images are intentionally public
-
-The release gate now consumes a runtime release manifest, updates each Railway
-service to the manifest-pinned image digest, and then redeploys from that
-manifest. The shared runtime path no longer uploads source with `railway up`.
+- Railway auto-deploy remains enabled for API, indexer, and worker orchestrator
+- `/api/health` and `/api/worker-health` must report the target runtime revision before the release gate passes
+- `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive bootstrap
 
 ---
 
@@ -337,19 +333,19 @@ image is a release issue, not an expected Apple Silicon limitation.
 
 Check every 15-30 minutes during first launch window:
 
-1. API `/healthz` returns 200.
+1. API `/api/health` returns 200.
 2. Indexer logs show new blocks processed.
 3. `indexed_events` block number continues advancing.
 4. `agora doctor` passes all required checks.
 5. Worker health: `curl <API_URL>/api/worker-health` returns `"ok": true` and shows healthy workers on the active runtime version. If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`, this also implies the executor passed the worker readiness checks.
 6. Authoring canary: create/patch/publish flows succeed for the intended caller type. There is no separate `/api/authoring/health` endpoint.
-7. Web proxy health: `curl <WEB_URL>/api/healthz` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
+7. Web proxy health: `curl <WEB_URL>/api/health` and `curl <WEB_URL>/api/worker-health` succeed without the `AGORA_API_URL` proxy-misconfiguration error.
 8. Indexer health: `curl <API_URL>/api/indexer-health` reports the intended factory address and no active alternate factories.
 
 Health commands:
 
 ```bash
-curl -sS http://localhost:3000/healthz
+curl -sS http://localhost:3000/api/health
 curl -sS http://localhost:3000/api/indexer-health
 curl -sS http://localhost:3000/api/worker-health
 agora doctor
@@ -534,12 +530,12 @@ agora reindex --from-block <block_number>
    - Docker daemon not running or unreachable on the executor host -> restart Docker there, then retry readiness checks.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the executor host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/healthz.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
+   - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Wallet-funded authoring publishes interrupted after the caller sent the chain transaction -> inspect the session row, confirm the `tx_hash`, and retry `POST /api/authoring/sessions/:id/confirm-publish` instead of replaying the authoring flow.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
-4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check `/healthz`.
+4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check the executor `/healthz` endpoint.
 
 ### Managed Authoring Backlog
 

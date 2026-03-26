@@ -19,7 +19,17 @@ current_runtime_version="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
 api_runtime_version=""
 api_release_git_sha=""
 
-if api_health_json="$(curl -fsS "$API_HEALTH_URL" 2>/dev/null)"; then
+if api_health_json="$(
+  API_HEALTH_URL="$API_HEALTH_URL" node --input-type=module <<'EOF'
+const response = await fetch(process.env.API_HEALTH_URL, {
+  headers: { accept: "application/json" },
+});
+if (!response.ok) {
+  process.exit(1);
+}
+process.stdout.write(await response.text());
+EOF
+)"; then
   api_runtime_version="$(
     printf '%s' "$api_health_json" | node -e 'const fs = require("node:fs"); const payload = JSON.parse(fs.readFileSync(0, "utf8")); process.stdout.write(String(payload.releaseId ?? payload.runtimeVersion ?? ""));' 2>/dev/null || true
   )"

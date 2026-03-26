@@ -20,7 +20,7 @@ Documentation index and reading order for the Agora repository.
 | 12 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
 | 13 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
 | 14 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 15 | [Runtime Release Architecture](specs/runtime-release-architecture.md) | What is the locked future-state release and hosted-ops contract? | Engineers, operators |
+| 15 | [Runtime Release Architecture](specs/runtime-release-architecture.md) | What is the locked runtime deploy, verification, bootstrap, and hosted-health contract? | Engineers, operators |
 | 16 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
 | 17 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
@@ -35,7 +35,7 @@ Documentation index and reading order for the Agora repository.
 - **Working on what counts as a valid executable challenge?** Read [Authoring Validity And Execution](specs/authoring-validity-and-execution.md).
 - **Working on machine submission or status contracts?** Read [Submission API Spec](specs/submission-api.md).
 - **Working on the hard-cut implementation sequence?** Read [Machine Contract Migration](specs/machine-contract-migration.md).
-- **Working on release architecture, deploy identity, or hosted health boundaries?** Read [Runtime Release Architecture](specs/runtime-release-architecture.md).
+- **Working on runtime deploy ownership, release verification, bootstrap, or hosted health boundaries?** Read [Runtime Release Architecture](specs/runtime-release-architecture.md).
 - **Need to debug authoring conversations or Telegram/OpenClaw session failures?** Read [Authoring Observability Spec](specs/authoring-observability.md).
 - **Working on agent submission wallets or Telegram solver identity?** Read [Solver Wallet Compatibility Spec](specs/solver-wallet-compatibility.md).
 - **Working on contracts or settlement?** Read [Protocol](protocol.md).
@@ -64,7 +64,7 @@ Documentation index and reading order for the Agora repository.
 | Locked authoring validity and execution model | [specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md) |
 | Locked submission machine contract | [specs/submission-api.md](specs/submission-api.md) |
 | Ordered contract migration plan | [specs/machine-contract-migration.md](specs/machine-contract-migration.md) |
-| Locked runtime release and hosted-ops contract | [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md) |
+| Locked runtime deploy, verification, bootstrap, and hosted-health contract | [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md) |
 | Internal authoring debug timeline and conversation logging | [specs/authoring-observability.md](specs/authoring-observability.md) |
 | Solver wallet compatibility and phased agent-wallet rollout | [specs/solver-wallet-compatibility.md](specs/solver-wallet-compatibility.md) |
 | Submission sealing, privacy boundary, key model | [submission-privacy.md](submission-privacy.md) |
@@ -91,7 +91,7 @@ Documentation index and reading order for the Agora repository.
 - **[specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md)** — Locked validity bar and execution-model redesign
 - **[specs/submission-api.md](specs/submission-api.md)** — Locked solver submission/status/finalize contract
 - **[specs/machine-contract-migration.md](specs/machine-contract-migration.md)** — Ordered hard-cut implementation plan
-- **[specs/runtime-release-architecture.md](specs/runtime-release-architecture.md)** — Locked runtime release, health, and ingress architecture
+- **[specs/runtime-release-architecture.md](specs/runtime-release-architecture.md)** — Locked runtime deploy ownership, verification, bootstrap, health, and ingress architecture
 - **[specs/authoring-observability.md](specs/authoring-observability.md)** — Internal authoring conversation logging and operator debug timeline spec
 - **[specs/solver-wallet-compatibility.md](specs/solver-wallet-compatibility.md)** — Solver wallet compatibility model and phased agent-wallet rollout
 

@@ -78,17 +78,12 @@ function isPlaceholder(value) {
   return value?.toLowerCase() === "dev";
 }
 
-function formatReleaseDate(createdAt) {
-  const [datePart = "1970-01-01"] = createdAt.split("T");
-  return datePart.replaceAll("-", "_");
-}
-
 export function deriveReleaseIdFromGitSha(gitSha, createdAt) {
   const normalizedGitSha = normalizeGitSha(gitSha);
   if (!normalizedGitSha) {
     return null;
   }
-  return `rt_${formatReleaseDate(normalizeCreatedAt(createdAt))}_${normalizedGitSha.slice(0, 12)}`;
+  return normalizedGitSha.slice(0, 12);
 }
 
 export function buildReleaseMetadata(input = {}) {

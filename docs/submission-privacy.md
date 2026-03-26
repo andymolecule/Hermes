@@ -348,7 +348,7 @@ This means the current model protects against solver-to-solver copying during th
 To confirm sealing is working:
 
 ```bash
-curl -sS http://localhost:3000/healthz
+curl -sS http://localhost:3000/api/health
 curl -sS http://localhost:3000/api/worker-health
 curl -sS http://localhost:3000/api/submissions/public-key
 ```
@@ -356,7 +356,7 @@ curl -sS http://localhost:3000/api/submissions/public-key
 Expected signals:
 
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` whenever sealing is configured successfully.
-- `/healthz` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
+- `/api/health` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
 - `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, and the same active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
 - File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader.
 

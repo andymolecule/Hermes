@@ -1,8 +1,8 @@
 # Runtime Release Architecture
 
 > Status: LOCKED
-> Scope: Release identity, deploy pipeline boundaries, hosted health contract,
-> ingress split, and cutover plan for runtime operations.
+> Scope: Runtime deploy ownership, release identity, hosted health, ingress
+> defaults, and the destructive bootstrap boundary.
 
 Read after:
 
@@ -17,38 +17,34 @@ Read after:
 
 ### 0.1 Why This Doc Exists
 
-Recent release failures were not business-logic failures. They were boundary
-failures caused by multiple systems trying to answer the same questions in
+Recent release failures were mostly boundary failures, not business-logic
+failures. The repo had multiple systems trying to answer the same questions in
 different ways:
 
-- what revision is running
-- what health route is canonical
-- which origin agents should call
-- which deploy system is authoritative
+- what revision is actually running
+- who owns runtime deployment
+- which health route is canonical
 - when destructive reset is allowed
+- which parts of the system require immutable artifacts
 
-This document exists to stop release and ops drift before more implementation
-work happens.
+This document locks the simpler model so runtime operations stop drifting.
 
 ### 0.2 What This Doc Is Authoritative For
 
-- the canonical identity of a deployed runtime release
-- the required stages of the runtime release pipeline
-- the boundary between runtime release and web release
-- the canonical hosted health contract
-- the caller split between browser traffic and agent/CLI traffic
-- the cutover rule for destructive bootstrap vs steady-state releases
-- which ops configuration must live in code or generated artifacts instead of
-  dashboard-only tribal knowledge
+- the canonical identity of a hosted runtime release
+- the boundary between Railway-native runtime deploys and GitHub verification
+- the destructive bootstrap boundary
+- the canonical hosted API health contract
+- the ingress split between browser traffic and agent/CLI traffic
+- which artifact discipline remains mandatory for scorer containers
 
-### 0.3 What This Doc Is NOT For
+### 0.3 What This Doc Is Not For
 
 - contract lifecycle or payout logic
 - challenge authoring or submission business behavior
 - UI design or copy
-- low-level Railway or Vercel click-by-click instructions unless they define a
-  lasting architectural boundary
-- executor redesign beyond the release and health boundaries it touches
+- step-by-step Railway dashboard usage, unless it defines a lasting boundary
+- executor redesign beyond the runtime boundaries it touches
 
 ### 0.4 Authority Rule
 
@@ -56,130 +52,121 @@ If this doc conflicts with:
 
 - bash scripts under `scripts/`
 - GitHub workflows
-- current dashboard operating habits
 - older deployment or operations wording
+- current dashboard habits
 
 this doc wins for the runtime release architecture.
 
-### 0.5 Freeze Rule
+### 0.5 Migration Assumption
 
-No additional runtime release refactor should land until it can be explained as
-an implementation of this spec.
+This design assumes:
 
-Patch fixes for live incidents are allowed, but they must move toward this
-contract rather than reintroduce alternative release, health, or identity
-paths.
-
-### 0.6 Migration Assumption
-
-This redesign assumes:
-
-- the migration cutover may be a hard cleanup with no backward-compatibility
-  layer
-- the migration cutover may be destructive with no data-preservation layer
-- steady-state releases after cutover must be non-destructive by default
-
-That means:
-
-- bootstrap and steady-state must be separate commands and separate concepts
-- destructive reset must not remain part of the default day-to-day release path
-- compatibility shims should be temporary and explicit
+- Railway remains the deploy owner for API, indexer, and worker orchestrator
+- GitHub Actions verifies deployments; it does not deploy runtime services
+- destructive reset remains explicit and separate from normal runtime release
+- official scorer images remain immutable OCI artifacts
 
 ---
 
 ## 1. Design Goals
 
-1. A deployed service must be able to state exactly which release it is running
-   without guessing from platform env fallbacks.
-2. A release verifier must compare against one immutable release manifest, not
-   recompute expectations from the local shell environment.
-3. Build, deploy, verify, and smoke must be independent stages with explicit
-   outputs and retry boundaries.
-4. Hosted health checks must use one canonical public route.
-5. Runtime services and web must have separate release domains.
-6. Agents and CLI should take the shortest stable path to the API.
-7. Manual dashboard state must stop being the hidden source of truth for normal
-   releases.
-8. Worker runtime fencing through `worker_runtime_state` and
+1. Hosted runtime services must report the exact commit they are running.
+2. Runtime deployment ownership must be obvious: Railway deploys, GitHub
+   verifies, operators bootstrap explicitly when needed.
+3. Runtime release and web release must remain separate domains.
+4. `GET /api/health` must be the canonical hosted health surface.
+5. The worker runtime fence through `worker_runtime_state` and
    `worker_runtime_control` must remain in place.
-9. Structured API error envelopes must remain in place, with fewer unclassified
-   internal failures.
+6. Destructive schema reset must require an admin-only DB connection that
+   runtime services do not need.
+7. Official scorer images must keep digest-pinned artifact discipline.
+8. The release path must stay understandable without a custom release control
+   plane layered on top of Railway.
 
 ---
 
 ## 2. Non-Goals
 
+- building or promoting GHCR runtime-service images for API, indexer, or worker
+- manifest-driven Railway deployment for runtime services
 - replacing Railway or Vercel immediately
+- hiding every platform-specific setting behind repo automation
 - redesigning the worker/executor topology in this phase
-- introducing preview-environment orchestration before the core runtime release
-  path is stable
-- preserving old `/healthz`-based hosted monitoring as a first-class contract
-- preserving local laptop `railway up` as a canonical deploy path for shared
-  environments
 
 ---
 
 ## 3. Locked Invariants
 
-### 3.1 Release Identity
+### 3.1 Runtime Identity
 
-- Every runtime release has one immutable `releaseId`.
-- Every runtime release records the source `gitSha`.
-- `releaseId` is the canonical deploy identity for runtime coordination.
-- `gitSha` is provenance, not the primary runtime fence.
+- Hosted runtime services must surface:
+  - `releaseId`
+  - `gitSha`
+  - `runtimeVersion`
+- In the normal hosted case, `releaseId` and `runtimeVersion` align to the
+  short commit SHA.
+- `gitSha` is the full 40-character provenance SHA.
 - Hosted runtime services must never fall back to `"dev"`.
-- Local development may still report `"dev"`.
+- Local development may still report `"dev"` when no build or platform metadata
+  exists.
+- Explicit overrides are allowed only when the host platform cannot surface git
+  metadata.
 
-### 3.2 Release Artifact
+### 3.2 Deploy Ownership
 
-- The deployable unit is an immutable image per service, not a source upload.
-- Runtime services in scope for this release architecture:
-  - API
-  - Indexer
-  - Worker Orchestrator
-- The executor remains an operational dependency, but it is not part of the
-  first release-manifest cutover unless explicitly added later.
+- Railway is the canonical deploy owner for API, indexer, and worker
+  orchestrator.
+- Shared environments deploy from Railway-native repo builds or Railway-managed
+  build config.
+- GitHub Actions may build, test, verify, and smoke, but must not mutate
+  Railway service config or promote runtime-service images.
+- Local operator laptops are not the canonical deploy source for shared
+  environments.
 
-### 3.3 Release Manifest
-
-- Every runtime release produces one manifest file.
-- Deploy consumes the manifest.
-- Verify consumes the manifest.
-- Smoke consumes the deployed release selected by the manifest.
-- No stage recomputes the intended release from `git rev-parse`, platform env
-  heuristics, or operator memory.
-
-### 3.4 Hosted Health Contract
+### 3.3 Hosted Health Contract
 
 - The canonical hosted API liveness/readiness route is `GET /api/health`.
 - `/api/worker-health` and `/api/indexer-health` remain detail routes.
-- `/healthz` is not a canonical hosted contract.
-- During migration, `/healthz` may remain as an implementation alias for local
-  or direct-process use, but hosted CI, monitors, docs, and operator playbooks
-  must not rely on it.
+- `/healthz` may remain as a local or direct-process alias, but hosted docs,
+  monitors, and verification must use `/api/health`.
 
-### 3.5 Release Domains
+### 3.4 Release Domains
 
 - Runtime release and web release are separate domains.
-- Runtime release verifies API, indexer, and worker only.
-- Web release verifies the web app only.
-- Runtime release must not fail because the web is on a different revision.
+- Runtime verification may skip web verification entirely.
 - Browser auth/session traffic continues to use the web-origin proxy.
 - Agents and CLI default to the API origin directly.
 
-### 3.6 Destructive vs Non-Destructive Operations
+### 3.5 Bootstrap Boundary
 
 - `bootstrap-testnet` is destructive and rare.
-- `release-runtime` is non-destructive and normal.
-- A steady-state runtime release must not reset the database by default.
-- A destructive bootstrap must be explicit, operator-invoked, and clearly named.
+- Normal runtime release verification is non-destructive.
+- Destructive bootstrap must use `AGORA_SUPABASE_ADMIN_DB_URL`.
+- Runtime services must not require `AGORA_SUPABASE_ADMIN_DB_URL`.
 
-### 3.7 Error Contract
+### 3.6 Worker Fence Contract
+
+- The API keeps the active scoring runtime version in
+  `worker_runtime_control` while the runtime schema is healthy.
+- Worker heartbeats publish runtime version through `worker_runtime_state`.
+- Older workers may continue heartbeating but must not claim new jobs after the
+  active runtime version changes.
+- The fence value must align with the hosted commit-derived runtime version.
+
+### 3.7 Scorer Artifact Discipline
+
+- Official scorer images remain immutable OCI artifacts.
+- Challenge persistence must keep scorer images digest-pinned.
+- Hidden evaluation data must not be baked into scorer images.
+- Runtime-service deployment simplicity does not relax scorer reproducibility
+  rules.
+
+### 3.8 Error Contract
 
 - Public API failures must resolve to structured JSON envelopes.
 - Validation and domain failures should become classified `AgoraError`s.
-- Platform 502/503 responses should represent actual upstream/platform failure,
-  not routine validation or compiler mistakes escaping the app boundary.
+- Platform 502/503 responses should represent actual upstream failure, not
+  routine validation or deployment drift.
 
 ---
 
@@ -187,100 +174,60 @@ That means:
 
 ### 4.1 Runtime Release Metadata
 
-Each runtime release produces build metadata with this logical shape:
+Hosted runtime services expose this logical shape:
 
 ```json
 {
-  "releaseId": "rt_2026_03_26_e7b2f4bfc0bd",
-  "gitSha": "e7b2f4bfc0bd47a4d4fed9936ceb77ce4bb07030",
-  "createdAt": "2026-03-26T06:14:32Z",
-  "schemaPlan": {
-    "type": "bootstrap",
-    "baselineId": "001_baseline.sql",
-    "baselineSha256": "<hash>"
-  },
-  "services": {
-    "api": {
-      "image": "ghcr.io/andymolecule/agora-api@sha256:..."
-    },
-    "indexer": {
-      "image": "ghcr.io/andymolecule/agora-indexer@sha256:..."
-    },
-    "worker": {
-      "image": "ghcr.io/andymolecule/agora-worker@sha256:..."
-    }
-  },
-  "healthContractVersion": "runtime-health-v1"
+  "releaseId": "60b3720747a3",
+  "gitSha": "60b3720747a3accaaa52d0fd50961f9cb9881f80",
+  "runtimeVersion": "60b3720747a3"
 }
 ```
 
 Rules:
 
-- `releaseId` must be baked into the artifact and surfaced by health endpoints.
-- `gitSha` must be baked into the artifact and surfaced by health endpoints.
-- `schemaPlan.type` is one of:
-  - `bootstrap`
-  - `forward_migration`
-  - `noop`
-- shared environments must reject a manifest whose schema plan is incompatible
-  with the requested command.
+- `releaseId` and `runtimeVersion` stay aligned in the normal hosted case.
+- Build-generated `release-metadata.json` files may exist, but if they do they
+  must resolve to the same commit-derived identity.
+- Platform git metadata is the canonical hosted fallback when no baked metadata
+  file exists.
 
-### 4.2 Runtime Identity in the App
+### 4.2 Runtime Release Pipeline
 
-Hosted runtime services must read release metadata from build-generated files or
-OCI labels materialized into the container at build time.
-
-Target state:
-
-- no hosted runtime identity derived from platform-specific env probing
-- no hosted runtime identity derived from local git at process start
-- no hosted runtime fallback to `"dev"`
-
-Local development may still synthesize `"dev"` when no build metadata exists.
-
-### 4.3 Pipeline Stages
-
-The runtime release pipeline has four durable stages plus smoke:
+The runtime release path has four stages:
 
 1. `build`
-   - builds images
-   - writes release manifest
-   - runs unit/integration/build checks required before promotion
-   - publishes artifacts
-2. `bootstrap` or `deploy`
-   - `bootstrap-testnet`: destructive environment creation/reset
-   - `release-runtime`: non-destructive rollout from a manifest
+   - build the repo
+   - run repo-native verification commands
+2. `platform deploy`
+   - Railway deploys API, indexer, and worker through its native deploy path
 3. `verify`
-   - read-only verification against the manifest
-   - checks release identity, canonical health, and worker fence alignment
+   - wait for `/api/health` and `/api/worker-health` to report the target
+     revision
 4. `smoke`
-   - read-only functional smoke against the deployed runtime release
+   - run the external lifecycle smoke against the deployed runtime
 
 Rules:
 
-- `build` does not mutate shared environments
-- `deploy` does not rebuild
-- `verify` does not deploy
-- `smoke` does not deploy or mutate schema
-- each stage must be rerunnable without replaying previous stages
+- Railway owns `platform deploy`.
+- GitHub Actions and local operator commands own `build`, `verify`, and
+  `smoke`.
+- `verify` and `smoke` are read-only.
+- `bootstrap-testnet` may reset shared state before `verify`, but it must not
+  become the default day-to-day path.
 
-### 4.4 Service Deployment Ownership
+### 4.3 Service Deployment Ownership
 
 For canonical shared environments:
 
-- runtime releases come from CI-produced artifacts
-- CI promotes explicit image digests
-- local operator laptops are not the canonical deploy source
-- dashboard configuration must not be the only place where required service
-  build/start/deploy intent is documented
+- keep Railway auto-deploy enabled for runtime services
+- do not replace Railway-native deploys with a manifest promotion layer
+- if Railway watch patterns or root directories are needed, use Railway-native
+  settings and document them clearly
+- treat dashboard config as operational configuration, not as a second custom
+  deployment system
 
-Target state:
-
-- service release inputs are defined in repo code or generated manifests
-- platform config is declarative or mechanically synced
-- dashboard-only instructions become operational reference, not primary truth
-
-### 4.5 Canonical Health Surface
+### 4.4 Canonical Hosted Health Surface
 
 `GET /api/health` must return one canonical hosted shape for runtime release
 verification.
@@ -291,14 +238,10 @@ Minimum logical fields:
 {
   "ok": true,
   "service": "api",
-  "releaseId": "rt_2026_03_26_e7b2f4bfc0bd",
-  "gitSha": "e7b2f4bfc0bd47a4d4fed9936ceb77ce4bb07030",
-  "checkedAt": "2026-03-26T06:35:39.379Z",
-  "components": {
-    "databaseSchema": {
-      "ok": true
-    }
-  }
+  "releaseId": "60b3720747a3",
+  "gitSha": "60b3720747a3accaaa52d0fd50961f9cb9881f80",
+  "runtimeVersion": "60b3720747a3",
+  "checkedAt": "2026-03-26T11:35:39.379Z"
 }
 ```
 
@@ -307,10 +250,9 @@ Rules:
 - hosted CI and monitoring use `/api/health`
 - worker detail remains under `/api/worker-health`
 - indexer detail remains under `/api/indexer-health`
-- `/healthz` must not have a divergent schema if it remains present during
-  migration
+- `/healthz` must not diverge if it remains present as an alias
 
-### 4.6 Ingress Contract
+### 4.5 Ingress Contract
 
 Caller defaults:
 
@@ -321,37 +263,47 @@ Caller defaults:
 | CLI | API origin direct | Fewer layers, fewer proxy-specific failures |
 | Agents | API origin direct | Bearer-token traffic does not need the web proxy |
 
-Rules:
+### 4.6 Bootstrap Flow
 
-- the API remains the canonical remote machine surface
-- the web proxy is a browser boundary, not a universal ingress boundary
-- agent and CLI docs should stop treating the web origin as the primary API URL
+`bootstrap-testnet` exists for destructive environment reset only.
 
-### 4.7 Worker Fence Contract
+Flow:
 
-Keep the current design direction:
+1. operator confirms the target environment is ready for destructive reset
+2. bootstrap uses `AGORA_SUPABASE_ADMIN_DB_URL`
+3. bootstrap wipes the public schema
+4. bootstrap reapplies `001_baseline.sql`
+5. bootstrap reloads the PostgREST schema cache
+6. bootstrap runs schema verification, deploy verification, and smoke
 
-- API declares the active runtime release fence
-- worker heartbeats report their active runtime release
-- stale workers may continue heartbeating but must not claim new jobs
+### 4.7 Verify-Only Runtime Flow
 
-Target refinement:
+Normal runtime release verification works like this:
 
-- the fence value should become the canonical `releaseId`
-- `gitSha` remains diagnostic only
+1. merge or push the target runtime revision to `main`
+2. Railway deploys API, indexer, and worker through its native deploy path
+3. `pnpm release:testnet` or the GitHub workflow waits for `/api/health` and
+   `/api/worker-health` to report the target revision
+4. run smoke once deploy verification passes
 
-### 4.8 Error Boundary Contract
+### 4.8 Named Hotspots and Mitigations
 
-The API already has a top-level error boundary. The redesign keeps that model
-and tightens classification.
-
-Target rules:
-
-- validation failures -> structured client-visible classified errors
-- domain failures -> structured classified `AgoraError`s
-- unexpected failures -> one consistent internal-error envelope with
-  `x-request-id`
-- platform rewrites must become rare instead of routine
+1. Provider boundary drift
+   - Symptom: runtime services need destructive DB credentials
+   - Mitigation: `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only
+2. Hidden deploy state
+   - Symptom: operators guess what commit is live
+   - Mitigation: `/api/health` must report commit-derived identity
+3. Over-engineered release control plane
+   - Symptom: GitHub deploys Railway by rewriting service config
+   - Mitigation: Railway deploys natively; GitHub verifies only
+4. Mixed web/runtime truth
+   - Symptom: runtime release fails because web is on a different revision
+   - Mitigation: runtime verification may skip web verification
+5. Collapsing scorer rigor into runtime-service ops
+   - Symptom: runtime-service simplicity weakens reproducibility guarantees
+   - Mitigation: keep strict artifact discipline only where determinism matters:
+     official scorer images
 
 ---
 
@@ -359,24 +311,19 @@ Target rules:
 
 Target command set:
 
-- `pnpm runtime:build`
-- `pnpm runtime:bootstrap:testnet`
-- `pnpm runtime:deploy`
-- `pnpm runtime:verify`
-- `pnpm runtime:smoke`
+- `pnpm release:testnet`
+- `pnpm bootstrap:testnet`
+- `pnpm schema:verify`
+- `pnpm scorers:verify`
+- `pnpm deploy:verify`
+- `pnpm smoke:lifecycle:testnet`
 
 Rules:
 
-- there is no day-to-day `runtime vs clean` toggle
-- destructive bootstrap is its own command
-- steady-state deploy is its own command
-- command behavior must match the manifest schema plan
-
-Implementation note:
-
-- replacing the current bash release controller with a typed TypeScript tool is
-  the intended direction, because the release pipeline already behaves like a
-  state machine and should be tested as one
+- `pnpm release:testnet` is verify-only
+- `pnpm bootstrap:testnet` is destructive
+- runtime verification defaults to API + worker, not web
+- bootstrap uses the admin DB URL and then runs the same verification gate
 
 ---
 
@@ -386,112 +333,74 @@ Implementation note:
 
 Objective:
 
-- lock the architecture before more release-script drift
+- lock the simplified runtime-release model before more docs or workflow drift
 
 Actions:
 
 1. lock this document
 2. point `docs/README.md`, `docs/operations.md`, and `docs/deployment.md` at it
-3. stop adding new hosted checks that rely on `/healthz`
-
-Acceptance gates:
-
-- one authoritative release-architecture doc exists
-- deployment and operations docs defer to it for release boundaries
+3. remove repo guidance that treats manifest-driven runtime deployment as the
+   target state
 
 ### 6.2 Phase 1: Health and Ingress Cleanup
 
 Objective:
 
-- remove split-truth boundaries without waiting for image-based deploy cutover
+- standardize hosted runtime verification on `/api/health`
 
 Actions:
 
-1. standardize hosted monitoring and verification on `/api/health`
-2. keep `/api/worker-health` and `/api/indexer-health` as detail routes
-3. update CLI and agent docs to prefer the API origin directly
-4. keep the web proxy only for browser-origin needs
+1. move hosted docs and checks to `/api/health`
+2. keep `/healthz` as an implementation alias only
+3. keep API-origin direct as the CLI/agent default
 
-Acceptance gates:
-
-- hosted monitors and deploy verification no longer use `/healthz`
-- agent-facing docs default to API origin direct
-
-### 6.3 Phase 2: Artifact and Manifest Build
+### 6.3 Phase 2: Runtime Identity Cleanup
 
 Objective:
 
-- stop using source uploads as the canonical release unit
+- make commit-derived identity the canonical hosted runtime identity
 
 Actions:
 
-1. build one immutable image per runtime service in CI
-2. generate a release manifest
-3. bake `releaseId` and `gitSha` into the artifact
-4. remove hosted runtime fallback to `"dev"` for canonical releases
+1. keep `releaseId` and `runtimeVersion` aligned to the short commit SHA
+2. keep `gitSha` as full provenance
+3. remove hosted dependence on runtime-only image metadata
 
-Acceptance gates:
-
-- a runtime release can be redeployed from manifest without rebuilding source
-- hosted API health reports `releaseId` and `gitSha` from baked metadata
-
-### 6.4 Phase 3: Bootstrap Cutover
+### 6.4 Phase 3: Remove Runtime Artifact Promotion
 
 Objective:
 
-- perform the one-time hard cleanup cutover for the redesigned runtime release
-  path
+- stop treating API, indexer, and worker as custom promoted OCI artifacts
 
 Actions:
 
-1. create the bootstrap command
-2. reset the target testnet schema once
-3. apply the baseline once
-4. deploy the first manifest-driven runtime release
-5. verify and smoke it end-to-end
+1. delete runtime manifest/image promotion workflows
+2. stop rewriting Railway service config from GitHub Actions
+3. keep Railway-native runtime deploys enabled
 
-Acceptance gates:
-
-- the new shared testnet runs from manifest-driven artifacts
-- the destructive path is no longer the default release path
-
-### 6.5 Phase 4: Steady-State Runtime Releases
+### 6.5 Phase 4: Split Bootstrap From Release Verification
 
 Objective:
 
-- make normal fix iterations non-destructive and retriable
+- keep destructive reset explicit and admin-only
 
 Actions:
 
-1. promote manifest-driven deploy as the default path
-2. remove the old runtime/clean toggle from day-to-day workflows
-3. ensure verify and smoke are read-only and independently rerunnable
-4. use forward migrations or no-op schema plans for steady-state changes
-
-Acceptance gates:
-
-- normal runtime releases do not reset the database
-- deploy retries do not rebuild
-- verify retries do not redeploy
+1. introduce `AGORA_SUPABASE_ADMIN_DB_URL`
+2. move destructive SQL to `bootstrap-testnet`
+3. make `release:testnet` read-only
 
 ### 6.6 Phase 5: Legacy Cleanup
 
 Objective:
 
-- delete compatibility paths that would otherwise reintroduce drift
+- remove compatibility language that would reintroduce drift
 
 Actions:
 
-1. remove hosted `/healthz` dependencies from docs, workflows, and scripts
-2. retire hosted runtime identity heuristics that are no longer needed
-3. retire source-upload release scripts for shared environments
-4. collapse duplicate release-verification logic
-
-Acceptance gates:
-
-- there is one normal release path
-- there is one canonical hosted health contract
-- there is one canonical runtime identity source
+1. remove hosted `/healthz` guidance from docs
+2. remove runtime manifest references from scripts and docs
+3. keep only scorer artifact publication under GHCR
 
 ---
 
@@ -501,9 +410,10 @@ Keep these concepts:
 
 - `worker_runtime_state`
 - `worker_runtime_control`
-- explicit verify phase
-- explicit smoke phase
+- `GET /api/health`
+- explicit `deploy:verify`
+- explicit smoke
 - structured API error envelopes
+- official scorer digest pinning and GHCR publication
 
-These are not the source of the current flakiness and should be refined, not
-removed.
+These remain the right long-term boundaries.

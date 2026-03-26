@@ -7,6 +7,7 @@
 
 export {
   maybeRunWorkerCli,
+  syncWorkerRuntimeStateRegistration,
   startWorker,
   shouldExitForRuntimeMismatch,
   WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,

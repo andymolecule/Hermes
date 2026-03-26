@@ -129,7 +129,7 @@ function assertCanonicalReleaseMetadata(fileMetadata) {
 
   if (!fileMetadata) {
     throw new Error(
-      "Canonical runtime release metadata is required but no baked metadata file was found. Next step: rebuild the runtime image through the artifact pipeline and retry.",
+      "Canonical runtime release metadata is required but no baked metadata file was found. Next step: rebuild the hosted runtime service and retry.",
     );
   }
 
@@ -139,7 +139,7 @@ function assertCanonicalReleaseMetadata(fileMetadata) {
     !fileMetadata.gitSha
   ) {
     throw new Error(
-      "Canonical runtime release metadata is incomplete. Next step: rebuild the runtime image so releaseId, runtimeVersion, and gitSha are baked into packages/common/dist/release-metadata.json.",
+      "Canonical runtime release metadata is incomplete. Next step: rebuild the hosted runtime service so releaseId, runtimeVersion, and gitSha are written into packages/common/dist/release-metadata.json.",
     );
   }
 }
