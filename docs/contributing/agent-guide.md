@@ -502,6 +502,8 @@ This is preview-only:
 - no proof bundle publication
 - no payout effect
 
+For private-evaluation challenges, the public API path does not expose the hidden evaluation bundle. In that case `score-local` only works inside a trusted Agora environment with DB access. Public solver flows should skip straight to `submit` and use `verify-public` after scoring begins.
+
 ### 3. Submit on-chain
 
 ```bash

@@ -310,7 +310,7 @@ AGORA_E2E_ENABLE_TIME_TRAVEL=1 \
 pnpm smoke:lifecycle:local
 ```
 
-Expected flow: post -> indexer pickup -> list -> get -> score-local -> submit -> worker scoring -> verify-public -> finalize -> claim.
+Expected flow: post -> indexer pickup -> list -> get -> submit -> worker scoring -> verify-public -> finalize -> claim. For private-evaluation challenges, a public `score-local` attempt should fail until Agora is running in a trusted environment with DB access.
 
 Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Use a local Anvil RPC with `evm_increaseTime` for full lifecycle settlement testing.
 The E2E script now expects the scorer image to already be published and pullable. It no longer builds a local official scorer fallback.

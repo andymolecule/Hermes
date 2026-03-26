@@ -198,11 +198,10 @@ Shared setup:
 2. Post challenge on-chain
 3. Wait for indexer sync
 4. Download challenge data
-5. Run `score-local` (preview)
-6. Submit on-chain
-7. Wait for the indexed submission to attach to the registered `submission_intent`
-8. Wait for worker scoring
-9. Verify public replay artifacts
+5. Submit on-chain
+6. Wait for the indexed submission to attach to the registered `submission_intent`
+7. Wait for worker scoring
+8. Verify public replay artifacts
 
 Dispute branch (`pnpm smoke:lifecycle` / `pnpm smoke:lifecycle:local`):
 
@@ -212,9 +211,10 @@ Dispute branch (`pnpm smoke:lifecycle` / `pnpm smoke:lifecycle:local`):
 
 Direct finalization branch (`pnpm smoke:lifecycle:testnet` / `./scripts/e2e-test.sh`):
 
-1. Wait for the dispute window to elapse
-2. Finalize challenge
-3. Claim payout
+1. Confirm the public CLI cannot run `score-local` for the private-evaluation challenge
+2. Wait for the dispute window to elapse
+3. Finalize challenge
+4. Claim payout
 
 ### Configuration
 

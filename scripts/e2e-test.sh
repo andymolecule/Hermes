@@ -228,8 +228,16 @@ echo "Challenge ID: $challenge_id"
 echo "Step 4/12: Downloading challenge data..."
 "${AGORA_CMD[@]}" get "$challenge_id" --download "$TMP_DIR/downloaded" --format json >/dev/null || fail "agora get --download"
 
-echo "Step 5/12: Running local scorer..."
-"${AGORA_CMD[@]}" score-local "$challenge_id" --submission "$TMP_DIR/submission.csv" --format json >"$TMP_DIR/score-local.json" || fail "agora score-local"
+echo "Step 5/12: Confirming public score-local stays blocked for private-evaluation challenges..."
+if "${AGORA_CMD[@]}" score-local "$challenge_id" --submission "$TMP_DIR/submission.csv" --format json >"$TMP_DIR/score-local.log" 2>&1; then
+  fail "agora score-local unexpectedly succeeded for a private-evaluation challenge"
+fi
+if ! grep -qi "private-evaluation challenges" "$TMP_DIR/score-local.log"; then
+  echo "Unexpected score-local output:"
+  cat "$TMP_DIR/score-local.log"
+  fail "agora score-local failed for an unexpected reason"
+fi
+echo "✔ Public score-local stayed blocked as expected"
 
 echo "Step 6/12: Submitting on-chain..."
 submit_json="$("${AGORA_CMD[@]}" submit "$TMP_DIR/submission.csv" --challenge "$challenge_id" --format json)" || fail "agora submit"

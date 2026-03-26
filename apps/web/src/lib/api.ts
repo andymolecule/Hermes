@@ -112,7 +112,7 @@ export async function getWorkerHealth(): Promise<WorkerHealth> {
 }
 
 export async function getApiHealth() {
-  return requestRaw<ApiHealth>("/healthz");
+  return requestRaw<ApiHealth>("/api/healthz");
 }
 
 export async function listChallenges(filters: {

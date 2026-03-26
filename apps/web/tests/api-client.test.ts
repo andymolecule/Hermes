@@ -152,10 +152,17 @@ test("getWorkerHealth reads raw worker-health responses", async () => {
   }
 });
 
-test("getApiHealth reads raw healthz responses", async () => {
+test("getApiHealth uses the proxied api health route in the browser", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(
+  const originalWindow = globalThis.window;
+  const calls: string[] = [];
+  Object.defineProperty(globalThis, "window", {
+    value: {} as Window,
+    configurable: true,
+  });
+  globalThis.fetch = (async (input) => {
+    calls.push(String(input));
+    return new Response(
       JSON.stringify({
         ok: true,
         service: "api",
@@ -166,14 +173,20 @@ test("getApiHealth reads raw healthz responses", async () => {
         status: 200,
         headers: { "content-type": "application/json" },
       },
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 
   try {
     const health = await getApiHealth();
     assert.equal(health.ok, true);
     assert.equal(health.service, "api");
     assert.equal(health.runtimeVersion, "sha-test");
+    assert.deepEqual(calls, ["/api/healthz"]);
   } finally {
     globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, "window", {
+      value: originalWindow,
+      configurable: true,
+    });
   }
 });

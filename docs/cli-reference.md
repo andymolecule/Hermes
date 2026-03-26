@@ -78,6 +78,8 @@ solver-specific submission usage and claimable payout.
 
 Run the scorer container locally for a free preview. Does not affect on-chain state.
 
+For private-evaluation challenges, this requires a trusted Agora environment with DB access. Public API-only clients should expect `score-local` to fail until replay artifacts are published after scoring begins.
+
 ```bash
 agora score-local ch-001 --submission ./results.csv --format json
 ```
