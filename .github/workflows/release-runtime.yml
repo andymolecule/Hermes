@@ -1,7 +1,23 @@
 name: Release Runtime
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      release_mode:
+        description: "Runtime deploy mode"
+        required: true
+        default: runtime
+        type: choice
+        options:
+          - runtime
+          - clean
+
+concurrency:
+  group: release-runtime-main
+  cancel-in-progress: false
 
 jobs:
   release-testnet:
@@ -28,6 +44,7 @@ jobs:
       AGORA_ORACLE_ADDRESS: ${{ secrets.AGORA_ORACLE_ADDRESS }}
       AGORA_TREASURY_ADDRESS: ${{ secrets.AGORA_TREASURY_ADDRESS }}
       AGORA_RUNTIME_VERSION: ${{ github.sha }}
+      AGORA_RELEASE_MODE: ${{ github.event_name == 'push' && 'runtime' || github.event.inputs.release_mode }}
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - name: Checkout
@@ -59,4 +76,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run gated runtime release
-        run: bash scripts/release-testnet.sh
+        run: bash scripts/release-testnet.sh --mode "$AGORA_RELEASE_MODE"

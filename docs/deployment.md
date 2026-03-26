@@ -59,13 +59,24 @@ Recommended runtime release trigger:
 
 ```bash
 pnpm release:testnet
+pnpm release:testnet:clean
 ```
 
-This is the smallest repo-owned runtime release gate. It resets the Supabase
-schema, reapplies the single baseline, reloads the PostgREST cache, verifies
-schema/scorers, deploys the Railway runtime services, verifies deploy
-alignment, and runs the external lifecycle smoke. The matching manual GitHub
-Actions trigger is [`.github/workflows/release-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/release-runtime.yml).
+This repo now ships two explicit runtime release lanes:
+
+- `pnpm release:testnet`: non-destructive runtime deploy. Keeps the current
+  Supabase schema, requires `pnpm schema:verify` to pass, deploys Railway
+  runtime services, verifies deploy alignment, and runs the external lifecycle
+  smoke.
+- `pnpm release:testnet:clean`: destructive rebuild lane. Resets the Supabase
+  schema, reapplies the single baseline, reloads the PostgREST cache, then
+  continues with the same deploy/verify/smoke gate.
+
+Pushes to `main` now trigger the same GitHub workflow automatically in
+non-destructive `runtime` mode. The matching manual GitHub Actions trigger is
+[`.github/workflows/release-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/release-runtime.yml),
+which accepts the same `runtime` vs `clean` choice when operators need to run
+it manually.
 
 Notes:
 
@@ -78,9 +89,9 @@ Railway deployment checks before production cutover:
 
 - Railway API, indexer, and worker orchestrator are dashboard-managed, not config-as-code.
 - Keep each service connected to repo `andymolecule/Agora`, branch `main`.
-- Disable native Railway auto-deploy for API, indexer, and worker orchestrator.
+- Disable native Railway auto-deploy for API, indexer, and worker orchestrator. GitHub Actions is now the automatic runtime deploy path.
 - Do not use repo-local `railway.toml` files for these services.
-- Do not use dashboard watch-path filtering unless you have a measured need for it. For Agora's current size, rebuilding on every `main` push is simpler and more reliable than selective deploy filtering.
+- Do not use dashboard watch-path filtering unless you have a measured need for it. Runtime services now deploy through the gated release path, not through raw `main` pushes.
 - Keep the dashboard build/start commands stable:
   - API build: `pnpm turbo build --filter=@agora/api`
   - API start: `pnpm --filter @agora/api start`
@@ -96,7 +107,7 @@ Railway deployment checks before production cutover:
   5. deploy API, indexer, and worker
   6. run `pnpm deploy:verify`
   7. run smoke
-  8. Prefer `pnpm release:testnet` or the manual `Release Runtime` workflow instead of ad hoc dashboard redeploys
+  8. Normal `main` pushes now deploy through the GitHub Actions `Release Runtime` workflow in `runtime` mode. Use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual workflow only when you need an explicit operator-triggered deploy.
 
 ---
 

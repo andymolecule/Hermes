@@ -13,24 +13,25 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/release-testnet.sh
+Usage: bash scripts/release-testnet.sh [--mode runtime|clean]
 
 Runs the testnet runtime release gate:
 1. build + test
-2. reset Supabase public schema
-3. apply packages/db/supabase/migrations/001_baseline.sql
-4. reload PostgREST schema cache
-5. verify schema + scorers
-6. deploy Railway API/indexer/worker services
-7. verify deploy alignment
-8. run external lifecycle smoke
+2. verify the live runtime schema or rebuild it from the baseline
+3. verify schema + scorers
+4. deploy Railway API/indexer/worker services
+5. verify deploy alignment
+6. run external lifecycle smoke
+
+Modes:
+  --mode runtime   Non-destructive runtime deploy. Keeps the current Supabase
+                   schema and fails closed if pnpm schema:verify does not pass.
+  --mode clean     Destructive rebuild. Resets Supabase public schema,
+                   reapplies packages/db/supabase/migrations/001_baseline.sql,
+                   reloads the PostgREST cache, then continues with the same
+                   runtime deploy gate.
 EOF
 }
-
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  usage
-  exit 0
-fi
 
 required_env=(
   AGORA_SUPABASE_DB_URL
@@ -58,6 +59,28 @@ fail() {
   echo "[FAIL] $1" >&2
   exit 1
 }
+
+RELEASE_MODE="runtime"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --mode)
+      RELEASE_MODE="${2:-}"
+      shift 2
+      ;;
+    *)
+      fail "Unknown argument: $1"
+      ;;
+  esac
+done
+
+if [[ "$RELEASE_MODE" != "runtime" && "$RELEASE_MODE" != "clean" ]]; then
+  fail "Unsupported release mode: ${RELEASE_MODE}. Use --mode runtime or --mode clean."
+fi
 
 require_env() {
   local key="$1"
@@ -114,7 +137,7 @@ deploy_runtime_service() {
   railway up --service "$service" --detach
 }
 
-echo "== Agora Testnet Release Gate =="
+echo "== Agora Testnet Release Gate (${RELEASE_MODE}) =="
 
 for key in "${required_env[@]}"; do
   require_env "$key"
@@ -130,17 +153,26 @@ pnpm turbo build
 echo "[STEP] Test workspace"
 NO_PROXY='*' pnpm turbo test
 
-echo "[STEP] Reset Supabase public schema"
-reset_runtime_schema
+if [[ "$RELEASE_MODE" == "clean" ]]; then
+  echo "[STEP] Reset Supabase public schema"
+  reset_runtime_schema
 
-echo "[STEP] Apply runtime baseline"
-apply_runtime_baseline
+  echo "[STEP] Apply runtime baseline"
+  apply_runtime_baseline
 
-echo "[STEP] Reload PostgREST schema cache"
-reload_postgrest_schema_cache
+  echo "[STEP] Reload PostgREST schema cache"
+  reload_postgrest_schema_cache
+else
+  echo "[STEP] Keep live runtime schema in place"
+fi
 
 echo "[STEP] Verify runtime schema compatibility"
-pnpm schema:verify
+if ! pnpm schema:verify; then
+  if [[ "$RELEASE_MODE" == "runtime" ]]; then
+    fail "Live runtime schema is incompatible with the current code. Next step: rerun this release with --mode clean."
+  fi
+  fail "Runtime schema verification failed after clean rebuild."
+fi
 
 echo "[STEP] Verify official scorers"
 pnpm scorers:verify
@@ -155,4 +187,4 @@ wait_for_deploy_verify
 echo "[STEP] Run external lifecycle smoke"
 pnpm smoke:lifecycle:testnet
 
-echo "[OK] Testnet runtime release gate completed successfully."
+echo "[OK] Testnet runtime release gate (${RELEASE_MODE}) completed successfully."
