@@ -110,39 +110,21 @@ export async function checkApiHealth(
   fetchImpl: typeof fetch = fetch,
 ) {
   const baseUrl = apiUrl.replace(/\/$/, "");
-  const endpoints = [
-    {
-      label: "/healthz",
-      url: `${baseUrl}/healthz`,
-      detail: "healthz ok",
-    },
-    {
-      label: "/api/healthz",
-      url: `${baseUrl}/api/healthz`,
-      detail: "api/healthz ok via web proxy",
-    },
-  ];
-  const failures: string[] = [];
+  const healthUrl = `${baseUrl}/api/health`;
 
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetchImpl(endpoint.url, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (response.ok) {
-        return endpoint.detail;
-      }
-      failures.push(`${endpoint.label} returned ${response.status}`);
-    } catch (error) {
-      failures.push(
-        `${endpoint.label} ${
-          error instanceof Error ? error.message : "request failed"
-        }`,
-      );
+  try {
+    const response = await fetchImpl(healthUrl, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      return "api/health ok";
     }
+    throw new Error(`/api/health returned ${response.status}`);
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : "api health request failed",
+    );
   }
-
-  throw new Error(failures.join("; "));
 }
 
 export async function checkSubmissionPublicKey(
@@ -459,7 +441,9 @@ export function buildDoctorCommand() {
             .select("id", { count: "exact" })
             .limit(1);
           if (error) {
-            throw new Error(`Supabase connectivity check failed: ${error.message}`);
+            throw new Error(
+              `Supabase connectivity check failed: ${error.message}`,
+            );
           }
           checks.push({
             name: "Supabase connectivity",

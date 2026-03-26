@@ -83,6 +83,12 @@ export const configSchema = z.object({
     )
     .default(180_000),
   AGORA_WORKER_RUNTIME_ID: z.string().min(1).optional(),
+  AGORA_RELEASE_ID: z.string().min(1).optional(),
+  AGORA_RELEASE_GIT_SHA: z
+    .string()
+    .regex(COMMIT_SHA_PATTERN, "must be a valid git SHA")
+    .transform((value) => value.toLowerCase())
+    .optional(),
   AGORA_RUNTIME_VERSION: z.string().min(1).optional(),
   AGORA_SCORER_EXECUTOR_BACKEND:
     scorerExecutorBackendSchema.default("local_docker"),
@@ -243,6 +249,12 @@ export interface AgoraRuntimeIdentity {
   rpcUrl: string;
 }
 
+export interface AgoraReleaseMetadata {
+  releaseId: string;
+  gitSha: string | null;
+  runtimeVersion: string;
+}
+
 function formatZodError(error: z.ZodError): string {
   const lines = error.issues.map((issue) => {
     const path = issue.path.join(".") || "(root)";
@@ -256,7 +268,11 @@ function normalizeRuntimeVersion(value: unknown): string | null {
     return null;
   }
   const trimmed = value.trim();
-  if (trimmed.length === 0) {
+  if (
+    trimmed.length === 0 ||
+    trimmed.toLowerCase() === "undefined" ||
+    trimmed.toLowerCase() === "null"
+  ) {
     return null;
   }
   if (COMMIT_SHA_PATTERN.test(trimmed)) {
@@ -265,37 +281,114 @@ function normalizeRuntimeVersion(value: unknown): string | null {
   return trimmed;
 }
 
-export function resolveAgoraRuntimeVersionFromEnv(
+function normalizeGitSha(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.toLowerCase() === "undefined" ||
+    trimmed.toLowerCase() === "null" ||
+    !COMMIT_SHA_PATTERN.test(trimmed)
+  ) {
+    return null;
+  }
+  return trimmed.toLowerCase();
+}
+
+function normalizeReleaseId(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.toLowerCase() === "undefined" ||
+    trimmed.toLowerCase() === "null"
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function isDevPlaceholder(value: string | null) {
+  return value?.toLowerCase() === "dev";
+}
+
+export function resolveAgoraGitShaFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): string | null {
-  const explicitRuntimeVersion = normalizeRuntimeVersion(
-    env.AGORA_RUNTIME_VERSION,
-  );
-  const explicitPlaceholder =
-    explicitRuntimeVersion?.toLowerCase() === "dev"
-      ? explicitRuntimeVersion
-      : null;
-  if (explicitRuntimeVersion && explicitPlaceholder === null) {
-    return explicitRuntimeVersion;
+  const explicitGitSha = normalizeGitSha(env.AGORA_RELEASE_GIT_SHA);
+  if (explicitGitSha) {
+    return explicitGitSha;
   }
 
   for (const key of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
-    const resolved = normalizeRuntimeVersion(env[key]);
+    const resolved = normalizeGitSha(env[key]);
     if (resolved) {
       return resolved;
     }
   }
 
-  return explicitPlaceholder;
+  return null;
+}
+
+export function resolveAgoraReleaseIdFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const explicitReleaseId = normalizeReleaseId(env.AGORA_RELEASE_ID);
+  if (explicitReleaseId && !isDevPlaceholder(explicitReleaseId)) {
+    return explicitReleaseId;
+  }
+
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    env.AGORA_RUNTIME_VERSION,
+  );
+  if (explicitRuntimeVersion && !isDevPlaceholder(explicitRuntimeVersion)) {
+    return explicitRuntimeVersion;
+  }
+
+  const gitSha = resolveAgoraGitShaFromEnv(env);
+  if (gitSha) {
+    return gitSha.slice(0, 12);
+  }
+
+  return explicitReleaseId ?? explicitRuntimeVersion;
+}
+
+export function resolveAgoraRuntimeVersionFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  return resolveAgoraReleaseIdFromEnv(env);
+}
+
+export function withResolvedReleaseMetadata(
+  env: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  const gitSha = resolveAgoraGitShaFromEnv(env) ?? undefined;
+  const releaseId = resolveAgoraReleaseIdFromEnv({
+    ...env,
+    AGORA_RELEASE_GIT_SHA: gitSha,
+  });
+  const runtimeVersion = resolveAgoraRuntimeVersionFromEnv({
+    ...env,
+    AGORA_RELEASE_ID: releaseId ?? env.AGORA_RELEASE_ID,
+    AGORA_RELEASE_GIT_SHA: gitSha,
+  });
+
+  return {
+    ...env,
+    AGORA_RELEASE_ID: releaseId ?? undefined,
+    AGORA_RELEASE_GIT_SHA: gitSha,
+    AGORA_RUNTIME_VERSION: runtimeVersion ?? "dev",
+  };
 }
 
 export function withResolvedRuntimeVersion(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-  return {
-    ...env,
-    AGORA_RUNTIME_VERSION: resolveAgoraRuntimeVersionFromEnv(env) ?? "dev",
-  };
+  return withResolvedReleaseMetadata(env);
 }
 
 export function parseConfigSection<Schema extends z.ZodTypeAny>(
@@ -454,7 +547,7 @@ export function loadConfig(): AgoraConfig {
     return cachedConfig;
   }
   const result = configSchema.safeParse(
-    withResolvedRuntimeVersion(process.env),
+    withResolvedReleaseMetadata(process.env),
   );
   if (!result.success) {
     throw new Error(formatZodError(result.error));
@@ -572,13 +665,43 @@ export function isProductionRuntime(
 }
 
 export function getAgoraRuntimeVersion(
-  config?: Pick<AgoraConfig, "AGORA_RUNTIME_VERSION"> | null,
+  config?: Pick<
+    AgoraConfig,
+    "AGORA_RELEASE_ID" | "AGORA_RELEASE_GIT_SHA" | "AGORA_RUNTIME_VERSION"
+  > | null,
 ): string {
-  return (
-    config?.AGORA_RUNTIME_VERSION ??
+  return getAgoraReleaseMetadata(config).runtimeVersion;
+}
+
+export function getAgoraReleaseMetadata(
+  config?: Pick<
+    AgoraConfig,
+    "AGORA_RELEASE_ID" | "AGORA_RELEASE_GIT_SHA" | "AGORA_RUNTIME_VERSION"
+  > | null,
+): AgoraReleaseMetadata {
+  const resolvedEnv =
+    config === null || config === undefined
+      ? null
+      : withResolvedReleaseMetadata({
+          AGORA_RELEASE_ID: config.AGORA_RELEASE_ID,
+          AGORA_RELEASE_GIT_SHA: config.AGORA_RELEASE_GIT_SHA,
+          AGORA_RUNTIME_VERSION: config.AGORA_RUNTIME_VERSION,
+        });
+
+  const releaseId =
+    resolvedEnv?.AGORA_RELEASE_ID ?? resolveAgoraReleaseIdFromEnv() ?? "dev";
+  const gitSha =
+    resolvedEnv?.AGORA_RELEASE_GIT_SHA ?? resolveAgoraGitShaFromEnv();
+  const runtimeVersion =
+    resolvedEnv?.AGORA_RUNTIME_VERSION ??
     resolveAgoraRuntimeVersionFromEnv() ??
-    "dev"
-  );
+    releaseId;
+
+  return {
+    releaseId,
+    gitSha,
+    runtimeVersion,
+  };
 }
 
 export function resetConfigCache() {

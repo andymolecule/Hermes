@@ -1,7 +1,7 @@
 import {
   configSchema,
   parseConfigSection,
-  withResolvedRuntimeVersion,
+  withResolvedReleaseMetadata,
 } from "./base.js";
 
 const observabilityRuntimeConfigSchema = configSchema.pick({
@@ -27,7 +27,7 @@ export function readObservabilityRuntimeConfig(
 ): AgoraObservabilityRuntimeConfig {
   const parsed = parseConfigSection(
     observabilityRuntimeConfigSchema,
-    withResolvedRuntimeVersion(env),
+    withResolvedReleaseMetadata(env),
   );
   return {
     nodeEnv: parsed.NODE_ENV,

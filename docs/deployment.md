@@ -11,13 +11,14 @@ Operators and engineers responsible for deploying Agora to testnet or production
 ## Read this after
 
 - [Architecture](architecture.md) — system overview
+- [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md) — locked release, health, and ingress architecture
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Operations](operations.md) — day-to-day operations, monitoring, and incident response
 - [specs/authoring-session-api.md](specs/authoring-session-api.md) — locked session-first authoring contract
 
 ## Source of truth
 
-This doc is authoritative for: pre-launch checklists, deployment procedures, rollback criteria, contract deployment, external cutover checklists, and worker recovery scripts. It is NOT authoritative for: day-to-day operations, health monitoring, incident playbooks, or service startup (see [Operations](operations.md)).
+This doc is authoritative for: pre-launch checklists, deployment procedures, rollback criteria, contract deployment, external cutover checklists, and worker recovery scripts. It is NOT authoritative for: future-state runtime release architecture (see [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md)), day-to-day operations, health monitoring, incident playbooks, or service startup (see [Operations](operations.md)).
 
 ## Summary
 
@@ -81,17 +82,23 @@ The matching manual GitHub Actions trigger is
 which accepts the same `runtime` vs `clean` choice when operators need to run
 it manually.
 
-Both the local script and the GitHub workflow require explicit Railway
-targeting:
+The current Railway runtime release path requires:
 
-- `AGORA_RAILWAY_PROJECT_ID`
-- `AGORA_RAILWAY_ENVIRONMENT`
 - `AGORA_RAILWAY_API_SERVICE`
 - `AGORA_RAILWAY_INDEXER_SERVICE`
 - `AGORA_RAILWAY_WORKER_SERVICE`
+- `AGORA_RAILWAY_PROJECT_ID`
+- `AGORA_RAILWAY_ENVIRONMENT`
+- `RAILWAY_TOKEN` created from Railway Project Settings > Tokens for the target
+  environment
+- runtime registry credentials (`AGORA_RUNTIME_REGISTRY_USERNAME` and
+  `AGORA_RUNTIME_REGISTRY_PASSWORD`, or `GHCR_USERNAME` and `GHCR_PAT` in
+  GitHub Actions) unless the runtime images are intentionally public
 
-The release gate now validates `RAILWAY_TOKEN` plus Railway project/service
-access before it starts build/test/schema work.
+The release workflow now builds immutable runtime images first, writes one
+runtime release manifest, then deploys Railway by updating each service to the
+manifest-pinned image digest and redeploying from that manifest. The shared
+runtime release path no longer uses `railway up` source uploads.
 
 Notes:
 
@@ -102,27 +109,23 @@ Notes:
 
 Railway deployment checks before production cutover:
 
-- Railway API, indexer, and worker orchestrator are dashboard-managed, not config-as-code.
-- Keep each service connected to repo `andymolecule/Agora`, branch `main`.
+- Railway API, indexer, and worker orchestrator are image-based services driven
+  by the release manifest, not source-upload services.
 - Disable native Railway auto-deploy for API, indexer, and worker orchestrator. GitHub Actions is now the automatic runtime deploy path.
 - Do not use repo-local `railway.toml` files for these services.
 - Do not use dashboard watch-path filtering unless you have a measured need for it. Runtime services now deploy through the gated release path, not through raw `main` pushes.
-- Keep the dashboard build/start commands stable:
-  - API build: `pnpm turbo build --filter=@agora/api`
-  - API start: `pnpm --filter @agora/api start`
-  - Indexer build: `pnpm turbo build --filter=@agora/chain`
-  - Indexer start: `pnpm --filter @agora/chain indexer`
-  - Worker build: `pnpm turbo build --filter=@agora/api`
-  - Worker start: `pnpm --filter @agora/api worker`
+- Keep the Railway environment linked to the intended project/environment IDs
+  used by the release workflow, and let the image CMD define process startup.
 - The only supported runtime rollout is gated and explicit:
-  1. reset the target schema
-  2. apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql)
-  3. reload the PostgREST schema cache
-  4. run `pnpm schema:verify`
-  5. deploy API, indexer, and worker
-  6. run `pnpm deploy:verify`
-  7. run smoke
-  8. Runtime-affecting `main` pushes now deploy through the GitHub Actions `Release Runtime` workflow in `runtime` mode. Use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual workflow when you need an explicit operator-triggered deploy or when a non-runtime commit still needs a runtime rollout.
+  1. build images and write a manifest
+  2. reset the target schema only for `bootstrap-testnet`
+  3. apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql) only for `bootstrap-testnet`
+  4. reload the PostgREST schema cache only for `bootstrap-testnet`
+  5. run `pnpm schema:verify`
+  6. deploy API, indexer, and worker from the manifest
+  7. run `pnpm deploy:verify --manifest=...`
+  8. run smoke
+  9. Runtime-affecting `main` pushes now deploy through the GitHub Actions `Release Runtime` workflow in `runtime` mode. Use `pnpm release:testnet`, `pnpm release:testnet:clean`, or the manual workflow when you need an explicit operator-triggered deploy or when a non-runtime commit still needs a runtime rollout.
 
 ---
 
@@ -251,7 +254,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm smoke:lifecycle:local` runs the deterministic Anvil-backed lifecycle smoke.
 - `pnpm smoke:lifecycle:testnet` runs the external CLI smoke against the configured deployment.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions.
+- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--expected-api` and `--expected-web` only when you intentionally want to verify different revisions. Use `--skip-web` when a release only deploys Railway runtime services and the web is managed on a separate pipeline.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 
 ### DNS and Domains
@@ -271,7 +274,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
-- `pnpm deploy:verify -- --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
+- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
 - API auth flow sets `agora_session`.
 - CLI help text shows `agora`.
 - Runtime envs contain only `AGORA_*` and `NEXT_PUBLIC_AGORA_*` keys for first-party settings.

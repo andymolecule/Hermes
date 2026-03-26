@@ -9,7 +9,7 @@ cd "$ROOT_DIR"
 
 if [[ -z "${AGORA_API_HEALTH_URL:-}" ]]; then
   echo "Worker deploy aborted: AGORA_API_HEALTH_URL is not set."
-  echo "Next step: export the live API /healthz URL in the worker environment, then rerun the deploy."
+  echo "Next step: export the live API /api/health URL in the worker environment, then rerun the deploy."
   exit 1
 fi
 
@@ -53,6 +53,7 @@ pnpm turbo build --filter=@agora/api
 
 # Keep the worker gate aligned with the live API deploy revision even when
 # PM2 restarts do not preserve shell exports reliably.
+export AGORA_RELEASE_GIT_SHA="$DEPLOYED_SHA"
 export AGORA_RUNTIME_VERSION="$DEPLOYED_SHORT_SHA"
 export AGORA_WORKER_PM2_NAME="$APP_NAME"
 

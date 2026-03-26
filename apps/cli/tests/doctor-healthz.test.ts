@@ -6,7 +6,7 @@ import {
   checkSubmissionPublicKey,
 } from "../src/commands/doctor.js";
 
-test("doctor falls back to /api/healthz when the web origin does not expose /healthz", async () => {
+test("doctor checks the canonical /api/health route on a web origin", async () => {
   const calls: string[] = [];
 
   const detail = await checkApiHealth(
@@ -14,38 +14,25 @@ test("doctor falls back to /api/healthz when the web origin does not expose /hea
     async (input) => {
       const url = String(input);
       calls.push(url);
-
-      if (url.endsWith("/api/healthz")) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-
-      return new Response("not found", { status: 404 });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
     },
   );
 
-  assert.equal(detail, "api/healthz ok via web proxy");
-  assert.deepEqual(calls, [
-    "https://agora-market.vercel.app/healthz",
-    "https://agora-market.vercel.app/api/healthz",
-  ]);
+  assert.equal(detail, "api/health ok");
+  assert.deepEqual(calls, ["https://agora-market.vercel.app/api/health"]);
 });
 
-test("doctor still accepts direct API origins that expose /healthz", async () => {
+test("doctor checks the canonical /api/health route on a direct API origin", async () => {
   const calls: string[] = [];
 
   const detail = await checkApiHealth("https://api.example", async (input) => {
     const url = String(input);
     calls.push(url);
-
-    if (url.endsWith("/healthz")) {
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    }
-
-    return new Response("not found", { status: 404 });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
   });
 
-  assert.equal(detail, "healthz ok");
-  assert.deepEqual(calls, ["https://api.example/healthz"]);
+  assert.equal(detail, "api/health ok");
+  assert.deepEqual(calls, ["https://api.example/api/health"]);
 });
 
 test("doctor validates the submission sealing public key endpoint", async () => {
@@ -73,10 +60,9 @@ test("doctor validates official scorer tags against pinned digests", async () =>
     return new Response("", {
       status: 200,
       headers: {
-        "docker-content-digest":
-          String(_input).includes("gems-tabular-scorer")
-            ? "sha256:b5f15b2d056c024c08f2f8a17e521e6ae8837ff49deda2572476b7a649bd17b5"
-            : "sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
+        "docker-content-digest": String(_input).includes("gems-tabular-scorer")
+          ? "sha256:b5f15b2d056c024c08f2f8a17e521e6ae8837ff49deda2572476b7a649bd17b5"
+          : "sha256:315f4e058b8bcd86e16b77f49bb418bfa06392fe163000dd53841e9b516f9a64",
       },
     });
   });

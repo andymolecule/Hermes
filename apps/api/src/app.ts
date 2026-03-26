@@ -1,5 +1,5 @@
 import {
-  getAgoraRuntimeVersion,
+  getAgoraReleaseMetadata,
   isProductionRuntime,
   readApiServerRuntimeConfig,
 } from "@agora/common";
@@ -46,6 +46,21 @@ export function createApp(
   const getRuntimeReadiness =
     dependencies.getRuntimeReadiness ?? createApiRuntimeReadinessProbe();
 
+  function buildApiHealthPayload(
+    readiness: Awaited<ReturnType<typeof getRuntimeReadiness>>,
+  ) {
+    const release = getAgoraReleaseMetadata();
+    return {
+      ok: readiness.ok,
+      service: "api",
+      releaseId: release.releaseId,
+      gitSha: release.gitSha,
+      runtimeVersion: release.runtimeVersion,
+      checkedAt: readiness.checkedAt,
+      readiness: readiness.readiness,
+    };
+  }
+
   app.use("*", createApiRequestObservabilityMiddleware());
 
   app.use(
@@ -89,30 +104,12 @@ export function createApp(
 
   app.get("/healthz", async (c) => {
     const readiness = await getRuntimeReadiness();
-    return c.json(
-      {
-        ok: readiness.ok,
-        service: "api",
-        runtimeVersion: getAgoraRuntimeVersion(),
-        checkedAt: readiness.checkedAt,
-        readiness: readiness.readiness,
-      },
-      readiness.ok ? 200 : 503,
-    );
+    return c.json(buildApiHealthPayload(readiness), readiness.ok ? 200 : 503);
   });
   // Alias under /api/ so Railway's edge proxy cannot shadow it.
   app.get("/api/health", async (c) => {
     const readiness = await getRuntimeReadiness();
-    return c.json(
-      {
-        ok: readiness.ok,
-        service: "api",
-        runtimeVersion: getAgoraRuntimeVersion(),
-        checkedAt: readiness.checkedAt,
-        readiness: readiness.readiness,
-      },
-      readiness.ok ? 200 : 503,
-    );
+    return c.json(buildApiHealthPayload(readiness), readiness.ok ? 200 : 503);
   });
   app.get("/.well-known/openapi.json", (c) =>
     c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),

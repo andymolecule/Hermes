@@ -2,45 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
 
-test("healthz reports API liveness without worker sealing state", async () => {
-  const app = createApp({
-    getRuntimeReadiness: async () => ({
-      ok: true,
-      checkedAt: "2026-03-25T00:00:00.000Z",
-      readiness: {
-        databaseSchema: {
-          ok: true,
-          failures: [],
-        },
-      },
-    }),
-  });
-  const response = await app.request(new Request("http://localhost/healthz"));
-
-  assert.equal(response.status, 200);
-
-  const body = (await response.json()) as {
-    ok: boolean;
-    service: string;
-    runtimeVersion: string;
-    checkedAt: string;
-    readiness: {
-      databaseSchema: {
-        ok: boolean;
-        failures: unknown[];
-      };
-    };
-  };
-
-  assert.equal(body.ok, true);
-  assert.equal(body.service, "api");
-  assert.equal(typeof body.runtimeVersion, "string");
-  assert.equal(body.checkedAt, "2026-03-25T00:00:00.000Z");
-  assert.equal(body.readiness.databaseSchema.ok, true);
-  assert.match(response.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
-});
-
-test("healthz preserves a caller supplied x-request-id", async () => {
+test("api health reports API liveness without worker sealing state", async () => {
   const app = createApp({
     getRuntimeReadiness: async () => ({
       ok: true,
@@ -54,7 +16,51 @@ test("healthz preserves a caller supplied x-request-id", async () => {
     }),
   });
   const response = await app.request(
-    new Request("http://localhost/healthz", {
+    new Request("http://localhost/api/health"),
+  );
+
+  assert.equal(response.status, 200);
+
+  const body = (await response.json()) as {
+    ok: boolean;
+    service: string;
+    releaseId: string;
+    gitSha: string | null;
+    runtimeVersion: string;
+    checkedAt: string;
+    readiness: {
+      databaseSchema: {
+        ok: boolean;
+        failures: unknown[];
+      };
+    };
+  };
+
+  assert.equal(body.ok, true);
+  assert.equal(body.service, "api");
+  assert.equal(typeof body.releaseId, "string");
+  assert.equal(typeof body.gitSha === "string" || body.gitSha === null, true);
+  assert.equal(typeof body.runtimeVersion, "string");
+  assert.equal(body.checkedAt, "2026-03-25T00:00:00.000Z");
+  assert.equal(body.readiness.databaseSchema.ok, true);
+  assert.match(response.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
+});
+
+test("api health preserves a caller supplied x-request-id", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () => ({
+      ok: true,
+      checkedAt: "2026-03-25T00:00:00.000Z",
+      readiness: {
+        databaseSchema: {
+          ok: true,
+          failures: [],
+        },
+      },
+    }),
+  });
+  const response = await app.request(
+    new Request("http://localhost/api/health", {
       headers: { "x-request-id": "req-observe-123" },
     }),
   );
@@ -62,7 +68,7 @@ test("healthz preserves a caller supplied x-request-id", async () => {
   assert.equal(response.headers.get("x-request-id"), "req-observe-123");
 });
 
-test("healthz returns 503 when runtime schema readiness fails", async () => {
+test("api health returns 503 when runtime schema readiness fails", async () => {
   const app = createApp({
     getRuntimeReadiness: async () => ({
       ok: false,
@@ -83,7 +89,9 @@ test("healthz returns 503 when runtime schema readiness fails", async () => {
       },
     }),
   });
-  const response = await app.request(new Request("http://localhost/healthz"));
+  const response = await app.request(
+    new Request("http://localhost/api/health"),
+  );
 
   assert.equal(response.status, 503);
   const body = (await response.json()) as {
@@ -101,6 +109,24 @@ test("healthz returns 503 when runtime schema readiness fails", async () => {
     body.readiness.databaseSchema.failures[0]?.checkId,
     "unmatched_submissions_table",
   );
+});
+
+test("healthz remains an alias for direct-process probes", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () => ({
+      ok: true,
+      checkedAt: "2026-03-25T00:00:00.000Z",
+      readiness: {
+        databaseSchema: {
+          ok: true,
+          failures: [],
+        },
+      },
+    }),
+  });
+
+  const response = await app.request(new Request("http://localhost/healthz"));
+  assert.equal(response.status, 200);
 });
 
 test("api routes fail closed when runtime schema readiness fails", async () => {

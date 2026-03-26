@@ -7,8 +7,10 @@ import type {
 export type Challenge = AgentChallengeSummary;
 export type Submission = AgentChallengeLeaderboardEntry;
 export type ChallengeDetails = AgentChallengeDetailPayload;
-export type PublicChallengeArtifact = ChallengeDetails["artifacts"]["public"][number];
-export type PrivateChallengeArtifact = ChallengeDetails["artifacts"]["private"][number];
+export type PublicChallengeArtifact =
+  ChallengeDetails["artifacts"]["public"][number];
+export type PrivateChallengeArtifact =
+  ChallengeDetails["artifacts"]["private"][number];
 
 export type Stats = {
   challengesTotal: number;
@@ -156,6 +158,8 @@ export type WorkerHealth = {
 export type ApiHealth = {
   ok: boolean;
   service: string;
+  releaseId: string;
+  gitSha: string | null;
   runtimeVersion: string;
   checkedAt: string;
 };

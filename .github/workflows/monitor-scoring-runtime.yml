@@ -22,8 +22,8 @@ jobs:
         id: health
         run: |
           set -euo pipefail
-          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
-          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/api/health}"
+          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/api/health}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           node scripts/ops/check-worker-health.mjs summary \
             --api-health-url "$AGORA_API_HEALTH_URL" \
@@ -51,8 +51,8 @@ jobs:
         if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
-          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/healthz}"
-          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/healthz}"
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/api/health}"
+          AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/api/health}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           EXPECTED_RUNTIME_VERSION="${{ steps.health.outputs.api_runtime }}"
           node scripts/ops/check-worker-health.mjs dump \

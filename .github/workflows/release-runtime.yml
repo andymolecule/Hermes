@@ -5,9 +5,17 @@ on:
     branches:
       - main
     paths:
+      - ".github/workflows/build-runtime-artifacts.yml"
       - ".github/workflows/release-runtime.yml"
+      - "containers/runtime/**"
+      - "scripts/bootstrap-testnet.sh"
+      - "scripts/deploy-runtime-manifest.ts"
+      - "scripts/runtime-build.ts"
+      - "scripts/runtime-manifest.ts"
       - "scripts/release-testnet.sh"
       - "scripts/e2e-test.sh"
+      - "scripts/runtime-env.mjs"
+      - "scripts/release-metadata.mjs"
       - "scripts/verify-deploy-sync.mjs"
       - "scripts/verify-runtime-schema.mjs"
       - "scripts/verify-official-scorers.mjs"
@@ -25,21 +33,33 @@ on:
       - ".env.example"
   workflow_dispatch:
     inputs:
-      release_mode:
-        description: "Runtime deploy mode"
+      release_operation:
+        description: "Runtime release operation"
         required: true
-        default: runtime
+        default: release-runtime
         type: choice
         options:
-          - runtime
-          - clean
+          - release-runtime
+          - bootstrap-testnet
+      release_id:
+        description: "Optional runtime release id override"
+        required: false
+        type: string
 
 concurrency:
   group: release-runtime-main
   cancel-in-progress: false
 
 jobs:
+  build-runtime-artifacts:
+    uses: ./.github/workflows/build-runtime-artifacts.yml
+    with:
+      release_id: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_id || '' }}
+      schema_plan: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_operation == 'bootstrap-testnet' && 'bootstrap' || 'noop' }}
+    secrets: inherit
+
   release-testnet:
+    needs: build-runtime-artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -64,8 +84,9 @@ jobs:
       AGORA_CORS_ORIGINS: ${{ secrets.AGORA_CORS_ORIGINS }}
       AGORA_ORACLE_ADDRESS: ${{ secrets.AGORA_ORACLE_ADDRESS }}
       AGORA_TREASURY_ADDRESS: ${{ secrets.AGORA_TREASURY_ADDRESS }}
-      AGORA_RUNTIME_VERSION: ${{ github.sha }}
-      AGORA_RELEASE_MODE: ${{ github.event_name == 'push' && 'runtime' || github.event.inputs.release_mode }}
+      AGORA_RELEASE_OPERATION: ${{ github.event_name == 'push' && 'release-runtime' || github.event.inputs.release_operation }}
+      AGORA_RUNTIME_REGISTRY_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      AGORA_RUNTIME_REGISTRY_PASSWORD: ${{ secrets.GHCR_PAT }}
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - name: Checkout
@@ -96,5 +117,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Materialize runtime release manifest
+        env:
+          AGORA_RELEASE_ID: ${{ needs.build-runtime-artifacts.outputs.release_id }}
+          AGORA_RELEASE_GIT_SHA: ${{ needs.build-runtime-artifacts.outputs.git_sha }}
+          AGORA_RELEASE_CREATED_AT: ${{ needs.build-runtime-artifacts.outputs.created_at }}
+          AGORA_RUNTIME_SCHEMA_PLAN: ${{ needs.build-runtime-artifacts.outputs.schema_plan }}
+          AGORA_RUNTIME_API_IMAGE: ${{ needs.build-runtime-artifacts.outputs.api_image }}
+          AGORA_RUNTIME_INDEXER_IMAGE: ${{ needs.build-runtime-artifacts.outputs.indexer_image }}
+          AGORA_RUNTIME_WORKER_IMAGE: ${{ needs.build-runtime-artifacts.outputs.worker_image }}
+          AGORA_RUNTIME_MANIFEST_OUTPUT: artifacts/runtime/${{ needs.build-runtime-artifacts.outputs.release_id }}/manifest.json
+        run: pnpm runtime:build
+
       - name: Run gated runtime release
-        run: bash scripts/release-testnet.sh --mode "$AGORA_RELEASE_MODE"
+        env:
+          AGORA_RUNTIME_MANIFEST_PATH: artifacts/runtime/${{ needs.build-runtime-artifacts.outputs.release_id }}/manifest.json
+        run: |
+          set -euo pipefail
+          if [ "$AGORA_RELEASE_OPERATION" = "bootstrap-testnet" ]; then
+            bash scripts/bootstrap-testnet.sh --manifest "$AGORA_RUNTIME_MANIFEST_PATH"
+          else
+            bash scripts/release-testnet.sh --mode runtime --manifest "$AGORA_RUNTIME_MANIFEST_PATH"
+          fi

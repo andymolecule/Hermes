@@ -201,8 +201,8 @@ export function ActivityPanel() {
             </div>
             <div className="feed-detail">
               {apiHealth
-                ? `runtime ${apiHealth.runtimeVersion.slice(0, 8)}`
-                : "Check web /api proxy and backend healthz."}
+                ? `release ${(apiHealth.releaseId || apiHealth.runtimeVersion).slice(0, 12)}`
+                : "Check web /api proxy and backend /api/health."}
             </div>
           </div>
           <StatusDot ok={apiHealth?.ok ?? false} />

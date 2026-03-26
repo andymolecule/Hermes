@@ -2,7 +2,7 @@ import {
   AUTHORING_DISTRIBUTION_VALUES,
   CHALLENGE_DOMAINS,
   CHALLENGE_LIMITS,
-  getAgoraRuntimeVersion,
+  getAgoraReleaseMetadata,
 } from "@agora/common";
 
 function uuidSchema() {
@@ -23,28 +23,29 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
     { bearerAuth: [] },
     { sessionCookieAuth: [] },
   ] as const;
+  const release = getAgoraReleaseMetadata();
 
   return {
     openapi: "3.1.0",
     info: {
       title: "Agora Agent API",
-      version: getAgoraRuntimeVersion(),
+      version: release.releaseId,
       description:
         "Canonical machine-facing discovery and submission API for Agora agents.",
     },
     servers,
     paths: {
-      "/healthz": {
+      "/api/health": {
         get: {
-          operationId: "getHealthz",
-          summary: "API liveness probe",
+          operationId: "getApiHealth",
+          summary: "API liveness and readiness probe",
           responses: {
             "200": {
               description: "Service is live.",
               content: {
                 "application/json": {
                   schema: {
-                    $ref: "#/components/schemas/HealthzResponse",
+                    $ref: "#/components/schemas/ApiHealthResponse",
                   },
                 },
               },
@@ -55,7 +56,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
               content: {
                 "application/json": {
                   schema: {
-                    $ref: "#/components/schemas/HealthzResponse",
+                    $ref: "#/components/schemas/ApiHealthResponse",
                   },
                 },
               },
@@ -1276,11 +1277,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         },
       },
       schemas: {
-        HealthzResponse: {
+        ApiHealthResponse: {
           type: "object",
           properties: {
             ok: { type: "boolean" },
             service: { type: "string", enum: ["api"] },
+            releaseId: { type: "string" },
+            gitSha: { type: ["string", "null"] },
             runtimeVersion: { type: "string" },
             checkedAt: isoDateTimeSchema(),
             readiness: {
@@ -1291,6 +1294,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           required: [
             "ok",
             "service",
+            "releaseId",
+            "gitSha",
             "runtimeVersion",
             "checkedAt",
             "readiness",

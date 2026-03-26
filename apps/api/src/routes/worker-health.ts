@@ -1,4 +1,5 @@
 import {
+  getAgoraReleaseMetadata,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
   loadConfig,
@@ -134,7 +135,8 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
           latestHeartbeatAt: input.workerRuntime.latestHeartbeatAt,
           latestStartedAt: input.workerRuntime.latestStartedAt ?? null,
           latestError: input.workerRuntime.latestError,
-          latestRuntimeVersion: input.workerRuntime.latestRuntimeVersion ?? null,
+          latestRuntimeVersion:
+            input.workerRuntime.latestRuntimeVersion ?? null,
           runtimeVersions: input.workerRuntime.runtimeVersions,
           activeRuntimeVersion: input.workerRuntime.activeRuntimeVersion,
           healthyWorkersForActiveRuntimeVersion:
@@ -178,6 +180,7 @@ router.get("/", async (c) => {
       activeSealKeyId,
       activeRuntimeVersion: getAgoraRuntimeVersion(config),
     });
+    const release = getAgoraReleaseMetadata(config);
     const sealingConfigured = hasSubmissionSealPublicConfig(config);
     const sealingReady =
       sealingConfigured && workerRuntime.healthyWorkersForActiveSealKey > 0;
@@ -213,6 +216,8 @@ router.get("/", async (c) => {
         },
       }),
       runtime: {
+        releaseId: release.releaseId,
+        gitSha: release.gitSha,
         apiVersion: getAgoraRuntimeVersion(config),
       },
       sealing: {

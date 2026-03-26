@@ -13,27 +13,30 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/release-testnet.sh [--mode runtime|clean]
+Usage: bash scripts/release-testnet.sh [--mode runtime|clean] --manifest <path>
 
 Runs the testnet runtime release gate:
-1. build + test
+1. read the immutable runtime release manifest
 2. verify the live runtime schema or rebuild it from the baseline
 3. verify schema + scorers
-4. deploy Railway API/indexer/worker services
-5. verify deploy alignment
+4. deploy Railway API/indexer/worker services from manifest-pinned images
+5. verify deploy alignment against the same manifest
 6. run external lifecycle smoke
 
 Modes:
   --mode runtime   Non-destructive runtime deploy. Keeps the current Supabase
-                   schema and fails closed if pnpm schema:verify does not pass.
+                   schema and requires a manifest schema plan of noop or
+                   forward_migration.
   --mode clean     Destructive rebuild. Resets Supabase public schema,
                    reapplies packages/db/supabase/migrations/001_baseline.sql,
-                   reloads the PostgREST cache, then continues with the same
-                   runtime deploy gate.
+                   reloads the PostgREST cache, and requires a manifest schema
+                   plan of bootstrap.
 EOF
 }
 
 required_env=(
+  AGORA_RAILWAY_PROJECT_ID
+  AGORA_RAILWAY_ENVIRONMENT
   AGORA_SUPABASE_DB_URL
   AGORA_SUPABASE_URL
   AGORA_SUPABASE_ANON_KEY
@@ -53,7 +56,7 @@ required_env=(
   AGORA_CORS_ORIGINS
 )
 
-required_cmds=(pnpm psql railway docker forge cast curl git)
+required_cmds=(pnpm psql railway docker forge cast curl)
 
 fail() {
   echo "[FAIL] $1" >&2
@@ -61,6 +64,8 @@ fail() {
 }
 
 RELEASE_MODE="runtime"
+RUNTIME_MANIFEST_PATH="${AGORA_RUNTIME_MANIFEST_PATH:-}"
+RUNTIME_SCHEMA_PLAN_TYPE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -72,6 +77,14 @@ while [[ $# -gt 0 ]]; do
       RELEASE_MODE="${2:-}"
       shift 2
       ;;
+    --manifest)
+      RUNTIME_MANIFEST_PATH="${2:-}"
+      shift 2
+      ;;
+    --manifest=*)
+      RUNTIME_MANIFEST_PATH="${1#--manifest=}"
+      shift
+      ;;
     *)
       fail "Unknown argument: $1"
       ;;
@@ -80,6 +93,10 @@ done
 
 if [[ "$RELEASE_MODE" != "runtime" && "$RELEASE_MODE" != "clean" ]]; then
   fail "Unsupported release mode: ${RELEASE_MODE}. Use --mode runtime or --mode clean."
+fi
+
+if [[ -z "$RUNTIME_MANIFEST_PATH" ]]; then
+  fail "Missing required --manifest argument. Next step: pass a runtime release manifest JSON file and retry."
 fi
 
 require_env() {
@@ -94,20 +111,16 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing required command: $cmd"
 }
 
-check_railway_auth_and_access() {
-  echo "[STEP] Verify Railway authentication and project access"
-  # Project-scoped tokens (from Project Settings > Tokens) work with
-  # railway status but not railway whoami. Use status as the auth gate.
-  railway status >/dev/null 2>&1 || fail "Invalid RAILWAY_TOKEN. Next step: create a project token at Railway Project Settings > Tokens and update the GitHub Actions secret."
-}
-
 wait_for_deploy_verify() {
   local attempts=40
   local sleep_seconds=15
   local attempt=1
 
   while (( attempt <= attempts )); do
-    if pnpm deploy:verify --api-url="$AGORA_API_URL" --web-url="$AGORA_WEB_URL"; then
+    if pnpm deploy:verify \
+      --api-url="$AGORA_API_URL" \
+      --manifest="$RUNTIME_MANIFEST_PATH" \
+      --skip-web; then
       return 0
     fi
     echo "[INFO] deploy:verify not ready yet (attempt ${attempt}/${attempts}); retrying in ${sleep_seconds}s"
@@ -138,11 +151,39 @@ reload_postgrest_schema_cache() {
   psql "$AGORA_SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "select pg_notify('pgrst', 'reload schema');"
 }
 
-deploy_runtime_service() {
-  local service="$1"
-  echo "[STEP] Deploying Railway service: ${service}"
-  # Project-scoped tokens already bind project + environment.
-  railway up --service "$service" --detach
+load_runtime_manifest_metadata() {
+  local output
+  output="$(
+    node --input-type=module -e '
+      import fs from "node:fs";
+      const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      if (
+        typeof manifest?.releaseId !== "string" ||
+        typeof manifest?.gitSha !== "string" ||
+        typeof manifest?.schemaPlan?.type !== "string"
+      ) {
+        process.exit(1);
+      }
+      console.log(manifest.releaseId);
+      console.log(manifest.gitSha);
+      console.log(manifest.schemaPlan.type);
+    ' "$RUNTIME_MANIFEST_PATH"
+  )" || fail "Runtime release manifest is invalid. Next step: regenerate or download the manifest artifact and retry."
+
+  AGORA_RELEASE_ID="$(printf '%s\n' "$output" | sed -n '1p')"
+  AGORA_RELEASE_GIT_SHA="$(printf '%s\n' "$output" | sed -n '2p')"
+  RUNTIME_SCHEMA_PLAN_TYPE="$(printf '%s\n' "$output" | sed -n '3p')"
+  AGORA_RUNTIME_VERSION="$AGORA_RELEASE_ID"
+}
+
+assert_manifest_matches_release_mode() {
+  if [[ "$RELEASE_MODE" == "clean" && "$RUNTIME_SCHEMA_PLAN_TYPE" != "bootstrap" ]]; then
+    fail "bootstrap-testnet requires a manifest schema plan of bootstrap. Next step: rebuild artifacts with schema_plan=bootstrap and retry."
+  fi
+
+  if [[ "$RELEASE_MODE" == "runtime" && "$RUNTIME_SCHEMA_PLAN_TYPE" == "bootstrap" ]]; then
+    fail "release-runtime cannot consume a bootstrap manifest. Next step: use a noop or forward_migration manifest for steady-state release."
+  fi
 }
 
 echo "== Agora Testnet Release Gate (${RELEASE_MODE}) =="
@@ -155,13 +196,12 @@ for cmd in "${required_cmds[@]}"; do
   require_cmd "$cmd"
 done
 
-check_railway_auth_and_access
+export AGORA_RELEASE_GIT_SHA AGORA_RELEASE_ID AGORA_RUNTIME_VERSION
+echo "[STEP] Read runtime release manifest"
+load_runtime_manifest_metadata
+assert_manifest_matches_release_mode
 
-echo "[STEP] Build workspace"
-pnpm turbo build
-
-echo "[STEP] Test workspace"
-NO_PROXY='*' pnpm turbo test
+echo "[STEP] Target runtime release ${AGORA_RELEASE_ID} (${AGORA_RELEASE_GIT_SHA})"
 
 if [[ "$RELEASE_MODE" == "clean" ]]; then
   echo "[STEP] Reset Supabase public schema"
@@ -187,9 +227,8 @@ fi
 echo "[STEP] Verify official scorers"
 pnpm scorers:verify
 
-deploy_runtime_service "$AGORA_RAILWAY_API_SERVICE"
-deploy_runtime_service "$AGORA_RAILWAY_INDEXER_SERVICE"
-deploy_runtime_service "$AGORA_RAILWAY_WORKER_SERVICE"
+echo "[STEP] Deploy runtime services from manifest"
+pnpm runtime:deploy --manifest="$RUNTIME_MANIFEST_PATH"
 
 echo "[STEP] Wait for deployed services to align"
 wait_for_deploy_verify

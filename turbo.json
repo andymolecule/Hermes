@@ -3,7 +3,13 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "build/**", ".next/**", "!.next/cache/**", "out/**"],
+      "outputs": [
+        "dist/**",
+        "build/**",
+        ".next/**",
+        "!.next/cache/**",
+        "out/**"
+      ],
       "env": [
         "NEXT_PUBLIC_AGORA_API_URL",
         "NEXT_PUBLIC_AGORA_FACTORY_ADDRESS",
@@ -11,7 +17,10 @@
         "NEXT_PUBLIC_AGORA_CHAIN_ID",
         "NEXT_PUBLIC_AGORA_RPC_URL",
         "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
-        "AGORA_PINATA_JWT"
+        "AGORA_PINATA_JWT",
+        "AGORA_RELEASE_ID",
+        "AGORA_RELEASE_GIT_SHA",
+        "AGORA_RELEASE_CREATED_AT"
       ]
     },
     "test": {

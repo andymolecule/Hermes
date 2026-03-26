@@ -2,9 +2,31 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  deriveReleaseMetadata,
+  readReleaseMetadataFile,
+} from "./release-metadata.mjs";
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(scriptDir, "..");
 const rootEnvPath = path.join(REPO_ROOT, ".env");
+const sourceReleaseMetadataPath = path.join(
+  REPO_ROOT,
+  "packages",
+  "common",
+  "release-metadata.json",
+);
+const builtReleaseMetadataPath = path.join(
+  REPO_ROOT,
+  "packages",
+  "common",
+  "dist",
+  "release-metadata.json",
+);
+const legacyRuntimeVersionFilePath = path.join(
+  REPO_ROOT,
+  ".agora-runtime-version",
+);
 
 const FILE_BACKED_ENV_RULES = [
   {
@@ -20,18 +42,6 @@ const FILE_BACKED_ENV_RULES = [
     fileEnvKey: "AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE",
   },
 ];
-const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
-  "VERCEL_GIT_COMMIT_SHA",
-  "RAILWAY_GIT_COMMIT_SHA",
-  "GITHUB_SHA",
-  "RENDER_GIT_COMMIT",
-  "CI_COMMIT_SHA",
-  "SOURCE_VERSION",
-  "COMMIT_SHA",
-  "GIT_COMMIT_SHA",
-];
-const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
-
 function readTextFile(filePath) {
   return fs.readFileSync(filePath, "utf8").trim();
 }
@@ -41,38 +51,6 @@ function resolveExistingPath(candidatePath) {
     ? candidatePath
     : path.join(REPO_ROOT, candidatePath);
   return fs.existsSync(absolutePath) ? absolutePath : null;
-}
-
-function normalizeRuntimeVersion(value) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  if (COMMIT_SHA_PATTERN.test(trimmed)) {
-    return trimmed.toLowerCase().slice(0, 12);
-  }
-  return trimmed;
-}
-
-function resolveHostedRuntimeVersion() {
-  const explicitRuntimeVersion = normalizeRuntimeVersion(
-    process.env.AGORA_RUNTIME_VERSION,
-  );
-  const explicitPlaceholder =
-    explicitRuntimeVersion?.toLowerCase() === "dev"
-      ? explicitRuntimeVersion
-      : null;
-  if (explicitRuntimeVersion && explicitPlaceholder === null) {
-    return explicitRuntimeVersion;
-  }
-
-  for (const envKey of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
-    const runtimeVersion = normalizeRuntimeVersion(process.env[envKey]);
-    if (runtimeVersion) {
-      return runtimeVersion;
-    }
-  }
-
-  return explicitPlaceholder;
 }
 
 function applyFileBackedEnvRule(rule) {
@@ -95,7 +73,7 @@ function applyFileBackedEnvRule(rule) {
   }
 }
 
-function resolveGitRuntimeVersion() {
+function resolveGitRuntimeVersionFallback() {
   const result = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], {
     cwd: REPO_ROOT,
     encoding: "utf8",
@@ -109,6 +87,63 @@ function resolveGitRuntimeVersion() {
   return "dev";
 }
 
+function shouldReplaceMetadataValue(value) {
+  const trimmed = value?.trim();
+  return !trimmed || trimmed.toLowerCase() === "dev";
+}
+
+function expectsCanonicalReleaseMetadata() {
+  const value = process.env.AGORA_EXPECT_RELEASE_METADATA?.trim().toLowerCase();
+  return value === "1" || value === "true";
+}
+
+function resolveFileReleaseMetadata() {
+  const sourceMetadata = readReleaseMetadataFile(sourceReleaseMetadataPath);
+  if (sourceMetadata) {
+    return sourceMetadata;
+  }
+
+  const builtMetadata = readReleaseMetadataFile(builtReleaseMetadataPath);
+  if (builtMetadata) {
+    return builtMetadata;
+  }
+
+  if (!fs.existsSync(legacyRuntimeVersionFilePath)) {
+    return null;
+  }
+
+  const runtimeVersion = readTextFile(legacyRuntimeVersionFilePath);
+  return {
+    releaseId: runtimeVersion,
+    gitSha: null,
+    runtimeVersion,
+    createdAt: new Date().toISOString(),
+    healthContractVersion: "runtime-health-v1",
+  };
+}
+
+function assertCanonicalReleaseMetadata(fileMetadata) {
+  if (!expectsCanonicalReleaseMetadata()) {
+    return;
+  }
+
+  if (!fileMetadata) {
+    throw new Error(
+      "Canonical runtime release metadata is required but no baked metadata file was found. Next step: rebuild the runtime image through the artifact pipeline and retry.",
+    );
+  }
+
+  if (
+    shouldReplaceMetadataValue(fileMetadata.releaseId) ||
+    shouldReplaceMetadataValue(fileMetadata.runtimeVersion) ||
+    !fileMetadata.gitSha
+  ) {
+    throw new Error(
+      "Canonical runtime release metadata is incomplete. Next step: rebuild the runtime image so releaseId, runtimeVersion, and gitSha are baked into packages/common/dist/release-metadata.json.",
+    );
+  }
+}
+
 export function applyAgoraRuntimeEnv() {
   if (typeof process.loadEnvFile === "function" && fs.existsSync(rootEnvPath)) {
     process.loadEnvFile(rootEnvPath);
@@ -118,11 +153,27 @@ export function applyAgoraRuntimeEnv() {
     applyFileBackedEnvRule(rule);
   }
 
-  if (!process.env.AGORA_RUNTIME_VERSION?.trim()) {
+  const fileMetadata = resolveFileReleaseMetadata();
+  assertCanonicalReleaseMetadata(fileMetadata);
+  const fallbackMetadata = deriveReleaseMetadata({ repoRoot: REPO_ROOT });
+  const effectiveMetadata = fileMetadata ?? fallbackMetadata;
+
+  if (
+    fileMetadata ||
+    shouldReplaceMetadataValue(process.env.AGORA_RELEASE_ID)
+  ) {
+    process.env.AGORA_RELEASE_ID = effectiveMetadata.releaseId;
+  }
+  if (fileMetadata || !process.env.AGORA_RELEASE_GIT_SHA?.trim()) {
+    if (effectiveMetadata.gitSha) {
+      process.env.AGORA_RELEASE_GIT_SHA = effectiveMetadata.gitSha;
+    }
+  }
+  if (
+    fileMetadata ||
+    shouldReplaceMetadataValue(process.env.AGORA_RUNTIME_VERSION)
+  ) {
     process.env.AGORA_RUNTIME_VERSION =
-      resolveHostedRuntimeVersion() ?? resolveGitRuntimeVersion();
-  } else if (process.env.AGORA_RUNTIME_VERSION.trim().toLowerCase() === "dev") {
-    process.env.AGORA_RUNTIME_VERSION =
-      resolveHostedRuntimeVersion() ?? process.env.AGORA_RUNTIME_VERSION;
+      effectiveMetadata.runtimeVersion ?? resolveGitRuntimeVersionFallback();
   }
 }

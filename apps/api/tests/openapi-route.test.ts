@@ -104,14 +104,14 @@ test("openapi document is served from well-known path", async () => {
     "authoring upload should advertise a wrapped success response",
   );
 
-  const healthzPath = body.paths["/healthz"] as {
+  const healthPath = body.paths["/api/health"] as {
     get?: {
       responses?: Record<string, unknown>;
     };
   };
   assert.ok(
-    "503" in (healthzPath.get?.responses ?? {}),
-    "healthz should advertise readiness failures",
+    "503" in (healthPath.get?.responses ?? {}),
+    "api health should advertise readiness failures",
   );
 
   const verifyPath = body.paths["/api/verify"] as {

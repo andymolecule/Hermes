@@ -28,6 +28,8 @@ import {
   readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
+  resolveAgoraGitShaFromEnv,
+  resolveAgoraReleaseIdFromEnv,
   resolveAgoraRuntimeVersionFromEnv,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
@@ -218,7 +220,22 @@ try {
     "19B3A2207D9B0A1B2C3D4E5F60718293ABCDEF12";
   resetConfigCache();
   const autoRuntimeConfig = loadConfig();
+  assert.equal(autoRuntimeConfig.AGORA_RELEASE_ID, "19b3a2207d9b");
+  assert.equal(
+    autoRuntimeConfig.AGORA_RELEASE_GIT_SHA,
+    "19b3a2207d9b0a1b2c3d4e5f60718293abcdef12",
+  );
   assert.equal(autoRuntimeConfig.AGORA_RUNTIME_VERSION, "19b3a2207d9b");
+  assert.equal(
+    resolveAgoraReleaseIdFromEnv(process.env),
+    "19b3a2207d9b",
+    "platform git sha should become the release id when no explicit release id exists",
+  );
+  assert.equal(
+    resolveAgoraGitShaFromEnv(process.env),
+    "19b3a2207d9b0a1b2c3d4e5f60718293abcdef12",
+    "platform git sha should remain available as provenance",
+  );
   assert.equal(
     resolveAgoraRuntimeVersionFromEnv(process.env),
     "19b3a2207d9b",
@@ -231,6 +248,11 @@ try {
     "A61B3299F42EACD5D27A01E87B4C019FABCDEF01";
   resetConfigCache();
   const placeholderRuntimeConfig = loadConfig();
+  assert.equal(placeholderRuntimeConfig.AGORA_RELEASE_ID, "a61b3299f42e");
+  assert.equal(
+    placeholderRuntimeConfig.AGORA_RELEASE_GIT_SHA,
+    "a61b3299f42eacd5d27a01e87b4c019fabcdef01",
+  );
   assert.equal(
     placeholderRuntimeConfig.AGORA_RUNTIME_VERSION,
     "a61b3299f42e",
@@ -242,6 +264,15 @@ try {
     "24B04E3AA5C13BFE73D9B0A1C2D3E4F556677889";
   resetConfigCache();
   const explicitRuntimeConfig = loadConfig();
+  assert.equal(
+    explicitRuntimeConfig.AGORA_RELEASE_ID,
+    "release-2026-03-12",
+    "explicit runtime versions should become the release id when no AGORA_RELEASE_ID override is set",
+  );
+  assert.equal(
+    explicitRuntimeConfig.AGORA_RELEASE_GIT_SHA,
+    "24b04e3aa5c13bfe73d9b0a1c2d3e4f556677889",
+  );
   assert.equal(
     explicitRuntimeConfig.AGORA_RUNTIME_VERSION,
     "release-2026-03-12",

@@ -62,14 +62,17 @@ function evaluateWorkerHealth({
   expectedRuntimeVersion,
   startingGraceMs,
 }) {
-  const apiRuntime = readOptionalString(apiHealth?.runtimeVersion);
+  const apiRuntime = readOptionalString(
+    apiHealth?.releaseId ?? apiHealth?.runtimeVersion,
+  );
   if (!apiRuntime) {
     throw new Error(
-      "API health did not include runtimeVersion. Next step: verify the API deploy completed, then retry.",
+      "API health did not include releaseId or runtimeVersion. Next step: verify the API deploy completed, then retry.",
     );
   }
 
-  const expectedRuntime = readOptionalString(expectedRuntimeVersion) ?? apiRuntime;
+  const expectedRuntime =
+    readOptionalString(expectedRuntimeVersion) ?? apiRuntime;
   const worker = workerHealth ?? {};
   const workers = worker.workers ?? {};
   const sealing = worker.sealing ?? {};
@@ -88,7 +91,9 @@ function evaluateWorkerHealth({
     Date.now();
   const latestStartedAtMs = readTimestampMs(latestStartedAt);
   const startingAgeMs =
-    typeof latestStartedAtMs === "number" ? checkedAtMs - latestStartedAtMs : null;
+    typeof latestStartedAtMs === "number"
+      ? checkedAtMs - latestStartedAtMs
+      : null;
 
   const startingWithinGrace =
     latestRuntimeVersion === expectedRuntime &&
@@ -179,7 +184,7 @@ async function main() {
     ) ?? DEFAULT_STARTING_GRACE_MS;
 
   const [apiHealth, workerHealth] = await Promise.all([
-    fetchJson(apiHealthUrl, "API /healthz"),
+    fetchJson(apiHealthUrl, "API /api/health"),
     fetchJson(workerHealthUrl, "API /api/worker-health"),
   ]);
 

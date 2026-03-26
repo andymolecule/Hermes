@@ -1,4 +1,9 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
+const FULL_GIT_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
 
 function parseArgs(argv) {
   const options = {};
@@ -50,16 +55,54 @@ function parseArgs(argv) {
       options.expectedWebRuntimeVersion = arg.slice("--expected-web=".length);
       continue;
     }
+    if (arg === "--manifest") {
+      options.manifestPath = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--manifest=")) {
+      options.manifestPath = arg.slice("--manifest=".length);
+      continue;
+    }
     if (arg === "--skip-worker") {
       options.skipWorker = true;
       continue;
     }
+    if (arg === "--skip-web") {
+      options.skipWeb = true;
+      continue;
+    }
     throw new Error(
-      `Unknown argument: ${arg}. Next step: use --api-url, --web-url, optional --expected/--expected-api/--expected-web, and optional --skip-worker.`,
+      `Unknown argument: ${arg}. Next step: use --api-url, optional --web-url, optional --manifest, optional --expected/--expected-api/--expected-web, and optional --skip-worker/--skip-web.`,
     );
   }
 
   return options;
+}
+
+function normalizeRuntimeVersion(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  if (COMMIT_SHA_PATTERN.test(trimmed)) {
+    return trimmed.toLowerCase().slice(0, 12);
+  }
+  return trimmed;
+}
+
+function normalizeGitSha(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!FULL_GIT_SHA_PATTERN.test(trimmed)) {
+    return null;
+  }
+  return trimmed.toLowerCase();
 }
 
 function normalizeBaseUrl(value, label) {
@@ -76,6 +119,48 @@ function normalizeBaseUrl(value, label) {
       `${label} is invalid (${value}). Next step: provide a full https:// URL and retry.`,
     );
   }
+}
+
+function normalizeManifestPath(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(
+      "Manifest path is invalid. Next step: pass --manifest with a runtime release manifest JSON file and retry.",
+    );
+  }
+
+  return path.isAbsolute(value) ? value : path.join(process.cwd(), value);
+}
+
+function readRuntimeReleaseManifest(manifestPath) {
+  const resolvedPath = normalizeManifestPath(manifestPath);
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(
+      `Runtime release manifest not found at ${resolvedPath}. Next step: generate or download the manifest artifact and retry.`,
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Runtime release manifest is not valid JSON (${resolvedPath}). Next step: regenerate the manifest artifact and retry. (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+
+  const releaseId = normalizeRuntimeVersion(parsed?.releaseId);
+  const gitSha = normalizeGitSha(parsed?.gitSha);
+  if (!releaseId || !gitSha) {
+    throw new Error(
+      `Runtime release manifest is missing releaseId or gitSha (${resolvedPath}). Next step: regenerate the manifest artifact and retry.`,
+    );
+  }
+
+  return {
+    path: resolvedPath,
+    releaseId,
+    gitSha,
+  };
 }
 
 function resolveGitRuntimeVersion() {
@@ -96,11 +181,16 @@ function resolveGitRuntimeVersion() {
 }
 
 function resolveSharedExpectedRuntimeVersion(options) {
-  if (options.expectedRuntimeVersion?.trim()) {
-    return options.expectedRuntimeVersion.trim();
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    options.expectedRuntimeVersion,
+  );
+  if (explicitRuntimeVersion) {
+    return explicitRuntimeVersion;
   }
 
-  const envRuntimeVersion = process.env.AGORA_RUNTIME_VERSION?.trim();
+  const envRuntimeVersion = normalizeRuntimeVersion(
+    process.env.AGORA_RUNTIME_VERSION,
+  );
   if (!envRuntimeVersion) {
     return null;
   }
@@ -156,50 +246,63 @@ function compareRuntimeVersion(input) {
   return false;
 }
 
+function readReportedReleaseValue(payload) {
+  return normalizeRuntimeVersion(payload?.releaseId ?? payload?.runtimeVersion);
+}
+
+function readReportedReleaseId(payload) {
+  return normalizeRuntimeVersion(payload?.releaseId);
+}
+
+function readReportedGitSha(payload) {
+  return normalizeGitSha(payload?.gitSha);
+}
+
 const options = parseArgs(process.argv.slice(2));
+const manifest = options.manifestPath
+  ? readRuntimeReleaseManifest(options.manifestPath)
+  : null;
 const apiUrl = normalizeBaseUrl(
   options.apiUrl ?? process.env.AGORA_API_URL,
   "API URL",
 );
-const webUrl = normalizeBaseUrl(
-  options.webUrl ?? process.env.AGORA_WEB_URL,
-  "Web URL",
-);
+const webUrl = options.skipWeb
+  ? null
+  : normalizeBaseUrl(options.webUrl ?? process.env.AGORA_WEB_URL, "Web URL");
 const sharedExpectedRuntimeVersion =
   resolveSharedExpectedRuntimeVersion(options);
 const expectedApiRuntimeVersion =
-  options.expectedApiRuntimeVersion?.trim() ||
+  normalizeRuntimeVersion(options.expectedApiRuntimeVersion) ||
+  manifest?.releaseId ||
   sharedExpectedRuntimeVersion ||
   resolveGitRuntimeVersion();
 const expectedWebRuntimeVersion =
-  options.expectedWebRuntimeVersion?.trim() ||
+  normalizeRuntimeVersion(options.expectedWebRuntimeVersion) ||
   sharedExpectedRuntimeVersion ||
   resolveGitRuntimeVersion();
 
 const apiHealth = await fetchJson(`${apiUrl}/api/health`, "API /api/health");
-const webVersion = await fetchJson(`${webUrl}/api/version`, "Web /api/version");
+const webVersion = webUrl
+  ? await fetchJson(`${webUrl}/api/version`, "Web /api/version")
+  : null;
 const workerHealth = options.skipWorker
   ? null
   : await fetchJson(`${apiUrl}/api/worker-health`, "API /api/worker-health");
 
-const apiRuntimeVersion =
-  typeof apiHealth?.runtimeVersion === "string"
-    ? apiHealth.runtimeVersion
-    : null;
-const webRuntimeVersion =
-  typeof webVersion?.runtimeVersion === "string"
-    ? webVersion.runtimeVersion
-    : null;
+const apiRuntimeVersion = readReportedReleaseValue(apiHealth);
+const apiReleaseId = readReportedReleaseId(apiHealth);
+const apiGitSha = readReportedGitSha(apiHealth);
+const webRuntimeVersion = readReportedReleaseValue(webVersion);
 
 if (!apiRuntimeVersion) {
   throw new Error(
-    "API /api/health did not return runtimeVersion. Next step: deploy the current API build and retry.",
+    "API /api/health did not return releaseId or runtimeVersion. Next step: deploy the current API build and retry.",
   );
 }
 
-if (!webRuntimeVersion) {
+if (webUrl && !webRuntimeVersion) {
   throw new Error(
-    "Web /api/version did not return runtimeVersion. Next step: deploy the current web build and retry.",
+    "Web /api/version did not return releaseId or runtimeVersion. Next step: deploy the current web build and retry.",
   );
 }
 
@@ -208,28 +311,67 @@ let ok = true;
 console.log(
   `[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`,
 );
-console.log(
-  `[INFO] Expected Web runtime version: ${expectedWebRuntimeVersion}`,
-);
 ok =
   compareRuntimeVersion({
     label: "API",
     expected: expectedApiRuntimeVersion,
     actual: apiRuntimeVersion,
   }) && ok;
-ok =
-  compareRuntimeVersion({
-    label: "Web",
-    expected: expectedWebRuntimeVersion,
-    actual: webRuntimeVersion,
-  }) && ok;
 
-if (apiRuntimeVersion === webRuntimeVersion) {
-  console.log(`[OK] Web and API are aligned on runtime ${apiRuntimeVersion}`);
-} else {
+if (manifest) {
   console.log(
-    `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This can be acceptable during rollout when each service still matches the revision you intended to deploy.`,
+    `[INFO] Expected API manifest release: ${manifest.releaseId} (${manifest.gitSha})`,
   );
+
+  if (!apiReleaseId) {
+    console.error(
+      "[FAIL] API /api/health did not report releaseId. Next step: deploy a runtime image with baked release metadata and retry.",
+    );
+    ok = false;
+  } else if (apiReleaseId !== manifest.releaseId) {
+    console.error(
+      `[FAIL] API releaseId mismatch: expected ${manifest.releaseId}, got ${apiReleaseId}. Next step: redeploy the API from the manifest artifact and retry.`,
+    );
+    ok = false;
+  } else {
+    console.log(`[OK] API releaseId matches manifest ${manifest.releaseId}`);
+  }
+
+  if (!apiGitSha) {
+    console.error(
+      "[FAIL] API /api/health did not report gitSha. Next step: deploy a runtime image with baked release metadata and retry.",
+    );
+    ok = false;
+  } else if (apiGitSha !== manifest.gitSha) {
+    console.error(
+      `[FAIL] API gitSha mismatch: expected ${manifest.gitSha}, got ${apiGitSha}. Next step: redeploy the API from the manifest artifact and retry.`,
+    );
+    ok = false;
+  } else {
+    console.log(`[OK] API gitSha matches manifest ${manifest.gitSha}`);
+  }
+}
+
+if (webUrl) {
+  console.log(
+    `[INFO] Expected Web runtime version: ${expectedWebRuntimeVersion}`,
+  );
+  ok =
+    compareRuntimeVersion({
+      label: "Web",
+      expected: expectedWebRuntimeVersion,
+      actual: webRuntimeVersion,
+    }) && ok;
+
+  if (apiRuntimeVersion === webRuntimeVersion) {
+    console.log(`[OK] Web and API are aligned on runtime ${apiRuntimeVersion}`);
+  } else {
+    console.log(
+      `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This can be acceptable during rollout when each service still matches the revision you intended to deploy.`,
+    );
+  }
+} else {
+  console.log("[INFO] Skipping web runtime verification");
 }
 
 if (workerHealth) {

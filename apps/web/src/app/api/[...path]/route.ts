@@ -43,8 +43,7 @@ async function proxy(
 
   const url = new URL(request.url);
   const upstreamPath = (context.params.path ?? []).join("/");
-  const upstreamRelativePath =
-    upstreamPath === "healthz" ? "healthz" : `api/${upstreamPath}`;
+  const upstreamRelativePath = `api/${upstreamPath}`;
   const upstreamUrl = new URL(
     `${upstreamRelativePath}${url.search}`,
     `${resolved.baseUrl}/`,

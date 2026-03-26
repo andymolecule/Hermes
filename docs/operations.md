@@ -11,6 +11,7 @@ Operators and engineers responsible for running Agora in testnet or production e
 ## Read this after
 
 - [Architecture](architecture.md) — system overview
+- [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md) — locked release, health, and ingress architecture
 - [specs/authoring-session-api.md](specs/authoring-session-api.md) — locked session-first authoring contract
 - [Protocol](protocol.md) — contract lifecycle and settlement rules
 - [Data and Indexing](data-and-indexing.md) — DB schema and indexer behavior
@@ -18,7 +19,7 @@ Operators and engineers responsible for running Agora in testnet or production e
 
 ## Source of truth
 
-This doc is authoritative for: service startup, monitoring, incident response, scoring limits, indexer operations, and runtime recovery. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
+This doc is authoritative for: service startup, monitoring, incident response, scoring limits, indexer operations, and runtime recovery. It is NOT authoritative for: deployment procedures, cutover checklists (see [Deployment](deployment.md)), future-state runtime release architecture (see [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md)), smart contract logic, sealed submission format internals, or database schema. For the privacy model itself, see [Submission Privacy](submission-privacy.md).
 
 ## Summary
 
@@ -292,12 +293,14 @@ Steady-state flow:
 
 Release prerequisites:
 
-- `RAILWAY_TOKEN` must be valid for the target Railway workspace
-- `AGORA_RAILWAY_PROJECT_ID` and `AGORA_RAILWAY_ENVIRONMENT` must point at the intended runtime
+- `RAILWAY_TOKEN` must be a valid Railway project token for the target environment
+- `AGORA_RAILWAY_PROJECT_ID` and `AGORA_RAILWAY_ENVIRONMENT` must point at the target Railway environment for manifest-driven deploys
 - service identifiers must match the deployed Railway services
+- runtime registry credentials must be available unless the runtime images are intentionally public
 
-The release gate now checks Railway auth and project/service access before it
-starts build/test/schema work.
+The release gate now consumes a runtime release manifest, updates each Railway
+service to the manifest-pinned image digest, and then redeploys from that
+manifest. The shared runtime path no longer uploads source with `railway up`.
 
 ---
 
