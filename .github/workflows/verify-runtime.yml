@@ -1,34 +1,11 @@
 name: Verify Runtime
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/verify-runtime.yml"
-      - ".github/workflows/reset-bomb-testnet.yml"
-      - ".github/workflows/hosted-smoke.yml"
-      - "scripts/verify-runtime.sh"
-      - "scripts/reset-bomb-testnet.sh"
-      - "scripts/hosted-smoke.sh"
-      - "scripts/local-lifecycle-smoke.mjs"
-      - "scripts/runtime-env.mjs"
-      - "scripts/release-metadata.mjs"
-      - "scripts/verify-deploy-sync.mjs"
-      - "scripts/verify-runtime-schema.mjs"
-      - "scripts/verify-official-scorers.mjs"
-      - "apps/api/**"
-      - "packages/common/**"
-      - "packages/db/**"
-      - "packages/chain/**"
-      - "packages/scorer/**"
-      - "packages/scorer-runtime/**"
-      - "packages/ipfs/**"
-      - "packages/contracts/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "turbo.json"
-      - ".env.example"
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
   workflow_dispatch:
 
 concurrency:
@@ -37,6 +14,7 @@ concurrency:
 
 jobs:
   verify-runtime:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -44,10 +22,12 @@ jobs:
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
       AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
       AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
+      AGORA_EXPECTED_GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           submodules: recursive
 
       - name: Setup pnpm

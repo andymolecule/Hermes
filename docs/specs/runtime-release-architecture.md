@@ -219,6 +219,8 @@ Rules:
 - GitHub Actions and local operator commands own `build`, `verify`, and the
   optional funded smoke lane.
 - `verify` is read-only.
+- `CI` is the only push-time code gate that Railway may wait on.
+- `verify` is post-deploy and must not be used as a Railway pre-deploy gate.
 - funded hosted smoke is intentionally stateful and must stay separate from the
   push-time runtime gate.
 - `reset-bomb-testnet` may reset shared state before `verify`, but it must not
@@ -296,6 +298,16 @@ Normal runtime release verification works like this:
 4. funded hosted smoke is a separate manual lane after verification, not part
    of the push-time gate
 
+GitHub Actions ordering rule:
+
+1. `CI` runs on push to `main`
+2. Railway deploys from `main`
+3. `Verify Runtime` runs after `CI` succeeds and observes the live hosted
+   runtime
+
+`Verify Runtime` must not run as the pre-deploy branch gate Railway waits on,
+because it inspects the deployed environment rather than pure repo state.
+
 ### 4.8 Named Hotspots and Mitigations
 
 1. Provider boundary drift
@@ -308,10 +320,14 @@ Normal runtime release verification works like this:
 3. Over-engineered release control plane
    - Symptom: GitHub deploys Railway by rewriting service config
    - Mitigation: Railway deploys natively; GitHub verifies only
-4. Mixed web/runtime truth
+4. Circular deploy gates
+   - Symptom: a hosted runtime check blocks the deploy it is supposed to verify
+   - Mitigation: keep `CI` as the only pre-deploy gate; run `Verify Runtime`
+     only after Railway deploy ownership has already advanced the commit
+5. Mixed web/runtime truth
    - Symptom: runtime release fails because web is on a different revision
    - Mitigation: runtime verification may skip web verification
-5. Collapsing scorer rigor into runtime-service ops
+6. Collapsing scorer rigor into runtime-service ops
    - Symptom: runtime-service simplicity weakens reproducibility guarantees
    - Mitigation: keep strict artifact discipline only where determinism matters:
      official scorer images
@@ -412,7 +428,8 @@ Actions:
 3. keep `verify:runtime` read-only and verify-only
 4. make deploy retries an explicit Railway concern; verify retries rerun health
    only
-5. do not add speculative forward-migration or reset orchestration to the
+5. keep `CI` as the only push-time gate and run `Verify Runtime` after deploy
+6. do not add speculative forward-migration or reset orchestration to the
    normal release path for this phase
 
 Acceptance:
@@ -421,6 +438,7 @@ Acceptance:
 2. `pnpm verify:runtime` retries do not redeploy runtime services
 3. `pnpm deploy:verify` remains read-only and rerunnable
 4. Railway remains the only normal deploy path for API, indexer, and worker
+5. `Verify Runtime` is post-deploy, not a pre-deploy Railway gate
 
 ### 6.6 Phase 5: Legacy Cleanup
 

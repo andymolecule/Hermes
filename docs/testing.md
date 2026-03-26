@@ -160,6 +160,20 @@ Runs the hosted runtime verification lane:
 - hosted `/api/health` and `/api/worker-health` readiness
 
 This command is read-only. It does not reset the DB and it does not post on-chain smoke traffic.
+When `AGORA_EXPECTED_GIT_SHA` is set, this gate also requires `/api/health.gitSha`
+to match the expected commit. That is the clean way to catch provider deploy
+drift without rebuilding a second deploy system.
+
+Workflow boundary:
+
+- `CI` is the push-time code gate.
+- `Verify Runtime` is the post-deploy hosted gate and should run only after CI
+  succeeds.
+- `Hosted Smoke` is manual and funded.
+
+Do not treat `Verify Runtime` as a Railway pre-deploy branch gate. It checks
+the live hosted runtime, so making Railway wait on it before deployment
+creates a circular dependency.
 
 ### `pnpm smoke:lifecycle`
 

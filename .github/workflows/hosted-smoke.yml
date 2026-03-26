@@ -16,6 +16,7 @@ jobs:
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
       AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
       AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
+      AGORA_EXPECTED_GIT_SHA: ${{ github.sha }}
       AGORA_RPC_URL: ${{ secrets.AGORA_RPC_URL }}
       AGORA_CHAIN_ID: ${{ secrets.AGORA_CHAIN_ID }}
       AGORA_FACTORY_ADDRESS: ${{ secrets.AGORA_FACTORY_ADDRESS }}

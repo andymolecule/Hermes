@@ -56,9 +56,17 @@ wait_for_deploy_verify() {
   local attempts=40
   local sleep_seconds=15
   local attempt=1
+  local deploy_verify_args=(
+    --api-url="$AGORA_API_URL"
+    --skip-web
+  )
+
+  if [[ -n "${AGORA_EXPECTED_GIT_SHA:-}" ]]; then
+    deploy_verify_args+=(--expected-git-sha="$AGORA_EXPECTED_GIT_SHA")
+  fi
 
   while (( attempt <= attempts )); do
-    if pnpm deploy:verify --api-url="$AGORA_API_URL" --skip-web; then
+    if pnpm deploy:verify "${deploy_verify_args[@]}"; then
       return 0
     fi
     echo "[INFO] deploy:verify not ready yet (attempt ${attempt}/${attempts}); retrying in ${sleep_seconds}s"

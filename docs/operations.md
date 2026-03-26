@@ -244,6 +244,7 @@ Recommended steady-state settings:
 - `Source Repo`: `andymolecule/Agora`
 - `Branch connected to production`: `main`
 - Native Railway auto-deploy: enabled
+- If `Wait for CI` is enabled, point it only at the repo `CI` workflow
 - No dashboard watch-path filtering
 - Build/start commands:
   - API build: `pnpm turbo build --filter=@agora/api`
@@ -257,6 +258,8 @@ Operational rule:
 
 - Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
 - Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the gated release sequence from [Deployment](deployment.md) for verification and explicit reset bomb when needed.
+- Do not use `Verify Runtime` as a Railway pre-deploy gate. The right order is
+  `CI` first, Railway deploy second, `Verify Runtime` third.
 
 ### Remote Executor Service
 

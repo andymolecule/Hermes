@@ -92,12 +92,18 @@ This repo now ships four explicit runtime lanes:
   deterministic without coupling funded hosted smoke back into the release
   gate.
 
-Pushes to `main` now trigger the same GitHub workflow automatically in
-verify-only mode only when the commit touches runtime-affecting
-paths (API, DB, chain, scorer, shared runtime contracts, or the release
-scripts/workflow). Frontend-only and docs-only pushes do not trigger the
-runtime verification workflow.
-The matching manual GitHub Actions trigger is
+GitHub Actions now follow the deploy boundary directly:
+
+- `CI` is the push-time code gate.
+- `Verify Runtime` runs only after `CI` succeeds on `main`, then waits for
+  Railway to finish rolling out that same commit before checking hosted
+  health.
+- `Hosted Smoke` is manual and funded.
+
+This separation is intentional. `Verify Runtime` observes the live hosted
+runtime, so it must not be the pre-deploy gate Railway waits on.
+
+The matching manual GitHub Actions triggers are
 [`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)
 for read-only hosted verification,
 [`.github/workflows/reset-bomb-testnet.yml`](/Users/changyuesin/Agora/.github/workflows/reset-bomb-testnet.yml)
@@ -133,6 +139,10 @@ Railway deployment checks before production cutover:
 
 - Keep native Railway auto-deploy enabled for API, indexer, and worker
   orchestrator.
+- If Railway `Wait for CI` is enabled, only let it wait on the repo `CI`
+  workflow. Do not make Railway wait on `Verify Runtime`, because
+  `Verify Runtime` is intentionally post-deploy and would create a circular
+  gate.
 - Do not replace Railway-native runtime deploys with a custom manifest/image
   promotion path.
 - Do not use repo-local `railway.toml` files for these services unless Railway
@@ -277,6 +287,8 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm verify:runtime` runs the read-only hosted runtime gate.
 - `pnpm smoke:hosted` runs the funded hosted smoke against the configured deployment.
 - `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks hosted API health, optional web version visibility, and worker readiness on the active API runtime. Use `--skip-web` for runtime-only verification. Pass `--expected`, `--expected-api`, `--expected-web`, or `--expected-git-sha` only when you intentionally want an explicit identity check.
+- Railway `redeploy` rebuilds the latest Railway deployment snapshot; it does not fetch the latest GitHub `main` commit. Use Railway auto-deploy or the dashboard's `Deploy Latest Commit` when the goal is to advance source freshness.
+- A healthy-but-stale runtime is a deploy freshness problem, not a smoke-test problem. The clean detector is `AGORA_EXPECTED_GIT_SHA` in `pnpm verify:runtime`; the clean fix is Railway advancing the GitHub source, not a second deploy system in this repo.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 
 ### DNS and Domains
