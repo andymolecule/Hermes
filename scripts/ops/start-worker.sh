@@ -8,6 +8,10 @@ log() {
   echo "[start-worker] $*"
 }
 
+is_git_revision() {
+  [[ "$1" =~ ^[[:xdigit:]]{7,40}$ ]]
+}
+
 if [[ -z "$API_HEALTH_URL" ]]; then
   log "Missing AGORA_API_HEALTH_URL. Next step: set AGORA_API_HEALTH_URL in the worker environment and retry."
   exit 1
@@ -42,7 +46,14 @@ if [[ -z "$api_runtime_version" ]]; then
   log "API runtime could not be read from $API_HEALTH_URL. Starting current checkout and relying on runtime fencing until the API is reachable."
 else
   log "Live API runtime is $api_runtime_version."
-  if [[ "$current_runtime_version" != "$api_runtime_version" ]]; then
+  target_revision=""
+  if is_git_revision "${api_release_git_sha:-}"; then
+    target_revision="$api_release_git_sha"
+  elif is_git_revision "${api_runtime_version:-}"; then
+    target_revision="$api_runtime_version"
+  fi
+
+  if [[ "$current_runtime_version" != "$api_runtime_version" && -n "$target_revision" ]]; then
     if ! git diff --quiet || ! git diff --cached --quiet; then
       log "Repository has uncommitted changes. Next step: clean the legacy worker-host checkout before restarting the worker."
       exit 1
@@ -51,7 +62,7 @@ else
     log "Current checkout is $current_runtime_version; aligning to API runtime $api_runtime_version."
     git fetch origin main
 
-    target_commit="$(git rev-parse --verify "${api_release_git_sha:-$api_runtime_version}^{commit}" 2>/dev/null || true)"
+    target_commit="$(git rev-parse --verify "${target_revision}^{commit}" 2>/dev/null || true)"
     if [[ -z "$target_commit" ]]; then
       log "API release ${api_runtime_version} is not reachable from origin/main after fetch. Next step: verify the deployed gitSha is reachable and retry."
       exit 1
@@ -63,6 +74,8 @@ else
     git gc --auto 2>/dev/null || true
     current_runtime_version="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
     log "Worker checkout aligned to $current_runtime_version."
+  elif [[ "$current_runtime_version" != "$api_runtime_version" ]]; then
+    log "API runtime ${api_runtime_version} is not a git revision. Starting the current checkout and relying on API-owned runtime fencing."
   fi
 fi
 

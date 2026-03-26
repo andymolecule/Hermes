@@ -163,7 +163,7 @@ Required env vars:
 
 - API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
-- Shared deploy version: `AGORA_RUNTIME_VERSION` (optional override; otherwise the runtime resolves from platform commit metadata or local git SHA)
+- Shared deploy version: `AGORA_RUNTIME_VERSION` (optional override; otherwise the runtime resolves from build metadata, platform commit metadata when available, or a best-effort fallback such as `dev`)
 - Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
 - Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
 - Optional delayed retry tuning: `AGORA_WORKER_POST_TX_RETRY_MS`, `AGORA_WORKER_INFRA_RETRY_MS`
@@ -237,7 +237,7 @@ Current production is intentionally split across hosts:
 - Railway: `@agora/api`, `agora-indexer`, `agora-worker-orchestrator`
 - Docker-capable host or service: `agora-executor`
 
-Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should only roll forward through the gated deployment flow from [Deployment](deployment.md): reset schema, apply baseline, reload PostgREST cache, verify schema, then deploy API/indexer/worker together. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
+Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should roll forward through Railway's native deploy path from `main`, then the gated verification flow from [Deployment](deployment.md) confirms schema compatibility, hosted health, worker readiness, and smoke. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
 
 Vercel-specific proxy rule:
 
@@ -251,7 +251,7 @@ Recommended steady-state settings:
 
 - `Source Repo`: `andymolecule/Agora`
 - `Branch connected to production`: `main`
-- Native Railway auto-deploy: disabled
+- Native Railway auto-deploy: enabled
 - No dashboard watch-path filtering
 - Build/start commands:
   - API build: `pnpm turbo build --filter=@agora/api`
@@ -264,7 +264,7 @@ Recommended steady-state settings:
 Operational rule:
 
 - Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
-- Do not redeploy runtime services directly from a repository push. Use the gated release sequence from [Deployment](deployment.md) so schema reset, baseline apply, cache reload, verification, and service rollout stay in one order.
+- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the gated release sequence from [Deployment](deployment.md) for verification and explicit bootstrap when needed.
 
 ### Remote Executor Service
 
@@ -284,7 +284,7 @@ Expected executor host configuration:
 Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
-2. The GitHub Actions workflow and `pnpm release:testnet` verify the deployed runtime revision; they do not deploy runtime services
+2. The GitHub Actions workflow and `pnpm release:testnet` verify hosted runtime readiness; they do not deploy runtime services
 3. Operators use `pnpm bootstrap:testnet` or the manual workflow only when they need an explicit destructive rebuild
 4. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
 5. The orchestrator checks executor health and preflights official images
@@ -295,7 +295,9 @@ Steady-state flow:
 Release prerequisites:
 
 - Railway auto-deploy remains enabled for API, indexer, and worker orchestrator
-- `/api/health` and `/api/worker-health` must report the target runtime revision before the release gate passes
+- `/api/health` must be healthy and report a runtime version before the release gate passes
+- `/api/worker-health` must report healthy workers on the active API runtime before the release gate passes
+- `gitSha` on Railway is best-effort provenance, not a hard hosted release gate
 - `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive bootstrap
 
 ---

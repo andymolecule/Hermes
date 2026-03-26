@@ -70,7 +70,8 @@ This design assumes:
 
 ## 1. Design Goals
 
-1. Hosted runtime services must report the exact commit they are running.
+1. Hosted runtime services must report stable release metadata, with exact git
+   provenance when the host platform can surface it cleanly.
 2. Runtime deployment ownership must be obvious: Railway deploys, GitHub
    verifies, operators bootstrap explicitly when needed.
 3. Runtime release and web release must remain separate domains.
@@ -103,14 +104,15 @@ This design assumes:
   - `releaseId`
   - `gitSha`
   - `runtimeVersion`
-- In the normal hosted case, `releaseId` and `runtimeVersion` align to the
-  short commit SHA.
-- `gitSha` is the full 40-character provenance SHA.
-- Hosted runtime services must never fall back to `"dev"`.
-- Local development may still report `"dev"` when no build or platform metadata
-  exists.
-- Explicit overrides are allowed only when the host platform cannot surface git
-  metadata.
+- `releaseId` and `runtimeVersion` should stay aligned.
+- When Railway or the build environment exposes git metadata cleanly,
+  `releaseId` and `runtimeVersion` should align to the short commit SHA.
+- `gitSha` is best-effort provenance. When present, it should be the full
+  40-character SHA.
+- Hosted Railway deploys may still report `"dev"` when no build or platform
+  metadata is available. That does not block runtime readiness by itself.
+- Explicit overrides are optional and should be introduced only when the team
+  deliberately accepts provider-specific metadata sync complexity.
 
 ### 3.2 Deploy Ownership
 
@@ -151,7 +153,8 @@ This design assumes:
 - Worker heartbeats publish runtime version through `worker_runtime_state`.
 - Older workers may continue heartbeating but must not claim new jobs after the
   active runtime version changes.
-- The fence value must align with the hosted commit-derived runtime version.
+- The fence value must align with the hosted API runtime version, even when
+  that version is a best-effort value such as `"dev"`.
 
 ### 3.7 Scorer Artifact Discipline
 
@@ -178,19 +181,19 @@ Hosted runtime services expose this logical shape:
 
 ```json
 {
-  "releaseId": "60b3720747a3",
-  "gitSha": "60b3720747a3accaaa52d0fd50961f9cb9881f80",
-  "runtimeVersion": "60b3720747a3"
+  "releaseId": "dev",
+  "gitSha": null,
+  "runtimeVersion": "dev"
 }
 ```
 
 Rules:
 
 - `releaseId` and `runtimeVersion` stay aligned in the normal hosted case.
-- Build-generated `release-metadata.json` files may exist, but if they do they
-  must resolve to the same commit-derived identity.
-- Platform git metadata is the canonical hosted fallback when no baked metadata
-  file exists.
+- Build-generated `release-metadata.json` files may exist, but readiness must
+  not depend on them carrying an exact git SHA.
+- Platform git metadata may improve provenance when available, but hosted
+  verification must still pass when `gitSha` is absent.
 
 ### 4.2 Runtime Release Pipeline
 
@@ -202,8 +205,9 @@ The runtime release path has four stages:
 2. `platform deploy`
    - Railway deploys API, indexer, and worker through its native deploy path
 3. `verify`
-   - wait for `/api/health` and `/api/worker-health` to report the target
-     revision
+   - wait for `/api/health` to return healthy release metadata
+   - wait for `/api/worker-health` to show healthy workers on the active API
+     runtime
 4. `smoke`
    - run the external lifecycle smoke against the deployed runtime
 
@@ -238,9 +242,9 @@ Minimum logical fields:
 {
   "ok": true,
   "service": "api",
-  "releaseId": "60b3720747a3",
-  "gitSha": "60b3720747a3accaaa52d0fd50961f9cb9881f80",
-  "runtimeVersion": "60b3720747a3",
+  "releaseId": "dev",
+  "gitSha": null,
+  "runtimeVersion": "dev",
   "checkedAt": "2026-03-26T11:35:39.379Z"
 }
 ```
@@ -280,10 +284,11 @@ Flow:
 
 Normal runtime release verification works like this:
 
-1. merge or push the target runtime revision to `main`
+1. merge or push the intended runtime change to `main`
 2. Railway deploys API, indexer, and worker through its native deploy path
-3. `pnpm release:testnet` or the GitHub workflow waits for `/api/health` and
-   `/api/worker-health` to report the target revision
+3. `pnpm release:testnet` or the GitHub workflow waits for `/api/health` to be
+   healthy and `/api/worker-health` to confirm healthy workers on the active
+   API runtime
 4. run smoke once deploy verification passes
 
 ### 4.8 Named Hotspots and Mitigations
@@ -293,7 +298,8 @@ Normal runtime release verification works like this:
    - Mitigation: `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only
 2. Hidden deploy state
    - Symptom: operators guess what commit is live
-   - Mitigation: `/api/health` must report commit-derived identity
+   - Mitigation: `/api/health` must report runtime identity, and verification
+     gates on health instead of exact provider git metadata
 3. Over-engineered release control plane
    - Symptom: GitHub deploys Railway by rewriting service config
    - Mitigation: Railway deploys natively; GitHub verifies only
@@ -358,12 +364,13 @@ Actions:
 
 Objective:
 
-- make commit-derived identity the canonical hosted runtime identity
+- keep hosted runtime identity observable without forcing provider-specific git
+  metadata plumbing
 
 Actions:
 
-1. keep `releaseId` and `runtimeVersion` aligned to the short commit SHA
-2. keep `gitSha` as full provenance
+1. keep `releaseId` and `runtimeVersion` aligned
+2. treat `gitSha` as best-effort provenance
 3. remove hosted dependence on runtime-only image metadata
 
 ### 6.4 Phase 3: Remove Runtime Artifact Promotion

@@ -1,5 +1,3 @@
-import { spawnSync } from "node:child_process";
-
 const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
 const FULL_GIT_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
 
@@ -119,81 +117,6 @@ function normalizeBaseUrl(value, label) {
   }
 }
 
-function resolveGitRuntimeVersion() {
-  const result = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
-  if (result.status === 0) {
-    const runtimeVersion = result.stdout.trim();
-    if (runtimeVersion.length > 0) {
-      return runtimeVersion;
-    }
-  }
-
-  throw new Error(
-    "Could not resolve the current git SHA. Next step: run this command from the Agora repo or pass --expected explicitly.",
-  );
-}
-
-function resolveGitSha() {
-  const result = spawnSync("git", ["rev-parse", "HEAD"], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
-  if (result.status === 0) {
-    const gitSha = normalizeGitSha(result.stdout);
-    if (gitSha) {
-      return gitSha;
-    }
-  }
-
-  throw new Error(
-    "Could not resolve the current full git SHA. Next step: run this command from the Agora repo or pass --expected-git-sha explicitly.",
-  );
-}
-
-function resolveSharedExpectedRuntimeVersion(options) {
-  const explicitRuntimeVersion = normalizeRuntimeVersion(
-    options.expectedRuntimeVersion,
-  );
-  if (explicitRuntimeVersion) {
-    return explicitRuntimeVersion;
-  }
-
-  const envRuntimeVersion = normalizeRuntimeVersion(
-    process.env.AGORA_RUNTIME_VERSION,
-  );
-  if (!envRuntimeVersion) {
-    return null;
-  }
-
-  try {
-    const headRuntimeVersion = resolveGitRuntimeVersion();
-    return envRuntimeVersion === headRuntimeVersion ? null : envRuntimeVersion;
-  } catch {
-    return envRuntimeVersion;
-  }
-}
-
-function resolveExpectedApiGitSha(options) {
-  const explicitGitSha = normalizeGitSha(options.expectedApiGitSha);
-  if (explicitGitSha) {
-    return explicitGitSha;
-  }
-
-  const envGitSha = normalizeGitSha(process.env.AGORA_RELEASE_GIT_SHA);
-  if (envGitSha) {
-    return envGitSha;
-  }
-
-  try {
-    return resolveGitSha();
-  } catch {
-    return null;
-  }
-}
-
 async function fetchJson(url, label) {
   const response = await fetch(url, {
     headers: { accept: "application/json" },
@@ -232,7 +155,7 @@ function compareRuntimeVersion(input) {
   }
 
   console.error(
-    `[FAIL] ${input.label} runtime version mismatch: expected ${input.expected}, got ${input.actual}. Next step: redeploy ${input.label.toLowerCase()} from the target revision and retry.`,
+    `[FAIL] ${input.label} runtime version mismatch: expected ${input.expected}, got ${input.actual}. Next step: redeploy the intended ${input.label.toLowerCase()} build or update the expected runtime version and retry.`,
   );
   return false;
 }
@@ -244,7 +167,7 @@ function compareGitSha(input) {
   }
 
   console.error(
-    `[FAIL] ${input.label} git SHA mismatch: expected ${input.expected}, got ${input.actual}. Next step: redeploy ${input.label.toLowerCase()} from the target revision and retry.`,
+    `[FAIL] ${input.label} git SHA mismatch: expected ${input.expected}, got ${input.actual}. Next step: redeploy the intended ${input.label.toLowerCase()} build or update the expected git SHA and retry.`,
   );
   return false;
 }
@@ -265,17 +188,13 @@ const apiUrl = normalizeBaseUrl(
 const webUrl = options.skipWeb
   ? null
   : normalizeBaseUrl(options.webUrl ?? process.env.AGORA_WEB_URL, "Web URL");
-const sharedExpectedRuntimeVersion =
-  resolveSharedExpectedRuntimeVersion(options);
 const expectedApiRuntimeVersion =
   normalizeRuntimeVersion(options.expectedApiRuntimeVersion) ||
-  sharedExpectedRuntimeVersion ||
-  resolveGitRuntimeVersion();
+  normalizeRuntimeVersion(options.expectedRuntimeVersion);
 const expectedWebRuntimeVersion =
   normalizeRuntimeVersion(options.expectedWebRuntimeVersion) ||
-  sharedExpectedRuntimeVersion ||
-  resolveGitRuntimeVersion();
-const expectedApiGitSha = resolveExpectedApiGitSha(options);
+  normalizeRuntimeVersion(options.expectedRuntimeVersion);
+const expectedApiGitSha = normalizeGitSha(options.expectedApiGitSha);
 
 const apiHealth = await fetchJson(`${apiUrl}/api/health`, "API /api/health");
 const webVersion = webUrl
@@ -289,15 +208,21 @@ const apiRuntimeVersion = readReportedReleaseValue(apiHealth);
 const apiGitSha = readReportedGitSha(apiHealth);
 const webRuntimeVersion = readReportedReleaseValue(webVersion);
 
-if (!apiRuntimeVersion) {
+if (apiHealth?.ok !== true) {
   throw new Error(
-    "API /api/health did not return releaseId or runtimeVersion. Next step: deploy the current API build and retry.",
+    "API /api/health reported ok=false. Next step: inspect the hosted API and retry once it is healthy.",
   );
 }
 
-if (!apiGitSha) {
+if (apiHealth?.service !== "api") {
   throw new Error(
-    "API /api/health did not return gitSha. Next step: deploy the current API build and retry.",
+    `API /api/health returned service=${String(apiHealth?.service)}. Next step: verify AGORA_API_URL points at the deployed Agora API and retry.`,
+  );
+}
+
+if (!apiRuntimeVersion) {
+  throw new Error(
+    "API /api/health did not return releaseId or runtimeVersion. Next step: deploy the current API build and retry.",
   );
 }
 
@@ -309,42 +234,62 @@ if (webUrl && !webRuntimeVersion) {
 
 let ok = true;
 
-console.log(
-  `[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`,
-);
-ok =
-  compareRuntimeVersion({
-    label: "API",
-    expected: expectedApiRuntimeVersion,
-    actual: apiRuntimeVersion,
-  }) && ok;
+console.log(`[OK] API /api/health is healthy`);
+console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
+if (apiGitSha) {
+  console.log(`[INFO] Reported API git SHA: ${apiGitSha}`);
+} else {
+  console.log(
+    "[INFO] API /api/health did not report gitSha. Railway git metadata is treated as best-effort in this verification mode.",
+  );
+}
 
-if (expectedApiGitSha) {
-  console.log(`[INFO] Expected API git SHA: ${expectedApiGitSha}`);
+if (expectedApiRuntimeVersion) {
+  console.log(`[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`);
   ok =
-    compareGitSha({
+    compareRuntimeVersion({
       label: "API",
-      expected: expectedApiGitSha,
-      actual: apiGitSha,
+      expected: expectedApiRuntimeVersion,
+      actual: apiRuntimeVersion,
     }) && ok;
 }
 
+if (expectedApiGitSha) {
+  if (!apiGitSha) {
+    console.error(
+      "[FAIL] API /api/health did not report gitSha. Next step: either remove the explicit git SHA expectation or deploy with provider metadata that surfaces gitSha.",
+    );
+    ok = false;
+  } else {
+    console.log(`[INFO] Expected API git SHA: ${expectedApiGitSha}`);
+    ok =
+      compareGitSha({
+        label: "API",
+        expected: expectedApiGitSha,
+        actual: apiGitSha,
+      }) && ok;
+  }
+}
+
 if (webUrl) {
-  console.log(
-    `[INFO] Expected Web runtime version: ${expectedWebRuntimeVersion}`,
-  );
-  ok =
-    compareRuntimeVersion({
-      label: "Web",
-      expected: expectedWebRuntimeVersion,
-      actual: webRuntimeVersion,
-    }) && ok;
+  console.log(`[INFO] Reported Web runtime version: ${webRuntimeVersion}`);
+  if (expectedWebRuntimeVersion) {
+    console.log(
+      `[INFO] Expected Web runtime version: ${expectedWebRuntimeVersion}`,
+    );
+    ok =
+      compareRuntimeVersion({
+        label: "Web",
+        expected: expectedWebRuntimeVersion,
+        actual: webRuntimeVersion,
+      }) && ok;
+  }
 
   if (apiRuntimeVersion === webRuntimeVersion) {
     console.log(`[OK] Web and API are aligned on runtime ${apiRuntimeVersion}`);
   } else {
     console.log(
-      `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This can be acceptable during rollout when each service still matches the revision you intended to deploy.`,
+      `[INFO] Web/API runtime versions differ (web=${webRuntimeVersion}, api=${apiRuntimeVersion}). This can be acceptable during rollout when the hosted API is healthy and each service remains independently verifiable.`,
     );
   }
 } else {
@@ -353,9 +298,14 @@ if (webUrl) {
 
 if (workerHealth) {
   const workerApiRuntimeVersion =
-    typeof workerHealth?.runtime?.apiVersion === "string"
-      ? workerHealth.runtime.apiVersion
-      : null;
+    normalizeRuntimeVersion(
+      typeof workerHealth?.runtime?.apiVersion === "string"
+        ? workerHealth.runtime.apiVersion
+        : null,
+    );
+  const activeWorkerRuntimeVersion = normalizeRuntimeVersion(
+    workerHealth?.workers?.activeRuntimeVersion,
+  );
   const healthyWorkersForActiveRuntimeVersion = Number(
     workerHealth?.workers?.healthyWorkersForActiveRuntimeVersion ?? 0,
   );
@@ -368,6 +318,17 @@ if (workerHealth) {
   } else {
     console.log(
       `[OK] Worker health is aligned with API runtime ${apiRuntimeVersion}`,
+    );
+  }
+
+  if (activeWorkerRuntimeVersion !== apiRuntimeVersion) {
+    console.error(
+      `[FAIL] Worker health reports activeRuntimeVersion=${activeWorkerRuntimeVersion}, expected API runtime ${apiRuntimeVersion}. Next step: inspect the runtime fence state and restart the stale worker if needed.`,
+    );
+    ok = false;
+  } else {
+    console.log(
+      `[OK] Worker fence is aligned with API runtime ${apiRuntimeVersion}`,
     );
   }
 

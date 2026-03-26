@@ -25,7 +25,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Railway owns runtime deployment for API, indexer, and worker orchestrator
-- GitHub and local operator commands verify the deployed runtime revision; they do not deploy runtime services
+- GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
 - `bootstrap:testnet` is the destructive admin-only lane; `release:testnet` is verify-only
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
 - External cutover covers GitHub, Vercel, API/runtime services, executor runtime, chain addresses, image registry, DNS, and operator machines
@@ -42,7 +42,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker orchestrator.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure each deployed service reports the commit SHA it is actually running. API and worker orchestrator should match for scoring; web may differ temporarily during rollout. Prefer automatic SHA detection from platform git metadata; set `AGORA_RUNTIME_VERSION` manually only when your host does not expose a commit SHA.
+9. Ensure `/api/health` and `/api/worker-health` expose a stable runtime version. Exact `gitSha` reporting on Railway is best-effort; do not add provider-metadata plumbing unless the team explicitly chooses that tradeoff.
 10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.
 11. Build and run preflight:
 
@@ -69,9 +69,9 @@ pnpm bootstrap:testnet
 This repo now ships two explicit runtime lanes:
 
 - `pnpm release:testnet`: non-destructive verification. Assumes Railway is
-  rolling out the current `main` revision through its native deploy path, waits
-  for `/api/health` and `/api/worker-health` to align with that revision, then
-  runs the external lifecycle smoke.
+  rolling out the current `main` change through its native deploy path, waits
+  for `/api/health` to be healthy and `/api/worker-health` to show healthy
+  workers on the active API runtime, then runs the external lifecycle smoke.
 - `pnpm bootstrap:testnet`: destructive admin lane. Uses
   `AGORA_SUPABASE_ADMIN_DB_URL` to reset the Supabase schema, reapplies the
   single baseline, reloads the PostgREST cache, then runs the same
@@ -118,11 +118,12 @@ Railway deployment checks before production cutover:
 - If Railway root directories or watch patterns are needed, keep them
   provider-native and document them clearly.
 - The only supported runtime rollout is gated and explicit:
-  1. merge or push the target runtime revision to `main`
+  1. merge or push the intended runtime change to `main`
   2. let Railway deploy API, indexer, and worker natively
   3. run `pnpm schema:verify`
   4. run `pnpm release:testnet` or the GitHub Actions workflow to wait for
-     `/api/health` and `/api/worker-health` to report the target revision
+     `/api/health` and `/api/worker-health` to report healthy hosted runtime
+     readiness
   5. run smoke
   6. use `pnpm bootstrap:testnet` only when a destructive reset is explicitly
      required
@@ -146,7 +147,7 @@ Rollback if any of these occur:
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
     B --> C["3. Railway deploys API, Indexer, Worker<br/>(native deploy path)"]
-    C --> D["4. Verify hosted runtime revision<br/>(pnpm release:testnet)"]
+    C --> D["4. Verify hosted runtime readiness<br/>(pnpm release:testnet)"]
     D --> E["5. Smoke test<br/>(pnpm smoke:lifecycle:testnet)"]
     E --> F{"All checks pass?"}
     F -->|Yes| G["✓ Live"]
@@ -193,7 +194,8 @@ This section covers non-code work for deployment across hosted systems.
 
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
-- `AGORA_RUNTIME_VERSION` is optional. API, worker orchestrator, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use platform commit metadata when available and otherwise fall back to the local git SHA.
+- `AGORA_RUNTIME_VERSION` is an optional override. API, worker orchestrator, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use build metadata or platform git metadata when available and otherwise fall back to a best-effort runtime version such as `dev`.
+- `AGORA_RELEASE_ID` and `AGORA_RELEASE_GIT_SHA` should normally be left alone on Railway. Only inject them deliberately if the team chooses an explicit metadata-sync step.
 - `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only. Do not inject it into the
   long-running runtime services unless an explicit admin command needs it.
 - While the runtime schema is healthy, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit even though API and worker orchestrator now roll forward together.
@@ -250,7 +252,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm scorers:verify` checks that all official scorer images are anonymously resolvable from GHCR and anonymously pullable with Docker.
 - `pnpm smoke:lifecycle:local` runs the deterministic Anvil-backed lifecycle smoke.
 - `pnpm smoke:lifecycle:testnet` runs the external CLI smoke against the configured deployment.
-- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks that API and web match the expected deployed revision and that the worker is healthy on the active API runtime. Use `--skip-web` for runtime-only verification and `--expected-git-sha` when you need to pin the full API commit explicitly.
+- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks hosted API health, optional web version visibility, and worker readiness on the active API runtime. Use `--skip-web` for runtime-only verification. Pass `--expected`, `--expected-api`, `--expected-web`, or `--expected-git-sha` only when you intentionally want an explicit identity check.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 
 ### DNS and Domains
@@ -270,7 +272,7 @@ This section covers non-code work for deployment across hosted systems.
 
 - `git remote -v` shows the Agora repo URL.
 - Hosted web app title and metadata display Agora.
-- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving API and web each serve the intended revision and that the worker is aligned with the API runtime.
+- `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` passes before cutover, proving the hosted API is healthy, the worker is aligned with the API runtime, and the optional web check is visible.
 - API auth flow sets `agora_session`.
 - CLI help text shows `agora`.
 - Runtime envs contain only `AGORA_*` and `NEXT_PUBLIC_AGORA_*` keys for first-party settings.

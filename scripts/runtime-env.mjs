@@ -135,11 +135,10 @@ function assertCanonicalReleaseMetadata(fileMetadata) {
 
   if (
     shouldReplaceMetadataValue(fileMetadata.releaseId) ||
-    shouldReplaceMetadataValue(fileMetadata.runtimeVersion) ||
-    !fileMetadata.gitSha
+    shouldReplaceMetadataValue(fileMetadata.runtimeVersion)
   ) {
     throw new Error(
-      "Canonical runtime release metadata is incomplete. Next step: rebuild the hosted runtime service so releaseId, runtimeVersion, and gitSha are written into packages/common/dist/release-metadata.json.",
+      "Canonical runtime release metadata is incomplete. Next step: rebuild the hosted runtime service so releaseId and runtimeVersion are written into packages/common/dist/release-metadata.json.",
     );
   }
 }

@@ -19,12 +19,12 @@ Runs the shared testnet runtime gate:
 1. optionally reset the Supabase schema from the single baseline
 2. verify runtime schema compatibility
 3. verify official scorer publication and pullability
-4. wait for the hosted runtime to report the target revision on /api/health
+4. wait for hosted runtime readiness on /api/health and /api/worker-health
 5. run the external lifecycle smoke
 
 Modes:
   --mode verify     Non-destructive verification. Assumes Railway is already
-                    rolling out the current commit through its native deploy
+                    rolling out the current `main` change through its native deploy
                     path.
   --mode bootstrap  Destructive reset. Uses AGORA_SUPABASE_ADMIN_DB_URL to
                     reset the public schema, apply 001_baseline.sql, reload the
@@ -46,7 +46,7 @@ required_env=(
   AGORA_PINATA_JWT
 )
 
-required_cmds=(pnpm node docker git)
+required_cmds=(pnpm node docker)
 
 fail() {
   echo "[FAIL] $1" >&2
@@ -91,32 +91,12 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing required command: $cmd"
 }
 
-resolve_expected_release_metadata() {
-  if [[ -z "${AGORA_RELEASE_GIT_SHA:-}" ]]; then
-    AGORA_RELEASE_GIT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
-  fi
-
-  if [[ -z "${AGORA_RELEASE_GIT_SHA:-}" ]]; then
-    fail "Could not resolve the current git SHA. Next step: run this command from the Agora repo or set AGORA_RELEASE_GIT_SHA explicitly."
-  fi
-
-  if [[ -z "${AGORA_RUNTIME_VERSION:-}" ]]; then
-    if [[ -n "${AGORA_RELEASE_ID:-}" ]]; then
-      AGORA_RUNTIME_VERSION="${AGORA_RELEASE_ID}"
-    else
-      AGORA_RUNTIME_VERSION="${AGORA_RELEASE_GIT_SHA:0:12}"
-    fi
-  fi
-
-  if [[ -z "${AGORA_RELEASE_ID:-}" ]]; then
-    AGORA_RELEASE_ID="${AGORA_RUNTIME_VERSION}"
-  fi
-
+ensure_oracle_key() {
   if [[ -z "${AGORA_ORACLE_KEY:-}" ]]; then
     AGORA_ORACLE_KEY="${AGORA_PRIVATE_KEY}"
   fi
 
-  export AGORA_RELEASE_GIT_SHA AGORA_RELEASE_ID AGORA_RUNTIME_VERSION AGORA_ORACLE_KEY
+  export AGORA_ORACLE_KEY
 }
 
 wait_for_deploy_verify() {
@@ -133,7 +113,7 @@ wait_for_deploy_verify() {
     attempt=$((attempt + 1))
   done
 
-  fail "Timed out waiting for the hosted runtime to report the target revision"
+  fail "Timed out waiting for hosted runtime readiness"
 }
 
 reset_runtime_schema() {
@@ -166,9 +146,9 @@ for cmd in "${required_cmds[@]}"; do
   require_cmd "$cmd"
 done
 
-resolve_expected_release_metadata
+ensure_oracle_key
 
-echo "[STEP] Target runtime ${AGORA_RUNTIME_VERSION} (${AGORA_RELEASE_GIT_SHA})"
+echo "[STEP] Hosted runtime readiness gate"
 
 if [[ "$RELEASE_MODE" == "bootstrap" ]]; then
   require_env "AGORA_SUPABASE_ADMIN_DB_URL"
@@ -197,7 +177,7 @@ fi
 echo "[STEP] Verify official scorers"
 pnpm scorers:verify
 
-echo "[STEP] Wait for hosted runtime verification"
+echo "[STEP] Wait for hosted runtime readiness"
 wait_for_deploy_verify
 
 echo "[STEP] Run external lifecycle smoke"
