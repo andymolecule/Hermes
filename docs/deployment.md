@@ -27,6 +27,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Railway owns runtime deployment for API, indexer, and worker orchestrator
 - GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
 - `bootstrap:testnet` is the destructive admin-only lane; `verify:runtime` is the read-only hosted gate
+- `smoke:cli:local` is the deterministic local CLI parity lane
 - `smoke:hosted` is the separate funded operator lane
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
 - External cutover covers GitHub, Vercel, API/runtime services, executor runtime, chain addresses, image registry, DNS, and operator machines
@@ -81,6 +82,10 @@ This repo now ships three explicit runtime lanes:
 - `pnpm smoke:hosted`: funded external smoke. Posts a small real challenge,
   submits a real result, waits for worker scoring, and verifies the public
   replay artifacts. It does not try to finalize or claim.
+- `pnpm smoke:cli:local`: deterministic local CLI parity. Runs the exact
+  `post -> submit -> worker scoring -> verify-public -> finalize -> claim`
+  path on local Anvil so CLI settlement coverage stays deterministic without
+  coupling funded hosted smoke back into the release gate.
 
 Pushes to `main` now trigger the same GitHub workflow automatically in
 verify-only mode only when the commit touches runtime-affecting

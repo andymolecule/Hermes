@@ -49,6 +49,9 @@ pnpm verify                 # = abi:check && build && test
 # Local deterministic lifecycle smoke
 pnpm smoke:lifecycle
 
+# Local deterministic CLI post -> payout parity
+pnpm smoke:cli:local
+
 # Read-only hosted runtime verification
 pnpm verify:runtime
 
@@ -128,6 +131,7 @@ node --import tsx --test tests/authoring-sessions-route.test.ts tests/authoring-
 | API tests | `apps/api/tests/*.test.ts` |
 | Local lifecycle wrapper | `scripts/local-lifecycle-smoke.mjs` |
 | Local lifecycle harness | `apps/api/src/lifecycle-smoke.ts` |
+| Local CLI parity smoke | `scripts/local-cli-smoke.sh` |
 | Hosted smoke script | `scripts/hosted-smoke.sh` |
 | Preflight script | `scripts/preflight-testnet.sh` |
 | Verification scripts | `scripts/verify-*.mjs` |
@@ -160,6 +164,12 @@ This command is read-only. It does not reset the DB and it does not post on-chai
 ### `pnpm smoke:lifecycle`
 
 Runs the deterministic local lifecycle smoke harness in `apps/api/src/lifecycle-smoke.ts` after first asserting runtime schema compatibility.
+
+### `pnpm smoke:cli:local`
+
+Runs the deterministic local CLI parity harness in `scripts/local-cli-smoke.sh`.
+This lane uses the real CLI path on local Anvil and covers `post -> submit ->
+worker scoring -> verify-public -> finalize -> claim`.
 
 ### `pnpm smoke:hosted`
 
@@ -199,9 +209,11 @@ Wallet/session hardening checks now live in:
 
 `pnpm smoke:lifecycle` is the preferred local entrypoint for the full deterministic lifecycle smoke test on an Anvil-backed environment.
 `pnpm smoke:lifecycle:local` is the explicit alias for that same path.
+`pnpm smoke:cli:local` is the exact CLI parity lane on local Anvil.
 `pnpm smoke:hosted` is the funded external smoke lane against the currently configured hosted environment.
 
 `apps/api/src/lifecycle-smoke.ts` exercises the full deterministic settlement branch (`create -> submit -> startScoring -> score -> dispute -> resolve -> claim`).
+`scripts/local-cli-smoke.sh` exercises the CLI parity branch on local Anvil (`post -> submit -> worker scoring -> verify-public -> finalize -> claim`).
 `scripts/hosted-smoke.sh` exercises the hosted operational branch (`post -> submit -> worker scoring -> verify-public`).
 
 Shared setup:
@@ -220,6 +232,14 @@ Local deterministic lifecycle (`pnpm smoke:lifecycle` / `pnpm smoke:lifecycle:lo
 1. Open a dispute
 2. Resolve the dispute
 3. Claim payout
+
+Local deterministic CLI parity (`pnpm smoke:cli:local` / `./scripts/local-cli-smoke.sh`):
+
+1. Post through the real CLI
+2. Submit through the real CLI
+3. Wait for worker scoring and verify public replay artifacts
+4. Advance the local dispute window
+5. Finalize and claim through the real CLI
 
 Hosted funded smoke (`pnpm smoke:hosted` / `./scripts/hosted-smoke.sh`):
 
@@ -250,7 +270,8 @@ AGORA_BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
 AGORA_FORK_BLOCK=""
 ```
 
-For the full post-deadline path, run `pnpm smoke:lifecycle:local` against local Anvil with `AGORA_CHAIN_ID=31337`.
+For the full post-deadline CLI path, run `pnpm smoke:cli:local` against local Anvil with `AGORA_CHAIN_ID=31337`.
+For the direct deterministic contract harness, run `pnpm smoke:lifecycle:local`.
 The local lifecycle config enforces the hardened 168 hour dispute window.
 `pnpm smoke:hosted` is the funded external/manual lane against the currently deployed factory generation.
 Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only readiness gate first.
@@ -260,6 +281,9 @@ Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only r
 ```bash
 # Preferred smoke entrypoint
 pnpm smoke:lifecycle
+
+# Deterministic local CLI parity
+pnpm smoke:cli:local
 
 # Explicit local alias
 pnpm smoke:lifecycle:local
@@ -274,7 +298,7 @@ pnpm smoke:hosted
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
-pnpm smoke:lifecycle:local
+pnpm smoke:cli:local
 ```
 
 The scorer image must already be published and pullable. Neither smoke lane builds local scorer images on demand.

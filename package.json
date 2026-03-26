@@ -21,6 +21,7 @@
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",
     "smoke:lifecycle": "pnpm smoke:lifecycle:local",
     "smoke:lifecycle:local": "node scripts/run-node-with-root-env.mjs --import tsx scripts/local-lifecycle-smoke.mjs",
+    "smoke:cli:local": "bash scripts/local-cli-smoke.sh",
     "smoke:hosted": "bash scripts/hosted-smoke.sh",
     "abi:sync": "pnpm --filter @agora/contracts build && node scripts/sync-abi.mjs",
     "abi:check": "pnpm --filter @agora/contracts build && node scripts/check-abi-sync.mjs",

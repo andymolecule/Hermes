@@ -328,6 +328,7 @@ Target command set:
 - `pnpm scorers:verify`
 - `pnpm deploy:verify`
 - `pnpm smoke:lifecycle`
+- `pnpm smoke:cli:local`
 - `pnpm smoke:hosted`
 
 Rules:
@@ -335,6 +336,7 @@ Rules:
 - `pnpm verify:runtime` is verify-only
 - `pnpm bootstrap:testnet` is destructive
 - `pnpm smoke:lifecycle` is the deterministic local settlement lane
+- `pnpm smoke:cli:local` is the deterministic local CLI parity lane
 - `pnpm smoke:hosted` is the funded hosted operational lane
 - runtime verification defaults to API + worker, not web
 - bootstrap uses the admin DB URL and then runs the same verification gate
@@ -442,13 +444,16 @@ Acceptance:
 2. one separate funded hosted smoke lane remains:
    verify first -> run `pnpm smoke:hosted` only when an operator wants the
    external write-path check
-3. one canonical hosted health contract remains:
+3. one deterministic local CLI parity lane remains:
+   run `pnpm smoke:cli:local` on local Anvil when the exact CLI
+   `post -> finalize -> claim` path needs deterministic coverage
+4. one canonical hosted health contract remains:
    `/api/health`, with detail routes under `/api/worker-health` and
    `/api/indexer-health`
-4. one canonical observable runtime identity contract remains:
+5. one canonical observable runtime identity contract remains:
    `releaseId` and `runtimeVersion` on `/api/health`, with `gitSha`
    best-effort only
-5. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
+6. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
 
 ---
 
@@ -461,6 +466,7 @@ Keep these concepts:
 - `GET /api/health`
 - explicit `deploy:verify`
 - deterministic local lifecycle smoke
+- deterministic local CLI parity smoke
 - funded hosted smoke
 - structured API error envelopes
 - official scorer digest pinning and GHCR publication

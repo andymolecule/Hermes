@@ -38,7 +38,7 @@ jobs:
       - name: Verify runtime lane scripts parse
         run: |
           set -euo pipefail
-          bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh
+          bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh scripts/local-cli-smoke.sh
           node --check scripts/local-lifecycle-smoke.mjs
 
       - name: Verify ABI sync

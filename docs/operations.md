@@ -279,11 +279,12 @@ Steady-state flow:
 2. The GitHub Actions workflow and `pnpm verify:runtime` verify hosted runtime readiness; they do not deploy runtime services
 3. Operators use `pnpm bootstrap:testnet` only when they need an explicit destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
-5. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
-6. The orchestrator checks executor health and preflights official images
-7. When a job is claimed, the orchestrator stages inputs and sends them to the executor
-8. The executor runs the scorer container locally and returns `score.json`
-9. The orchestrator persists proof data and posts scores on-chain
+5. Deterministic local CLI parity stays local-only: `pnpm smoke:cli:local`
+6. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`
+7. The orchestrator checks executor health and preflights official images
+8. When a job is claimed, the orchestrator stages inputs and sends them to the executor
+9. The executor runs the scorer container locally and returns `score.json`
+10. The orchestrator persists proof data and posts scores on-chain
 
 Release prerequisites:
 
@@ -305,16 +306,18 @@ Local deterministic smoke:
 
 ```bash
 pnpm smoke:lifecycle:local
+pnpm smoke:cli:local
 
 # or, with explicit local overrides
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
-pnpm smoke:lifecycle:local
+pnpm smoke:cli:local
 ```
 
 Hosted smoke flow: post -> indexer pickup -> list -> get -> public score-local blocked for private-evaluation -> submit -> worker scoring -> verify-public.
 Local deterministic flow: create -> submit -> startScoring -> score -> dispute -> resolve -> claim.
+Local CLI parity flow: post -> submit -> worker scoring -> verify-public -> finalize -> claim.
 
 Note: `agora finalize` and `agora claim` require the dispute window to elapse from scoring start. Full lifecycle settlement testing belongs to the local deterministic lane, not hosted smoke.
 The smoke lanes expect the scorer image to already be published and pullable. They do not build a local official scorer fallback.
