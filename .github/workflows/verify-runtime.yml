@@ -6,7 +6,12 @@ on:
       - main
     paths:
       - ".github/workflows/verify-runtime.yml"
+      - ".github/workflows/bootstrap-testnet.yml"
+      - ".github/workflows/hosted-smoke.yml"
       - "scripts/verify-runtime.sh"
+      - "scripts/bootstrap-testnet.sh"
+      - "scripts/hosted-smoke.sh"
+      - "scripts/local-lifecycle-smoke.mjs"
       - "scripts/runtime-env.mjs"
       - "scripts/release-metadata.mjs"
       - "scripts/verify-deploy-sync.mjs"

@@ -35,6 +35,12 @@ jobs:
       - name: Verify scorer containers stay code-only
         run: pnpm scorers:check
 
+      - name: Verify runtime lane scripts parse
+        run: |
+          set -euo pipefail
+          bash -n scripts/verify-runtime.sh scripts/bootstrap-testnet.sh scripts/hosted-smoke.sh
+          node --check scripts/local-lifecycle-smoke.mjs
+
       - name: Verify ABI sync
         run: pnpm abi:check
 
