@@ -11,7 +11,6 @@ import {
   ExternalLink,
   FileText,
   FlaskConical,
-  Target,
   TrendingUp,
   Users,
   Wallet,
@@ -51,18 +50,23 @@ const progressTransition = {
   ease: [0.16, 1, 0.3, 1] as const,
 };
 
+const pageStackClass = "space-y-5 overflow-x-hidden md:space-y-6";
 const sectionShellClass =
-  "rounded-3xl bg-[var(--surface-container-low)] p-5 md:p-6";
+  "rounded-[1.75rem] bg-[var(--surface-container-low)] p-4 md:p-5";
 const cardShellClass =
-  "rounded-3xl bg-[var(--surface-container-lowest)] p-4 md:p-5";
+  "rounded-[1.5rem] bg-[var(--surface-container-lowest)] p-4";
 const insetShellClass =
-  "rounded-2xl bg-[var(--surface-container-low)] px-4 py-3";
+  "rounded-[1.125rem] bg-[var(--surface-container-low)] px-3.5 py-3";
 const eyebrowClass =
   "font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]";
+const pillClass =
+  "inline-flex rounded-full px-2.5 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.18em]";
+const feedItemShellClass =
+  "rounded-[1.375rem] bg-[var(--surface-container-lowest)] px-4 py-3.5";
 const metricValueClass =
   "font-mono font-semibold leading-none tracking-[-0.04em] text-[var(--text-primary)]";
-const primaryMetricValueClass = `${metricValueClass} mt-3 text-[2.5rem] md:text-[3rem]`;
-const secondaryMetricValueClass = `${metricValueClass} mt-3 text-[2rem] md:text-[2.375rem]`;
+const primaryMetricValueClass = `${metricValueClass} text-[clamp(2rem,5vw,2.625rem)]`;
+const secondaryMetricValueClass = `${metricValueClass} text-[clamp(1.5rem,3vw,2rem)]`;
 
 function formatCount(value: number | undefined | null) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
@@ -155,7 +159,7 @@ function StatusPill({
 }) {
   return (
     <span
-      className="inline-flex rounded-full px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
+      className={pillClass}
       style={{ backgroundColor: tone.bg, color: tone.text }}
     >
       {label}
@@ -175,13 +179,13 @@ function SectionHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
       <div className="max-w-3xl">
         <p className={eyebrowClass}>{eyebrow}</p>
-        <h2 className="mt-2 text-balance font-display text-[1.75rem] font-semibold leading-tight tracking-tight text-[var(--text-primary)] md:text-[2rem]">
+        <h2 className="mt-1.5 text-balance font-display text-[1.625rem] font-semibold leading-tight tracking-tight text-[var(--text-primary)] md:text-[1.875rem]">
           {title}
         </h2>
-        <p className="mt-2 max-w-[58ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
+        <p className="mt-1.5 max-w-[56ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
           {description}
         </p>
       </div>
@@ -202,15 +206,17 @@ function StatusSignal({
   tone?: Omit<Tone, "label">;
 }) {
   return (
-    <div className={`${cardShellClass} flex h-full min-w-0 flex-col`}>
+    <div
+      className={`${cardShellClass} flex h-full min-w-0 flex-col justify-between`}
+    >
       <p className={eyebrowClass}>{label}</p>
       <p
-        className={primaryMetricValueClass}
+        className={`${primaryMetricValueClass} mt-2.5`}
         style={{ color: tone?.text ?? "var(--text-primary)" }}
       >
         {value}
       </p>
-      <p className="mt-2 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+      <p className="mt-1.5 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
         {detail}
       </p>
     </div>
@@ -227,7 +233,11 @@ function StageMetric({
   return (
     <div className={insetShellClass}>
       <p className={eyebrowClass}>{label}</p>
-      <p className={`${metricValueClass} mt-2 text-[1.375rem]`}>{value}</p>
+      <p
+        className={`${metricValueClass} mt-1.5 text-[1.25rem] md:text-[1.3125rem]`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -253,28 +263,28 @@ function FlowStage({
   }>;
 }) {
   return (
-    <div className={`${cardShellClass} flex h-full flex-col`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <div className={`${cardShellClass} flex h-full min-w-0 flex-col`}>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
           <p className={eyebrowClass}>{step}</p>
-          <h3 className="mt-2 text-balance text-xl font-semibold text-[var(--text-primary)]">
+          <h3 className="mt-1.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
             {title}
           </h3>
         </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--surface-container-low)] text-[var(--text-secondary)]">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-container-low)] text-[var(--text-secondary)]">
           <Icon className="h-4 w-4" strokeWidth={1.75} />
         </div>
       </div>
 
-      <p className={`${primaryMetricValueClass} mt-5`}>{primaryValue}</p>
-      <p className="mt-2 text-xs leading-5 text-[var(--text-tertiary)]">
+      <p className={`${primaryMetricValueClass} mt-4`}>{primaryValue}</p>
+      <p className="mt-1.5 text-xs leading-5 text-[var(--text-tertiary)]">
         {primaryLabel}
       </p>
-      <p className="mt-3 text-pretty text-sm leading-6 text-[var(--text-secondary)]">
+      <p className="mt-2.5 text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         {description}
       </p>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-2.5">
         {metrics.map((metric) => (
           <StageMetric
             key={metric.label}
@@ -299,8 +309,8 @@ function FlowAmountCell({
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
       <p className={eyebrowClass}>{label}</p>
-      <p className={secondaryMetricValueClass}>{value}</p>
-      <p className="mt-2 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+      <p className={`${secondaryMetricValueClass} mt-2.5`}>{value}</p>
+      <p className="mt-1.5 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
         {detail}
       </p>
     </div>
@@ -317,13 +327,13 @@ function DollarFlowBand({
   }>;
 }) {
   return (
-    <div className="overflow-hidden rounded-3xl bg-[var(--surface-container)] p-4 md:p-5">
+    <div className="overflow-hidden rounded-[1.625rem] bg-[var(--surface-container)] p-4">
       <p className={eyebrowClass}>Capital path</p>
-      <p className="mt-2 max-w-[48ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
+      <p className="mt-1.5 max-w-[46ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         Posted USDC moves into live escrow, solver payouts, and protocol fees.
       </p>
 
-      <div className="mt-5 grid gap-3 lg:grid-cols-4">
+      <div className="mt-4 grid gap-2.5 lg:grid-cols-4">
         {cells.map((cell, index) => (
           <div key={cell.label} className="relative min-w-0">
             <FlowAmountCell
@@ -356,16 +366,16 @@ function MetricTile({
 }) {
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <p className={eyebrowClass}>{label}</p>
-          <p className={`${primaryMetricValueClass} mt-4`}>{value}</p>
+          <p className={`${primaryMetricValueClass} mt-3`}>{value}</p>
         </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--surface-container-low)] text-[var(--text-secondary)]">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-container-low)] text-[var(--text-secondary)]">
           <Icon className="h-4 w-4" strokeWidth={1.75} />
         </div>
       </div>
-      <p className="mt-2 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+      <p className="mt-1.5 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
         {detail}
       </p>
     </div>
@@ -384,9 +394,9 @@ function DataPoint({
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
       <p className={eyebrowClass}>{label}</p>
-      <p className={secondaryMetricValueClass}>{value}</p>
+      <p className={`${secondaryMetricValueClass} mt-2.5`}>{value}</p>
       {detail ? (
-        <p className="mt-2 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+        <p className="mt-1.5 text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
           {detail}
         </p>
       ) : null}
@@ -415,28 +425,28 @@ function BreakdownPanel({
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
       <p className={eyebrowClass}>{eyebrow}</p>
-      <h3 className="mt-3 text-balance text-xl font-semibold text-[var(--text-primary)]">
+      <h3 className="mt-2.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
         {title}
       </h3>
-      <p className="mt-2 max-w-[32ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
+      <p className="mt-1.5 max-w-[30ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         {description}
       </p>
 
       {entries.length === 0 ? (
-        <p className="mt-5 text-sm leading-6 text-[var(--text-secondary)]">
+        <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
           {emptyLabel}
         </p>
       ) : (
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-3">
           {entries.slice(0, 4).map((entry, index) => (
             <div key={entry.key} className="space-y-2">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-sm font-medium text-[var(--text-primary)]">
+                <p className="min-w-0 text-sm font-medium text-[var(--text-primary)]">
                   {entry.label}
                 </p>
-                <div className="flex items-center gap-3 font-mono text-xs text-[var(--text-secondary)]">
+                <div className="shrink-0 font-mono text-xs text-[var(--text-secondary)]">
                   <span>{formatCount(entry.count)}</span>
-                  <span>{entry.share}%</span>
+                  <span className="ml-2">{entry.share}%</span>
                 </div>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
@@ -468,14 +478,18 @@ function ParticipationStat({
   detail: string;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl bg-[var(--surface-container-low)] px-4 py-3">
+    <div className="flex items-start justify-between gap-3 rounded-[1.125rem] bg-[var(--surface-container-low)] px-3.5 py-3">
       <div className="min-w-0">
         <p className={eyebrowClass}>{label}</p>
-        <p className="mt-1 max-w-[18ch] text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+        <p className="mt-1 max-w-[16ch] text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
           {detail}
         </p>
       </div>
-      <p className={`${metricValueClass} shrink-0 text-[1.75rem]`}>{value}</p>
+      <p
+        className={`${metricValueClass} shrink-0 text-[1.5rem] md:text-[1.625rem]`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -496,14 +510,14 @@ function ParticipationPanel({
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
       <p className={eyebrowClass}>Participation</p>
-      <h3 className="mt-3 text-balance text-xl font-semibold text-[var(--text-primary)]">
+      <h3 className="mt-2.5 text-balance text-[1.125rem] font-semibold text-[var(--text-primary)] md:text-[1.1875rem]">
         Activity depth
       </h3>
-      <p className="mt-2 max-w-[30ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
+      <p className="mt-1.5 max-w-[28ch] text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         Agent supply and active solver activity.
       </p>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-2.5">
         <ParticipationStat
           label="Registered agents"
           value={formatCount(registeredAgents)}
@@ -544,8 +558,8 @@ function ProgressRail({
 
   return (
     <div className={`${cardShellClass} flex h-full flex-col`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Icon
               className="h-4 w-4 text-[var(--text-secondary)]"
@@ -553,13 +567,15 @@ function ProgressRail({
             />
             <p className={eyebrowClass}>{label}</p>
           </div>
-          <p className="mt-2 max-w-[18ch] text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
+          <p className="mt-1.5 max-w-[18ch] text-pretty text-xs leading-5 text-[var(--text-tertiary)]">
             {detail}
           </p>
         </div>
-        <p className={secondaryMetricValueClass}>{clampedValue}%</p>
+        <p className={`${secondaryMetricValueClass} shrink-0`}>
+          {clampedValue}%
+        </p>
       </div>
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-container-high)]">
         <motion.div
           className="h-full rounded-full bg-[var(--color-warm-900)]"
           initial={{ width: 0 }}
@@ -585,22 +601,19 @@ function RecentChallengesTable({
       />
 
       {challenges.length === 0 ? (
-        <div className="mt-5 rounded-3xl bg-[var(--surface-container-lowest)] p-6">
+        <div className="mt-4 rounded-[1.375rem] bg-[var(--surface-container-lowest)] p-5">
           <p className="text-sm leading-6 text-[var(--text-secondary)]">
             No challenges are indexed yet. Post a challenge or refresh after the
             next sync.
           </p>
         </div>
       ) : (
-        <div className="mt-5 grid gap-3">
+        <div className="mt-4 grid gap-2.5">
           {challenges.map((challenge) => {
             const statusStyle = getStatusStyle(challenge.status);
 
             return (
-              <div
-                key={challenge.id}
-                className="rounded-3xl bg-[var(--surface-container-lowest)] px-4 py-4 md:px-5"
-              >
+              <div key={challenge.id} className={feedItemShellClass}>
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="min-w-0">
                     <Link
@@ -613,12 +626,14 @@ function RecentChallengesTable({
                       <ExternalLink className="mt-1 h-3 w-3 shrink-0 opacity-50" />
                     </Link>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex rounded-full bg-[var(--surface-container-low)] px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`${pillClass} bg-[var(--surface-container-low)] text-[var(--text-secondary)]`}
+                      >
                         {formatKeyLabel(challenge.domain)}
                       </span>
                       <span
-                        className="inline-flex rounded-full px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
+                        className={pillClass}
                         style={{
                           backgroundColor: statusStyle.bg,
                           color: statusStyle.text,
@@ -661,24 +676,21 @@ function RecentSubmissionsTable({
       />
 
       {submissions.length === 0 ? (
-        <div className="mt-5 rounded-3xl bg-[var(--surface-container-lowest)] p-6">
+        <div className="mt-4 rounded-[1.375rem] bg-[var(--surface-container-lowest)] p-5">
           <p className="text-sm leading-6 text-[var(--text-secondary)]">
             No solver submissions are indexed yet. Refresh after the first
             submissions land.
           </p>
         </div>
       ) : (
-        <div className="mt-5 grid gap-3">
+        <div className="mt-4 grid gap-2.5">
           {submissions.map((submission) => {
             const explorerUrl = getExplorerAddressUrl(
               submission.solver_address,
             );
 
             return (
-              <div
-                key={submission.id}
-                className="rounded-3xl bg-[var(--surface-container-lowest)] px-4 py-4 md:px-5"
-              >
+              <div key={submission.id} className={feedItemShellClass}>
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                   <div className="min-w-0">
                     {explorerUrl ? (
@@ -703,9 +715,9 @@ function RecentSubmissionsTable({
                       </span>
                     )}
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
                       <span
-                        className="inline-flex rounded-full px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em]"
+                        className={pillClass}
                         style={{
                           backgroundColor: submission.scored
                             ? "var(--color-success-bg)"
@@ -717,7 +729,9 @@ function RecentSubmissionsTable({
                       >
                         {submission.scored ? "Scored" : "Pending"}
                       </span>
-                      <span className="inline-flex rounded-full bg-[var(--surface-container-low)] px-3 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+                      <span
+                        className={`${pillClass} bg-[var(--surface-container-low)] text-[var(--text-secondary)]`}
+                      >
                         Score {formatWadToScore(submission.score)}
                       </span>
                     </div>
@@ -750,7 +764,7 @@ function ProjectionFootnote({
       : "unknown lag";
 
   return (
-    <div className="rounded-3xl bg-[var(--surface-container-low)] px-5 py-4 md:px-6">
+    <div className="rounded-[1.625rem] bg-[var(--surface-container-low)] px-4 py-3.5 md:px-5">
       <p className="text-pretty text-sm leading-6 text-[var(--text-secondary)]">
         <span className="font-medium text-[var(--text-primary)]">
           Projection snapshot.
@@ -766,7 +780,7 @@ function ProjectionFootnote({
 
 function AnalyticsSkeleton() {
   return (
-    <div className="space-y-6 overflow-x-hidden md:space-y-8">
+    <div className={pageStackClass}>
       <div className={sectionShellClass}>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)]">
           <div>
@@ -788,8 +802,8 @@ function AnalyticsSkeleton() {
 
       <div className={sectionShellClass}>
         <div className="skeleton h-6 w-48" />
-        <div className="mt-6 grid gap-3 xl:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => (
+        <div className="mt-5 grid gap-3 xl:grid-cols-3">
+          {[1, 2, 3].map((item) => (
             <div key={item} className={cardShellClass}>
               <div className="skeleton h-4 w-24" />
               <div className="mt-4 skeleton h-8 w-32" />
@@ -812,7 +826,7 @@ function AnalyticsSkeleton() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-4 xl:grid-cols-2">
         {[1, 2].map((item) => (
           <div key={item} className={sectionShellClass}>
             <div className="skeleton h-5 w-40" />
@@ -841,9 +855,6 @@ export function AnalyticsClient() {
   const openChallenges = data
     ? getMetricCount(data.challengesByStatus, "open")
     : 0;
-  const scoringChallenges = data
-    ? getMetricCount(data.challengesByStatus, "scoring")
-    : 0;
   const finalizedChallenges = data
     ? getMetricCount(data.challengesByStatus, "finalized")
     : 0;
@@ -863,17 +874,10 @@ export function AnalyticsClient() {
     data && openChallenges > 0
       ? formatRatio(data.registeredAgents, openChallenges)
       : "0.0";
-  const scoredPipeline =
-    data && data.totalSubmissions > 0
-      ? Math.round((data.scoredSubmissions / data.totalSubmissions) * 100)
-      : 0;
   const capitalReturnedRate =
     data && data.totalRewardUsdc > 0
       ? clampPercent((data.distributedUsdc / data.totalRewardUsdc) * 100)
       : 0;
-  const statusEntries = data
-    ? buildBreakdownEntries(data.challengesByStatus, data.totalChallenges)
-    : [];
   const domainEntries = data
     ? buildBreakdownEntries(data.challengesByDomain, data.totalChallenges)
     : [];
@@ -886,7 +890,7 @@ export function AnalyticsClient() {
     : "Waiting for analytics snapshot";
 
   return (
-    <div className="space-y-6 overflow-x-hidden md:space-y-8">
+    <div className={pageStackClass}>
       <motion.section
         className={sectionShellClass}
         initial={{ opacity: 0, y: 16 }}
@@ -958,11 +962,11 @@ export function AnalyticsClient() {
           >
             <SectionHeader
               eyebrow="Lifecycle flow"
-              title="Posting → submission → scoring → payout"
-              description="Four public steps from posted rewards to settled payout."
+              title="Posting → submission → settlement"
+              description="Three public checkpoints from posted rewards to settled payout."
             />
 
-            <div className="mt-6 grid gap-3 xl:grid-cols-4">
+            <div className="mt-5 grid gap-3 xl:grid-cols-3">
               <FlowStage
                 step="01 Posting"
                 title="Posted"
@@ -1005,31 +1009,9 @@ export function AnalyticsClient() {
                 ]}
               />
               <FlowStage
-                step="03 Scoring"
-                title="Scoring"
-                description="Submissions turning into scores."
-                primaryValue={formatCount(data.scoredSubmissions)}
-                primaryLabel="Submissions scored"
-                icon={Target}
-                metrics={[
-                  {
-                    label: "Challenges in scoring",
-                    value: formatCount(scoringChallenges),
-                  },
-                  {
-                    label: "Pending to score",
-                    value: formatCount(data.unscoredSubmissions),
-                  },
-                  {
-                    label: "Scoring success",
-                    value: `${clampPercent(data.scoringSuccessRate)}%`,
-                  },
-                ]}
-              />
-              <FlowStage
-                step="04 Finalization"
+                step="03 Settlement"
                 title="Payout"
-                description="Rewards leaving escrow."
+                description="Rewards finalized and released from escrow."
                 primaryValue={`$${formatUsdc(data.distributedUsdc)}`}
                 primaryLabel="Paid to solvers"
                 icon={Wallet}
@@ -1050,7 +1032,7 @@ export function AnalyticsClient() {
               />
             </div>
 
-            <div className="mt-5">
+            <div className="mt-4">
               <DollarFlowBand
                 cells={[
                   {
@@ -1087,10 +1069,10 @@ export function AnalyticsClient() {
             <SectionHeader
               eyebrow="Demand signals"
               title="Participation and demand"
-              description="Participation, competition, and where demand is concentrating."
+              description="Participation depth and where new challenge demand is concentrating."
             />
 
-            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MetricTile
                 label="Registered agents"
                 value={formatCount(data.registeredAgents)}
@@ -1117,7 +1099,7 @@ export function AnalyticsClient() {
               />
             </div>
 
-            <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,0.95fr)]">
+            <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
               <ParticipationPanel
                 registeredAgents={data.registeredAgents}
                 uniqueSolvers={data.uniqueSolvers}
@@ -1132,13 +1114,6 @@ export function AnalyticsClient() {
                 entries={domainEntries}
                 emptyLabel="Domain distribution will appear once challenges are indexed."
               />
-              <BreakdownPanel
-                eyebrow="State mix"
-                title="Inventory by state"
-                description="Open, scoring, and finalized inventory."
-                entries={statusEntries}
-                emptyLabel="State distribution will appear once challenges are indexed."
-              />
             </div>
           </motion.section>
 
@@ -1149,24 +1124,18 @@ export function AnalyticsClient() {
             transition={{ ...revealTransition, delay: 0.12 }}
           >
             <SectionHeader
-              eyebrow="Public performance"
-              title="Scoring and payout conversion"
-              description="How posted demand converts into scores and payouts."
+              eyebrow="Core outcomes"
+              title="Completion and payout conversion"
+              description="How posted demand turns into completed challenges and solver payouts."
             />
 
-            <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.85fr)]">
               <div className="grid gap-3">
                 <ProgressRail
                   label="Completion rate"
                   value={data.completionRate ?? 0}
                   detail="Challenges completed."
                   icon={CheckCircle2}
-                />
-                <ProgressRail
-                  label="Scored pipeline"
-                  value={scoredPipeline}
-                  detail="Submissions scored."
-                  icon={Target}
                 />
                 <ProgressRail
                   label="Capital returned"
@@ -1183,26 +1152,16 @@ export function AnalyticsClient() {
                   detail="Available for submissions."
                 />
                 <DataPoint
-                  label="In scoring"
-                  value={formatCount(scoringChallenges)}
-                  detail="Currently scoring."
-                />
-                <DataPoint
                   label="Finalized"
                   value={formatCount(finalizedChallenges)}
                   detail="Completed payout loop."
-                />
-                <DataPoint
-                  label="Awaiting score"
-                  value={formatCount(data.unscoredSubmissions)}
-                  detail="Still unscored."
                 />
               </div>
             </div>
           </motion.section>
 
           <motion.div
-            className="space-y-4"
+            className="grid gap-4 xl:grid-cols-2 xl:items-start"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...revealTransition, delay: 0.16 }}
