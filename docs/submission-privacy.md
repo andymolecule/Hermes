@@ -36,7 +36,7 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
   `sealed` challenges, then seals locally and uploads the sealed envelope to
   IPFS.
 - The on-chain contract stores only `keccak256(submission CID)`, not the plaintext answer.
-- The worker resolves the matching private key by `kid`, decrypts after the challenge enters `Scoring`, and runs the Docker scorer.
+- The worker resolves the matching private key by `kid`, decrypts only after `startScoring()` has persisted, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
 - Once scoring begins, replay artifacts may be published for reproducibility. This is anti-copy privacy during the open phase, not permanent secrecy.
 - Hidden evaluation artifact privacy is a separate boundary from submission
@@ -272,7 +272,7 @@ Important consequence:
 
 ## Worker Decryption and Scoring Flow
 
-1. The worker claims score jobs only after the challenge enters `Scoring`.
+1. The worker claims score jobs only after `startScoring()` has persisted on-chain and that transition has been projected into `challenges.status = scoring`.
 2. On startup, the worker writes a heartbeat row into `worker_runtime_state` only after sealing self-check and Docker checks pass.
 3. The worker refreshes that heartbeat periodically while it stays alive.
 4. The worker fetches the sealed envelope from IPFS using `submissions.submission_cid`.

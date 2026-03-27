@@ -526,6 +526,78 @@ export async function getChallengeLifecycleState(
   };
 }
 
+export type ChallengeScoringState = {
+  status: ChallengeStatus;
+  deadline: bigint;
+  scoringStartedAt: bigint;
+};
+
+export async function getChallengeScoringState(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<ChallengeScoringState> {
+  const publicClient = getPublicClient();
+  const rawStatus = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "status",
+    blockNumber,
+  });
+  const deadline = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "deadline",
+    blockNumber,
+  });
+  const scoringStartedAt = await readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "scoringStartedAt",
+    blockNumber,
+  });
+
+  return {
+    status: decodeChallengeStatusValue(rawStatus),
+    deadline,
+    scoringStartedAt,
+  };
+}
+
+export function hasChallengeScoringStarted(
+  state: Pick<ChallengeScoringState, "scoringStartedAt">,
+) {
+  return state.scoringStartedAt > 0n;
+}
+
+export function isChallengeScoringWriteActive(
+  state: Pick<ChallengeScoringState, "status" | "scoringStartedAt">,
+) {
+  return (
+    state.status === CHALLENGE_STATUS.scoring &&
+    hasChallengeScoringStarted(state)
+  );
+}
+
+export function shouldStartChallengeScoring(
+  state: Pick<
+    ChallengeScoringState,
+    "status" | "deadline" | "scoringStartedAt"
+  >,
+  nowSeconds: bigint,
+) {
+  if (hasChallengeScoringStarted(state)) {
+    return false;
+  }
+
+  return (
+    state.status === CHALLENGE_STATUS.scoring ||
+    (state.status === CHALLENGE_STATUS.open && state.deadline <= nowSeconds)
+  );
+}
+
 export type ChallengeFinalizeState = {
   contractVersion: number;
   status: ChallengeStatus;

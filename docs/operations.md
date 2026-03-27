@@ -128,12 +128,13 @@ flowchart LR
 Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation still provides the fast path, but the indexer can also recover a `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match, and then create or revive the corresponding `score_jobs`.
-- Worker polls `score_jobs` but only claims jobs after the challenge enters `Scoring` at deadline, and only when the worker runtime matches the active scoring runtime version declared by the API.
+- Worker polls `score_jobs` but only claims jobs after the persisted `startScoring()` transition has landed and been projected into `challenges.status = scoring`, and only when the worker runtime matches the active scoring runtime version declared by the API.
 - Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
 - Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
 - Official scorer-template challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
+- Read-side challenge visibility and write-side scoring readiness intentionally differ after the deadline. Use contract `status()` for public visibility decisions and `scoringStartedAt > 0` for score posting, dispute timing, finalization timing, and score-job eligibility.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
 
 ### Worker / Executor Flow
@@ -193,6 +194,7 @@ Expected results:
 - `/api/health` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- `/api/worker-health` should not report `idle` when queued work exists. If `queued > 0` and `eligibleQueued = 0`, treat that as blocked scoring work and inspect the `startScoring()` boundary, queue backoff, and runtime alignment before assuming the worker is healthy.
 - Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
 
@@ -390,7 +392,7 @@ Per-challenge overrides can be set in the challenge spec:
 1. Check `submission_intents`: each client submission should create an intent before the wallet transaction is sent, and the on-chain submission should attach to that existing intent. `submissions.submission_intent_id` should be present before the row can become scoreable.
 2. Check `score_jobs` transitions: once the submission has both on-chain state and the linked registered metadata, jobs should move from `queued` -> `running` -> `scored`. Infrastructure retries may temporarily stay `queued` with a future `next_attempt_at`.
 3. Check `GET /api/worker-health`: it should show `status != "warning"` and `workers.healthyWorkersForActiveRuntimeVersion > 0` before you expect automatic scoring. `healthyWorkersNotOnActiveRuntimeVersion` is still useful diagnostically, but it is no longer a hard readiness requirement when an active healthy worker already exists.
-4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after the indexed `submissions` row exists with its linked `submission_intent_id`. The job should remain queued until the deadline passes and the challenge enters `Scoring`, then the worker should pick it up within ~15s (worker poll).
+4. After a submission, a `submission_intents` row appears immediately. A `score_jobs` row appears only after the indexed `submissions` row exists with its linked `submission_intent_id`. The job should remain queued until `startScoring()` has landed on-chain and that persisted transition has been projected into `challenges.status = scoring`, then the worker should pick it up within ~15s (worker poll).
 5. If the on-chain submission arrived before the intent became visible, check `GET /api/indexer-health`: `unmatchedSubmissions.total` should briefly rise and then drain. Operators can inspect the backlog at `GET /api/internal/submissions/challenges/:id/unmatched`.
 6. Successful scoring produces a proof bundle CID in `proof_bundles.cid`.
 7. The frontend ActivityPanel "Scorer" row shows live queued/scored/failed counts.

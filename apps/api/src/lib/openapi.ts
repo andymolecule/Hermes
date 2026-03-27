@@ -2384,6 +2384,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "string",
                   enum: ["pending", "complete", "scored_awaiting_proof"],
                 },
+                statusDetail: {
+                  type: "string",
+                  nullable: true,
+                },
                 terminal: { type: "boolean" },
                 recommendedPollSeconds: {
                   type: "integer",
@@ -2399,6 +2403,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "lastError",
                 "lastErrorPhase",
                 "scoringStatus",
+                "statusDetail",
                 "terminal",
                 "recommendedPollSeconds",
               ],
@@ -2456,6 +2461,10 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "string",
                   enum: ["pending", "complete", "scored_awaiting_proof"],
                 },
+                statusDetail: {
+                  type: "string",
+                  nullable: true,
+                },
                 terminal: { type: "boolean" },
                 recommendedPollSeconds: {
                   type: "integer",
@@ -2469,6 +2478,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "proofBundle",
                 "job",
                 "scoringStatus",
+                "statusDetail",
                 "terminal",
                 "recommendedPollSeconds",
                 "waitedMs",

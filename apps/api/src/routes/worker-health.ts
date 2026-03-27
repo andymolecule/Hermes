@@ -62,6 +62,10 @@ export function deriveWorkerHealthStatus(
   const oldestQueuedAgeMs = input.oldestPendingAt
     ? nowMs - new Date(input.oldestPendingAt).getTime()
     : null;
+  const blockedQueuedCount = Math.max(
+    input.jobs.queued - input.jobs.eligibleQueued,
+    0,
+  );
 
   if (
     input.workerRuntime?.activeRuntimeVersion &&
@@ -84,11 +88,20 @@ export function deriveWorkerHealthStatus(
   }
 
   if (
-    input.jobs.eligibleQueued === 0 &&
+    input.jobs.queued === 0 &&
     input.jobs.running === 0 &&
     input.jobs.failed === 0
   ) {
     return "idle";
+  }
+
+  if (
+    blockedQueuedCount > 0 &&
+    input.jobs.eligibleQueued === 0 &&
+    input.jobs.running === 0 &&
+    input.jobs.failed === 0
+  ) {
+    return "warning";
   }
 
   if (
@@ -109,6 +122,10 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
   const oldestQueuedAgeMs = input.oldestPendingAt
     ? Math.max(0, nowMs - new Date(input.oldestPendingAt).getTime())
     : null;
+  const blockedQueuedCount = Math.max(
+    input.jobs.queued - input.jobs.eligibleQueued,
+    0,
+  );
   const status = deriveWorkerHealthStatus({ ...input, nowMs });
 
   return {
@@ -125,6 +142,7 @@ export function buildWorkerHealthResponse(input: WorkerHealthSnapshotInput) {
     },
     metrics: {
       oldestQueuedAgeMs,
+      blockedQueuedCount,
     },
     checkedAt: new Date(nowMs).toISOString(),
     workers: input.workerRuntime

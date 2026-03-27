@@ -2,10 +2,12 @@ import {
   deriveChallengeFinalizeReadState,
   finalizeChallenge,
   getChallengeFinalizeState,
-  getChallengeLifecycleState,
+  getChallengeScoringState,
   getOnChainSubmission,
   getPublicClient,
+  isChallengeScoringWriteActive,
   postScore,
+  shouldStartChallengeScoring,
   startChallengeScoring,
 } from "@agora/chain";
 import { CHALLENGE_STATUS } from "@agora/common";
@@ -75,12 +77,14 @@ export function shouldAttemptChallengeFinalize(
 
 function isIgnorableLifecycleSweepError(message: string) {
   const missingScoringStartedAt =
-    /scoringStartedAt/i.test(message)
-    && /returned no data|function does not exist|revert|0x/i.test(message);
+    /scoringStartedAt/i.test(message) &&
+    /returned no data|function does not exist|revert|0x/i.test(message);
 
-  return /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed|ScoringIncomplete|Unsupported challenge contract version/i.test(
-    message,
-  ) || missingScoringStartedAt;
+  return (
+    /ChallengeFinalized|ChallengeCancelled|InvalidStatus|DeadlineNotPassed|ScoringIncomplete|Unsupported challenge contract version/i.test(
+      message,
+    ) || missingScoringStartedAt
+  );
 }
 
 export async function reconcileScoredSubmission(
@@ -250,7 +254,7 @@ export async function postScoreAndWaitForConfirmation(
 type LifecycleSweepDeps = {
   finalizeChallenge: typeof finalizeChallenge;
   getChallengeFinalizeState: typeof getChallengeFinalizeState;
-  getChallengeLifecycleState: typeof getChallengeLifecycleState;
+  getChallengeScoringState: typeof getChallengeScoringState;
   getPublicClient: typeof getPublicClient;
   nowSeconds: () => bigint;
   startChallengeScoring: typeof startChallengeScoring;
@@ -260,7 +264,7 @@ type LifecycleSweepDeps = {
 const defaultLifecycleSweepDeps: LifecycleSweepDeps = {
   finalizeChallenge,
   getChallengeFinalizeState,
-  getChallengeLifecycleState,
+  getChallengeScoringState,
   getPublicClient,
   nowSeconds: () => BigInt(Math.floor(Date.now() / 1000)),
   startChallengeScoring,
@@ -291,13 +295,12 @@ export async function sweepChallengeLifecycle(
     const challengeAddress = challenge.contract_address as `0x${string}`;
 
     try {
-      const lifecycle =
-        await resolvedDeps.getChallengeLifecycleState(challengeAddress);
+      const scoringState =
+        await resolvedDeps.getChallengeScoringState(challengeAddress);
 
       if (
         challenge.status === CHALLENGE_STATUS.open &&
-        lifecycle.status === CHALLENGE_STATUS.open &&
-        lifecycle.deadline <= nowSeconds
+        shouldStartChallengeScoring(scoringState, nowSeconds)
       ) {
         log("info", "Starting scoring window", {
           challengeId: challenge.id,
@@ -322,14 +325,7 @@ export async function sweepChallengeLifecycle(
         continue;
       }
 
-      if (
-        challenge.status === CHALLENGE_STATUS.open &&
-        lifecycle.status === CHALLENGE_STATUS.scoring
-      ) {
-        continue;
-      }
-
-      if (lifecycle.status !== CHALLENGE_STATUS.scoring) {
+      if (!isChallengeScoringWriteActive(scoringState)) {
         continue;
       }
 

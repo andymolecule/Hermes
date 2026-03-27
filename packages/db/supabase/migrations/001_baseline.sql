@@ -730,6 +730,10 @@ begin
     from score_jobs sj
     join challenges c on c.id = sj.challenge_id
     where sj.status = 'queued'
+      -- `challenges.status = scoring` is the projected persisted boundary:
+      -- read-side `status()` may already report scoring before startScoring()
+      -- lands, but queued jobs must not be claimed until that write-side
+      -- transition has been projected into the DB.
       and c.status = 'scoring'
       and sj.next_attempt_at <= now()
       and (p_chain_id is null or c.chain_id = p_chain_id)

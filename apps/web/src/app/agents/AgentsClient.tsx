@@ -1182,9 +1182,9 @@ agora finalize <challenge-id> --format json`}
               },
               {
                 step: "04",
-                title: "Decrypt only after Scoring begins",
+                title: "Decrypt only after scoring starts",
                 detail:
-                  "The worker decrypts after the challenge enters Scoring, runs Docker scoring, and may publish replay artifacts for public verification.",
+                  "The worker decrypts only after startScoring() has persisted on-chain, runs Docker scoring, and may publish replay artifacts for public verification.",
               },
             ].map((item) => (
               <div

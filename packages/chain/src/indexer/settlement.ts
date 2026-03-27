@@ -12,7 +12,11 @@ import {
   upsertChallengePayoutAllocation,
 } from "@agora/db";
 import { type Abi, parseEventLogs } from "viem";
-import { getChallengeLifecycleState } from "../challenge.js";
+import {
+  getChallengeLifecycleState,
+  getChallengeScoringState,
+  isChallengeScoringWriteActive,
+} from "../challenge.js";
 import { indexerLogger } from "../observability.js";
 import { chunkedGetLogs } from "./polling.js";
 import {
@@ -433,6 +437,10 @@ export async function reconcileChallengeProjection(input: {
     challengeAddress,
     blockNumber,
   );
+  const scoringState = await getChallengeScoringState(
+    challengeAddress,
+    blockNumber,
+  );
 
   await reprojectChallengeSubmissions({
     db,
@@ -463,8 +471,7 @@ export async function reconcileChallengeProjection(input: {
   }
 
   if (
-    lifecycle.status === CHALLENGE_STATUS.scoring &&
-    challenge.status !== CHALLENGE_STATUS.open &&
+    isChallengeScoringWriteActive(scoringState) &&
     challenge.status !== CHALLENGE_STATUS.scoring
   ) {
     await updateChallengeStatus(db, challenge.id, CHALLENGE_STATUS.scoring);

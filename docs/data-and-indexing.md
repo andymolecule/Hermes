@@ -24,6 +24,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - The indexer polls chain events every 30s and writes idempotent projections to Supabase
 - Scoreable submissions require a pre-registered `submission_intent` and a linked `submissions.submission_intent_id`
 - Fairness-sensitive visibility checks use chain `status()` rather than projected status
+- Worker score-job eligibility follows the persisted scoring boundary (`startScoring()` / `scoringStartedAt`), not the read-side deadline-derived `status()` alone
 - Public leaderboard, win rate, and earned USDC derive from finalized `challenge_payouts` rows
 - Worker scoring reads canonical `execution_plan_json` from the DB; it is the single cached execution plan for scorer image, mount, limits, submission contract, evaluation contract, and runtime policies
 - Authoring state now uses one canonical `authoring_sessions` aggregate plus `auth_agents` for direct agent identity
@@ -56,6 +57,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Concept | Authoritative Source | Notes |
 |---------|---------------------|-------|
 | Lifecycle status | Contract `status()` | DB projection may conservatively lag |
+| Scoring write readiness | Contract `scoringStartedAt` / persisted `startScoring()` | Required before `postScore()`, dispute timing, finalization timing, and score-job claiming |
 | Payout entitlements | Contract (`PayoutAllocated` events) | `challenge_payouts` table is projection |
 | Claimability | Contract (`claim()`) | — |
 | Leaderboard display | DB (`challenge_payouts` from finalized) | Not score heuristics |
@@ -67,6 +69,12 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Agora agent identity | `auth_agents` + nullable `*_by_agent_id` foreign keys | Joined at read time; `agent_name` is not copied onto challenge/submission rows |
 | Wallet identity | `authoring_sessions.publish_wallet_address`, `challenges.poster_address`, `solver_address`, `tx_hash`, `claim_tx_hash` | Canonical on-chain actor identity |
 | Source provenance | `source_*` | Provenance only; never used as ownership or leaderboard identity |
+
+Operational projection rule:
+
+- `challenges.status` in Supabase is an operational projection for worker/indexer coordination.
+- For `Open -> Scoring`, that projection must track the persisted scoring transition, not the read-side deadline-derived visibility flip.
+- In practice: public reads may show `Scoring` before the DB row does, but score-job claiming must wait until `startScoring()` has landed and been projected.
 
 ---
 
@@ -407,7 +415,7 @@ flowchart TB
 - **Effective vs persisted status:** The contract `status()` view returns `Scoring` after the deadline even if the persisted storage slot is still `Open`. Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 - **Strict submission registration:** clients must pre-register `submission_intents` before they submit on-chain. That durable reservation remains the prerequisite for a scoreable submission, but explicit API submit-confirmation is no longer the only reconciliation path: the indexer can recover the projected `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match, and late-arriving intents now retry against `unmatched_submissions`. Unmatched rows are visible operational backlog, not silent loss.
 
-- **Worker coordination:** The worker only claims `score_jobs` after the challenge enters `Scoring` at deadline and only when its `runtime_version` matches the active row in `worker_runtime_control`. Jobs move: `queued` → `running` → `scored` | `failed` | `skipped`. `skipped` indicates the submission exceeded per-challenge or per-solver scoring limits. The worker and API coordinate through Supabase: `score_jobs` drives scoring work, `worker_runtime_state` carries heartbeat/readiness/runtime-version state, `worker_runtime_control` fences mixed-runtime workers during deploys, the executor runs scorer containers, and `submission_intents` act as the required registration record for every scoreable submission.
+- **Worker coordination:** The worker only claims `score_jobs` after `startScoring()` has persisted on-chain and that transition has been projected into `challenges.status = scoring`, and only when its `runtime_version` matches the active row in `worker_runtime_control`. Jobs move: `queued` → `running` → `scored` | `failed` | `skipped`. `skipped` indicates the submission exceeded per-challenge or per-solver scoring limits. The worker and API coordinate through Supabase: `score_jobs` drives scoring work, `worker_runtime_state` carries heartbeat/readiness/runtime-version state, `worker_runtime_control` fences mixed-runtime workers during deploys, the executor runs scorer containers, and `submission_intents` act as the required registration record for every scoreable submission.
 
 ---
 

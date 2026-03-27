@@ -5,7 +5,13 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getPublicClient, postScore } from "@agora/chain";
+import {
+  getChallengeScoringState,
+  getPublicClient,
+  postScore,
+  shouldStartChallengeScoring,
+  startChallengeScoring,
+} from "@agora/chain";
 import {
   type ChallengeExecutionRow,
   loadConfig,
@@ -137,6 +143,27 @@ export async function oracleScore(
 
     const proofHash = keccak256(toBytes(proofCid.replace("ipfs://", "")));
     const scoreWad = scoreToWad(run.result.score);
+    const publicClient = getPublicClient();
+
+    const scoringState = await getChallengeScoringState(
+      challenge.contract_address as `0x${string}`,
+    );
+    const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
+    if (shouldStartChallengeScoring(scoringState, latestBlock.timestamp)) {
+      const startTxHash = await startChallengeScoring(
+        challenge.contract_address as `0x${string}`,
+      );
+      const startReceipt = await publicClient.waitForTransactionReceipt({
+        hash: startTxHash,
+      });
+      if (startReceipt.status !== "success") {
+        throw new Error(`startScoring transaction reverted: ${startTxHash}`);
+      }
+    } else if (scoringState.status !== "scoring") {
+      throw new Error(
+        "Challenge is not in scoring yet. Next step: wait for the deadline to pass and retry official scoring.",
+      );
+    }
 
     // 5. Persist proof bundle before posting so recovery can reconcile
     await upsertProofBundle(db, {
@@ -156,7 +183,6 @@ export async function oracleScore(
       scoreWad,
       proofHash,
     );
-    const publicClient = getPublicClient();
     await publicClient.waitForTransactionReceipt({ hash: txHash });
 
     // 7. Update scored submission state

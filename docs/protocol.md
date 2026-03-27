@@ -77,6 +77,7 @@ stateDiagram-v2
 
 - The contract `status()` view function is the read-side truth. After the deadline passes, it returns `Scoring` even if the persisted storage slot is still `Open`.
 - Write-side transitions remain strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
+- The canonical write-side proof that scoring has started is `scoringStartedAt > 0` on the challenge contract. Do not treat read-side `status() == Scoring` as sufficient for score posting, dispute timing, finalization timing, or score-job eligibility.
 - `dispute()` is submission-specific. The caller must target its own scored submission and escrow a dispute bond equal to 10% of the reward.
 - If the oracle resolves in favor of the disputed submission, the bond is returned to that solver. Otherwise, or if the dispute times out, the bond is slashed to the treasury.
 - Off-chain consumers (API, web, CLI) should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
@@ -85,6 +86,7 @@ stateDiagram-v2
 
 - **Open:** Submissions are allowed. No public leaderboard, no public verification artifacts, and no score computation. Sealed submissions are hidden from the public and other solvers.
 - **Scoring:** Submissions are closed. The worker may decrypt sealed submissions, compute scores, and publish per-challenge results.
+- **Scoring write boundary:** Worker and operator scoring flows must call `startScoring()` when the read-side status has flipped but `scoringStartedAt == 0`, then wait for that persisted transition before posting scores or treating score jobs as eligible.
 - **Finalized:** Public global reputation surfaces (win rate, earned USDC) derive from finalized challenges only.
 
 ### Sealed submission rules
@@ -93,7 +95,7 @@ For the full sealing flow, trust boundary, and envelope details, see [Submission
 
 - The canonical sealed submission format is `sealed_submission_v2`.
 - The browser fetches the active submission sealing public key from `GET /api/submissions/public-key`, seals the answer locally, uploads only the sealed envelope to IPFS, and submits the CID hash on-chain.
-- The worker resolves the matching private key by `kid` and decrypts only after the challenge enters `Scoring`.
+- The worker resolves the matching private key by `kid` and decrypts only after `startScoring()` has persisted on-chain.
 - Public verification remains locked while the challenge is `Open`. Once scoring begins, proof bundles and replay artifacts may be published for reproducibility.
 - Privacy guarantee: answer bytes are hidden from the public and other solvers while the challenge is open. Wallet address, transaction metadata, and any replay artifact published after scoring are not private.
 
@@ -352,7 +354,7 @@ Rules:
   - `--user 65532:65532` — non-root execution
   - `--security-opt=no-new-privileges` — no privilege escalation
 - **`score-local` is preview-only:** Free and unlimited. Does not affect on-chain state. For private-evaluation challenges, public API-only flows cannot use it until replay artifacts are public or the solver is running inside a trusted Agora environment.
-- **Official scoring:** Happens after the deadline through the worker/oracle flow. `agora oracle-score` is the manual operator fallback for the same official path.
+- **Official scoring:** Happens after the deadline through the worker/oracle flow. `agora oracle-score` is the manual operator fallback for the same official path and must satisfy the same write-side scoring-start boundary before posting scores.
 - **Proof bundles:** Pinned to IPFS. Contain all inputs, outputs, and container metadata needed to reproduce the score.
 - **Score precision:** Scores are stored on-chain as `uint256` in WAD format (1e18 precision).
 

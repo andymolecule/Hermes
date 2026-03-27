@@ -1,4 +1,8 @@
-import { getChallengeLifecycleState, getPublicClient } from "@agora/chain";
+import {
+  getChallengeScoringState,
+  getPublicClient,
+  isChallengeScoringWriteActive,
+} from "@agora/chain";
 import {
   CHALLENGE_STATUS,
   SUBMISSION_CID_MISSING_ERROR,
@@ -16,6 +20,10 @@ import {
   upsertProofBundle,
 } from "@agora/db";
 import {
+  createSubmissionEvent,
+  recordSubmissionEvents,
+} from "../lib/submission-observability.js";
+import {
   handlePreviouslyPostedScoreTx,
   postScoreAndWaitForConfirmation,
   reconcileScoredSubmission,
@@ -28,10 +36,6 @@ import {
   isWorkerInfrastructureError,
 } from "./policy.js";
 import { scoreSubmissionAndBuildProof } from "./scoring.js";
-import {
-  createSubmissionEvent,
-  recordSubmissionEvents,
-} from "../lib/submission-observability.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
@@ -49,7 +53,7 @@ export interface ProcessJobDeps {
   completeJob: typeof completeJob;
   failJob: typeof failJob;
   getChallengeById: typeof getChallengeById;
-  getChallengeLifecycleState: typeof getChallengeLifecycleState;
+  getChallengeScoringState: typeof getChallengeScoringState;
   getPublicClient: typeof getPublicClient;
   getSubmissionById: typeof getSubmissionById;
   handlePreviouslyPostedScoreTx: typeof handlePreviouslyPostedScoreTx;
@@ -66,7 +70,7 @@ const defaultProcessJobDeps: ProcessJobDeps = {
   completeJob,
   failJob,
   getChallengeById,
-  getChallengeLifecycleState,
+  getChallengeScoringState,
   getPublicClient,
   getSubmissionById,
   handlePreviouslyPostedScoreTx,
@@ -85,9 +89,19 @@ async function recordWorkerSubmissionEvent(input: {
   challenge?: Pick<ChallengeRow, "id" | "contract_address"> | null;
   submission?: Pick<
     SubmissionRow,
-    "id" | "challenge_id" | "on_chain_sub_id" | "solver_address" | "trace_id" | "submission_cid"
+    | "id"
+    | "challenge_id"
+    | "on_chain_sub_id"
+    | "solver_address"
+    | "trace_id"
+    | "submission_cid"
   > | null;
-  event: "scoring.started" | "scoring.requeued" | "scoring.skipped" | "scoring.failed" | "scoring.completed";
+  event:
+    | "scoring.started"
+    | "scoring.requeued"
+    | "scoring.skipped"
+    | "scoring.failed"
+    | "scoring.completed";
   outcome: "accepted" | "blocked" | "failed" | "completed";
   code?: string | null;
   summary: string;
@@ -105,7 +119,10 @@ async function recordWorkerSubmissionEvent(input: {
         intent_id: null,
         submission_id: input.submission?.id ?? input.job.submission_id,
         score_job_id: input.job.id,
-        challenge_id: input.challenge?.id ?? input.submission?.challenge_id ?? input.job.challenge_id,
+        challenge_id:
+          input.challenge?.id ??
+          input.submission?.challenge_id ??
+          input.job.challenge_id,
         on_chain_submission_id: input.submission?.on_chain_sub_id ?? null,
         agent_id: null,
         solver_address: input.submission?.solver_address ?? null,
@@ -150,10 +167,10 @@ async function ensureChallengeIsScoreable(input: {
   log: WorkerLogFn;
   deps: ProcessJobDeps;
 }) {
-  const lifecycle = await input.deps.getChallengeLifecycleState(
+  const scoringState = await input.deps.getChallengeScoringState(
     input.challengeAddress,
   );
-  if (lifecycle.status === CHALLENGE_STATUS.scoring) {
+  if (isChallengeScoringWriteActive(scoringState)) {
     return true;
   }
 
@@ -163,7 +180,7 @@ async function ensureChallengeIsScoreable(input: {
     challengeId: input.challenge.id,
   };
 
-  if (lifecycle.status === CHALLENGE_STATUS.open) {
+  if (scoringState.status === CHALLENGE_STATUS.open) {
     const reason = "challenge_not_in_scoring";
     input.log("info", "Challenge is not in scoring yet; requeueing job", {
       ...phaseMeta,
@@ -191,7 +208,39 @@ async function ensureChallengeIsScoreable(input: {
     return false;
   }
 
-  const reason = `challenge_${lifecycle.status}`;
+  if (scoringState.status === CHALLENGE_STATUS.scoring) {
+    const reason = "challenge_scoring_not_started";
+    input.log(
+      "warn",
+      "Challenge read-side scoring is active, but scoring has not started on-chain",
+      {
+        ...phaseMeta,
+        reason,
+      },
+    );
+    await input.deps.requeueJobWithoutAttemptPenalty(
+      input.db,
+      input.job.id,
+      input.job.attempts,
+      reason,
+      getWorkerPostTxRetryDelayMs(),
+    );
+    await recordWorkerSubmissionEvent({
+      db: input.db,
+      job: input.job,
+      challenge: input.challenge,
+      submission: input.submission,
+      event: "scoring.requeued",
+      outcome: "blocked",
+      code: reason,
+      summary:
+        "Worker requeued the score job because the challenge deadline passed but startScoring() has not been persisted on-chain yet.",
+      retryDelayMs: getWorkerPostTxRetryDelayMs(),
+    });
+    return false;
+  }
+
+  const reason = `challenge_${scoringState.status}`;
   input.log("warn", "Challenge is no longer scoreable; skipping job", {
     ...phaseMeta,
     reason,
