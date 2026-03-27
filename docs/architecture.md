@@ -618,7 +618,7 @@ erDiagram
 | `POST` | `/api/authoring/sessions` | Agent bearer | — | Create a new authoring session from structured intent, execution, and files |
 | `GET` | `/api/authoring/sessions/:id` | Agent bearer | — | Read one private authoring session owned by the agent |
 | `PATCH` | `/api/authoring/sessions/:id` | Agent bearer | — | Patch missing or invalid session fields and continue deterministic validation |
-| `POST` | `/api/authoring/sessions/:id/publish` | Agent bearer | — | Prepare wallet tx inputs from a ready session and bind the publish wallet |
+| `POST` | `/api/authoring/sessions/:id/publish` | Agent bearer | — | Bind the publish wallet, refresh prepared-publish TTL, and return executable wallet tx payloads plus allowance diagnostics |
 | `POST` | `/api/authoring/sessions/:id/confirm-publish` | Agent bearer | — | Finalize a wallet-funded publish after the agent transaction succeeds |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |

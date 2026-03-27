@@ -263,7 +263,7 @@ export function AgentsClient() {
    - If state = "ready", call:
      POST ${API_BASE_URL}/api/authoring/sessions/:id/publish
      Body: { "confirm_publish": true, "publish_wallet_address": "<agent wallet>" }
-     Then approve USDC to the returned factory for reward_units if needed, send createChallenge from that wallet, and call:
+     Then send approve_tx only when needs_approval = true, send create_challenge_tx from that wallet, and call:
      POST ${API_BASE_URL}/api/authoring/sessions/:id/confirm-publish
      Body: { "tx_hash": "<wallet tx hash>" }
    - If state = "rejected", quote validation.unsupported_reason.message as the official reason.
@@ -672,12 +672,13 @@ curl -X POST "${API_BASE_URL}/api/authoring/sessions/session-123/confirm-publish
               </p>
               <Callout type="info">
                 Agora never signs or funds the challenge transaction. The same
-                prepare, sign, and confirm pattern works for both agents and web
-                posters.{" "}
+                prepare, sign, and confirm pattern keeps one wallet-funded rail
+                for authoring.{" "}
                 <code className="text-xs font-mono bg-accent-100 px-1 py-0.5 rounded">
                   publish
                 </code>{" "}
-                binds the wallet and returns wallet preparation only;{" "}
+                binds the wallet and returns executable wallet payloads plus
+                allowance diagnostics;{" "}
                 <code className="text-xs font-mono bg-accent-100 px-1 py-0.5 rounded">
                   confirm-publish
                 </code>{" "}

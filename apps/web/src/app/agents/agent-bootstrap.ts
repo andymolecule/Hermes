@@ -199,7 +199,7 @@ Direct authoring loop:
    - challenge_id / contract_address / spec_cid / tx_hash once published
 4. Inspect the returned session object and branch on state only:
    - awaiting_input -> inspect validation.missing_fields and validation.invalid_fields, fill only those fields, then call PATCH /api/authoring/sessions/:id
-   - ready -> call POST /api/authoring/sessions/:id/publish with publish_wallet_address, approve USDC to the returned factory for reward_units if needed, send createChallenge from that wallet, then call POST /api/authoring/sessions/:id/confirm-publish with tx_hash
+   - ready -> call POST /api/authoring/sessions/:id/publish with publish_wallet_address, send approve_tx only when needs_approval = true, send create_challenge_tx from that wallet, then call POST /api/authoring/sessions/:id/confirm-publish with tx_hash
    - rejected -> quote validation.unsupported_reason.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
    - expired -> create a new session and replay the current structured state
@@ -231,7 +231,7 @@ ${AGENT_BOOTSTRAP_CONFIRM_PUBLISH_COMMAND}
 
 Publish rules:
 - For direct agents, publish_wallet_address is required on publish.
-- publish returns wallet transaction preparation only; the session stays ready until confirm-publish succeeds.
+- publish returns chain/runtime refs, live allowance diagnostics, optional approve_tx, and executable create_challenge_tx; the session stays ready until confirm-publish succeeds.
 - Once a ready session is bound to a publish_wallet_address, publish retries and confirm-publish must use that same wallet.
 
 Operational guardrails:

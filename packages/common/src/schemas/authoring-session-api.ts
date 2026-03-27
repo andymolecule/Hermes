@@ -16,6 +16,8 @@ const normalizedAddressSchema = z
   .trim()
   .toLowerCase()
   .regex(/^0x[a-f0-9]{40}$/);
+const hexDataSchema = z.string().trim().regex(/^0x[a-fA-F0-9]+$/);
+const decimalUnitsSchema = z.string().trim().regex(/^\d+$/);
 
 export const authoringSessionPublicStateSchema = z.enum([
   "awaiting_input",
@@ -341,24 +343,54 @@ export const confirmPublishAuthoringSessionRequestSchema = z
   })
   .strict();
 
+export const walletTransactionRequestSchema = z
+  .object({
+    to: normalizedAddressSchema,
+    data: hexDataSchema,
+    value: decimalUnitsSchema,
+  })
+  .strict();
+
 export const walletPublishPreparationSchema = z
   .object({
     spec_cid: z.string().trim().min(1),
+    publish_wallet_address: normalizedAddressSchema,
+    chain_id: z.number().int().positive(),
     factory_address: z.string().trim().min(1),
     usdc_address: z.string().trim().min(1),
-    reward_units: z.string().trim().min(1),
+    reward_units: decimalUnitsSchema,
+    current_allowance_units: decimalUnitsSchema,
+    needs_approval: z.boolean(),
     deadline_seconds: z.number().int().nonnegative(),
     dispute_window_hours: z
       .number()
       .int()
       .min(CHALLENGE_LIMITS.disputeWindowMinHours),
-    minimum_score_wad: z.string().trim().min(1),
+    minimum_score_wad: decimalUnitsSchema,
     distribution_type: z.number().int().nonnegative(),
     lab_tba: z.string().trim().min(1),
     max_submissions_total: z.number().int().positive(),
     max_submissions_per_solver: z.number().int().positive(),
+    approve_tx: walletTransactionRequestSchema.nullable(),
+    create_challenge_tx: walletTransactionRequestSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.needs_approval && value.approve_tx === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "approve_tx is required when needs_approval is true",
+        path: ["approve_tx"],
+      });
+    }
+    if (!value.needs_approval && value.approve_tx !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "approve_tx must be null when needs_approval is false",
+        path: ["approve_tx"],
+      });
+    }
+  });
 
 export const walletPublishPreparationResponseSchema = z
   .object({

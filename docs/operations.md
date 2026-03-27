@@ -537,7 +537,8 @@ agora reindex --from-block <block_number>
    - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
-   - Wallet-funded authoring publishes interrupted after the caller sent the chain transaction -> inspect the session row, confirm the `tx_hash`, and retry `POST /api/authoring/sessions/:id/confirm-publish` instead of replaying the authoring flow.
+   - Wallet-funded authoring publishes interrupted before the caller sent the chain transaction -> rerun `POST /api/authoring/sessions/:id/publish` with the same bound wallet and use the returned executable tx payloads.
+   - Wallet-funded authoring publishes interrupted after the caller sent the chain transaction -> inspect the session row, confirm the `tx_hash`, and retry `POST /api/authoring/sessions/:id/confirm-publish` with the original `tx_hash` instead of replaying the authoring flow.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
 4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check the executor `/healthz` endpoint.
 
@@ -546,8 +547,9 @@ agora reindex --from-block <block_number>
 1. Check recent API logs and inspect affected rows in `authoring_sessions`.
 2. If `sessions.expired > 0`, confirm they are abandoned private workspaces. Sessions do not refresh in place; the caller starts a new session if they need to continue after expiry.
 3. If `sessions.stale_ready > 0` or `sessions.stale_awaiting_input > 0`, inspect recent API logs for interrupted authoring requests and confirm the caller is still polling `GET /api/authoring/sessions/:id`.
-4. If a wallet-funded publish is stuck after the caller transaction succeeded, retry `POST /api/authoring/sessions/:id/confirm-publish` with the original `tx_hash` before asking the caller to rebuild the session.
-5. There is no push-delivery recovery path in the current authoring model. Session clients use direct mutation responses plus authenticated polling.
+4. If a wallet-funded publish is stuck before the caller transaction was sent, rerun `POST /api/authoring/sessions/:id/publish` with the same wallet and continue from the returned tx payloads.
+5. If a wallet-funded publish is stuck after the caller transaction succeeded, retry `POST /api/authoring/sessions/:id/confirm-publish` with the original `tx_hash` before asking the caller to rebuild the session.
+6. There is no push-delivery recovery path in the current authoring model. Session clients use direct mutation responses plus authenticated polling.
 
 ### Oracle Key Issue
 

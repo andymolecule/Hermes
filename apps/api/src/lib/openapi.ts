@@ -1186,7 +1186,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "publishAuthoringSession",
           summary:
-            "Prepare wallet transaction inputs from a ready authoring session",
+            "Bind the publish wallet, refresh prepared-publish TTL, and return executable wallet publish payloads",
           security: authoringSecurity,
           parameters: [
             {
@@ -1911,6 +1911,15 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
           required: ["tx_hash"],
         },
+        WalletTransactionRequest: {
+          type: "object",
+          properties: {
+            to: addressSchema(),
+            data: { type: "string", pattern: "^0x[a-fA-F0-9]+$" },
+            value: { type: "string", pattern: "^\\d+$" },
+          },
+          required: ["to", "data", "value"],
+        },
         AuthoringUploadUrlRequest: {
           type: "object",
           properties: {
@@ -1922,9 +1931,13 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             spec_cid: { type: "string" },
+            publish_wallet_address: addressSchema(),
+            chain_id: { type: "integer", minimum: 1 },
             factory_address: addressSchema(),
             usdc_address: addressSchema(),
             reward_units: { type: "string" },
+            current_allowance_units: { type: "string" },
+            needs_approval: { type: "boolean" },
             deadline_seconds: { type: "integer", minimum: 0 },
             dispute_window_hours: {
               type: "integer",
@@ -1935,12 +1948,25 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             lab_tba: addressSchema(),
             max_submissions_total: { type: "integer", minimum: 1 },
             max_submissions_per_solver: { type: "integer", minimum: 1 },
+            approve_tx: {
+              oneOf: [
+                { $ref: "#/components/schemas/WalletTransactionRequest" },
+                { type: "null" },
+              ],
+            },
+            create_challenge_tx: {
+              $ref: "#/components/schemas/WalletTransactionRequest",
+            },
           },
           required: [
             "spec_cid",
+            "publish_wallet_address",
+            "chain_id",
             "factory_address",
             "usdc_address",
             "reward_units",
+            "current_allowance_units",
+            "needs_approval",
             "deadline_seconds",
             "dispute_window_hours",
             "minimum_score_wad",
@@ -1948,6 +1974,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "lab_tba",
             "max_submissions_total",
             "max_submissions_per_solver",
+            "approve_tx",
+            "create_challenge_tx",
           ],
         },
         Error: {

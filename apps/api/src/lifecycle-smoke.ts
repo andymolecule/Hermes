@@ -700,9 +700,13 @@ async function runAuthoringLifecycleSmoke(input: {
   const publishBody = await expectJsonResponse<{
     data: {
       spec_cid: string;
+      publish_wallet_address: `0x${string}`;
+      chain_id: number;
       factory_address: `0x${string}`;
       usdc_address: `0x${string}`;
       reward_units: string;
+      current_allowance_units: string;
+      needs_approval: boolean;
       deadline_seconds: number;
       dispute_window_hours: number;
       minimum_score_wad: string;
@@ -710,6 +714,16 @@ async function runAuthoringLifecycleSmoke(input: {
       lab_tba: `0x${string}`;
       max_submissions_total: number;
       max_submissions_per_solver: number;
+      approve_tx: {
+        to: `0x${string}`;
+        data: `0x${string}`;
+        value: string;
+      } | null;
+      create_challenge_tx: {
+        to: `0x${string}`;
+        data: `0x${string}`;
+        value: string;
+      };
     };
   }>(
     await app.request(
@@ -738,6 +752,19 @@ async function runAuthoringLifecycleSmoke(input: {
   }
   const runtimeConfig = loadConfig();
   if (
+    publishBody.data.publish_wallet_address.toLowerCase() !==
+    normalizedAccountAddress
+  ) {
+    throw new Error(
+      `Authoring publish returned publish_wallet_address=${publishBody.data.publish_wallet_address}, but the expected wallet is ${normalizedAccountAddress}.`,
+    );
+  }
+  if (publishBody.data.chain_id !== runtimeConfig.AGORA_CHAIN_ID) {
+    throw new Error(
+      `Authoring publish returned chain_id=${publishBody.data.chain_id}, but the active chain runtime is configured for ${runtimeConfig.AGORA_CHAIN_ID}.`,
+    );
+  }
+  if (
     publishBody.data.factory_address.toLowerCase() !==
     runtimeConfig.AGORA_FACTORY_ADDRESS.toLowerCase()
   ) {
@@ -753,26 +780,51 @@ async function runAuthoringLifecycleSmoke(input: {
       `Authoring publish returned usdc_address=${publishBody.data.usdc_address}, but the active chain runtime is configured for ${runtimeConfig.AGORA_USDC_ADDRESS}.`,
     );
   }
-  const rewardAmountUsdc = Number(rewardUnits / 1_000_000n);
-  console.log("5. Publish preparation returned canonical wallet inputs");
+  if (publishBody.data.create_challenge_tx.value !== "0") {
+    throw new Error(
+      `Authoring publish returned unexpected create_challenge_tx value=${publishBody.data.create_challenge_tx.value}.`,
+    );
+  }
+  if (publishBody.data.needs_approval && !publishBody.data.approve_tx) {
+    throw new Error(
+      "Authoring publish marked needs_approval=true without returning approve_tx.",
+    );
+  }
+  if (!publishBody.data.needs_approval && publishBody.data.approve_tx) {
+    throw new Error(
+      "Authoring publish returned approve_tx even though needs_approval=false.",
+    );
+  }
+  console.log("5. Publish preparation returned executable wallet payloads");
 
-  const approveTxHash = await approve(
-    publishBody.data.factory_address,
-    rewardAmountUsdc,
-  );
-  await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
-  console.log("6. Publish wallet approved USDC allowance:", approveTxHash);
+  const walletClient = getWalletClient();
+  if (!walletClient.account) {
+    throw new Error("Wallet client is missing the smoke-test account.");
+  }
 
-  const createTxHash = await createChallenge({
-    specCid: publishBody.data.spec_cid,
-    rewardAmount: rewardAmountUsdc,
-    deadline: publishBody.data.deadline_seconds,
-    disputeWindowHours: publishBody.data.dispute_window_hours,
-    minimumScore: BigInt(publishBody.data.minimum_score_wad),
-    distributionType: publishBody.data.distribution_type,
-    labTba: publishBody.data.lab_tba,
-    maxSubmissions: publishBody.data.max_submissions_total,
-    maxSubmissionsPerSolver: publishBody.data.max_submissions_per_solver,
+  if (publishBody.data.approve_tx) {
+    const approveTxHash = await walletClient.sendTransaction({
+      account: walletClient.account,
+      to: publishBody.data.approve_tx.to,
+      data: publishBody.data.approve_tx.data,
+      value: BigInt(publishBody.data.approve_tx.value),
+      chain: null,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+    console.log("6. Publish wallet approved USDC allowance:", approveTxHash);
+  } else {
+    console.log(
+      "6. Publish wallet already had sufficient USDC allowance:",
+      publishBody.data.current_allowance_units,
+    );
+  }
+
+  const createTxHash = await walletClient.sendTransaction({
+    account: walletClient.account,
+    to: publishBody.data.create_challenge_tx.to,
+    data: publishBody.data.create_challenge_tx.data,
+    value: BigInt(publishBody.data.create_challenge_tx.value),
+    chain: null,
   });
   await publicClient.waitForTransactionReceipt({ hash: createTxHash });
   console.log("7. Publish transaction sent:", createTxHash);
@@ -821,6 +873,39 @@ async function runAuthoringLifecycleSmoke(input: {
   ) {
     throw new Error(
       "Authoring confirm-publish completed without canonical challenge references.",
+    );
+  }
+  const confirmReplayBody = await expectJsonResponse<{
+    data: {
+      state: string;
+      challenge_id: string | null;
+      tx_hash: string | null;
+    };
+  }>(
+    await app.request(
+      new Request(
+        `http://localhost/api/authoring/sessions/${sessionId}/confirm-publish`,
+        {
+          method: "POST",
+          headers: {
+            authorization,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            tx_hash: createTxHash,
+          }),
+        },
+      ),
+    ),
+    "authoring confirm-publish replay",
+  );
+  if (
+    confirmReplayBody.data.state !== "published" ||
+    confirmReplayBody.data.challenge_id !== confirmBody.data.challenge_id ||
+    confirmReplayBody.data.tx_hash !== createTxHash
+  ) {
+    throw new Error(
+      "Authoring confirm-publish replay should return the same published session.",
     );
   }
 

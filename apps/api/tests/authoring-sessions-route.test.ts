@@ -1234,9 +1234,11 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
 });
 
 test("POST /sessions/:id/publish binds publish_wallet_address for agent publish", async () => {
+  const previousChainId = process.env.AGORA_CHAIN_ID;
   const previousRpcUrl = process.env.AGORA_RPC_URL;
   const previousFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
   const previousUsdcAddress = process.env.AGORA_USDC_ADDRESS;
+  process.env.AGORA_CHAIN_ID = "8453";
   process.env.AGORA_RPC_URL = "http://127.0.0.1:8545";
   process.env.AGORA_FACTORY_ADDRESS =
     "0x00000000000000000000000000000000000000bb";
@@ -1269,6 +1271,7 @@ test("POST /sessions/:id/publish binds publish_wallet_address for agent publish"
           publish_wallet_address:
             payload.publish_wallet_address ??
             storedSession.publish_wallet_address,
+          expires_at: payload.expires_at ?? storedSession.expires_at,
           conversation_log_json:
             payload.conversation_log_json ??
             storedSession.conversation_log_json ??
@@ -1277,6 +1280,7 @@ test("POST /sessions/:id/publish binds publish_wallet_address for agent publish"
         });
         return storedSession;
       },
+      readUsdcAllowance: async () => 0n,
       pinJsonImpl: async (_name, payload) => {
         pinnedSpec = payload;
         return "ipfs://sanitized-agent-spec";
@@ -1299,9 +1303,29 @@ test("POST /sessions/:id/publish binds publish_wallet_address for agent publish"
     const payload = await response.json();
     assert.equal(payload.data.spec_cid, "ipfs://sanitized-agent-spec");
     assert.equal(
+      payload.data.publish_wallet_address,
+      "0x00000000000000000000000000000000000000bb",
+    );
+    assert.equal(payload.data.chain_id, 8453);
+    assert.equal(payload.data.current_allowance_units, "0");
+    assert.equal(payload.data.needs_approval, true);
+    assert.equal(
+      payload.data.approve_tx.to,
+      "0x00000000000000000000000000000000000000cc",
+    );
+    assert.equal(payload.data.approve_tx.value, "0");
+    assert.match(payload.data.approve_tx.data, /^0x[a-f0-9]+$/i);
+    assert.equal(
+      payload.data.create_challenge_tx.to,
+      "0x00000000000000000000000000000000000000bb",
+    );
+    assert.equal(payload.data.create_challenge_tx.value, "0");
+    assert.match(payload.data.create_challenge_tx.data, /^0x[a-f0-9]+$/i);
+    assert.equal(
       storedSession.publish_wallet_address,
       "0x00000000000000000000000000000000000000bb",
     );
+    assert.notEqual(storedSession.expires_at, "2026-04-23T00:00:00.000Z");
     assert.ok(pinnedSpec);
     const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
     assert.equal(
@@ -1309,6 +1333,80 @@ test("POST /sessions/:id/publish binds publish_wallet_address for agent publish"
       "artifact-hidden",
     );
   } finally {
+    process.env.AGORA_CHAIN_ID = previousChainId;
+    process.env.AGORA_RPC_URL = previousRpcUrl;
+    process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
+    process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
+  }
+});
+
+test("POST /sessions/:id/publish safely re-prepares the same bound wallet and refreshes expiry", async () => {
+  const previousChainId = process.env.AGORA_CHAIN_ID;
+  const previousRpcUrl = process.env.AGORA_RPC_URL;
+  const previousFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
+  const previousUsdcAddress = process.env.AGORA_USDC_ADDRESS;
+  process.env.AGORA_CHAIN_ID = "8453";
+  process.env.AGORA_RPC_URL = "http://127.0.0.1:8545";
+  process.env.AGORA_FACTORY_ADDRESS =
+    "0x00000000000000000000000000000000000000bb";
+  process.env.AGORA_USDC_ADDRESS = "0x00000000000000000000000000000000000000cc";
+  let storedSession = createSession({
+    id: "session-agent-publish-retry",
+    created_by_agent_id: "agent-abc",
+    state: "ready",
+    publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+    expires_at: "2026-03-22T00:00:00.000Z",
+    compilation_json: createCompilation(),
+  });
+
+  try {
+    const router = createAuthoringSessionRoutes({
+      requireAuthoringAgentMiddleware: withPrincipal({
+        type: "agent",
+        agent_id: "agent-abc",
+      }),
+      requireWriteQuotaImpl: allowQuota(),
+      createSupabaseClient: () => ({}) as never,
+      getAuthoringSessionById: async () => storedSession,
+      updateAuthoringSession: async (_db, payload) => {
+        storedSession = createSession({
+          ...storedSession,
+          publish_wallet_address:
+            payload.publish_wallet_address ??
+            storedSession.publish_wallet_address,
+          expires_at: payload.expires_at ?? storedSession.expires_at,
+          conversation_log_json:
+            payload.conversation_log_json ??
+            storedSession.conversation_log_json ??
+            [],
+          updated_at: "2026-03-22T00:06:00.000Z",
+        });
+        return storedSession;
+      },
+      readUsdcAllowance: async () => 30_000_000n,
+      pinJsonImpl: async () => "ipfs://sanitized-agent-spec",
+    });
+
+    const response = await router.request(
+      "http://localhost/sessions/session-agent-publish-retry/publish",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          confirm_publish: true,
+          publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.data.needs_approval, false);
+    assert.equal(payload.data.current_allowance_units, "30000000");
+    assert.equal(payload.data.approve_tx, null);
+    assert.notEqual(storedSession.expires_at, "2026-03-22T00:00:00.000Z");
+  } finally {
+    process.env.AGORA_CHAIN_ID = previousChainId;
     process.env.AGORA_RPC_URL = previousRpcUrl;
     process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
     process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
@@ -1350,6 +1448,15 @@ test("POST /sessions/:id/publish returns targeted migration guidance for legacy 
 });
 
 test("POST /sessions/:id/publish returns service_unavailable when publish wallet binding fails", async () => {
+  const previousChainId = process.env.AGORA_CHAIN_ID;
+  const previousRpcUrl = process.env.AGORA_RPC_URL;
+  const previousFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
+  const previousUsdcAddress = process.env.AGORA_USDC_ADDRESS;
+  process.env.AGORA_CHAIN_ID = "8453";
+  process.env.AGORA_RPC_URL = "http://127.0.0.1:8545";
+  process.env.AGORA_FACTORY_ADDRESS =
+    "0x00000000000000000000000000000000000000bb";
+  process.env.AGORA_USDC_ADDRESS = "0x00000000000000000000000000000000000000cc";
   const storedSession = createSession({
     id: "session-agent-publish-runtime-mismatch",
     created_by_agent_id: "agent-abc",
@@ -1359,43 +1466,52 @@ test("POST /sessions/:id/publish returns service_unavailable when publish wallet
     publish_wallet_address: null,
   });
 
-  const router = createAuthoringSessionRoutes({
-    requireAuthoringAgentMiddleware: withPrincipal({
-      type: "agent",
-      agent_id: "agent-abc",
-    }),
-    requireWriteQuotaImpl: allowQuota(),
-    createSupabaseClient: () => ({}) as never,
-    createAuthoringEvents: async () => [],
-    getAuthoringSessionById: async () => storedSession,
-    updateAuthoringSession: async () => {
-      throw new Error(
-        "Failed to update authoring session: runtime schema drift detected",
-      );
-    },
-  });
-
-  const response = await router.request(
-    "http://localhost/sessions/session-agent-publish-runtime-mismatch/publish",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        confirm_publish: true,
-        publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+  try {
+    const router = createAuthoringSessionRoutes({
+      requireAuthoringAgentMiddleware: withPrincipal({
+        type: "agent",
+        agent_id: "agent-abc",
       }),
-    },
-  );
+      requireWriteQuotaImpl: allowQuota(),
+      createSupabaseClient: () => ({}) as never,
+      createAuthoringEvents: async () => [],
+      getAuthoringSessionById: async () => storedSession,
+      pinJsonImpl: async () => "ipfs://sanitized-agent-spec",
+      readUsdcAllowance: async () => 0n,
+      updateAuthoringSession: async () => {
+        throw new Error(
+          "Failed to update authoring session: runtime schema drift detected",
+        );
+      },
+    });
 
-  assert.equal(response.status, 503);
-  const payload = await response.json();
-  assert.equal(payload.error.code, "service_unavailable");
-  assert.match(payload.error.message, /could not bind the publish wallet/i);
-  assert.match(payload.error.next_action, /apply .*001_baseline\.sql/i);
-  assert.equal(
-    payload.error.details?.cause,
-    "Failed to update authoring session: runtime schema drift detected",
-  );
+    const response = await router.request(
+      "http://localhost/sessions/session-agent-publish-runtime-mismatch/publish",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          confirm_publish: true,
+          publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 503);
+    const payload = await response.json();
+    assert.equal(payload.error.code, "service_unavailable");
+    assert.match(payload.error.message, /could not bind the publish wallet/i);
+    assert.match(payload.error.next_action, /apply .*001_baseline\.sql/i);
+    assert.equal(
+      payload.error.details?.cause,
+      "Failed to update authoring session: runtime schema drift detected",
+    );
+  } finally {
+    process.env.AGORA_CHAIN_ID = previousChainId;
+    process.env.AGORA_RPC_URL = previousRpcUrl;
+    process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
+    process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
+  }
 });
 
 test("POST /sessions/:id/confirm-publish registers an agent-funded publish", async () => {
@@ -1485,4 +1601,57 @@ test("POST /sessions/:id/confirm-publish registers an agent-funded publish", asy
   );
   assert.equal(payload.data.tx_hash, "0xabc123");
   assert.equal(capturedCreatedByAgentId, "agent-abc");
+});
+
+test("POST /sessions/:id/confirm-publish replays the same published tx hash safely", async () => {
+  const storedSession = createSession({
+    id: "session-agent-confirm-replay",
+    created_by_agent_id: "agent-abc",
+    publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+    state: "published",
+    published_challenge_id: "challenge-123",
+    published_spec_cid: "ipfs://published-spec",
+    published_at: "2026-03-22T00:07:00.000Z",
+    compilation_json: createCompilation(),
+  });
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringAgentMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    getAuthoringSessionById: async () => storedSession,
+    getChallengeById: async () =>
+      ({
+        id: "challenge-123",
+        contract_address: "0x00000000000000000000000000000000000000cc",
+        tx_hash: "0xabc123",
+      }) as never,
+    registerChallengeFromTxHashImpl: async () => {
+      throw new Error("confirm-publish should not re-register a published tx");
+    },
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-agent-confirm-replay/confirm-publish",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tx_hash: "0xabc123",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.data.state, "published");
+  assert.equal(payload.data.challenge_id, "challenge-123");
+  assert.equal(
+    payload.data.contract_address,
+    "0x00000000000000000000000000000000000000cc",
+  );
+  assert.equal(payload.data.tx_hash, "0xabc123");
 });
