@@ -9,6 +9,11 @@ import {
 
 export const SUBMISSION_SEAL_VERSION = "sealed_submission_v2" as const;
 export const SUBMISSION_SEAL_ALG = "aes-256-gcm+rsa-oaep-256" as const;
+export const SUBMISSION_SEAL_TEXT_ENCODING = "utf-8" as const;
+export const SUBMISSION_SEAL_BINARY_ENCODING = "base64url-no-padding" as const;
+export const SUBMISSION_SEAL_IV_BYTES = 12;
+export const SUBMISSION_SEAL_TAG_BITS = 128;
+export const SUBMISSION_SEAL_RSA_HASH = "SHA-256" as const;
 
 type SupportedCryptoKey = CryptoKey;
 const SELF_CHECK_CHALLENGE_ID = "00000000-0000-0000-0000-000000000001";
@@ -16,6 +21,32 @@ const SELF_CHECK_SOLVER_ADDRESS = "0x0000000000000000000000000000000000000001";
 const SELF_CHECK_BYTES = new TextEncoder().encode(
   "agora-sealed-submission-self-check",
 );
+
+export type SubmissionOpenErrorCode =
+  | "key_unwrap_failed"
+  | "ciphertext_auth_failed";
+
+export class SubmissionOpenError extends Error {
+  code: SubmissionOpenErrorCode;
+
+  constructor(
+    code: SubmissionOpenErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message);
+    this.name = "SubmissionOpenError";
+    this.code = code;
+    if (options && "cause" in options) {
+      Object.defineProperty(this, "cause", {
+        value: options.cause,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    }
+  }
+}
 
 function normalizeSolverAddress(value: string) {
   return value.toLowerCase();
@@ -130,7 +161,7 @@ export async function importSubmissionSealPublicKey(
   return crypto.subtle.importKey(
     "spki",
     pemToDerBytes(pem),
-    { name: "RSA-OAEP", hash: "SHA-256" },
+    { name: "RSA-OAEP", hash: SUBMISSION_SEAL_RSA_HASH },
     false,
     ["encrypt"],
   );
@@ -143,7 +174,7 @@ export async function importSubmissionOpenPrivateKey(
   return crypto.subtle.importKey(
     "pkcs8",
     pemToDerBytes(pem),
-    { name: "RSA-OAEP", hash: "SHA-256" },
+    { name: "RSA-OAEP", hash: SUBMISSION_SEAL_RSA_HASH },
     false,
     ["decrypt"],
   );
@@ -161,7 +192,7 @@ export async function sealSubmission(input: {
   const crypto = await getWebCrypto();
   const solverAddress = normalizeSolverAddress(input.solverAddress);
   const plaintext = new Uint8Array(input.bytes);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const iv = crypto.getRandomValues(new Uint8Array(SUBMISSION_SEAL_IV_BYTES));
   const aesKey = await crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
     true,
@@ -182,7 +213,7 @@ export async function sealSubmission(input: {
         name: "AES-GCM",
         iv,
         additionalData: aad,
-        tagLength: 128,
+        tagLength: SUBMISSION_SEAL_TAG_BITS,
       },
       aesKey,
       plaintext,
@@ -226,29 +257,49 @@ export async function openSubmission(input: {
     fileName: envelope.fileName,
     mimeType: envelope.mimeType,
   });
-  const rawAesKey = await crypto.subtle.decrypt(
-    { name: "RSA-OAEP" },
-    input.privateKey,
-    base64UrlToBytes(envelope.wrappedKey),
-  );
-  const aesKey = await crypto.subtle.importKey(
-    "raw",
-    rawAesKey,
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"],
-  );
+  const aesKey = await (async () => {
+    try {
+      const rawAesKey = await crypto.subtle.decrypt(
+        { name: "RSA-OAEP" },
+        input.privateKey,
+        base64UrlToBytes(envelope.wrappedKey),
+      );
+      return await crypto.subtle.importKey(
+        "raw",
+        rawAesKey,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"],
+      );
+    } catch (error) {
+      throw new SubmissionOpenError(
+        "key_unwrap_failed",
+        "Failed to unwrap the sealed submission AES key. Next step: ensure wrappedKey was produced for Agora's active RSA-OAEP SHA-256 public key and encoded as base64url without '=' padding, then reseal from the original plaintext and retry.",
+        { cause: error },
+      );
+    }
+  })();
   const bytes = new Uint8Array(
-    await crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: base64UrlToBytes(envelope.iv),
-        additionalData: aad,
-        tagLength: 128,
-      },
-      aesKey,
-      base64UrlToBytes(envelope.ciphertext),
-    ),
+    await (async () => {
+      try {
+        return await crypto.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: base64UrlToBytes(envelope.iv),
+            additionalData: aad,
+            tagLength: SUBMISSION_SEAL_TAG_BITS,
+          },
+          aesKey,
+          base64UrlToBytes(envelope.ciphertext),
+        );
+      } catch (error) {
+        throw new SubmissionOpenError(
+          "ciphertext_auth_failed",
+          "Failed to authenticate the sealed submission ciphertext. Next step: ensure version, alg, kid, challengeId, lowercase solverAddress, fileName, mimeType, iv, and ciphertext all match Agora's sealed_submission_v2 contract exactly, then reseal from the original plaintext and retry.",
+          { cause: error },
+        );
+      }
+    })(),
   );
 
   return {

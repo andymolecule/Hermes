@@ -1,4 +1,5 @@
 import {
+  SubmissionOpenError,
   importSubmissionOpenPrivateKey,
   openSubmission,
   parseSealedSubmissionEnvelope,
@@ -59,6 +60,9 @@ export async function resolveSubmissionSource(input: {
         privateKey,
       });
     } catch (error) {
+      if (error instanceof SubmissionOpenError) {
+        throw new SealedSubmissionError(error.code, error.message);
+      }
       throw new SealedSubmissionError(
         "decrypt_failed",
         error instanceof Error

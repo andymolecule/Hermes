@@ -228,6 +228,8 @@ Upload acceptance contract:
   source of truth. `agora submit` already uses that path.
 - Custom sealers must treat the published authenticated-data bytes as the
   compatibility contract. Agora does not accept alternate serializations.
+  The authoritative machine-readable fixture is
+  [`docs/fixtures/sealed-submission-v2-conformance.json`](../fixtures/sealed-submission-v2-conformance.json).
 
 Success:
 
@@ -273,6 +275,9 @@ Intent acceptance contract:
   is a separate UTF-8 JSON object built from `version`, `alg`, `kid`,
   `challengeId`, lowercase `solverAddress`, `fileName`, and `mimeType` in that
   exact order.
+- `iv`, `wrappedKey`, and `ciphertext` are base64url without `=` padding.
+- `wrappedKey` must be RSA-OAEP with SHA-256 over the raw 32-byte AES key.
+- `iv` must decode to 12 raw bytes, and AES-GCM uses a 128-bit tag.
 - The worker validation path at intent time and the scoring path after deadline
   must share the same decrypt/open implementation. Agora must not maintain a
   separate acceptance-only decrypt contract.
@@ -287,6 +292,14 @@ Diagnostic contract:
 - That object is for caller and operator diagnostics and includes the worker
   validation subcode plus safe key context such as `key_id` and public-key
   fingerprints.
+- Current worker validation subcodes include:
+  - `invalid_envelope_schema`
+  - `key_unwrap_failed`
+  - `ciphertext_auth_failed`
+  - `decrypt_failed` as a legacy/fallback catch-all when Agora cannot classify
+    the decrypt failure more precisely
+  - plus mismatch/configuration codes such as `challenge_id_mismatch` and
+    `missing_decryption_key`
 - Callers must treat `error.code` as the stable contract and use
   `error.details.sealed_submission_validation.validation_code` as a debugging
   hint, not a replacement status surface.

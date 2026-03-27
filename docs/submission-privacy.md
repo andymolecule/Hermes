@@ -35,6 +35,9 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
 - The browser fetches Agora's active submission sealing public key only for
   `sealed` challenges, then seals locally and uploads the sealed envelope to
   IPFS.
+- Agora supports custom non-TypeScript sealers only against the published
+  `sealed_submission_v2` wire contract and conformance fixture. JS/TS callers
+  should still prefer `@agora/common` `sealSubmission`.
 - The on-chain contract stores only `keccak256(submission CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts only after `startScoring()` has persisted, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
@@ -203,9 +206,17 @@ Fields:
 ### Cryptographic construction
 
 - The browser generates a fresh random AES-256-GCM key per submission.
-- The answer bytes are encrypted with that AES key.
+- The browser generates a fresh random 12-byte IV per submission.
+- The answer bytes are encrypted with that AES key using AES-GCM with a 128-bit authentication tag.
 - The AES key is then wrapped with the active Agora RSA public key using RSA-OAEP with SHA-256.
 - The envelope is serialized as JSON and uploaded to IPFS.
+
+Wire encoding rules:
+
+- Authenticated data is UTF-8.
+- `iv`, `wrappedKey`, and `ciphertext` are base64url without `=` padding.
+- `challengeId` is always the challenge UUID, not the contract address.
+- `solverAddress` is always lowercase before authenticated data is built.
 
 ### Authenticated data
 
@@ -240,6 +251,35 @@ Canonical serialization rule:
 
 - JS/TS clients should call `@agora/common` `sealSubmission` directly.
 - Custom sealers must reproduce that object exactly. Agora does not accept alternate field orders, mixed-case `solverAddress`, or mismatched `fileName` / `mimeType` bytes.
+
+### Conformance contract
+
+Agora now treats `sealed_submission_v2` as an explicit wire contract for custom
+sealers, not a JS-only implementation detail.
+
+Authoritative fixture:
+
+- [`docs/fixtures/sealed-submission-v2-conformance.json`](fixtures/sealed-submission-v2-conformance.json)
+
+That fixture publishes:
+
+- the exact normalized visible fields
+- the exact authenticated-data JSON string
+- the authenticated-data UTF-8 bytes as hex
+- a common non-canonical counterexample showing alphabetical key order
+- base64url-no-padding encoding vectors
+- a known-good envelope plus test keypair for open/decode validation
+
+Important distinction:
+
+- The authenticated-data string and the encoding vectors are deterministic and
+  must match exactly.
+- Full `sealSubmission()` output is intentionally nondeterministic because the
+  AES key, IV, and RSA-OAEP encryption all use fresh randomness.
+- Custom sealers should not compare new `wrappedKey` or `ciphertext` bytes
+  against the known-good envelope fixture. They should compare the deterministic
+  contract pieces, then verify that their own sealed output can be opened with
+  the published test private key.
 
 ### Encrypted data
 
@@ -313,7 +353,23 @@ Important consequence:
 9. The worker stages the plaintext bytes into the scoring workspace and runs the Docker scorer.
 10. If scoring succeeds, the worker pins the proof bundle and may pin a replay artifact for public verification.
 
-If the worker cannot resolve the `kid`, or if the envelope metadata was tampered with, decryption fails and the submission is rejected as invalid.
+If the worker cannot resolve the `kid`, or if the envelope metadata was
+tampered with, decryption fails and the submission is rejected as invalid.
+
+Current worker validation subcodes:
+
+- `key_unwrap_failed`
+  Means `wrappedKey` could not be opened with the configured RSA-OAEP SHA-256
+  private key. Most likely causes are the wrong public key, the wrong OAEP hash,
+  or corrupted `wrappedKey` bytes.
+- `ciphertext_auth_failed`
+  Means AES-GCM authentication failed after key unwrap. Most likely causes are
+  authenticated-data drift (`challengeId`, lowercase `solverAddress`,
+  `fileName`, `mimeType`, or key order) or corrupted `iv` / `ciphertext` bytes.
+- `decrypt_failed`
+  Legacy/fallback catch-all when Agora cannot classify the decrypt failure more
+  precisely. New canonical failures should usually surface as
+  `key_unwrap_failed` or `ciphertext_auth_failed`.
 
 ---
 
@@ -360,11 +416,11 @@ This keeps rotation simple:
 
 ### Canonical sealing requirement
 
-- `sealed_submission_v2` is only supported when the client uses Agora's canonical sealing helper and preserves the AES-GCM additional authenticated data contract exactly.
-- Hand-rolled or partially reimplemented envelope builders are unsupported unless they reproduce the same authenticated data byte-for-byte.
+- `sealed_submission_v2` supports custom sealers only when they reproduce Agora's published wire contract exactly.
+- Hand-rolled or partially reimplemented envelope builders are unsupported unless they reproduce the same authenticated data bytes, RSA-OAEP SHA-256 parameters, and base64url-no-padding encoding rules.
 - Custom clients should treat the shared helper as the source of truth:
   - `packages/common/src/submission-sealing.ts`
-- For non-TypeScript clients, publish and test against official Agora vectors before sending live submissions.
+- For non-TypeScript clients, validate against the official conformance fixture before sending live submissions.
 
 ---
 

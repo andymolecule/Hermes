@@ -25,8 +25,8 @@ test("validateSealedSubmissionForIntent surfaces worker validation diagnostics",
         return new Response(
           JSON.stringify({
             ok: false,
-            code: "decrypt_failed",
-            message: "The operation failed for an operation-specific reason.",
+            code: "ciphertext_auth_failed",
+            message: "Failed to authenticate the sealed submission ciphertext.",
             retriable: false,
             keyId: "submission-seal-test",
             publicKeyFingerprint: "0xabc",
@@ -45,10 +45,15 @@ test("validateSealedSubmissionForIntent surfaces worker validation diagnostics",
       assert.ok(error instanceof SubmissionSealValidationClientError);
       assert.equal(error.status, 400);
       assert.equal(error.code, "SEALED_SUBMISSION_INVALID");
+      assert.match(
+        error.message,
+        /authenticate the sealed submission ciphertext/i,
+      );
       assert.deepEqual(error.options?.extras, {
         sealed_submission_validation: {
-          validation_code: "decrypt_failed",
-          worker_message: "The operation failed for an operation-specific reason.",
+          validation_code: "ciphertext_auth_failed",
+          worker_message:
+            "Failed to authenticate the sealed submission ciphertext.",
           key_id: "submission-seal-test",
           public_key_fingerprint: "0xabc",
           derived_public_key_fingerprint: "0xabc",
@@ -59,4 +64,44 @@ test("validateSealedSubmissionForIntent surfaces worker validation diagnostics",
   );
 
   assert.equal(requestedAuthorization, "Bearer worker-token");
+});
+
+test("validateSealedSubmissionForIntent maps key unwrap failures into actionable guidance", async () => {
+  await assert.rejects(
+    validateSealedSubmissionForIntent({
+      resultCid: "ipfs://bafy-sealed",
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      solverAddress: "0x2222222222222222222222222222222222222222",
+      runtimeConfig: {
+        sealingConfigured: true,
+        workerInternalUrl: "http://worker.internal",
+        workerInternalToken: "worker-token",
+      },
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            code: "key_unwrap_failed",
+            message: "Failed to unwrap the sealed submission AES key.",
+            retriable: false,
+            keyId: "submission-seal-test",
+            publicKeyFingerprint: "0xabc",
+            derivedPublicKeyFingerprint: "0xabc",
+          }),
+          {
+            status: 400,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof SubmissionSealValidationClientError);
+      assert.equal(error.status, 400);
+      assert.equal(error.code, "SEALED_SUBMISSION_INVALID");
+      assert.match(error.message, /RSA-OAEP.*SHA-256/i);
+      return true;
+    },
+  );
 });

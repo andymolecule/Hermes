@@ -33,7 +33,7 @@ const telemetryEvent = submissionEventInputSchema.parse({
   code: null,
   summary: "Agora created a submission intent.",
   refs: {
-      challenge_address: "0x00000000000000000000000000000000000000bb",
+    challenge_address: "0x00000000000000000000000000000000000000bb",
     tx_hash: null,
     score_tx_hash: null,
     result_cid: "ipfs://bafy-result",
@@ -57,7 +57,7 @@ const telemetryEvent = submissionEventInputSchema.parse({
       message: "Agora could not open the sealed submission payload.",
       details: {
         sealed_submission_validation: {
-          validation_code: "decrypt_failed",
+          validation_code: "ciphertext_auth_failed",
           key_id: "submission-seal-test",
         },
       },
@@ -76,7 +76,7 @@ const validationDetails = telemetryEvent.payload?.error?.details as
   | undefined;
 assert.equal(
   validationDetails?.sealed_submission_validation?.validation_code,
-  "decrypt_failed",
+  "ciphertext_auth_failed",
 );
 
 const query = submissionEventListQuerySchema.parse({

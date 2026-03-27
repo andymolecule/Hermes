@@ -63,8 +63,8 @@ test("worker internal validate surfaces sealed submission failures", async () =>
     }),
     resolveSubmissionSourceImpl: async () => {
       throw new SealedSubmissionError(
-        "decrypt_failed",
-        "The operation failed for an operation-specific reason",
+        "ciphertext_auth_failed",
+        "Failed to authenticate the sealed submission ciphertext.",
       );
     },
   });
@@ -87,6 +87,6 @@ test("worker internal validate surfaces sealed submission failures", async () =>
   assert.equal(response.status, 400);
   const body = await response.json();
   assert.equal(body.ok, false);
-  assert.equal(body.code, "decrypt_failed");
+  assert.equal(body.code, "ciphertext_auth_failed");
   assert.equal(body.retriable, false);
 });

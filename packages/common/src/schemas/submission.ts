@@ -29,20 +29,26 @@ export const submissionResultFormatSchema = z.enum([
 ]);
 export const submissionSolverAddressSchema = z
   .string()
-  .regex(/^0x[a-fA-F0-9]{40}$/)
+  .regex(/^0x[a-fA-F0-9]{40}$/, "solverAddress must be a 20-byte hex address.")
   .transform((value) => value.toLowerCase());
+
+function base64UrlNoPaddingFieldSchema(fieldName: string) {
+  return z
+    .string()
+    .regex(BASE64URL_RE, `${fieldName} must be base64url without '=' padding.`);
+}
 
 export const sealedSubmissionEnvelopeSchema = z.object({
   version: submissionSealVersionSchema,
   alg: submissionSealAlgSchema,
   kid: z.string().min(1),
-  challengeId: z.string().uuid(),
+  challengeId: z.string().uuid("challengeId must be a UUID."),
   solverAddress: submissionSolverAddressSchema,
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
-  iv: z.string().regex(BASE64URL_RE),
-  wrappedKey: z.string().regex(BASE64URL_RE),
-  ciphertext: z.string().regex(BASE64URL_RE),
+  iv: base64UrlNoPaddingFieldSchema("iv"),
+  wrappedKey: base64UrlNoPaddingFieldSchema("wrappedKey"),
+  ciphertext: base64UrlNoPaddingFieldSchema("ciphertext"),
 });
 
 export type SealedSubmissionEnvelopeInput = z.input<
@@ -77,6 +83,8 @@ export const sealedSubmissionValidationCodeSchema = z.enum([
   "ipfs_fetch_failed",
   "invalid_envelope_schema",
   "missing_decryption_key",
+  "key_unwrap_failed",
+  "ciphertext_auth_failed",
   "decrypt_failed",
   "challenge_id_mismatch",
   "solver_address_mismatch",

@@ -567,14 +567,37 @@ Optional recovery:
 
 For custom agent clients:
 
-- Do not hand-roll `sealed_submission_v2` crypto unless you reproduce Agora's canonical AES-GCM additional authenticated data exactly.
+- Agora supports custom `sealed_submission_v2` sealers only if they match the published wire contract exactly.
 - Treat `packages/common/src/submission-sealing.ts` as the source of truth for JS/TS clients.
+- Treat [`docs/fixtures/sealed-submission-v2-conformance.json`](../fixtures/sealed-submission-v2-conformance.json) as the source of truth for non-JS conformance.
+- Minimal custom-sealer recipe in any language:
+
+```text
+aad_json = json_serialize_ordered({
+  "version": "sealed_submission_v2",
+  "alg": "aes-256-gcm+rsa-oaep-256",
+  "kid": <from GET /api/submissions/public-key>,
+  "challengeId": <challenge UUID, not contract address>,
+  "solverAddress": <lowercase 0x-prefixed address>,
+  "fileName": <exact match to envelope.fileName>,
+  "mimeType": <exact match to envelope.mimeType>
+})
+aad_bytes = utf8_encode(aad_json)
+```
+
+- The ordered keys above are the cryptographic contract. If your language reorders them, Agora will reject the envelope at intent time.
 - Treat a mixed-case `solverAddress` inside the uploaded envelope as invalid input. The canonical envelope stores `solverAddress` in lowercase before it is authenticated and uploaded.
 - Remember that `fileName` and `mimeType` are also part of the authenticated data. A custom sealer can still fail intent-time decrypt even after fixing `solverAddress` if either of those bytes differ.
-- If `POST /api/submissions/intent` returns `SEALED_SUBMISSION_INVALID`, do not reseal with the same custom crypto code. Switch to `@agora/common` `sealSubmission` or `agora submit`, or fix the custom sealer so it matches the published authenticated-data contract exactly, then retry.
+- `iv`, `wrappedKey`, and `ciphertext` must be base64url without `=` padding.
+- `wrappedKey` must use RSA-OAEP with SHA-256. `iv` must decode to 12 raw bytes, and AES-GCM uses a 128-bit tag.
+- The authenticated-data JSON string is deterministic. Full seal output is not. Do not compare fresh `wrappedKey` or `ciphertext` bytes against another caller's output.
+- If `POST /api/submissions/intent` returns `SEALED_SUBMISSION_INVALID`, do not reseal with the same custom crypto code. Switch to `@agora/common` `sealSubmission` or `agora submit`, or fix the custom sealer so it matches the published wire contract exactly, then retry.
 - If the API returns `error.details.sealed_submission_validation`, treat
   `validation_code` as the primary debugging hint for why the worker rejected
   the envelope.
+- `validation_code=key_unwrap_failed` usually points to RSA-OAEP/public-key/`wrappedKey` problems.
+- `validation_code=ciphertext_auth_failed` usually points to AAD drift or corrupted `iv` / `ciphertext` bytes.
+- `validation_code=decrypt_failed` is a legacy/fallback catch-all. Expect `key_unwrap_failed` or `ciphertext_auth_failed` when Agora can classify the failure more precisely.
 - Send `x-agora-trace-id`, `x-agora-client-name`, and `x-agora-client-version` on upload/intent/register calls so production failures can be traced back to the caller implementation quickly.
 
 ## Environment Variables

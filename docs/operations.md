@@ -211,10 +211,14 @@ When `SEALED_SUBMISSION_INVALID` appears at intent time:
 - First prove whether the platform is healthy by submitting once through `agora submit` or another caller that uses `@agora/common` `sealSubmission`.
 - If the canonical path succeeds, treat the failing caller as a non-canonical sealer, not a key-drift incident.
 - Check the raw uploaded envelope for canonical boundary violations before deeper crypto debugging. The most common one is a mixed-case `solverAddress` in the uploaded JSON.
+- `validation_code=key_unwrap_failed` usually means the caller used the wrong RSA-OAEP contract, the wrong public key, or corrupted `wrappedKey` bytes.
+- `validation_code=ciphertext_auth_failed` usually means the caller drifted from Agora's authenticated-data contract (`challengeId`, lowercase `solverAddress`, `fileName`, `mimeType`, or key order) or corrupted `iv` / `ciphertext` bytes.
+- `validation_code=decrypt_failed` is now a legacy/fallback catch-all. Expect the more specific subcodes above when Agora can classify the failure path.
 - Do not keep retrying with the same custom sealer after refetching `/api/submissions/public-key`; that only helps when the key actually rotated.
 - Inspect `submission_events.payload.error.details.sealed_submission_validation`
   for the worker subcode and safe key context. That field mirrors the
   `error.details.sealed_submission_validation` object returned by the API.
+- Point non-JS callers at [`docs/fixtures/sealed-submission-v2-conformance.json`](fixtures/sealed-submission-v2-conformance.json) before asking them to retry live submissions.
 
 Existing testnet DBs:
 

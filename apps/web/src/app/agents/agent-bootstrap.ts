@@ -339,7 +339,7 @@ Solver workflow:
    agora score-local <challenge_uuid> --submission ./submission.csv --format json
 5. Submit a sealed solution on-chain:
    agora submit ./submission.csv --challenge <challenge_uuid> --format json
-   - Do not hand-roll sealed_submission_v2 JSON. The canonical helper lowercases solverAddress before AES-GCM authenticated data is computed.
+   - JS/TS callers should not hand-roll sealed_submission_v2 JSON. Use the canonical helper. Custom non-JS sealers must match Agora's published sealed_submission_v2 wire contract and conformance fixture exactly.
    - A 200 from /api/submissions/upload is not enough. /api/submissions/intent is the step where Agora proves the worker can open the sealed CID.
 6. Track official scoring:
    agora submission-status <submission_uuid> --watch --format json

@@ -1,0 +1,75 @@
+{
+  "fixtureVersion": 1,
+  "version": "sealed_submission_v2",
+  "alg": "aes-256-gcm+rsa-oaep-256",
+  "encoding": {
+    "text": "utf-8",
+    "binary": "base64url-no-padding"
+  },
+  "crypto": {
+    "aesGcm": {
+      "keyBits": 256,
+      "ivBytes": 12,
+      "tagBits": 128
+    },
+    "rsaOaep": {
+      "hash": "SHA-256"
+    }
+  },
+  "inputs": {
+    "challengeId": "22222222-2222-2222-2222-222222222222",
+    "solverAddress": "0xABCDEF0000000000000000000000000000000001",
+    "fileName": "answer.txt",
+    "mimeType": "text/plain",
+    "keyId": "fixture-kid",
+    "plaintextUtf8": "hello sealed world"
+  },
+  "normalizedEnvelopeFields": {
+    "version": "sealed_submission_v2",
+    "alg": "aes-256-gcm+rsa-oaep-256",
+    "kid": "fixture-kid",
+    "challengeId": "22222222-2222-2222-2222-222222222222",
+    "solverAddress": "0xabcdef0000000000000000000000000000000001",
+    "fileName": "answer.txt",
+    "mimeType": "text/plain"
+  },
+  "authenticatedData": {
+    "json": "{\"version\":\"sealed_submission_v2\",\"alg\":\"aes-256-gcm+rsa-oaep-256\",\"kid\":\"fixture-kid\",\"challengeId\":\"22222222-2222-2222-2222-222222222222\",\"solverAddress\":\"0xabcdef0000000000000000000000000000000001\",\"fileName\":\"answer.txt\",\"mimeType\":\"text/plain\"}",
+    "utf8Hex": "7b2276657273696f6e223a227365616c65645f7375626d697373696f6e5f7632222c22616c67223a226165732d3235362d67636d2b7273612d6f6165702d323536222c226b6964223a22666978747572652d6b6964222c226368616c6c656e67654964223a2232323232323232322d323232322d323232322d323232322d323232323232323232323232222c22736f6c76657241646472657373223a22307861626364656630303030303030303030303030303030303030303030303030303030303030303031222c2266696c654e616d65223a22616e737765722e747874222c226d696d6554797065223a22746578742f706c61696e227d"
+  },
+  "negativeExamples": {
+    "alphabeticallySortedKeys": {
+      "note": "This looks similar but is non-canonical because the JSON keys are sorted alphabetically instead of using Agora's required insertion order.",
+      "json": "{\"alg\":\"aes-256-gcm+rsa-oaep-256\",\"challengeId\":\"22222222-2222-2222-2222-222222222222\",\"fileName\":\"answer.txt\",\"kid\":\"fixture-kid\",\"mimeType\":\"text/plain\",\"solverAddress\":\"0xabcdef0000000000000000000000000000000001\",\"version\":\"sealed_submission_v2\"}",
+      "utf8Hex": "7b22616c67223a226165732d3235362d67636d2b7273612d6f6165702d323536222c226368616c6c656e67654964223a2232323232323232322d323232322d323232322d323232322d323232323232323232323232222c2266696c654e616d65223a22616e737765722e747874222c226b6964223a22666978747572652d6b6964222c226d696d6554797065223a22746578742f706c61696e222c22736f6c76657241646472657373223a22307861626364656630303030303030303030303030303030303030303030303030303030303030303031222c2276657273696f6e223a227365616c65645f7375626d697373696f6e5f7632227d",
+      "whyWrong": "AES-GCM authenticates the exact UTF-8 bytes. Alphabetically sorted keys produce different bytes, so Agora will reject the envelope with ciphertext_auth_failed even though the visible fields look equivalent."
+    }
+  },
+  "base64urlVectors": [
+    {
+      "rawHex": "000102030405060708090a0b",
+      "encoded": "AAECAwQFBgcICQoL"
+    },
+    {
+      "rawHex": "11223344",
+      "encoded": "ESIzRA"
+    }
+  ],
+  "knownGoodEnvelope": {
+    "note": "Seal output is intentionally nondeterministic because AES key generation, IV generation, and RSA-OAEP encryption use fresh randomness. Use this envelope to validate open/decode behavior, not byte-for-byte equality of new seal output.",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt47epMY+8JZYRAVG3tx5\n99KDJVN3eJ5idtbFhzvvGyti4ENCRGaBcEy43VJv8zyf0ZuD3Ak9wD279CslcZey\nAVy4W5d1hLo3ECpw36YscGTjxEnvwgky+HegHiIRhdZKF2kDgpwVL9X55B2BtVTv\nJw9ktEs5Us2FFrPsTPWbZk1jIDwssrHLcim6QZj9GckX78++LA6tFOF9KJSy5Lml\npay4IpyySc810nOAhOHSiORtP8S53d2WcdFjM6Gu4TJB716Wq+W58CsL7NekQFa0\niGfKka8k3Jl1hKI3vGpO4F2Ks/zlSnDLr44UkZ8FzhaFiltQuqkoVjzi117RHKrO\nQwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC3jt6kxj7wllhE\nBUbe3Hn30oMlU3d4nmJ21sWHO+8bK2LgQ0JEZoFwTLjdUm/zPJ/Rm4PcCT3APbv0\nKyVxl7IBXLhbl3WEujcQKnDfpixwZOPESe/CCTL4d6AeIhGF1koXaQOCnBUv1fnk\nHYG1VO8nD2S0SzlSzYUWs+xM9ZtmTWMgPCyysctyKbpBmP0ZyRfvz74sDq0U4X0o\nlLLkuaWlrLginLJJzzXSc4CE4dKI5G0/xLnd3ZZx0WMzoa7hMkHvXpar5bnwKwvs\n16RAVrSIZ8qRryTcmXWEoje8ak7gXYqz/OVKcMuvjhSRnwXOFoWKW1C6qShWPOLX\nXtEcqs5DAgMBAAECggEAEAwf/9TLFNp3/f5eG0a4LQfM6lr5M2TZY91T6IY/Wac5\n3jRTG0rA3zH96W93FRNEP51yci6mpONgxrBs9hjWeZMDFRLRNdjXzoR/WLYc5XiU\nhwkVumd2es1uhKPi10oMMS6/nVAK9CMnVR+VQuaZf9czLSX0bX5FN95j9rh0LQXK\nA8c5y0QjtnVwUyGvG2B4YOjoeZ18A9/NuImh/tJnraEIAfbn+qTh2fPcOBO33da9\nP4C9LxCsbVAmS73YqRwCwB8Q5Asa6DdedSg/x49+g1rH6+5Ph8fNBI2UKufog+Kf\npZ4Sq2dRFULt9iWqtC8NZNjUREbLIXBcyqI0iwspVQKBgQDka3Yd2IxJGyIzeVyO\njrGlAeZkoO7oSRE9TI9sptJrbOS2WXLzDB2rL9HECSOrA4Xa+PnHWlzUl5aJMWkz\nMmzzYdVctuinFvrI29vmXwaaG63+pwZ1W0bmDC1Mw++z9Rn6l0C3IcAn8luaX0UC\nuIfa6OT3b32btr69nslylgH4lQKBgQDNuLeZuJ3Km23mghYhJy5tCWwXdYuC4CbF\nILOvcgF6P4qFDxIGIA3JJsQ47ECgIoe9t9Bj2xtDvacnT82LHzmpm19+Z0hodxnv\nn5LbFnLiVZzO/XtKlsblgql5qQKj3Ut+DOLFmzr+un5QPN5GSomdNWQoliofqG3k\nvxiLfIH9dwKBgQCr8WyfeOPZIDC1mLSgpy94K573vuE4P9BXWWtZeZZJwVXFIj5S\nUJuAwmVf8RVFZUh8lhDIDPB2I4nwyh4LqPi0mL+YpCMrrDOpwT6eAoggt5dZaveE\nneoXv7DV6WRmDam5pePUNvbD2z8zTGXRb4Dsu4Wn8OgXsA+TA5VWyS7ApQKBgCHa\nsRQyBn2OIILbi4q/KOu2rjwaEvBhtN+h5xALQeT9Se1lsoChi8M7hvUbI/N2W0JE\nWp3kM9NtBXH5twibBeE8eXWSx56xYupFJ2S4iAVpM1n46u42a9rfKsajopSW2VKQ\nCk2coxPCWwEXUzjcEVN2stnfBGWbUSJgtEhYIAg3AoGBAIdkXko1cuX+dvFcZxt3\naT5lYshDFxapii8b1LBWDqwWD8c3LxNMaMcKNsQwmQsbPTQnR1nKeBLGEe5XqVAD\nJXmGT4kKAT7iOxGnP1bSCphTTdPbRcnnYBHuBovgt8Kt43KW61ztTnBZx5APagT3\noq1X+5vEPcR3IcIWhJx7xfVp\n-----END PRIVATE KEY-----\n",
+    "envelope": {
+      "version": "sealed_submission_v2",
+      "alg": "aes-256-gcm+rsa-oaep-256",
+      "kid": "fixture-kid",
+      "challengeId": "22222222-2222-2222-2222-222222222222",
+      "solverAddress": "0xabcdef0000000000000000000000000000000001",
+      "fileName": "answer.txt",
+      "mimeType": "text/plain",
+      "iv": "-LEi_WP4hxnOqlNa",
+      "wrappedKey": "glKNJoRCWNJOvNoTZKrpsWMYCMCsdxJ767l0fhSR4NXDcwwP2GY_4CGCc0Y3BXKNNfeYvfg1mGuU_n-DwTA8jxUn1Q3lzdlnpGeGzyOEX8XONg2zkQ-AXa4gU5oWYDdGc85cSwEEwVjQ5WWDD29xU_4RFa0we4uKVDFaa2GRxbUhuFysm5CYfa9-OF6mGXewCMJWNsTNhYuy5GQPi9-zeMLcvcjVEWpobKPoduovMnWVP4PvNW1IRZWH_u4E9ttHKRBbkrlXcUMZ3X7_n2Nv6FNPW4v7iOJMZ7J24F2x6Du2lp0AdXtkhQw0RVwb8KMbBUhZES0wsFOucrq3dq-J0A",
+      "ciphertext": "2wcElc8qA2FTKDWlXrapDdyAsJ-sk2efFcy5n8eaIhq6ag"
+    }
+  }
+}

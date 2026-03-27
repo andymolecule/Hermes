@@ -253,12 +253,9 @@ export function validateSealedSubmissionUpload(bytes: Uint8Array) {
       ? rawEnvelopeObject.solverAddress
       : null;
 
-  if (
-    rawSolverAddress &&
-    rawSolverAddress !== rawSolverAddress.toLowerCase()
-  ) {
+  if (rawSolverAddress && rawSolverAddress !== rawSolverAddress.toLowerCase()) {
     throw new Error(
-      "sealed_submission_v2 solverAddress must be lowercase in the uploaded envelope. Next step: reseal the payload with @agora/common sealSubmission or agora submit, or fix the custom sealer so solverAddress is lowercase in both authenticated data and uploaded JSON, then retry.",
+      "sealed_submission_v2 solverAddress must be lowercase in the uploaded envelope. Next step: reseal the payload with @agora/common sealSubmission or agora submit, or fix the custom sealer so solverAddress is lowercase in both the authenticated-data bytes and uploaded JSON, then retry.",
     );
   }
 

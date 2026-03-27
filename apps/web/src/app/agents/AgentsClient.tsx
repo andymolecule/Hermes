@@ -1369,6 +1369,9 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
               <code>sealed_submission_v2</code> envelope by itself. Use{" "}
               <code>@agora/common</code> <code>sealSubmission</code> or{" "}
               <code>agora submit</code> to produce the uploaded JSON first.
+              Custom non-JS sealers are supported only if they match Agora's
+              published sealed-submission wire contract and conformance fixture
+              exactly.
             </Callout>
           </section>
 
