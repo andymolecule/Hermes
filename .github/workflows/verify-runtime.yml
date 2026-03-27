@@ -22,6 +22,10 @@ jobs:
       AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
       AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
       AGORA_API_URL: ${{ secrets.AGORA_API_URL }}
+      AGORA_RPC_URL: ${{ secrets.AGORA_RPC_URL }}
+      AGORA_CHAIN_ID: ${{ secrets.AGORA_CHAIN_ID }}
+      AGORA_FACTORY_ADDRESS: ${{ secrets.AGORA_FACTORY_ADDRESS }}
+      AGORA_USDC_ADDRESS: ${{ secrets.AGORA_USDC_ADDRESS }}
       AGORA_EXPECTED_GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout
