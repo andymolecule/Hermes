@@ -14,15 +14,16 @@ Documentation index and reading order for the Agora repository.
 | 6 | [Authoring Session API Spec](specs/authoring-session-api.md) | What is the locked session-first authoring contract? | Product, frontend, backend |
 | 7 | [Authoring Validity And Execution](specs/authoring-validity-and-execution.md) | What makes a challenge valid and executable before publish? | Product, backend, compiler/scoring |
 | 8 | [Submission API Spec](specs/submission-api.md) | What is the locked machine contract for solver submissions? | Backend, agent runtime, web |
-| 9 | [Machine Contract Migration](specs/machine-contract-migration.md) | What is the ordered hard-cut implementation plan? | Engineers, operators |
-| 10 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
-| 11 | [Solver Wallet Compatibility Spec](specs/solver-wallet-compatibility.md) | How should Agora support agent-owned, smart-account, and delegated solver wallets? | Product, backend, chain, agent runtime |
-| 12 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
-| 13 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
-| 14 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
-| 15 | [Runtime Release Architecture](specs/runtime-release-architecture.md) | What is the locked runtime deploy, verification, bootstrap, and hosted-health contract? | Engineers, operators |
-| 16 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
-| 17 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
+| 9 | [Agent Submission Helper Spec](specs/agent-submission-helper.md) | What is the canonical local helper contract for autonomous solver submissions? | Engineers, agent authors, operators |
+| 10 | [Machine Contract Migration](specs/machine-contract-migration.md) | What is the ordered hard-cut implementation plan? | Engineers, operators |
+| 11 | [Authoring Observability Spec](specs/authoring-observability.md) | How should internal authoring conversation logs and debug timelines work? | Product, backend, operators |
+| 12 | [Solver Wallet Compatibility Spec](specs/solver-wallet-compatibility.md) | How should Agora support agent-owned, smart-account, and delegated solver wallets? | Product, backend, chain, agent runtime |
+| 13 | [Submission Privacy](submission-privacy.md) | How do sealed submissions and privacy boundaries work? | Engineers, operators |
+| 14 | [Protocol](protocol.md) | What are the on-chain rules? | Contract/settlement engineers |
+| 15 | [Data and Indexing](data-and-indexing.md) | Where does truth live? | Backend/indexer engineers |
+| 16 | [Runtime Release Architecture](specs/runtime-release-architecture.md) | What is the locked runtime deploy, verification, bootstrap, and hosted-health contract? | Engineers, operators |
+| 17 | [Operations](operations.md) | How do I run and monitor it? | Operators, DevOps |
+| 18 | [Deployment](deployment.md) | How do I deploy and cut over? | Operators, DevOps |
 
 ## Start Here
 
@@ -34,6 +35,7 @@ Documentation index and reading order for the Agora repository.
 - **Working on the new authoring flow?** Read [Authoring Session API Spec](specs/authoring-session-api.md).
 - **Working on what counts as a valid executable challenge?** Read [Authoring Validity And Execution](specs/authoring-validity-and-execution.md).
 - **Working on machine submission or status contracts?** Read [Submission API Spec](specs/submission-api.md).
+- **Working on autonomous solver submission helpers?** Read [Agent Submission Helper Spec](specs/agent-submission-helper.md).
 - **Working on the hard-cut implementation sequence?** Read [Machine Contract Migration](specs/machine-contract-migration.md).
 - **Working on runtime deploy ownership, release verification, bootstrap, or hosted health boundaries?** Read [Runtime Release Architecture](specs/runtime-release-architecture.md).
 - **Need to debug authoring conversations or Telegram/OpenClaw session failures?** Read [Authoring Observability Spec](specs/authoring-observability.md).
@@ -63,6 +65,7 @@ Documentation index and reading order for the Agora repository.
 | Locked authoring session API contract | [specs/authoring-session-api.md](specs/authoring-session-api.md) |
 | Locked authoring validity and execution model | [specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md) |
 | Locked submission machine contract | [specs/submission-api.md](specs/submission-api.md) |
+| Canonical autonomous solver helper contract | [specs/agent-submission-helper.md](specs/agent-submission-helper.md) |
 | Ordered contract migration plan | [specs/machine-contract-migration.md](specs/machine-contract-migration.md) |
 | Locked runtime deploy, verification, bootstrap, and hosted-health contract | [specs/runtime-release-architecture.md](specs/runtime-release-architecture.md) |
 | Internal authoring debug timeline and conversation logging | [specs/authoring-observability.md](specs/authoring-observability.md) |
@@ -90,6 +93,7 @@ Documentation index and reading order for the Agora repository.
 - **[specs/authoring-session-api.md](specs/authoring-session-api.md)** — Locked session-first authoring contract
 - **[specs/authoring-validity-and-execution.md](specs/authoring-validity-and-execution.md)** — Locked validity bar and execution-model redesign
 - **[specs/submission-api.md](specs/submission-api.md)** — Locked solver submission/status/finalize contract
+- **[specs/agent-submission-helper.md](specs/agent-submission-helper.md)** — Canonical local helper contract for autonomous solver submissions
 - **[specs/machine-contract-migration.md](specs/machine-contract-migration.md)** — Ordered hard-cut implementation plan
 - **[specs/runtime-release-architecture.md](specs/runtime-release-architecture.md)** — Locked runtime deploy ownership, verification, bootstrap, health, and ingress architecture
 - **[specs/authoring-observability.md](specs/authoring-observability.md)** — Internal authoring conversation logging and operator debug timeline spec

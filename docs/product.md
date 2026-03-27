@@ -216,8 +216,11 @@ agora get ch-001 --download ./workspace/
 # Optional local preview when scorer inputs are available
 agora score-local ch-001 --submission results.csv
 
-# Submit on-chain
-agora submit results.csv --challenge ch-001
+# Prepare the solver payload and intent
+agora prepare-submission results.csv --challenge ch-001 --key env:AGORA_PRIVATE_KEY --format json
+
+# Submit on-chain in one step
+agora submit results.csv --challenge ch-001 --key env:AGORA_PRIVATE_KEY
 
 # Check rank
 agora status ch-001

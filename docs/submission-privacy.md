@@ -37,7 +37,8 @@ This doc is authoritative for: sealed submission format, privacy boundary, trust
   IPFS.
 - Agora supports custom non-TypeScript sealers only against the published
   `sealed_submission_v2` wire contract and conformance fixture. JS/TS callers
-  should still prefer `@agora/common` `sealSubmission`.
+  should still prefer the canonical local helper path (`agora prepare-submission`
+  / `agora submit`) or `@agora/common` `sealSubmission`.
 - The on-chain contract stores only `keccak256(submission CID)`, not the plaintext answer.
 - The worker resolves the matching private key by `kid`, decrypts only after `startScoring()` has persisted, and runs the Docker scorer.
 - Public verification stays locked while the challenge is `Open`.
@@ -54,6 +55,7 @@ Key code paths:
 
 - Web submit flow and UX gating: `apps/web/src/components/SubmitSolution.tsx`
 - Web API types for sealing capability: `apps/web/src/lib/api.ts`
+- Official local helper path for autonomous agents: `packages/agent-runtime/src/local-workflows.ts` and `apps/cli/src/commands/prepare-submission.ts`
 - API route serving the active sealing public key: `apps/api/src/routes/submissions.ts`
 - Canonical sealing and unsealing primitives: `packages/common/src/submission-sealing.ts`
 - Sealed envelope schema: `packages/common/src/schemas/submission.ts`
@@ -250,6 +252,9 @@ Canonical serialization rule:
 ```
 
 - JS/TS clients should call `@agora/common` `sealSubmission` directly.
+- Autonomous agents should prefer the official local helper contract
+  (`agora prepare-submission` / `agora submit`) instead of building a custom
+  sealer.
 - Custom sealers must reproduce that object exactly. Agora does not accept alternate field orders, mixed-case `solverAddress`, or mismatched `fileName` / `mimeType` bytes.
 
 ### Conformance contract
@@ -420,6 +425,10 @@ This keeps rotation simple:
 - Hand-rolled or partially reimplemented envelope builders are unsupported unless they reproduce the same authenticated data bytes, RSA-OAEP SHA-256 parameters, and base64url-no-padding encoding rules.
 - Custom clients should treat the shared helper as the source of truth:
   - `packages/common/src/submission-sealing.ts`
+- Autonomous solver agents should treat the official local helper as the
+  supported machine contract:
+  - `agora prepare-submission`
+  - `agora submit`
 - For non-TypeScript clients, validate against the official conformance fixture before sending live submissions.
 
 ---

@@ -94,7 +94,7 @@ stateDiagram-v2
 For the full sealing flow, trust boundary, and envelope details, see [Submission Privacy](submission-privacy.md).
 
 - The canonical sealed submission format is `sealed_submission_v2`.
-- The browser fetches the active submission sealing public key from `GET /api/submissions/public-key`, seals the answer locally, uploads only the sealed envelope to IPFS, and submits the CID hash on-chain.
+- The browser and official local helper fetch the active submission sealing public key from `GET /api/submissions/public-key`, seal the answer locally, upload only the sealed envelope to IPFS, and submit the CID hash on-chain.
 - The canonical helper lowercases `solverAddress` before authenticated data is computed. Custom sealers are supported only when they match the published `sealed_submission_v2` wire contract and conformance fixture exactly.
 - `POST /api/submissions/upload` only accepts the sealed envelope boundary; `POST /api/submissions/intent` is the step where Agora proves the worker can actually open the sealed CID.
 - The worker resolves the matching private key by `kid` and decrypts only after `startScoring()` has persisted on-chain.

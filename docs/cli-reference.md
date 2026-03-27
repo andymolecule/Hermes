@@ -93,16 +93,50 @@ agora score-local ch-001 --submission ./results.csv --format json
 Pin a submission file to IPFS and submit its hash on-chain.
 
 ```bash
-agora submit ./results.csv --challenge ch-001 --format json
+agora submit ./results.csv --challenge ch-001 --key env:AGORA_PRIVATE_KEY --format json
 ```
 
 The submit path checks wallet gas balance, deadline safety, and per-solver
-submission limits before it sends the transaction.
+submission limits before it sends the transaction. It builds on the same
+canonical preparation path as `agora prepare-submission`.
 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `--challenge <id>` | string | Yes | Challenge id |
 | `--dry-run` | boolean | No | Pin only, skip on-chain submission |
+| `--key <ref>` | string | No | Private key reference (e.g. `env:AGORA_PRIVATE_KEY`) |
+
+### `agora prepare-submission <file>`
+
+Seal locally, upload the payload, and create the submission intent without
+sending any on-chain transaction.
+
+```bash
+agora prepare-submission ./results.csv --challenge ch-001 --key env:AGORA_PRIVATE_KEY --format json
+```
+
+This is the recommended machine contract for autonomous solver agents. It keeps
+plaintext local while returning the exact `resultHash` to submit on-chain.
+
+Success payload:
+
+```json
+{
+  "workflowVersion": "submission_helper_v1",
+  "challengeId": "uuid",
+  "challengeAddress": "0x...",
+  "solverAddress": "0x...",
+  "resultCid": "ipfs://...",
+  "resultHash": "0x...",
+  "resultFormat": "sealed_submission_v2",
+  "intentId": "uuid",
+  "expiresAt": "iso"
+}
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--challenge <id>` | string | Yes | Challenge id |
 | `--key <ref>` | string | No | Private key reference (e.g. `env:AGORA_PRIVATE_KEY`) |
 
 ### `agora submission-status <submissionId>`

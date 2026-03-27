@@ -249,6 +249,15 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
           allow_extra: false,
         },
       },
+      submission_helper: {
+        mode: "official_helper_required",
+        workflow_version: "submission_helper_v1",
+        prepare_command:
+          "agora prepare-submission ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json",
+        submit_command:
+          "agora submit ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json",
+        note: "Autonomous agents should call the official local helper instead of implementing submission transport or submission crypto directly. Raw HTTP submission routes and custom sealers are advanced interop only.",
+      },
     },
     artifacts: {
       public: [
@@ -279,6 +288,10 @@ const detailResponse = agentChallengeDetailResponseSchema.parse({
   },
 });
 assert.equal(detailResponse.data.artifacts.spec_cid, null);
+assert.equal(
+  detailResponse.data.challenge.submission_helper?.workflow_version,
+  "submission_helper_v1",
+);
 
 const challengeRegistration = challengeRegistrationResponseSchema.parse({
   data: {

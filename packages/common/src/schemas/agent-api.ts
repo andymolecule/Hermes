@@ -29,6 +29,9 @@ const challengeStatusSchema = z.enum([
   CHALLENGE_STATUS.disputed,
   CHALLENGE_STATUS.cancelled,
 ]);
+export const SUBMISSION_HELPER_MODE = "official_helper_required" as const;
+export const SUBMISSION_HELPER_WORKFLOW_VERSION =
+  "submission_helper_v1" as const;
 const challengeTypeSchema = z.enum(CHALLENGE_TYPES);
 const rewardDistributionSchema = z.enum([
   "winner_take_all",
@@ -171,6 +174,16 @@ export const challengeLeaderboardEntrySchema = z.object({
   has_public_verification: z.boolean().optional(),
 });
 
+export const submissionHelperSchema = z
+  .object({
+    mode: z.literal(SUBMISSION_HELPER_MODE),
+    workflow_version: z.literal(SUBMISSION_HELPER_WORKFLOW_VERSION),
+    prepare_command: z.string().min(1),
+    submit_command: z.string().min(1),
+    note: z.string().min(1),
+  })
+  .strict();
+
 export const challengeDetailSchema = challengeSummarySchema
   .extend({
     poster_address: addressSchema.optional(),
@@ -190,6 +203,7 @@ export const challengeDetailSchema = challengeSummarySchema
     max_submissions_total: positiveIntegerSchema.nullable().optional(),
     max_submissions_per_solver: positiveIntegerSchema.nullable().optional(),
     submission_contract: submissionContractSchema.nullable().optional(),
+    submission_helper: submissionHelperSchema.optional(),
     submission_privacy_mode: submissionPrivacyModeSchema,
   })
   .strict();

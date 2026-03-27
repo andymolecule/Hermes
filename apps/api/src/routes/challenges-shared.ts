@@ -20,6 +20,7 @@ import {
   listSubmissionsForChallenge,
 } from "@agora/db";
 import type { z } from "zod";
+import { buildSubmissionHelperGuidance } from "../lib/submission-helper-guidance.js";
 
 type SubmissionRow = Awaited<
   ReturnType<typeof listSubmissionsForChallenge>
@@ -294,6 +295,7 @@ export function toChallengeDetail(row: ChallengeRow | ChallengeListRow) {
         ? toOptionalInteger(row.max_submissions_per_solver)
         : null,
     submission_contract: runtimeConfig?.submissionContract ?? null,
+    submission_helper: buildSubmissionHelperGuidance(),
     submission_privacy_mode: runtimeConfig?.submissionPrivacyMode ?? "sealed",
   };
 }

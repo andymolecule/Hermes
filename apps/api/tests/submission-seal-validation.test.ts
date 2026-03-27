@@ -58,6 +58,15 @@ test("validateSealedSubmissionForIntent surfaces worker validation diagnostics",
           public_key_fingerprint: "0xabc",
           derived_public_key_fingerprint: "0xabc",
         },
+        submission_helper: {
+          mode: "official_helper_required",
+          workflow_version: "submission_helper_v1",
+          prepare_command:
+            "agora prepare-submission ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json",
+          submit_command:
+            "agora submit ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json",
+          note: "Autonomous agents should call the official local helper instead of implementing submission transport or submission crypto directly. Raw HTTP submission routes and custom sealers are advanced interop only.",
+        },
       });
       return true;
     },

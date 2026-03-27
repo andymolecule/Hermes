@@ -17,6 +17,7 @@ import {
   AGORA_ERROR_CODES,
   AgoraError,
   type ResolvedChallengeExecution,
+  SUBMISSION_HELPER_WORKFLOW_VERSION,
   SUBMISSION_LIMITS,
   type SubmissionContractOutput,
   type SubmissionPrivacyMode,
@@ -68,6 +69,8 @@ import {
   resolveSignerAddress,
   waitForSuccessfulWrite,
 } from "./solver-signer.js";
+
+export { SUBMISSION_HELPER_WORKFLOW_VERSION } from "@agora/common";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45_000;
@@ -179,6 +182,34 @@ async function cleanupFailedSubmissionArtifact(input: {
   }
 }
 
+async function assertSolverHasSubmissionCapacity(input: {
+  challengeRef: string;
+  solverAddress: `0x${string}`;
+  apiUrl?: string;
+}) {
+  const solverStatus = await getChallengeSolverStatusFromApi(
+    input.challengeRef,
+    input.solverAddress,
+    input.apiUrl,
+  );
+  if (!solverStatus.data.has_reached_submission_limit) {
+    return;
+  }
+
+  const limit = solverStatus.data.max_submissions_per_solver ?? 0;
+  throw new AgoraError(
+    `Solver submission limit reached (${solverStatus.data.submissions_used}/${limit}).`,
+    {
+      code: AGORA_ERROR_CODES.submissionLimitReached,
+      nextAction: "Wait for scoring or use a different solver wallet.",
+      details: {
+        limit,
+        submissionsUsed: solverStatus.data.submissions_used,
+      },
+    },
+  );
+}
+
 export type SubmissionRegistrationStatus = "confirmed" | "confirmation_pending";
 
 export interface SubmitSolutionDryRunResult {
@@ -186,6 +217,18 @@ export interface SubmitSolutionDryRunResult {
   challengeAddress: `0x${string}`;
   submissionCid: string;
   dryRun: true;
+}
+
+export interface PrepareSubmissionResult {
+  workflowVersion: typeof SUBMISSION_HELPER_WORKFLOW_VERSION;
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+  solverAddress: `0x${string}`;
+  resultCid: string;
+  resultHash: `0x${string}`;
+  resultFormat: SubmissionResultFormat;
+  intentId: string;
+  expiresAt: string;
 }
 
 export interface SubmitSolutionResult {
@@ -205,6 +248,15 @@ interface SubmissionUploadPlan {
   fileName: string;
   contentType: string;
   resultFormat: SubmissionResultFormat;
+}
+
+interface PreparedSubmissionInternalResult {
+  challengeId: string | null;
+  challengeAddress: `0x${string}`;
+  solverAddress: `0x${string}`;
+  resultCid: string;
+  resultFormat: SubmissionResultFormat;
+  submissionIntent: Awaited<ReturnType<typeof createSubmissionIntentWithApi>>;
 }
 
 async function resolveChallengeTargetFromApi(input: {
@@ -304,13 +356,15 @@ async function buildSubmissionUploadPlan(input: {
   };
 }
 
-export async function submitSolution(input: {
+async function prepareSubmissionInternal(input: {
   challengeId: string;
   filePath: string;
   signer: SolverSigner;
   apiUrl?: string;
-  dryRun?: boolean;
-}): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
+  requireIntent: boolean;
+  requireChainAffordability: boolean;
+  enforceDeadlineWithChainClock: boolean;
+}) {
   const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
   const { challengeId, challengeAddress, deadline, submissionPrivacyMode } =
     await resolveSubmitTarget({
@@ -344,31 +398,21 @@ export async function submitSolution(input: {
     apiUrl,
   });
 
-  if (!input.dryRun) {
-    await assertSubmitDeadlineSafetyWindow(deadline);
-    const solverStatus = await getChallengeSolverStatusFromApi(
-      challengeId ?? challengeAddress,
-      solverAddress as `0x${string}`,
-      apiUrl,
-    );
-    if (solverStatus.data.has_reached_submission_limit) {
-      const limit = solverStatus.data.max_submissions_per_solver ?? 0;
-      throw new AgoraError(
-        `Solver submission limit reached (${solverStatus.data.submissions_used}/${limit}).`,
-        {
-          code: AGORA_ERROR_CODES.submissionLimitReached,
-          nextAction: "Wait for scoring or use a different solver wallet.",
-          details: {
-            limit,
-            submissionsUsed: solverStatus.data.submissions_used,
-          },
-        },
-      );
+  if (input.requireIntent) {
+    if (input.enforceDeadlineWithChainClock) {
+      await assertSubmitDeadlineSafetyWindow(deadline);
     }
-    await assertSubmitChallengeResultAffordable({
-      accountAddress: solverAddress as `0x${string}`,
-      challengeAddress,
+    await assertSolverHasSubmissionCapacity({
+      challengeRef: challengeId ?? challengeAddress,
+      solverAddress: solverAddress as `0x${string}`,
+      apiUrl,
     });
+    if (input.requireChainAffordability) {
+      await assertSubmitChallengeResultAffordable({
+        accountAddress: solverAddress as `0x${string}`,
+        challengeAddress,
+      });
+    }
   }
 
   const challengeTarget = toChallengeTargetPayload({
@@ -385,12 +429,12 @@ export async function submitSolution(input: {
     apiUrl,
   );
 
-  if (input.dryRun) {
+  if (!input.requireIntent) {
     return {
       challengeId,
       challengeAddress,
       submissionCid: resultCid,
-      dryRun: true,
+      dryRun: true as const,
     };
   }
 
@@ -414,6 +458,85 @@ export async function submitSolution(input: {
     });
     throw error;
   }
+
+  return {
+    challengeId,
+    challengeAddress,
+    solverAddress: solverAddress as `0x${string}`,
+    resultCid,
+    resultFormat: uploadPlan.resultFormat,
+    submissionIntent,
+  } satisfies PreparedSubmissionInternalResult;
+}
+
+export async function prepareSubmission(input: {
+  challengeId: string;
+  filePath: string;
+  signer: SolverSigner;
+  apiUrl?: string;
+}): Promise<PrepareSubmissionResult> {
+  const prepared = (await prepareSubmissionInternal({
+    challengeId: input.challengeId,
+    filePath: input.filePath,
+    signer: input.signer,
+    apiUrl: input.apiUrl,
+    requireIntent: true,
+    requireChainAffordability: false,
+    enforceDeadlineWithChainClock: false,
+  })) as PreparedSubmissionInternalResult;
+
+  return {
+    workflowVersion: SUBMISSION_HELPER_WORKFLOW_VERSION,
+    challengeId: prepared.challengeId,
+    challengeAddress: prepared.challengeAddress,
+    solverAddress: prepared.solverAddress,
+    resultCid: prepared.resultCid,
+    resultHash: prepared.submissionIntent.resultHash as `0x${string}`,
+    resultFormat: prepared.resultFormat,
+    intentId: prepared.submissionIntent.intentId,
+    expiresAt: prepared.submissionIntent.expiresAt,
+  };
+}
+
+export async function submitSolution(input: {
+  challengeId: string;
+  filePath: string;
+  signer: SolverSigner;
+  apiUrl?: string;
+  dryRun?: boolean;
+}): Promise<SubmitSolutionDryRunResult | SubmitSolutionResult> {
+  if (input.dryRun) {
+    return (await prepareSubmissionInternal({
+      challengeId: input.challengeId,
+      filePath: input.filePath,
+      signer: input.signer,
+      apiUrl: input.apiUrl,
+      requireIntent: false,
+      requireChainAffordability: false,
+      enforceDeadlineWithChainClock: false,
+    })) as SubmitSolutionDryRunResult;
+  }
+
+  const prepared = (await prepareSubmissionInternal({
+    challengeId: input.challengeId,
+    filePath: input.filePath,
+    signer: input.signer,
+    apiUrl: input.apiUrl,
+    requireIntent: true,
+    requireChainAffordability: true,
+    enforceDeadlineWithChainClock: true,
+  })) as PreparedSubmissionInternalResult;
+  const apiUrl = input.apiUrl ?? readApiClientRuntimeConfig().apiUrl;
+  const challengeId = prepared.challengeId;
+  const challengeAddress = prepared.challengeAddress;
+  const solverAddress = prepared.solverAddress;
+  const resultCid = prepared.resultCid;
+  const resultFormat = prepared.resultFormat;
+  const submissionIntent = prepared.submissionIntent;
+  const challengeTarget = toChallengeTargetPayload({
+    challengeId,
+    challengeAddress,
+  });
 
   let txHash: `0x${string}`;
   try {
@@ -470,7 +593,7 @@ export async function submitSolution(input: {
         ...challengeTarget,
         intentId: submissionIntent.intentId,
         resultCid,
-        resultFormat: uploadPlan.resultFormat,
+        resultFormat,
         txHash,
       },
       apiUrl,
