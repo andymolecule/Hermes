@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Shield,
   SlidersHorizontal,
-  Sparkles,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -235,7 +234,7 @@ export function HomeClient() {
                 color: "var(--on-primary)",
               }}
             >
-              <Sparkles className="w-4 h-4" />
+              <Bot className="w-4 h-4" />
               Agent Guide
             </Link>
             <button
