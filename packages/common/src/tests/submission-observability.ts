@@ -51,11 +51,33 @@ const telemetryEvent = submissionEventInputSchema.parse({
       resultCid: "ipfs://bafy-result",
       resultFormat: "sealed_submission_v2",
     },
+    error: {
+      status: 400,
+      code: "SEALED_SUBMISSION_INVALID",
+      message: "Agora could not open the sealed submission payload.",
+      details: {
+        sealed_submission_validation: {
+          validation_code: "decrypt_failed",
+          key_id: "submission-seal-test",
+        },
+      },
+    },
   },
 });
 
 assert.equal(telemetryEvent.trace_id, "trace-123");
 assert.equal(telemetryEvent.payload?.result_format, "sealed_submission_v2");
+const validationDetails = telemetryEvent.payload?.error?.details as
+  | {
+      sealed_submission_validation?: {
+        validation_code?: string;
+      };
+    }
+  | undefined;
+assert.equal(
+  validationDetails?.sealed_submission_validation?.validation_code,
+  "decrypt_failed",
+);
 
 const query = submissionEventListQuerySchema.parse({
   trace_id: "trace-123",

@@ -1321,6 +1321,7 @@ curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/leaderboard"`}
 curl "${API_BASE_URL}/api/submissions/public-key"
 
 # 2. upload the sealed or plain payload
+# sealed-submission.json must be produced by @agora/common sealSubmission or agora submit
 # required header: x-agora-result-format: sealed_submission_v2 | plain_v0
 curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
   -H "x-agora-result-format: sealed_submission_v2" \\
@@ -1364,7 +1365,10 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
               The direct submission upload route also requires{" "}
               <code>x-agora-result-format</code> so Agora can validate whether
               the body is <code>sealed_submission_v2</code> or{" "}
-              <code>plain_v0</code>.
+              <code>plain_v0</code>. The curl sequence does not create a valid{" "}
+              <code>sealed_submission_v2</code> envelope by itself. Use{" "}
+              <code>@agora/common</code> <code>sealSubmission</code> or{" "}
+              <code>agora submit</code> to produce the uploaded JSON first.
             </Callout>
           </section>
 

@@ -16,11 +16,26 @@ export class SubmissionSealValidationClientError extends Error {
     message: string,
     readonly options?: {
       retriable?: boolean;
+      extras?: Record<string, unknown>;
     },
   ) {
     super(message);
     this.name = "SubmissionSealValidationClientError";
   }
+}
+
+function buildWorkerValidationExtras(
+  failure: typeof sealedSubmissionValidationFailureSchema._output,
+) {
+  return {
+    sealed_submission_validation: {
+      validation_code: failure.code,
+      worker_message: failure.message,
+      key_id: failure.keyId,
+      public_key_fingerprint: failure.publicKeyFingerprint,
+      derived_public_key_fingerprint: failure.derivedPublicKeyFingerprint,
+    },
+  };
 }
 
 export function hasSubmissionSealValidationBridgeConfig(input?: {
@@ -42,26 +57,38 @@ function mapWorkerValidationFailure(
         503,
         "SUBMISSION_VALIDATION_UNAVAILABLE",
         "Agora sent an invalid worker validation request. Next step: inspect the current API deployment, then retry.",
-        { retriable: true },
+        {
+          retriable: true,
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     case "challenge_id_mismatch":
       return new SubmissionSealValidationClientError(
         409,
         "SEALED_SUBMISSION_CHALLENGE_MISMATCH",
         "Sealed submission challengeId does not match the requested challenge. Next step: reseal the payload for the correct challengeId, re-upload it, and retry.",
+        {
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     case "solver_address_mismatch":
       return new SubmissionSealValidationClientError(
         409,
         "SEALED_SUBMISSION_SOLVER_MISMATCH",
         "Sealed submission solverAddress does not match the submitting wallet. Next step: reseal the payload with the same solver address you use for the intent and retry.",
+        {
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     case "ipfs_fetch_failed":
       return new SubmissionSealValidationClientError(
         503,
         "SUBMISSION_ARTIFACT_UNAVAILABLE",
         "Agora could not read the sealed submission artifact from IPFS. Next step: retry after the CID is reachable, or re-upload the artifact and retry.",
-        { retriable: true },
+        {
+          retriable: true,
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     case "missing_decryption_key":
     case "submission_sealing_unavailable":
@@ -69,14 +96,20 @@ function mapWorkerValidationFailure(
         503,
         "SUBMISSION_VALIDATION_UNAVAILABLE",
         "Agora cannot validate sealed submissions right now. Next step: retry after the worker sealing keys are restored.",
-        { retriable: true },
+        {
+          retriable: true,
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     case "invalid_envelope_schema":
     case "decrypt_failed":
       return new SubmissionSealValidationClientError(
         400,
         "SEALED_SUBMISSION_INVALID",
-        "Agora could not open the sealed submission payload. Next step: fetch /api/submissions/public-key again, reseal the payload with the official helper, re-upload it, and retry.",
+        "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper. Next step: fetch /api/submissions/public-key again, reseal with @agora/common sealSubmission or agora submit, re-upload it, and retry.",
+        {
+          extras: buildWorkerValidationExtras(failure),
+        },
       );
     default: {
       const unknownCode: never = failure.code;

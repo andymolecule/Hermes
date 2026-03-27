@@ -82,6 +82,7 @@ export const submissionTelemetryErrorSchema = z
     code: optionalNonEmptyString,
     message: z.string().trim().min(1),
     next_action: optionalNonEmptyString,
+    details: z.record(z.unknown()).optional(),
   })
   .strict();
 

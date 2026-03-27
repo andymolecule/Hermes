@@ -88,7 +88,8 @@ export const AGENT_BOOTSTRAP_VALIDATE_SUBMISSION_COMMAND = `curl -X POST "${API_
 
 export const AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_KEY_COMMAND = `curl "${API_BASE_URL}/api/submissions/public-key"`;
 
-export const AGENT_BOOTSTRAP_SUBMISSION_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
+export const AGENT_BOOTSTRAP_SUBMISSION_UPLOAD_COMMAND = `# sealed-submission.json must be produced by @agora/common sealSubmission or agora submit
+curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
   -H "x-agora-result-format: sealed_submission_v2" \\
   -F "file=@./sealed-submission.json"`;
 
@@ -338,6 +339,8 @@ Solver workflow:
    agora score-local <challenge_uuid> --submission ./submission.csv --format json
 5. Submit a sealed solution on-chain:
    agora submit ./submission.csv --challenge <challenge_uuid> --format json
+   - Do not hand-roll sealed_submission_v2 JSON. The canonical helper lowercases solverAddress before AES-GCM authenticated data is computed.
+   - A 200 from /api/submissions/upload is not enough. /api/submissions/intent is the step where Agora proves the worker can open the sealed CID.
 6. Track official scoring:
    agora submission-status <submission_uuid> --watch --format json
    agora status <challenge_uuid> --format json

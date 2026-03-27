@@ -83,6 +83,10 @@ This model is designed to prevent copy/paste leakage during the live competition
   same rule again at the submission upload and registration boundary.
 - `/api/submissions/upload` requires explicit `x-agora-result-format`.
 - `sealed_submission_v2` uploads must contain a valid sealed envelope.
+- A successful sealed upload only proves the payload matches Agora's upload-side
+  envelope boundary. It does not prove the worker can decrypt the payload yet.
+- The uploaded envelope JSON must already be canonical for normalized fields.
+  Today that means `solverAddress` must be lowercase in the raw uploaded JSON.
 - `plain_v0` uploads are allowed only for challenges that explicitly opt into
   `public` mode.
 - `/api/submissions/intent` and `/api/submissions` require explicit
@@ -217,6 +221,10 @@ The following visible fields are included in AES-GCM additional authenticated da
 
 That means these fields are not secret, but they cannot be modified without causing decryption failure.
 
+Canonical serialization rule:
+
+- The uploaded envelope JSON must store `solverAddress` in lowercase. Agora rejects mixed-case `solverAddress` values at upload because the canonical authenticated-data contract normalizes that field before encryption.
+
 ### Encrypted data
 
 Only the answer payload bytes are encrypted.
@@ -261,10 +269,11 @@ This is why the system should be described as public-hidden answer privacy durin
 6. The browser seals the submission locally as `sealed_submission_v2`.
 7. The browser uploads only `sealed-submission.json` to IPFS.
 8. During `POST /api/submissions/intent`, the API asks the worker to open the uploaded sealed CID and verify `challengeId` plus `solverAddress` before creating any durable intent.
-9. The browser receives the canonical `resultHash` only after that worker-backed validation succeeds.
-10. The browser submits that `resultHash` on-chain.
-11. The browser confirms the submission with the API.
-12. Scoring requires the on-chain submission and the pre-registered `submission_intent` to be linked. If confirmation or indexing does not establish that link, the submission must be investigated instead of being treated as scoreable automatically later.
+9. That same worker open/decrypt path is reused later by scoring after the deadline. There is no separate acceptance-only decrypt implementation.
+10. The browser receives the canonical `resultHash` only after that worker-backed validation succeeds.
+11. The browser submits that `resultHash` on-chain.
+12. The browser confirms the submission with the API.
+13. Scoring requires the on-chain submission and the pre-registered `submission_intent` to be linked. If confirmation or indexing does not establish that link, the submission must be investigated instead of being treated as scoreable automatically later.
 
 Important consequence:
 

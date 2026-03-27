@@ -244,7 +244,10 @@ export async function validateSubmissionIntentPayloadBoundary(
         error.status as ContentfulStatusCode,
         error.code,
         error.message,
-        { retriable: error.options?.retriable },
+        {
+          retriable: error.options?.retriable,
+          extras: error.options?.extras,
+        },
       );
     }
     throw error;

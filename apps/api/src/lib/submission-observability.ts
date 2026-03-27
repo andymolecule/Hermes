@@ -57,6 +57,7 @@ export function logSubmissionEvents(
         code: event.code,
         txHash: event.refs.tx_hash,
         scoreTxHash: event.refs.score_tx_hash,
+        errorDetails: event.payload?.error?.details,
       },
       event.summary,
     );

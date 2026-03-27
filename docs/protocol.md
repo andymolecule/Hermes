@@ -95,6 +95,8 @@ For the full sealing flow, trust boundary, and envelope details, see [Submission
 
 - The canonical sealed submission format is `sealed_submission_v2`.
 - The browser fetches the active submission sealing public key from `GET /api/submissions/public-key`, seals the answer locally, uploads only the sealed envelope to IPFS, and submits the CID hash on-chain.
+- The canonical helper lowercases `solverAddress` before authenticated data is computed. Hand-rolled sealers must match that contract exactly.
+- `POST /api/submissions/upload` only accepts the sealed envelope boundary; `POST /api/submissions/intent` is the step where Agora proves the worker can actually open the sealed CID.
 - The worker resolves the matching private key by `kid` and decrypts only after `startScoring()` has persisted on-chain.
 - Public verification remains locked while the challenge is `Open`. Once scoring begins, proof bundles and replay artifacts may be published for reproducibility.
 - Privacy guarantee: answer bytes are hidden from the public and other solvers while the challenge is open. Wallet address, transaction metadata, and any replay artifact published after scoring are not private.

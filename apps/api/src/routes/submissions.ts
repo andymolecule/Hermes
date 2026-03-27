@@ -132,12 +132,14 @@ function toSubmissionTelemetryError(input: {
   code: string;
   message: string;
   nextAction?: string | null;
+  details?: Record<string, unknown>;
 }) {
   return {
     status: input.status,
     code: input.code,
     message: input.message,
     next_action: input.nextAction ?? null,
+    details: input.details,
   };
 }
 
@@ -230,6 +232,33 @@ export function validateSealedSubmissionUpload(bytes: Uint8Array) {
   } catch {
     throw new Error(
       "Submission upload must be a UTF-8 sealed_submission_v2 JSON envelope.",
+    );
+  }
+
+  let rawEnvelope: unknown;
+  try {
+    rawEnvelope = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(
+      "Submission upload must be a valid sealed_submission_v2 JSON envelope.",
+    );
+  }
+
+  const rawEnvelopeObject =
+    rawEnvelope && typeof rawEnvelope === "object"
+      ? (rawEnvelope as Record<string, unknown>)
+      : null;
+  const rawSolverAddress =
+    rawEnvelopeObject && typeof rawEnvelopeObject.solverAddress === "string"
+      ? rawEnvelopeObject.solverAddress
+      : null;
+
+  if (
+    rawSolverAddress &&
+    rawSolverAddress !== rawSolverAddress.toLowerCase()
+  ) {
+    throw new Error(
+      "sealed_submission_v2 solverAddress must be lowercase in the uploaded envelope. Next step: reseal the payload with Agora's official helper and retry.",
     );
   }
 
@@ -731,6 +760,7 @@ router.post(
               status: error.status,
               code: error.code,
               message: error.message,
+              details: error.options?.extras,
             })
           : toSubmissionTelemetryError({
               status: 500,
@@ -1174,6 +1204,7 @@ router.post(
               status: error.status,
               code: error.code,
               message: error.message,
+              details: error.options?.extras,
             })
           : toSubmissionTelemetryError({
               status: 500,
@@ -1352,6 +1383,7 @@ router.post("/", requireWriteQuota("/api/submissions"), async (c) => {
             status: error.status,
             code: error.code,
             message: error.message,
+            details: error.options?.extras,
           })
         : toSubmissionTelemetryError({
             status: 500,

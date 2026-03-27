@@ -212,6 +212,21 @@ Uploads the official solver payload:
 - sealed envelope in `sealed` mode
 - explicit public payload in `public` mode
 
+Upload acceptance contract:
+
+- `sealed_submission_v2` upload success only proves the payload is a UTF-8 JSON
+  envelope with the canonical raw boundary fields Agora can validate at upload
+  time.
+- Upload success does not prove the worker can decrypt the payload. That proof
+  happens at `POST /api/submissions/intent`.
+- The uploaded raw JSON must already be canonical for any normalized fields.
+  Today that means `solverAddress` must be lowercase in the uploaded envelope,
+  because the canonical helper lowercases it before AES-GCM authenticated data
+  is computed.
+- JS/TS clients should treat `@agora/common`
+  `packages/common/src/submission-sealing.ts` as the only supported sealing
+  source of truth. `agora submit` already uses that path.
+
 Success:
 
 ```json
@@ -245,8 +260,30 @@ For `sealed_submission_v2`, intent creation has an extra invariant:
   uploaded CID, parse the envelope, decrypt it with the configured private key,
   and confirm that `challengeId` plus `solverAddress` match the intent body
 
+Intent acceptance contract:
+
+- A `200` from `POST /api/submissions/intent` is the first point where Agora
+  has proven the worker can open the sealed CID with the active private key.
+- `SEALED_SUBMISSION_INVALID` means the worker could not open the envelope with
+  the canonical `sealed_submission_v2` contract. Refetching the public key is
+  not sufficient when the caller is reusing the same custom sealing logic.
+- The worker validation path at intent time and the scoring path after deadline
+  must share the same decrypt/open implementation. Agora must not maintain a
+  separate acceptance-only decrypt contract.
+
 If that worker-backed validation fails, Agora must reject the intent instead of
 allowing the failure to surface only after the challenge deadline.
+
+Diagnostic contract:
+
+- On worker-backed validation failures, the API error body may include
+  `error.details.sealed_submission_validation`.
+- That object is for caller and operator diagnostics and includes the worker
+  validation subcode plus safe key context such as `key_id` and public-key
+  fingerprints.
+- Callers must treat `error.code` as the stable contract and use
+  `error.details.sealed_submission_validation.validation_code` as a debugging
+  hint, not a replacement status surface.
 
 Success:
 

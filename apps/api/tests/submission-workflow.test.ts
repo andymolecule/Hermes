@@ -239,7 +239,15 @@ test("validateSubmissionIntentPayloadBoundary maps worker validation failures in
           throw new SubmissionSealValidationClientError(
             400,
             "SEALED_SUBMISSION_INVALID",
-            "Agora could not open the sealed submission payload. Next step: fetch /api/submissions/public-key again, reseal the payload with the official helper, re-upload it, and retry.",
+            "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper. Next step: fetch /api/submissions/public-key again, reseal with @agora/common sealSubmission or agora submit, re-upload it, and retry.",
+            {
+              extras: {
+                sealed_submission_validation: {
+                  validation_code: "decrypt_failed",
+                  key_id: "submission-seal-test",
+                },
+              },
+            },
           );
         },
       },
@@ -248,6 +256,17 @@ test("validateSubmissionIntentPayloadBoundary maps worker validation failures in
       assert.ok(error instanceof SubmissionWorkflowError);
       assert.equal(error.status, 400);
       assert.equal(error.code, "SEALED_SUBMISSION_INVALID");
+      const validationExtras = error.options?.extras as
+        | {
+            sealed_submission_validation?: {
+              validation_code?: string;
+            };
+          }
+        | undefined;
+      assert.equal(
+        validationExtras?.sealed_submission_validation?.validation_code,
+        "decrypt_failed",
+      );
       return true;
     },
   );

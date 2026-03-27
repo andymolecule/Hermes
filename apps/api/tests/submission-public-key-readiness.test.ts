@@ -197,3 +197,24 @@ test("sealed upload validator rejects plaintext payloads", () => {
     validateSealedSubmissionUpload(bytes);
   }, /sealed_submission_v2|JSON envelope|Unexpected token/i);
 });
+
+test("sealed upload validator rejects mixed-case solver addresses", () => {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({
+      version: "sealed_submission_v2",
+      alg: "aes-256-gcm+rsa-oaep-256",
+      kid: "submission-seal-test",
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      solverAddress: "0x00000000000000000000000000000000000000Aa",
+      fileName: "submission.csv",
+      mimeType: "text/csv",
+      iv: "aGVsbG8",
+      wrappedKey: "d3JhcHBlZC1rZXk",
+      ciphertext: "Y2lwaGVydGV4dA",
+    }),
+  );
+
+  assert.throws(() => {
+    validateSealedSubmissionUpload(bytes);
+  }, /solverAddress must be lowercase/i);
+});

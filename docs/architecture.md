@@ -258,8 +258,10 @@ sequenceDiagram
 Current privacy boundary:
 - The browser uploads only the sealed envelope while the challenge is open. Plaintext answer bytes are not uploaded directly.
 - The active public key is served by `GET /api/submissions/public-key`; the worker must hold the matching private key for that `kid`, and the API now proves the worker can open uploaded sealed CIDs before creating submission intents.
+- `POST /api/submissions/upload` is only a shape-plus-canonical-boundary check for sealed envelopes. Decryptability is not proven until `POST /api/submissions/intent`.
 - Submission metadata is pre-registered as a `submission_intent` before the on-chain submit. That intent remains the strict prerequisite for a scoreable submission, but the reconciliation path is no longer limited to the explicit API confirmation call: the indexer can also recover the projected submission directly from the reserved intent when the on-chain `solver` + `result_hash` match. Unmatched on-chain submissions still must be investigated instead of reconciled later.
 - `sealed_submission_v2` authenticates `challengeId`, `solverAddress`, `fileName`, and `mimeType` as AES-GCM additional data, so those fields cannot be tampered with without breaking decryption.
+- The canonical helper lowercases `solverAddress` before authenticated data is computed. Mixed-case raw `solverAddress` values in uploaded envelopes are therefore non-canonical and must be rejected.
 - This is anti-copy privacy, not full metadata opacity. Wallet address and transaction remain on-chain. After scoring begins, replay artifacts may be published for public verification.
 - Official scorer code and images should stay public for reproducibility, but hidden evaluation material belongs in mounted artifacts or evaluation bundles, not inside the image itself.
 

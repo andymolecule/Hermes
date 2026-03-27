@@ -180,6 +180,7 @@ Key handling rules:
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any previous keys whose still-pending sealed submissions need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
 - `GET /api/submissions/public-key` returns the active public key only when the worker validation bridge is configured too. Sealed submission validity is now enforced at submission time as well as scoring time.
+- A `200` from `POST /api/submissions/upload` does not prove a sealed submission is decryptable. Treat `POST /api/submissions/intent` as the decryptability gate.
 - Set `AGORA_WORKER_RUNTIME_ID` when you intentionally run multiple scoring workers on the same host. Otherwise the worker derives a stable host-based runtime id automatically.
 
 Verification checklist:
@@ -204,6 +205,16 @@ Expected results:
 - Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` plus `publicKeyFingerprint` whenever sealing and the worker validation bridge are configured successfully.
 - `/internal/sealed-submissions/healthz` returns the worker `keyId`, `publicKeyFingerprint`, and `derivedPublicKeyFingerprint`; both fingerprints must match the API `publicKeyFingerprint`.
+
+When `SEALED_SUBMISSION_INVALID` appears at intent time:
+
+- First prove whether the platform is healthy by submitting once through `agora submit` or another caller that uses `@agora/common` `sealSubmission`.
+- If the canonical path succeeds, treat the failing caller as a non-canonical sealer, not a key-drift incident.
+- Check the raw uploaded envelope for canonical boundary violations before deeper crypto debugging. The most common one is a mixed-case `solverAddress` in the uploaded JSON.
+- Do not keep retrying with the same custom sealer after refetching `/api/submissions/public-key`; that only helps when the key actually rotated.
+- Inspect `submission_events.payload.error.details.sealed_submission_validation`
+  for the worker subcode and safe key context. That field mirrors the
+  `error.details.sealed_submission_validation` object returned by the API.
 
 Existing testnet DBs:
 

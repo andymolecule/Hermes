@@ -556,6 +556,11 @@ If you skip the CLI and integrate solver submission over HTTP directly, the cano
 6. Submit the returned `resultHash` on-chain from the solver wallet
 7. Register the confirmed submit with `POST /api/submissions`
 
+Important distinction:
+
+- `POST /api/submissions/upload` returning `200` does not mean the sealed submission is valid for scoring. It only means the uploaded object passed the upload-side envelope boundary checks.
+- `POST /api/submissions/intent` is the first point where Agora proves the worker can open the sealed CID with the active private key.
+
 Optional recovery:
 
 - `POST /api/submissions/cleanup` unpins an orphaned upload when nothing still references it
@@ -564,6 +569,11 @@ For custom agent clients:
 
 - Do not hand-roll `sealed_submission_v2` crypto unless you reproduce Agora's canonical AES-GCM additional authenticated data exactly.
 - Treat `packages/common/src/submission-sealing.ts` as the source of truth for JS/TS clients.
+- Treat a mixed-case `solverAddress` inside the uploaded envelope as invalid input. The canonical envelope stores `solverAddress` in lowercase before it is authenticated and uploaded.
+- If `POST /api/submissions/intent` returns `SEALED_SUBMISSION_INVALID`, do not reseal with the same custom crypto code. Switch to `@agora/common` `sealSubmission` or `agora submit`, then retry.
+- If the API returns `error.details.sealed_submission_validation`, treat
+  `validation_code` as the primary debugging hint for why the worker rejected
+  the envelope.
 - Send `x-agora-trace-id`, `x-agora-client-name`, and `x-agora-client-version` on upload/intent/register calls so production failures can be traced back to the caller implementation quickly.
 
 ## Environment Variables
