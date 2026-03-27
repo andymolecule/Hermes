@@ -269,7 +269,7 @@ duplicate publish logic, and hardcoded template assumptions.
 - `/api/authoring/sessions/*` as the only public authoring route family
 - one canonical session shape and the locked state machine
 - semantic-only public session payloads
-- one wallet-funded publish flow shared by web and agent callers
+- one wallet-funded publish flow for direct agent callers
 - agent-runtime preflights as advisory helpers, not as the source of truth
 
 ### Delete
@@ -365,7 +365,8 @@ Primary files:
 
 Changes:
 - keep `POST /api/authoring/sessions/:id/publish` as a pure prepare step that
-  binds the poster wallet and returns canonical wallet tx inputs
+  binds the poster wallet, refreshes the prepared-publish TTL, and returns the
+  canonical executable wallet publish bundle plus live allowance diagnostics
 - make `POST /api/authoring/sessions/:id/confirm-publish` the only path that
   registers a completed `createChallenge` transaction
 - move challenge registration and shared verification into the existing
@@ -373,6 +374,8 @@ Changes:
 - delete any server-side tx broadcast helper and any duplicate
   challenge-registration branches once the shared helper covers the needed
   assertions
+- make repeated publish with the same bound wallet idempotent
+- make repeated confirm with the same `tx_hash` idempotent
 
 Acceptance gates:
 - all authoring publish confirmation and tx-hash registration use the same
@@ -380,6 +383,9 @@ Acceptance gates:
 - challenge identity, spec CID, and contract-address verification happen in
   one place
 - publish failures still return the locked authoring error envelope
+- publish returns executable tx payloads and live allowance diagnostics
+- safe retry no longer requires rebuilding the session when the same wallet and
+  `tx_hash` are replayed
 
 #### 6C. Tighten canonical semantic schemas across `@agora/common`
 

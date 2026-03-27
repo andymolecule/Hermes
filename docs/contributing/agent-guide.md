@@ -80,7 +80,7 @@ Agent runtime contract:
 5. On create/patch success, treat the session object as the source of truth.
 6. Read the returned session object and branch only on `state`:
    - `awaiting_input` -> inspect `validation.missing_fields` and `validation.invalid_fields`, ask your human only for those missing fields, then call `PATCH /api/authoring/sessions/:id`
-   - `ready` -> call `POST /api/authoring/sessions/:id/publish` with `{ "confirm_publish": true, "publish_wallet_address": "<agent_wallet>" }`, approve USDC to the returned factory for `reward_units` if needed, send the `createChallenge` transaction from that wallet using the returned publish parameters, then call `POST /api/authoring/sessions/:id/confirm-publish`
+   - `ready` -> call `POST /api/authoring/sessions/:id/publish` with `{ "confirm_publish": true, "publish_wallet_address": "<agent_wallet>" }`, send the returned `approve_tx` only when `needs_approval = true`, send the returned `create_challenge_tx` from that wallet, then call `POST /api/authoring/sessions/:id/confirm-publish`
    - `rejected` -> quote `validation.unsupported_reason.message` as the official reason; if you add your own diagnosis, label it as inference
    - `published` -> report success with `challenge_id` and `tx_hash`
    - `expired` -> create a new session and replay the current structured state
@@ -445,9 +445,10 @@ curl -X POST "$AGORA_API_URL/api/authoring/sessions/session-123/publish" \
   }'
 ```
 
-The prepare response returns canonical wallet publish parameters. The agent
-wallet approves the returned `factory_address` to spend `reward_units` from
-`usdc_address` if needed, then sends `createChallenge` off-band and confirms:
+The prepare response returns the canonical executable wallet bundle plus live
+allowance diagnostics. The agent wallet sends `approve_tx` only when
+`needs_approval = true`, then sends the returned `create_challenge_tx`
+off-band and confirms:
 
 ```bash
 curl -X POST "$AGORA_API_URL/api/authoring/sessions/session-123/confirm-publish" \
@@ -473,8 +474,10 @@ Success returns the canonical published session object with:
 Publish rules:
 
 - for direct agents, `publish_wallet_address` is required on `publish`
-- `publish` returns wallet transaction preparation only; the session remains `ready` until `confirm-publish` succeeds
-- once a `ready` session is bound to a `publish_wallet_address`, retries and confirm-publish must reuse that same wallet
+- `publish` returns chain/runtime refs, live allowance diagnostics, optional `approve_tx`, and executable `create_challenge_tx`; the session remains `ready` until `confirm-publish` succeeds
+- once a `ready` session is bound to a `publish_wallet_address`, publish retries and confirm-publish must reuse that same wallet
+- repeated publish with the same wallet is safe and refreshes the session expiry
+- repeated `confirm-publish` with the same `tx_hash` is safe and returns the same published session
 
 ## Solver CLI and Local Tooling
 

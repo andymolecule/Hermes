@@ -168,9 +168,13 @@ assert.equal(artifactResponse.data.artifact_id, "art-123");
 
 const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
   spec_cid: "ipfs://bafybeiexample",
+  publish_wallet_address: "0x0000000000000000000000000000000000000003",
+  chain_id: 8453,
   factory_address: "0x0000000000000000000000000000000000000001",
   usdc_address: "0x0000000000000000000000000000000000000002",
   reward_units: "1000000",
+  current_allowance_units: "0",
+  needs_approval: true,
   deadline_seconds: 1_900_000_000,
   dispute_window_hours: -1,
   minimum_score_wad: "0",
@@ -178,19 +182,29 @@ const invalidWalletPreparation = walletPublishPreparationSchema.safeParse({
   lab_tba: "0x0000000000000000000000000000000000000000",
   max_submissions_total: 100,
   max_submissions_per_solver: 3,
+  approve_tx: null,
+  create_challenge_tx: {
+    to: "0x0000000000000000000000000000000000000001",
+    data: "0x1234",
+    value: "0",
+  },
 });
 assert.equal(
   invalidWalletPreparation.success,
   false,
-  "wallet publish preparation should reject negative dispute windows",
+  "wallet publish preparation should reject invalid approval state and negative dispute windows",
 );
 
 const walletPreparation = walletPublishPreparationResponseSchema.parse({
   data: {
     spec_cid: "ipfs://bafybeiexample",
+    publish_wallet_address: "0x0000000000000000000000000000000000000003",
+    chain_id: 8453,
     factory_address: "0x0000000000000000000000000000000000000001",
     usdc_address: "0x0000000000000000000000000000000000000002",
     reward_units: "1000000",
+    current_allowance_units: "0",
+    needs_approval: true,
     deadline_seconds: 1_900_000_000,
     dispute_window_hours: 168,
     minimum_score_wad: "0",
@@ -198,8 +212,19 @@ const walletPreparation = walletPublishPreparationResponseSchema.parse({
     lab_tba: "0x0000000000000000000000000000000000000000",
     max_submissions_total: 100,
     max_submissions_per_solver: 3,
+    approve_tx: {
+      to: "0x0000000000000000000000000000000000000002",
+      data: "0x1234",
+      value: "0",
+    },
+    create_challenge_tx: {
+      to: "0x0000000000000000000000000000000000000001",
+      data: "0x5678",
+      value: "0",
+    },
   },
 });
 assert.equal(walletPreparation.data.reward_units, "1000000");
+assert.equal(walletPreparation.data.needs_approval, true);
 
 console.log("authoring session API schemas passed");

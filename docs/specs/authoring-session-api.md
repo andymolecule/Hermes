@@ -57,7 +57,7 @@ The deployment rule is equally strict:
 | Actor | What they do |
 |-------|-------------|
 | **Agent** | Calls the authoring API, sends structured intent/execution/files, patches missing fields, prepares publish, sends the wallet transaction, then confirms publish. |
-| **Agora** | Validates the session deterministically, compiles the challenge candidate, returns exact blockers, prepares canonical wallet tx inputs, and confirms the completed publish transaction. |
+| **Agora** | Validates the session deterministically, compiles the challenge candidate, returns exact blockers, prepares the canonical executable wallet publish bundle, and confirms the completed publish transaction. |
 
 ## 3. Identity Model
 
@@ -99,7 +99,7 @@ Authoring auth is agent-only:
 | `POST` | `/api/authoring/sessions` | Create a new authoring session |
 | `GET` | `/api/authoring/sessions/:id` | Read one session |
 | `PATCH` | `/api/authoring/sessions/:id` | Submit structured corrections or additional files |
-| `POST` | `/api/authoring/sessions/:id/publish` | Bind the publish wallet and prepare canonical wallet tx inputs |
+| `POST` | `/api/authoring/sessions/:id/publish` | Bind the publish wallet, refresh prepared-publish TTL, and return executable wallet tx payloads plus allowance diagnostics |
 | `POST` | `/api/authoring/sessions/:id/confirm-publish` | Confirm the completed wallet-funded publish tx |
 
 ### 4.3 Success Envelope
@@ -138,7 +138,9 @@ Terminal side paths:
 ### 5.3 TTL Policy
 
 - `awaiting_input`: 24 hours
-- `ready`: 2 hours
+- `ready`: 2 hours before publish preparation
+- successful `publish` preparation refreshes `expires_at` to 24 hours so the
+  bound wallet can complete the chain transaction and replay confirmation safely
 - terminal states: short retention is allowed, but they do not re-open
 
 ### 5.4 Privacy Rule
@@ -304,11 +306,15 @@ Rules:
 - `publish_wallet_address` is required
 - there is no `funding` field
 - there is no server-side publish path
-- the returned `factory_address`, `usdc_address`, and `reward_units` define the
-  required ERC20 approval target and amount for the bound wallet
-- before sending `createChallenge`, the bound wallet must already have or set
-  `USDC.approve(factory_address, reward_units)` against the returned addresses
-- once a ready session binds `publish_wallet_address`, repeated publish calls must reuse it
+- the response returns the canonical executable wallet publish bundle, including:
+  - chain/runtime references (`chain_id`, `factory_address`, `usdc_address`)
+  - live allowance diagnostics (`reward_units`, `current_allowance_units`,
+    `needs_approval`)
+  - `approve_tx` when the current allowance is insufficient
+  - `create_challenge_tx` for the canonical `createChallenge` call
+- once a ready session binds `publish_wallet_address`, repeated publish calls
+  must reuse it
+- repeating publish with the same wallet is idempotent and refreshes `expires_at`
 
 ### 7.5 Confirm Publish
 
@@ -323,6 +329,8 @@ Rules:
 - `confirm-publish` requires a bound `publish_wallet_address`
 - Agora validates the tx against the active factory, the compiled session, and the bound wallet
 - success transitions the session to `published`
+- repeated confirm with the same session and `tx_hash` is idempotent and returns
+  the canonical published session
 
 ## 8. Wallet Publish Contract
 
@@ -335,11 +343,13 @@ Prepare step behavior:
 
 - session must be `ready`
 - Agora binds `publish_wallet_address`
-- Agora returns canonical wallet tx inputs for the approval precondition and the
-  `createChallenge` call
-- the bound wallet must approve `usdc_address` to spend at least `reward_units`
-  for `factory_address` before sending `createChallenge`, unless sufficient
-  allowance already exists
+- Agora refreshes `expires_at` to the prepared-publish TTL
+- Agora returns the canonical executable wallet bundle:
+  - `approve_tx` when allowance is insufficient
+  - `create_challenge_tx` for the publish call
+  - live allowance diagnostics for the bound wallet at prepare time
+- repeated prepare with the same bound wallet is safe and refreshes the prepared
+  publish TTL
 - the session remains `ready` until confirmation succeeds
 
 Confirm step behavior:
@@ -348,6 +358,8 @@ Confirm step behavior:
 - Agora validates the completed tx hash
 - Agora registers the resulting challenge
 - Agora persists `challenge_id`, `contract_address`, `spec_cid`, and `tx_hash`
+- repeated confirm with the same session and `tx_hash` returns the same
+  published session instead of failing
 
 ## 9. Validation and Error Semantics
 
@@ -387,6 +399,8 @@ Additional locked rules:
 - removed legacy fields must return explicit migration guidance
 - generic "fix the request body and retry" guidance is not sufficient when Agora can
   identify the exact contract violation
+- repeated confirm after authoritative publish completion must not degrade into a
+  new invalid state-transition error when the caller replays the same `tx_hash`
 
 ## 10. Deployment and Readiness Invariants
 
@@ -437,6 +451,9 @@ Required coverage:
   schema
 - the lifecycle must prove `create -> patch -> ready -> publish(bind wallet) ->
   confirm-publish`
+- publish verification must assert the returned executable tx bundle and live
+  allowance diagnostics
+- repeated confirm with the same `tx_hash` must return the same published session
 - route-level mocks are allowed for focused unit tests, but they do not replace the
   baseline-backed verification
 - readiness probes must block traffic before the system reaches a user-visible publish

@@ -13,6 +13,7 @@ These apply to every line of code and every design decision:
 - **YAGNI** — Don't build what you don't need yet. No speculative abstractions, no "just in case" code.
 - **No scope creep** — Every change must trace to a concrete requirement. If it doesn't solve a stated problem, don't build it.
 - **No over-engineering** — Prefer flat functions over deep class hierarchies. Prefer explicit code over clever abstractions.
+- **Respect architectural continuity** — Before proposing structural changes, inspect the current code, authoritative docs, and relevant git/spec history for that area. Extend the chosen direction unless there is clear evidence it is broken. Do not reintroduce retired concepts, renamed workflows, or duplicate parallel surfaces. Propose large refactors only when the current design is clearly unsustainable or materially misdirected, and explain why the existing direction should be changed.
 - **Fail fast, fail loud** — Validate inputs at the boundary (Zod). Throw clear errors with suggested next actions.
 - **Fix root causes, not symptoms** — Don't ship short-term patch fixes when a bug points to a deeper design or contract problem. Trace failures to the real source, fix them at the boundary or source of truth, and call out when the right answer is a structural refactor.
 - **Composition over inheritance** — Small, focused modules composed together. No god objects.

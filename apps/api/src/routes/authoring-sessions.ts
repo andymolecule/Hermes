@@ -11,6 +11,7 @@ import {
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   defaultMinimumScoreForExecution,
+  erc20Abi,
   partialChallengeIntentTransportSchema,
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
@@ -33,9 +34,13 @@ import {
   updateAuthoringSession,
 } from "@agora/db";
 import { pinJSON } from "@agora/ipfs";
+import { allowance as readUsdcAllowance } from "@agora/chain";
+import AgoraFactoryAbiJson from "@agora/common/abi/AgoraFactory.json" with {
+  type: "json",
+};
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { parseUnits, zeroAddress } from "viem";
+import { type Abi, encodeFunctionData, parseUnits, zeroAddress } from "viem";
 import type { z } from "zod";
 import { compileAuthoringSessionOutcome } from "../lib/authoring-compiler.js";
 import { buildAuthoringIr } from "../lib/authoring-ir.js";
@@ -81,12 +86,15 @@ import type { ApiEnv } from "../types.js";
 const INTERNAL_CREATED_TTL_MS = 15 * 60 * 1000;
 const AWAITING_INPUT_TTL_MS = 24 * 60 * 60 * 1000;
 const READY_TTL_MS = 2 * 60 * 60 * 1000;
+const PREPARED_PUBLISH_TTL_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_TTL_MS = 0;
+const ZERO_TX_VALUE = "0";
 const DISTRIBUTION_TO_ENUM = {
   winner_take_all: 0,
   top_3: 1,
   proportional: 2,
 } as const;
+const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 
 type AuthoringSessionRouteDependencies = {
   createSupabaseClient?: typeof createSupabaseClient;
@@ -103,6 +111,7 @@ type AuthoringSessionRouteDependencies = {
   createDirectAuthoringSessionArtifact?: typeof createDirectAuthoringSessionArtifact;
   normalizeAuthoringSessionFileInputs?: typeof normalizeAuthoringSessionFileInputs;
   pinJsonImpl?: typeof pinJSON;
+  readUsdcAllowance?: typeof readUsdcAllowance;
   registerChallengeFromTxHashImpl?: typeof registerChallengeFromTxHash;
 };
 
@@ -124,9 +133,11 @@ function toUnixSeconds(iso: string) {
   return Math.floor(timestamp / 1000);
 }
 
-function buildWalletPublishPreparation(input: {
+async function buildWalletPublishPreparation(input: {
   session: AuthoringSessionRow;
   specCid: string;
+  publishWalletAddress: `0x${string}`;
+  readUsdcAllowanceImpl: typeof readUsdcAllowance;
 }) {
   const challengeSpec = input.session.compilation_json?.challenge_spec;
   if (!challengeSpec) {
@@ -136,33 +147,105 @@ function buildWalletPublishPreparation(input: {
   }
 
   const config = readAuthoringPublishRuntimeConfig();
+  const factoryAddress = config.factoryAddress as `0x${string}`;
+  const usdcAddress = config.usdcAddress as `0x${string}`;
+  const rewardUnits = parseUnits(
+    String(challengeSpec.reward.total),
+    6,
+  );
+  const minimumScoreWad = parseUnits(
+    String(
+      challengeSpec.minimum_score ??
+        defaultMinimumScoreForExecution(challengeSpec.execution) ??
+        0,
+    ),
+    18,
+  );
+  const disputeWindowHours =
+    challengeSpec.dispute_window_hours ??
+    CHALLENGE_LIMITS.defaultDisputeWindowHours;
+  const distributionType =
+    DISTRIBUTION_TO_ENUM[
+      challengeSpec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
+    ] ?? 0;
+  const maxSubmissionsTotal =
+    challengeSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge;
+  const maxSubmissionsPerSolver =
+    challengeSpec.max_submissions_per_solver ??
+    SUBMISSION_LIMITS.maxPerSolverPerChallenge;
+
+  let currentAllowance: bigint;
+  try {
+    currentAllowance = await input.readUsdcAllowanceImpl(
+      input.publishWalletAddress,
+      factoryAddress,
+    );
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new AgoraError(
+      "Authoring publish is unavailable because Agora could not read the current USDC allowance for the bound publish wallet.",
+      {
+        code: "service_unavailable",
+        status: 503,
+        retriable: true,
+        nextAction:
+          "Verify the RPC connection and publish runtime config, then retry publish.",
+        details: { cause },
+        cause: error,
+      },
+    );
+  }
+
+  const needsApproval = currentAllowance < rewardUnits;
+  const approveTx = needsApproval
+    ? {
+        to: usdcAddress,
+        data: encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [factoryAddress, rewardUnits],
+        }),
+        value: ZERO_TX_VALUE,
+      }
+    : null;
+  const createChallengeTx = {
+    to: factoryAddress,
+    data: encodeFunctionData({
+      abi: AgoraFactoryAbi,
+      functionName: "createChallenge",
+      args: [
+        input.specCid,
+        rewardUnits,
+        BigInt(toUnixSeconds(challengeSpec.deadline)),
+        BigInt(disputeWindowHours),
+        minimumScoreWad,
+        distributionType,
+        zeroAddress,
+        BigInt(maxSubmissionsTotal),
+        BigInt(maxSubmissionsPerSolver),
+      ],
+    }),
+    value: ZERO_TX_VALUE,
+  };
+
   return walletPublishPreparationSchema.parse({
     spec_cid: input.specCid,
-    factory_address: config.factoryAddress,
-    usdc_address: config.usdcAddress,
-    reward_units: parseUnits(String(challengeSpec.reward.total), 6).toString(),
+    publish_wallet_address: input.publishWalletAddress,
+    chain_id: config.chainId,
+    factory_address: factoryAddress,
+    usdc_address: usdcAddress,
+    reward_units: rewardUnits.toString(),
+    current_allowance_units: currentAllowance.toString(),
+    needs_approval: needsApproval,
     deadline_seconds: toUnixSeconds(challengeSpec.deadline),
-    dispute_window_hours:
-      challengeSpec.dispute_window_hours ??
-      CHALLENGE_LIMITS.defaultDisputeWindowHours,
-    minimum_score_wad: parseUnits(
-      String(
-        challengeSpec.minimum_score ??
-          defaultMinimumScoreForExecution(challengeSpec.execution) ??
-          0,
-      ),
-      18,
-    ).toString(),
-    distribution_type:
-      DISTRIBUTION_TO_ENUM[
-        challengeSpec.reward.distribution as keyof typeof DISTRIBUTION_TO_ENUM
-      ] ?? 0,
+    dispute_window_hours: disputeWindowHours,
+    minimum_score_wad: minimumScoreWad.toString(),
+    distribution_type: distributionType,
     lab_tba: zeroAddress,
-    max_submissions_total:
-      challengeSpec.max_submissions_total ?? SUBMISSION_LIMITS.maxPerChallenge,
-    max_submissions_per_solver:
-      challengeSpec.max_submissions_per_solver ??
-      SUBMISSION_LIMITS.maxPerSolverPerChallenge,
+    max_submissions_total: maxSubmissionsTotal,
+    max_submissions_per_solver: maxSubmissionsPerSolver,
+    approve_tx: approveTx,
+    create_challenge_tx: createChallengeTx,
   });
 }
 
@@ -1275,6 +1358,7 @@ export function createAuthoringSessionRoutes(
     normalizeAuthoringSessionFileInputs:
       normalizeAuthoringSessionFileInputsImpl = normalizeAuthoringSessionFileInputs,
     pinJsonImpl = pinJSON,
+    readUsdcAllowance: readUsdcAllowanceImpl = readUsdcAllowance,
     registerChallengeFromTxHashImpl = registerChallengeFromTxHash,
   } = dependencies;
 
@@ -1853,17 +1937,102 @@ export function createAuthoringSessionRoutes(
         });
       }
 
+      const specCid = await pinPublicChallengeSpecForSession({
+        session: visible.session,
+        pinJsonImpl,
+      });
+      let preparation: z.output<typeof walletPublishPreparationSchema>;
+      try {
+        preparation = await buildWalletPublishPreparation({
+          session: visible.session,
+          specCid,
+          publishWalletAddress: boundPublishWalletAddress,
+          readUsdcAllowanceImpl,
+        });
+      } catch (error) {
+        if (error instanceof AgoraError && error.code === "service_unavailable") {
+          await recordRouteTelemetryEvent({
+            c,
+            db,
+            createAuthoringEventsImpl,
+            principal,
+            session: visible.session,
+            route: "publish",
+            event: "publish.failed",
+            phase: "publish",
+            actor: "system",
+            outcome: "failed",
+            summary: error.message,
+            httpStatus: error.status ?? 503,
+            code: error.code,
+            payload: {
+              error: {
+                status: error.status ?? 503,
+                code: error.code,
+                message: error.message,
+                next_action:
+                  error.nextAction ??
+                  "Verify the publish runtime and retry publish.",
+              },
+            },
+          }).catch(() => null);
+
+          return buildPublishServiceUnavailableResponse(c, {
+            message: error.message,
+            nextAction:
+              error.nextAction ??
+              "Verify the publish runtime and retry publish.",
+            details: error.details,
+          });
+        }
+        if (!isPublishRuntimeConfigError(error)) {
+          throw error;
+        }
+        const cause = error instanceof Error ? error.message : String(error);
+
+        await recordRouteTelemetryEvent({
+          c,
+          db,
+          createAuthoringEventsImpl,
+          principal,
+          session: visible.session,
+          route: "publish",
+          event: "publish.failed",
+          phase: "publish",
+          actor: "system",
+          outcome: "failed",
+          summary:
+            "Agora rejected publish because authoring publish runtime config is missing or invalid.",
+          httpStatus: 503,
+          code: "service_unavailable",
+          payload: {
+            error: {
+              status: 503,
+              code: "service_unavailable",
+              message:
+                "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
+              next_action: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+            },
+          },
+        }).catch(() => null);
+
+        return buildPublishServiceUnavailableResponse(c, {
+          message:
+            "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
+          nextAction: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+          details: {
+            cause,
+          },
+        });
+      }
       let publishSession: AuthoringSessionRow;
       try {
-        publishSession =
-          existingPublishWalletAddress ===
-          boundPublishWalletAddress.toLowerCase()
-            ? visible.session
-            : await updateAuthoringSessionImpl(db, {
-                id: visible.session.id,
-                expected_updated_at: visible.session.updated_at,
-                publish_wallet_address: boundPublishWalletAddress,
-              });
+        publishSession = await updateAuthoringSessionImpl(db, {
+          id: visible.session.id,
+          expected_updated_at: visible.session.updated_at,
+          publish_wallet_address: boundPublishWalletAddress,
+          expires_at: buildExpiry(PREPARED_PUBLISH_TTL_MS),
+        });
       } catch (error) {
         if (error instanceof AuthoringSessionWriteConflictError) {
           return jsonAuthoringSessionApiError(c, {
@@ -1909,11 +2078,6 @@ export function createAuthoringSessionRoutes(
           },
         });
       }
-
-      const specCid = await pinPublicChallengeSpecForSession({
-        session: publishSession,
-        pinJsonImpl,
-      });
       const requestEntry = createConversationLogEntry({
         trace_id: resolveAuthoringTraceId(c, publishSession),
         request_id: getRequestId(c) ?? null,
@@ -1921,59 +2085,12 @@ export function createAuthoringSessionRoutes(
         event: "publish.requested",
         actor: "publish",
         summary: "Caller requested wallet publish preparation.",
-        state_before: getSessionPublicState(publishSession),
+        state_before: getSessionPublicState(visible.session),
         state_after: getSessionPublicState(publishSession),
         publish: {
           spec_cid: specCid,
         },
       });
-      let preparation: z.output<typeof walletPublishPreparationSchema>;
-      try {
-        preparation = buildWalletPublishPreparation({
-          session: publishSession,
-          specCid,
-        });
-      } catch (error) {
-        if (!isPublishRuntimeConfigError(error)) {
-          throw error;
-        }
-        const cause = error instanceof Error ? error.message : String(error);
-
-        await recordRouteTelemetryEvent({
-          c,
-          db,
-          createAuthoringEventsImpl,
-          principal,
-          session: publishSession,
-          route: "publish",
-          event: "publish.failed",
-          phase: "publish",
-          actor: "system",
-          outcome: "failed",
-          summary:
-            "Agora rejected publish because authoring publish runtime config is missing or invalid.",
-          httpStatus: 503,
-          code: "service_unavailable",
-          payload: {
-            error: {
-              status: 503,
-              code: "service_unavailable",
-              message:
-                "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
-              next_action: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
-            },
-          },
-        }).catch(() => null);
-
-        return buildPublishServiceUnavailableResponse(c, {
-          message:
-            "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
-          nextAction: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
-          details: {
-            cause,
-          },
-        });
-      }
       const preparedEntry = createConversationLogEntry({
         trace_id: resolveAuthoringTraceId(c, publishSession),
         request_id: getRequestId(c) ?? null,
@@ -2065,6 +2182,56 @@ export function createAuthoringSessionRoutes(
       );
       if (!visible.ok) {
         return visible.response;
+      }
+
+      if (visible.session.state === "published") {
+        const challenge = await maybeReadChallenge(
+          getChallengeByIdImpl,
+          db,
+          visible.session,
+        );
+        if (!challenge) {
+          return buildPublishServiceUnavailableResponse(c, {
+            message:
+              "Authoring confirm-publish is unavailable because the published challenge record could not be reloaded.",
+            nextAction:
+              "Reload the latest session and retry confirm-publish with the original tx_hash.",
+          });
+        }
+        if (
+          challenge.tx_hash.toLowerCase() ===
+          parsed.data.tx_hash.toLowerCase()
+        ) {
+          return c.json({
+            data: buildAuthoringSessionPayload(visible.session, { challenge }),
+          });
+        }
+
+        await appendValidationFailureLog({
+          c,
+          db,
+          session: visible.session,
+          updateAuthoringSessionImpl,
+          appendAuthoringSessionConversationLogImpl,
+          createAuthoringEventsImpl,
+          route: "confirm_publish",
+          phase: "registration",
+          status: 409,
+          code: "invalid_request",
+          message:
+            "This session is already published under a different transaction hash.",
+          nextAction:
+            "Reuse the original publish tx_hash for this session, or create a new session for another publish.",
+        });
+        return jsonAuthoringSessionApiError(c, {
+          status: 409,
+          code: "invalid_request",
+          message:
+            "This session is already published under a different transaction hash.",
+          nextAction:
+            "Reuse the original publish tx_hash for this session, or create a new session for another publish.",
+          state: getSessionPublicState(visible.session),
+        });
       }
 
       if (visible.session.state === "expired") {

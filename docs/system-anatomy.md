@@ -126,9 +126,10 @@ only public authoring contract.
 
 Publish has one rail:
 
-- Agora prepares canonical wallet transaction inputs from a `ready` session
-- the caller wallet approves USDC to the returned factory if needed, then signs
-  and sends `createChallenge`
+- Agora prepares the canonical executable wallet bundle from a `ready` session,
+  including live allowance diagnostics
+- the caller wallet sends the returned `approve_tx` only when needed, then signs
+  and sends the returned `create_challenge_tx`
 - Agora confirms and registers the resulting transaction with
   `POST /sessions/:id/confirm-publish`
 
