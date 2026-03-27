@@ -116,7 +116,7 @@ High-level package map for common engineering tasks:
 | Runtime scorer staging and Docker execution | `packages/scorer/src/pipeline.ts` |
 | Human challenge fixture walkthroughs | `challenges/test-data/*` |
 | Worker scoring orchestration | `apps/api/src/worker/scoring.ts` |
-| Web challenge posting UX | `apps/web/src/app/post/PostClient.tsx` |
+| Agent authoring guide UX | `apps/web/src/app/agents/AgentsClient.tsx` |
 | Indexer projections and chain event handling | `packages/chain/src/indexer/` |
 | API routes and machine-facing contracts | `apps/api/src/routes/` and `packages/common/src/schemas/agent-api.ts` |
 

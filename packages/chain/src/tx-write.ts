@@ -311,6 +311,24 @@ function toRevertDetails(
   };
 }
 
+function resolveRevertNextAction(
+  diagnostics: RevertDiagnostics,
+  input: WriteErrorClassificationInput,
+) {
+  if (input.revertNextAction) {
+    return input.revertNextAction;
+  }
+
+  switch (diagnostics.errorName) {
+    case "ERC20InsufficientAllowance":
+      return "Approve USDC to the active factory for at least the reward amount, then retry from the bound wallet.";
+    case "ERC20InsufficientBalance":
+      return "Fund the bound wallet with enough USDC for the reward amount, then retry.";
+    default:
+      return "Confirm the challenge state, submission limits, and wallet eligibility before retrying.";
+  }
+}
+
 export function isRetryableWriteError(error: unknown) {
   const message = toErrorMessage(error);
   if (
@@ -368,9 +386,7 @@ export function classifyWriteError(
     return new AgoraError(summary ? `${prefix} ${summary}.` : prefix, {
       code: AGORA_ERROR_CODES.txReverted,
       retriable: false,
-      nextAction:
-        input.revertNextAction ??
-        "Confirm the challenge state, submission limits, and wallet eligibility before retrying.",
+      nextAction: resolveRevertNextAction(diagnostics, input),
       details: {
         label: input.label,
         ...toRevertDetails(diagnostics, input.details),

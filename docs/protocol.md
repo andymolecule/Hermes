@@ -33,8 +33,8 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 
 | Role | Who | What they can do | Trust level |
 |------|-----|-----------------|-------------|
-| **Poster** | Any wallet | Creates a challenge, deposits USDC, cancels (if 0 submissions before deadline), disputes scores | Trustless — USDC locked in smart contract escrow |
-| **Solver** | Any wallet | Submits result hashes on-chain during the Open phase, claims payouts after finalization | Trustless — can only submit hashes |
+| **Poster** | Any wallet | Creates a challenge, deposits USDC, cancels (if 0 submissions before deadline) | Trustless — USDC locked in smart contract escrow |
+| **Solver** | Any wallet | Submits result hashes on-chain during the Open phase, disputes its own scored submission by escrowing a bond, claims payouts after finalization | Trustless with bounded dispute rights — can only challenge its own scored submission and must post a slashable bond |
 | **Oracle** | Designated address (set at challenge creation) | Calls `startScoring()`, `postScore()`, `resolveDispute()` | Semi-trusted (single key in MVP); immutable per challenge |
 | **Treasury** | Designated address (set on factory) | Receives 10% protocol fee on finalization | Controlled by factory owner; updates affect future challenges only |
 | **Verifier** | Anyone | Re-runs the Docker scorer locally to check that posted scores are honest | Fully trustless — no on-chain role required |
@@ -48,7 +48,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 | `startScoring()` | — | — | — | Yes (after deadline) |
 | `postScore()` | — | — | Yes | — |
 | `finalize()` | — | — | — | Yes (after dispute window, once all submissions are scored or scoring grace elapses) |
-| `dispute()` | — | — | — | Yes (during dispute window) |
+| `dispute(submissionId, reason)` | — | Yes (only for caller-owned scored submissions, with bond) | — | — |
 | `resolveDispute()` | — | — | Yes | — |
 | `cancel()` | Yes (if 0 subs) | — | — | — |
 | `timeoutRefund()` | — | — | — | Yes (after 30 days) |
@@ -65,7 +65,7 @@ stateDiagram-v2
     Open --> Scoring : startScoring() after deadline
     Open --> Cancelled : cancel() [0 submissions]
     Scoring --> Scoring : postScore()
-    Scoring --> Disputed : dispute()
+    Scoring --> Disputed : dispute(submissionId, reason)
     Scoring --> Finalized : finalize() [after dispute window + all scored, or grace elapsed]
     Disputed --> Finalized : resolveDispute()
     Disputed --> Cancelled : timeoutRefund() [30 days]
@@ -77,6 +77,8 @@ stateDiagram-v2
 
 - The contract `status()` view function is the read-side truth. After the deadline passes, it returns `Scoring` even if the persisted storage slot is still `Open`.
 - Write-side transitions remain strict: `postScore()`, `dispute()`, and `finalize()` require a persisted `startScoring()` transaction first.
+- `dispute()` is submission-specific. The caller must target its own scored submission and escrow a dispute bond equal to 10% of the reward.
+- If the oracle resolves in favor of the disputed submission, the bond is returned to that solver. Otherwise, or if the dispute times out, the bond is slashed to the treasury.
 - Off-chain consumers (API, web, CLI) should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 
 ### Fairness boundary
@@ -178,7 +180,7 @@ All distributions apply after the 10% protocol fee is deducted.
 | `SettlementFinalized` | Challenge fully settled — fee sent to treasury, payouts claimable. |
 | `Disputed` | A dispute was raised during the dispute window. |
 | `DisputeResolved` | Oracle resolved an active dispute, selecting the correct winner. |
-| `Cancelled` | Challenge cancelled — USDC refunded to poster. |
+| `Cancelled` | Challenge cancelled — reward USDC refunded to poster. If the cancel path was a dispute timeout, the dispute bond is slashed to treasury. |
 | `Claimed` | A solver withdrew their payout from the escrow. |
 | `ChallengeLinkedToLab` | Factory emits when `labTBA != address(0)` at challenge creation |
 
@@ -328,7 +330,7 @@ Rules:
 ## Safety Nets
 
 - **Poster cancel:** Poster can cancel before the deadline if there are 0 submissions. Full USDC refund.
-- **Dispute timeout:** If a dispute remains unresolved for 30 days, `timeoutRefund()` returns the full escrow to the poster.
+- **Dispute timeout:** If a dispute remains unresolved for 30 days, `timeoutRefund()` returns the full reward escrow to the poster and slashes the dispute bond to the treasury.
 - **Immutable oracle:** The oracle address is fixed at challenge creation. The poster cannot rotate the oracle mid-challenge to manipulate scoring.
 - **Stuck escrow protection:** The 30-day `timeoutRefund()` ensures USDC can never be permanently locked in a disputed contract.
 - **Reentrancy guard:** `ReentrancyGuard` is applied to all state-changing and transfer functions.

@@ -54,13 +54,15 @@ interface IAgoraChallenge {
     function maxSubmissions() external view returns (uint256);
     function maxSubmissionsPerSolver() external view returns (uint256);
     function solverSubmissionCount(address solver) external view returns (uint256);
+    function disputeBondAmount() external view returns (uint256);
 
     function submit(bytes32 resultHash) external returns (uint256 subId);
     /// @notice Persists the `Open -> Scoring` transition after the deadline.
     function startScoring() external;
     function postScore(uint256 subId, uint256 score, bytes32 proofBundleHash) external;
     function finalize() external;
-    function dispute(string calldata reason) external;
+    /// @notice Opens a dispute for the caller's own scored submission and escrows a slashable bond.
+    function dispute(uint256 subId, string calldata reason) external;
     function resolveDispute(uint256 winnerSubId) external;
     function cancel() external;
     function timeoutRefund() external;

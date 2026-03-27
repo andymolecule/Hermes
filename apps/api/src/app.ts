@@ -61,6 +61,38 @@ export function createApp(
     };
   }
 
+  function collectRuntimeReadinessNextAction(
+    readiness: Awaited<ReturnType<typeof getRuntimeReadiness>>,
+  ) {
+    const nextActions = [
+      ...readiness.readiness.databaseSchema.failures.map((failure) =>
+        failure.nextStep.trim(),
+      ),
+      ...readiness.readiness.authoringPublishConfig.failures.map((failure) =>
+        failure.nextStep.trim(),
+      ),
+    ].filter(Boolean);
+    return (
+      nextActions[0] ??
+      "Restore the runtime schema and authoring publish configuration before accepting traffic."
+    );
+  }
+
+  function buildRuntimeReadinessFailureMessage(
+    readiness: Awaited<ReturnType<typeof getRuntimeReadiness>>,
+  ) {
+    const schemaFailed = !readiness.readiness.databaseSchema.ok;
+    const publishConfigFailed = !readiness.readiness.authoringPublishConfig.ok;
+
+    if (schemaFailed && publishConfigFailed) {
+      return "API runtime database schema and authoring publish config are incompatible with the current deployment.";
+    }
+    if (schemaFailed) {
+      return "API runtime database schema is incompatible with the current deployment.";
+    }
+    return "API runtime authoring publish config is incompatible with the current deployment.";
+  }
+
   app.use("*", createApiRequestObservabilityMiddleware());
 
   app.use(
@@ -123,18 +155,12 @@ export function createApp(
       return;
     }
 
-    const failures = readiness.readiness.databaseSchema.failures;
-    const nextAction =
-      [...new Set(failures.map((failure) => failure.nextStep.trim()))][0] ??
-      "Restore database schema compatibility and reload the PostgREST schema cache before accepting traffic.";
-
     return jsonError(c, {
       status: 503,
       code: "SERVICE_UNAVAILABLE",
-      message:
-        "API runtime database schema is incompatible with the current deployment.",
+      message: buildRuntimeReadinessFailureMessage(readiness),
       retriable: true,
-      nextAction,
+      nextAction: collectRuntimeReadinessNextAction(readiness),
       extras: {
         readiness: readiness.readiness,
       },

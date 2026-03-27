@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {
+  AGORA_RUNTIME_SCHEMA_CONTRACT,
+  AGORA_RUNTIME_SCHEMA_CONTRACT_RPC,
   REQUIRED_RUNTIME_SCHEMA_CHECKS,
   type RuntimeSchemaCheck,
   assertRuntimeDatabaseSchema,
@@ -8,8 +10,12 @@ import {
 } from "../schema-compatibility";
 
 type MockResponse = { error: { message: string } | null };
+type MockRpcResponse = { data?: unknown; error: { message: string } | null };
 
-function createMockDb(results: Record<string, MockResponse>) {
+function createMockDb(
+  results: Record<string, MockResponse>,
+  rpcResults: Record<string, MockRpcResponse> = {},
+) {
   const selectCalls: Array<{
     table: string;
     select: string;
@@ -19,6 +25,7 @@ function createMockDb(results: Record<string, MockResponse>) {
     table: string;
     filters: Record<string, string | number | boolean>;
   }> = [];
+  const rpcCalls: string[] = [];
   return {
     from(table: string) {
       return {
@@ -50,11 +57,26 @@ function createMockDb(results: Record<string, MockResponse>) {
         },
       };
     },
+    async rpc(name: string) {
+      rpcCalls.push(name);
+      if (name === AGORA_RUNTIME_SCHEMA_CONTRACT_RPC) {
+        return (
+          rpcResults[name] ?? {
+            data: AGORA_RUNTIME_SCHEMA_CONTRACT,
+            error: null,
+          }
+        );
+      }
+      return rpcResults[name] ?? { data: null, error: null };
+    },
     getSelectCalls() {
       return selectCalls;
     },
     getDeleteCalls() {
       return deleteCalls;
+    },
+    getRpcCalls() {
+      return rpcCalls;
     },
   };
 }
@@ -138,14 +160,14 @@ const checks: RuntimeSchemaCheck[] = [
     id: "authoring_sessions_table",
     table: "authoring_sessions",
     select:
-      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id,publish_wallet_address",
     nextStep: "apply migration",
   },
   {
     id: "authoring_events_table",
     table: "authoring_events",
     select:
-      "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+      "request_id,trace_id,session_id,agent_id,publish_wallet_address,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
     nextStep: "apply migration",
   },
   {
@@ -182,6 +204,7 @@ assert.deepEqual(passingDb.getDeleteCalls(), [
     },
   },
 ]);
+assert.deepEqual(passingDb.getRpcCalls(), [AGORA_RUNTIME_SCHEMA_CONTRACT_RPC]);
 
 const failingDb = createMockDb({
   "worker_runtime_state:executor_ready": {
@@ -202,6 +225,7 @@ const failingStatus = await readRuntimeDatabaseSchemaStatus(
 assert.equal(failingStatus.ok, false);
 assert.equal(failingStatus.failures.length, 1);
 assert.equal(failingStatus.nextStep, "apply migration");
+assert.equal(failingStatus.contract.ok, true);
 
 const deleteFailingDb = createMockDb({
   'unmatched_submissions:delete:{"challenge_id":"00000000-0000-0000-0000-000000000000","on_chain_sub_id":-1}':
@@ -219,6 +243,30 @@ const deleteFailures = await verifyRuntimeDatabaseSchema(
 assert.equal(deleteFailures.length, 1);
 assert.equal(deleteFailures[0]?.checkId, "unmatched_submissions_cleanup_path");
 assert.equal(deleteFailures[0]?.operation, "delete");
+
+const contractMismatchDb = createMockDb(
+  {},
+  {
+    [AGORA_RUNTIME_SCHEMA_CONTRACT_RPC]: {
+      data: "agora-runtime:2026-03-20:web-authoring-v0",
+      error: null,
+    },
+  },
+);
+const contractMismatchStatus = await readRuntimeDatabaseSchemaStatus(
+  contractMismatchDb as never,
+  checks,
+);
+assert.equal(contractMismatchStatus.ok, false);
+assert.equal(contractMismatchStatus.contract.ok, false);
+assert.equal(
+  contractMismatchStatus.contract.actual,
+  "agora-runtime:2026-03-20:web-authoring-v0",
+);
+assert.equal(
+  contractMismatchStatus.failures[0]?.checkId,
+  "runtime_schema_contract",
+);
 
 assert.equal(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
@@ -272,7 +320,7 @@ assert.equal(
     (check) =>
       check.id === "authoring_events_table" &&
       check.select ===
-        "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+        "request_id,trace_id,session_id,agent_id,publish_wallet_address,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
   ),
   true,
   "runtime schema checks should guard the authoring events ledger",

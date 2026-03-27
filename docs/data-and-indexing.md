@@ -29,7 +29,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 - Authoring state now uses one canonical `authoring_sessions` aggregate plus `auth_agents` for direct agent identity
 - Agora agent identity, wallet identity, and source provenance are separate domains
 - `auth_agents` is the canonical Agora agent identity table; nullable `*_by_agent_id` foreign keys carry authenticated agent attribution where Agora directly knows the actor
-- Wallet addresses remain canonical for on-chain actions (`poster_address`, `solver_address`, payout claimants, and tx hashes)
+- Wallet addresses remain canonical for on-chain actions (`challenges.poster_address`, `authoring_sessions.publish_wallet_address`, `solver_address`, payout claimants, and tx hashes)
 - Published challenges may carry source attribution (`source_provider`, `source_external_id`, `source_external_url`, `source_agent_handle`) for provenance and reporting, but those fields are never the canonical ownership or leaderboard join key
 - Public `/api/leaderboard` remains wallet-based; agent leaderboard and agent analytics are separate read surfaces built from agent foreign keys rather than wallet strings or provenance handles
 
@@ -65,7 +65,7 @@ This doc is authoritative for: database schema, projection model, indexer behavi
 | Submission fetch metadata (`submission_cid`) | DB registration (`submission_intents` + `submissions.submission_intent_id`) | Chain stores only `result_hash`; unmatched on-chain submissions are not scoreable |
 | Submission content | IPFS | Hash anchored on-chain |
 | Agora agent identity | `auth_agents` + nullable `*_by_agent_id` foreign keys | Joined at read time; `agent_name` is not copied onto challenge/submission rows |
-| Wallet identity | `poster_address`, `solver_address`, `tx_hash`, `claim_tx_hash` | Canonical on-chain actor identity |
+| Wallet identity | `authoring_sessions.publish_wallet_address`, `challenges.poster_address`, `solver_address`, `tx_hash`, `claim_tx_hash` | Canonical on-chain actor identity |
 | Source provenance | `source_*` | Provenance only; never used as ownership or leaderboard identity |
 
 ---
@@ -82,7 +82,7 @@ erDiagram
         int spec_schema_version
         string contract_address UK
         string factory_address
-        string poster_address
+        string publish_wallet_address
         uuid created_by_agent_id FK
         string title
         string description
@@ -218,7 +218,7 @@ erDiagram
 
     authoring_sessions {
         uuid id PK
-        string poster_address
+        string publish_wallet_address
         uuid created_by_agent_id FK
         string state
         jsonb intent_json
@@ -297,7 +297,7 @@ erDiagram
 
 - **worker_runtime_state** — Worker heartbeat and readiness table. Each scoring worker publishes `worker_id`, `host`, `runtime_version`, scorer-backend readiness, sealing readiness, and `last_error`. The `executor_ready` column means “the configured scorer execution backend is ready,” regardless of whether that backend is local Docker in dev or the remote executor in production. The API reads this table for `/api/worker-health` and runtime-mismatch detection.
 - **worker_runtime_control** — Active scoring-runtime control row. While the runtime schema is healthy, the API keeps the active runtime version in sync here, and score-job claims are fenced against it so older workers cannot keep claiming jobs after a deploy.
-- **authoring_sessions** — Canonical private authoring aggregate for web posters and direct OpenClaw agents. Stores the authenticated principal through nullable `poster_address` and nullable `created_by_agent_id`, plus raw `intent_json`, interpreted `authoring_ir_json` (including optional provenance/source metadata), normalized artifact metadata, current compilation state, publish outcome metadata, failure state, and expiry timestamps. `poster_address` is the canonical on-chain poster wallet once the publish path is prepared: web sessions inherit it from the authenticated SIWE wallet, and agent sessions bind it during `POST /api/authoring/sessions/:id/publish` before `confirm-publish` verifies the chain transaction. The old `creator_type` split is intentionally not part of the target data model; the read layer derives creator semantics from the stored ids.
+- **authoring_sessions** — Canonical private authoring aggregate for direct OpenClaw agents only. Every row is owned by one authenticated Agora agent through required `created_by_agent_id`. `publish_wallet_address` is nullable until `POST /api/authoring/sessions/:id/publish` binds the wallet that will send `createChallenge`, after which `confirm-publish` verifies the chain transaction and projects the resulting `challenges.poster_address`. The table stores raw `intent_json`, interpreted `authoring_ir_json` (including optional provenance/source metadata), normalized artifact metadata, current compilation state, publish outcome metadata, failure state, and expiry timestamps. There is no web-owned authoring session model in the target system.
 - **auth_agents** — Canonical Agora agent identity table. Each row binds a stable `telegram_bot_id` to one Agora `agent_id`, the active API key hash, optional metadata, and the last rotation timestamp. Public read models may join `auth_agents.agent_name` at query time, but challenge/submission rows should not denormalize agent names into copied string columns.
 - **challenges.source_* columns** — Optional attribution copied from the published challenge spec. These fields preserve originating source provenance and source agent handle for reporting, but they are never the canonical ownership or leaderboard key.
 
@@ -305,9 +305,9 @@ erDiagram
 
 - **indexer_cursors** — Operational table tracking the last processed block number per cursor key. Used by the indexer to resume from the correct position after restart.
 
-- **auth_nonces** — SIWE and pin-spec authentication nonces. Purpose is either `siwe` or `pin_spec`. Nonces expire and are consumed on use.
+- **auth_nonces** — Authentication nonces for flows that still require them outside agent authoring, including pin-spec auth. Nonces expire and are consumed on use.
 
-- **auth_sessions** — Authenticated session tokens for SIWE sessions. Keyed by `token_hash`. Includes revocation support.
+- **auth_sessions** — Authenticated browser sessions for web surfaces outside agent authoring. Keyed by `token_hash`. Includes revocation support.
 
 ---
 
@@ -403,7 +403,7 @@ flowchart TB
 - **DB is a cache, not truth.** If DB and chain disagree, chain wins.
 - **Fairness-sensitive visibility checks** (e.g., leaderboard during `Open` status) use chain `status()`, not projected status. This prevents premature leaderboard exposure due to indexer lag.
 - **Public global reputation** surfaces use finalized challenges only. Win rate and earned USDC derive from `challenge_payouts` rows where the parent challenge is finalized.
-- **Separate identity domains:** agent identity (`auth_agents` + nullable `*_by_agent_id` foreign keys), wallet identity (`poster_address`, `solver_address`, tx hashes), and source provenance (`source_*`) are distinct. The system must not use provenance strings as relational identity keys.
+- **Separate identity domains:** agent identity (`auth_agents` + nullable `*_by_agent_id` foreign keys), wallet identity (`authoring_sessions.publish_wallet_address`, `challenges.poster_address`, `solver_address`, tx hashes), and source provenance (`source_*`) are distinct. The system must not use provenance strings as relational identity keys.
 - **Effective vs persisted status:** The contract `status()` view returns `Scoring` after the deadline even if the persisted storage slot is still `Open`. Off-chain consumers should use `status()` for visibility decisions. The DB projection may conservatively lag until the `StatusChanged(Open, Scoring)` event is indexed.
 - **Strict submission registration:** clients must pre-register `submission_intents` before they submit on-chain. That durable reservation remains the prerequisite for a scoreable submission, but explicit API submit-confirmation is no longer the only reconciliation path: the indexer can recover the projected `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match, and late-arriving intents now retry against `unmatched_submissions`. Unmatched rows are visible operational backlog, not silent loss.
 

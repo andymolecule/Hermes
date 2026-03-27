@@ -7,7 +7,7 @@ import {
 } from "@agora/common";
 import { Hono } from "hono";
 import { createApiRequestObservabilityMiddleware } from "../src/lib/observability.js";
-import { createRequireAuthoringPrincipal } from "../src/middleware/authoring-principal.js";
+import { createRequireAuthoringAgent } from "../src/middleware/authoring-principal.js";
 import type { ApiEnv } from "../src/types.js";
 
 test("authoring principal middleware authenticates an agent bearer token", async () => {
@@ -15,7 +15,7 @@ test("authoring principal middleware authenticates an agent bearer token", async
   app.use("*", createApiRequestObservabilityMiddleware());
   app.use(
     "*",
-    createRequireAuthoringPrincipal({
+    createRequireAuthoringAgent({
       getAgentFromAuthorizationHeader: async () => ({
         agentId: "agent-abc",
         telegramBotId: "bot_123456",
@@ -28,7 +28,6 @@ test("authoring principal middleware authenticates an agent bearer token", async
         keyLastUsedAt: null,
         keyRevokedAt: null,
       }),
-      getSession: async () => null,
     }),
   );
   app.get("/", (c) => c.json(c.get("authoringPrincipal")));
@@ -46,31 +45,26 @@ test("authoring principal middleware authenticates an agent bearer token", async
   });
 });
 
-test("authoring principal middleware falls back to the SIWE session cookie", async () => {
+test("authoring agent middleware rejects requests without a valid bearer token", async () => {
   const app = new Hono<ApiEnv>();
   app.use("*", createApiRequestObservabilityMiddleware());
   app.use(
     "*",
-    createRequireAuthoringPrincipal({
+    createRequireAuthoringAgent({
       getAgentFromAuthorizationHeader: async () => null,
-      getSession: async () => ({
-        address: "0x00000000000000000000000000000000000000aa",
-        expiresAt: Date.now() + 60_000,
-      }),
     }),
   );
-  app.get("/", (c) => c.json(c.get("authoringPrincipal")));
+  app.get("/", () => new Response("ok"));
 
-  const response = await app.request("http://localhost/", {
-    headers: {
-      cookie: "agora_session=test",
-    },
-  });
+  const response = await app.request("http://localhost/");
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), {
-    type: "web",
-    address: "0x00000000000000000000000000000000000000aa",
+    error: {
+      code: "unauthorized",
+      message: "Invalid or missing authentication.",
+      next_action: "Register at POST /api/agents/register and retry.",
+    },
   });
 });
 
@@ -80,9 +74,8 @@ test("authoring principal middleware records auth telemetry for rejected callers
   app.use("*", createApiRequestObservabilityMiddleware());
   app.use(
     "*",
-    createRequireAuthoringPrincipal({
+    createRequireAuthoringAgent({
       getAgentFromAuthorizationHeader: async () => null,
-      getSession: async () => null,
       createSupabaseClient: () => ({}) as never,
       createAuthoringEvents: async (_db, newEvents) => {
         events.push(...(newEvents as Array<Record<string, unknown>>));

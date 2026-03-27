@@ -1,4 +1,10 @@
 import {
+  AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+  readAuthoringPublishRuntimeConfig,
+} from "@agora/common";
+import {
+  AGORA_RUNTIME_SCHEMA_CONTRACT,
+  type RuntimeSchemaContractStatus,
   type RuntimeSchemaFailure,
   createSupabaseClient,
   readRuntimeDatabaseSchemaStatus,
@@ -12,9 +18,20 @@ export interface ApiRuntimeReadiness {
   readiness: {
     databaseSchema: {
       ok: boolean;
+      contract: RuntimeSchemaContractStatus;
       failures: RuntimeSchemaFailure[];
     };
+    authoringPublishConfig: {
+      ok: boolean;
+      failures: RuntimeReadinessFailure[];
+    };
   };
+}
+
+export interface RuntimeReadinessFailure {
+  checkId: string;
+  message: string;
+  nextStep: string;
 }
 
 function toRuntimeReadinessFailure(message: string): RuntimeSchemaFailure {
@@ -29,10 +46,29 @@ function toRuntimeReadinessFailure(message: string): RuntimeSchemaFailure {
   };
 }
 
+function toMissingContractStatus(): RuntimeSchemaContractStatus {
+  return {
+    ok: false,
+    expected: AGORA_RUNTIME_SCHEMA_CONTRACT,
+    actual: null,
+  };
+}
+
+function toAuthoringPublishConfigFailure(
+  message: string,
+): RuntimeReadinessFailure {
+  return {
+    checkId: "authoring_publish_runtime_config",
+    message,
+    nextStep: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+  };
+}
+
 export function createApiRuntimeReadinessProbe(
   dependencies: {
     createSupabaseClientImpl?: typeof createSupabaseClient;
     readRuntimeDatabaseSchemaStatusImpl?: typeof readRuntimeDatabaseSchemaStatus;
+    readAuthoringPublishRuntimeConfigImpl?: typeof readAuthoringPublishRuntimeConfig;
   } = {},
 ) {
   const createDb =
@@ -40,6 +76,9 @@ export function createApiRuntimeReadinessProbe(
   const readSchemaStatus =
     dependencies.readRuntimeDatabaseSchemaStatusImpl ??
     readRuntimeDatabaseSchemaStatus;
+  const readAuthoringPublishRuntime =
+    dependencies.readAuthoringPublishRuntimeConfigImpl ??
+    readAuthoringPublishRuntimeConfig;
 
   let cached: ApiRuntimeReadiness | null = null;
   let cachedAt = 0;
@@ -55,10 +94,13 @@ export function createApiRuntimeReadinessProbe(
     }
 
     inFlight = (async () => {
+      let contract = toMissingContractStatus();
       let failures: RuntimeSchemaFailure[] = [];
       try {
         const db = createDb(true);
-        failures = (await readSchemaStatus(db)).failures;
+        const status = await readSchemaStatus(db);
+        contract = status.contract;
+        failures = status.failures;
       } catch (error) {
         failures = [
           toRuntimeReadinessFailure(
@@ -67,13 +109,29 @@ export function createApiRuntimeReadinessProbe(
         ];
       }
 
+      let authoringPublishFailures: RuntimeReadinessFailure[] = [];
+      try {
+        readAuthoringPublishRuntime();
+      } catch (error) {
+        authoringPublishFailures = [
+          toAuthoringPublishConfigFailure(
+            error instanceof Error ? error.message : String(error),
+          ),
+        ];
+      }
+
       const readiness: ApiRuntimeReadiness = {
-        ok: failures.length === 0,
+        ok: failures.length === 0 && authoringPublishFailures.length === 0,
         checkedAt: new Date().toISOString(),
         readiness: {
           databaseSchema: {
             ok: failures.length === 0,
+            contract,
             failures,
+          },
+          authoringPublishConfig: {
+            ok: authoringPublishFailures.length === 0,
+            failures: authoringPublishFailures,
           },
         },
       };

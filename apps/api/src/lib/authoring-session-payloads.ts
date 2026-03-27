@@ -152,20 +152,6 @@ function buildArtifactRoleMap(session: AuthoringSessionRow) {
   return roleByUri;
 }
 
-function resolveCreator(session: AuthoringSessionRow) {
-  if (typeof session.created_by_agent_id === "string") {
-    return {
-      type: "agent" as const,
-      agent_id: session.created_by_agent_id,
-    };
-  }
-
-  return {
-    type: "web" as const,
-    address: session.poster_address ?? "",
-  };
-}
-
 function buildValidation(
   session: AuthoringSessionRow,
   publicState: ReturnType<typeof toPublicState>,
@@ -520,7 +506,7 @@ export function buildAuthoringSessionPayload(
   return authoringSessionSchema.parse({
     id: session.id,
     state: publicState,
-    creator: resolveCreator(session),
+    publish_wallet_address: session.publish_wallet_address,
     resolved: buildResolved(session),
     validation,
     readiness: buildReadiness(session, publicState, validation),

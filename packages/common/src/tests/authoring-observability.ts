@@ -38,7 +38,7 @@ const telemetryEvent = authoringEventInputSchema.parse({
   trace_id: "trace-123",
   session_id: "session-123",
   agent_id: "agent-abc",
-  poster_address: null,
+  publish_wallet_address: null,
   route: "create",
   event: "turn.output.recorded",
   phase: "semantic",

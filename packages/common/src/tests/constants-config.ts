@@ -18,6 +18,7 @@ import {
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
   readAuthoringOperatorRuntimeConfig,
+  readAuthoringPublishRuntimeConfig,
   readCliRuntimeConfig,
   readExecutorServerRuntimeConfig,
   readFeaturePolicy,
@@ -316,6 +317,18 @@ try {
     "https://preview.example",
   ]);
   assert.equal(isProductionRuntime(apiRuntime), true);
+
+  const authoringPublishRuntime = readAuthoringPublishRuntimeConfig();
+  assert.equal(authoringPublishRuntime.chainId, DEFAULT_CHAIN_ID);
+  assert.equal(authoringPublishRuntime.rpcUrl, "https://example-rpc.invalid");
+  assert.equal(
+    authoringPublishRuntime.factoryAddress,
+    "0x0000000000000000000000000000000000000001",
+  );
+  assert.equal(
+    authoringPublishRuntime.usdcAddress,
+    "0x0000000000000000000000000000000000000002",
+  );
 
   const observabilityRuntime = readObservabilityRuntimeConfig();
   assert.equal(observabilityRuntime.logLevel, "debug");

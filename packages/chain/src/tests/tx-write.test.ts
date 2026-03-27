@@ -175,6 +175,10 @@ test("classifyWriteError decodes raw ERC20 custom errors", () => {
   assert.ok(error instanceof AgoraError);
   assert.equal(error.code, "TX_REVERTED");
   assert.match(error.message, /ERC20InsufficientAllowance/);
+  assert.equal(
+    error.nextAction,
+    "Approve USDC to the active factory for at least the reward amount, then retry from the bound wallet.",
+  );
   assert.equal(error.details?.revertErrorName, "ERC20InsufficientAllowance");
   assert.equal(error.details?.revertSignature, raw.slice(0, 10));
   assert.equal(
@@ -185,4 +189,24 @@ test("classifyWriteError decodes raw ERC20 custom errors", () => {
     (error.details?.revertErrorArgs as unknown[] | undefined)?.slice(1),
     [5n, 10n],
   );
+});
+
+test("classifyWriteError gives a specific next action for ERC20 balance reverts", () => {
+  const raw = encodeErrorResult({
+    abi: erc20Abi,
+    errorName: "ERC20InsufficientBalance",
+    args: ["0x00000000000000000000000000000000000000aa", 5n, 10n],
+  });
+  const error = classifyWriteError(createRawSignatureRevertError(raw), {
+    label: "Authoring challenge creation",
+    phase: "write",
+  });
+
+  assert.ok(error instanceof AgoraError);
+  assert.equal(error.code, "TX_REVERTED");
+  assert.equal(
+    error.nextAction,
+    "Fund the bound wallet with enough USDC for the reward amount, then retry.",
+  );
+  assert.equal(error.details?.revertErrorName, "ERC20InsufficientBalance");
 });

@@ -44,7 +44,7 @@ Use this when you need:
 
 - a new user-facing challenge family
 - different posting defaults
-- shared challenge spec candidate construction used by the web posting flow
+- shared challenge spec candidate construction used by the agent authoring flow
 
 This file owns:
 
@@ -150,8 +150,8 @@ Use this path only when the user-facing posting flow genuinely differs.
 - `apps/api/src/worker/scoring.ts`
   - "Score one queued submission and build a proof."
 
-- `apps/web/src/app/post/PostClient.tsx`
-  - "Render the form and call the shared challenge-spec builder."
+- `apps/api/src/routes/authoring-sessions.ts`
+  - "Own the agent authoring lifecycle and call the shared challenge-spec builder."
 
 ## What should stay unchanged
 

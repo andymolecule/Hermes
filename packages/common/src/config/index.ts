@@ -2,6 +2,7 @@ export * from "./base.js";
 export * from "./api.js";
 export * from "./authoring.js";
 export * from "./cli.js";
+export * from "./db.js";
 export * from "./e2e.js";
 export * from "./indexer.js";
 export * from "./worker.js";

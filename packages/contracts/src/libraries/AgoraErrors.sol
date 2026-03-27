@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 library AgoraErrors {
     error NotOracle();
     error NotPoster();
-    error NotASolver();
+    error NotSubmissionOwner();
     error InvalidStatus();
     error DeadlinePassed();
     error DeadlineNotPassed();

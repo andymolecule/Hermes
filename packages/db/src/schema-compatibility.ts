@@ -2,12 +2,15 @@ import type { AgoraDbClient } from "./index";
 
 export const BASELINE_SCHEMA_NEXT_STEP =
   "Reset the Supabase schema, apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, then restart the affected services.";
+export const AGORA_RUNTIME_SCHEMA_CONTRACT =
+  "agora-runtime:2026-03-27:agent-authoring-v1";
+export const AGORA_RUNTIME_SCHEMA_CONTRACT_RPC = "agora_runtime_contract";
 
 export interface RuntimeSchemaCheck {
   id: string;
   table: string;
   select?: string;
-  operation?: "select" | "delete";
+  operation?: "select" | "delete" | "rpc";
   filters?: Record<string, string | number | boolean>;
   nextStep: string;
 }
@@ -15,16 +18,23 @@ export interface RuntimeSchemaCheck {
 export interface RuntimeSchemaFailure {
   checkId: string;
   table: string;
-  operation: "select" | "delete";
+  operation: "select" | "delete" | "rpc";
   select?: string;
   filters?: Record<string, string | number | boolean>;
   message: string;
   nextStep: string;
 }
 
+export interface RuntimeSchemaContractStatus {
+  ok: boolean;
+  expected: string;
+  actual: string | null;
+}
+
 export interface RuntimeDatabaseSchemaStatus {
   ok: boolean;
   checkedAt: string;
+  contract: RuntimeSchemaContractStatus;
   failures: RuntimeSchemaFailure[];
   nextStep: string | null;
 }
@@ -33,7 +43,9 @@ export function formatRuntimeSchemaFailure(failure: RuntimeSchemaFailure) {
   const target =
     failure.operation === "delete"
       ? `delete ${JSON.stringify(failure.filters ?? {})}`
-      : (failure.select ?? "*");
+      : failure.operation === "rpc"
+        ? (failure.select ?? "rpc")
+        : (failure.select ?? "*");
   return `- ${failure.checkId} (${failure.table}.${target}): ${failure.message}. Next step: ${failure.nextStep}`;
 }
 
@@ -169,7 +181,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     table: "authoring_sessions",
     operation: "select",
     select:
-      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id",
+      "trace_id,state,intent_json,authoring_ir_json,uploaded_artifacts_json,compilation_json,conversation_log_json,published_challenge_id,published_spec_json,published_spec_cid,published_at,expires_at,created_by_agent_id,publish_wallet_address",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
@@ -177,7 +189,7 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     table: "authoring_events",
     operation: "select",
     select:
-      "request_id,trace_id,session_id,agent_id,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
+      "request_id,trace_id,session_id,agent_id,publish_wallet_address,route,event,phase,actor,outcome,code,challenge_id,contract_address,tx_hash,spec_cid,validation_json,client_json,payload_json",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {
@@ -189,6 +201,103 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
 ];
+
+function normalizeRuntimeSchemaContractValue(data: unknown): string | null {
+  if (typeof data === "string") {
+    const trimmed = data.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const normalized = normalizeRuntimeSchemaContractValue(item);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return null;
+  }
+  if (data && typeof data === "object") {
+    for (const value of Object.values(data)) {
+      const normalized = normalizeRuntimeSchemaContractValue(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+  return null;
+}
+
+async function readRuntimeSchemaContractStatus(db: AgoraDbClient): Promise<{
+  contract: RuntimeSchemaContractStatus;
+  failure: RuntimeSchemaFailure | null;
+}> {
+  const expected = AGORA_RUNTIME_SCHEMA_CONTRACT;
+  const fallback = {
+    contract: {
+      ok: false,
+      expected,
+      actual: null,
+    },
+    failure: null,
+  };
+
+  try {
+    const { data, error } = await db.rpc(AGORA_RUNTIME_SCHEMA_CONTRACT_RPC);
+    if (error) {
+      return {
+        ...fallback,
+        failure: {
+          checkId: "runtime_schema_contract",
+          table: "runtime",
+          operation: "rpc",
+          select: `${AGORA_RUNTIME_SCHEMA_CONTRACT_RPC}()`,
+          message: error.message,
+          nextStep: BASELINE_SCHEMA_NEXT_STEP,
+        },
+      };
+    }
+
+    const actual = normalizeRuntimeSchemaContractValue(data);
+    if (actual === expected) {
+      return {
+        contract: {
+          ok: true,
+          expected,
+          actual,
+        },
+        failure: null,
+      };
+    }
+
+    return {
+      contract: {
+        ok: false,
+        expected,
+        actual,
+      },
+      failure: {
+        checkId: "runtime_schema_contract",
+        table: "runtime",
+        operation: "rpc",
+        select: `${AGORA_RUNTIME_SCHEMA_CONTRACT_RPC}()`,
+        message: `Expected runtime schema contract ${expected} but database reported ${actual ?? "null"}.`,
+        nextStep: BASELINE_SCHEMA_NEXT_STEP,
+      },
+    };
+  } catch (error) {
+    return {
+      ...fallback,
+      failure: {
+        checkId: "runtime_schema_contract",
+        table: "runtime",
+        operation: "rpc",
+        select: `${AGORA_RUNTIME_SCHEMA_CONTRACT_RPC}()`,
+        message: error instanceof Error ? error.message : String(error),
+        nextStep: BASELINE_SCHEMA_NEXT_STEP,
+      },
+    };
+  }
+}
 
 async function runRuntimeSchemaCheck(
   db: AgoraDbClient,
@@ -213,11 +322,16 @@ async function runRuntimeSchemaCheck(
     .limit(1);
 }
 
-export async function verifyRuntimeDatabaseSchema(
+async function collectRuntimeDatabaseSchemaState(
   db: AgoraDbClient,
-  checks: RuntimeSchemaCheck[] = REQUIRED_RUNTIME_SCHEMA_CHECKS,
-): Promise<RuntimeSchemaFailure[]> {
+  checks: RuntimeSchemaCheck[],
+) {
+  const { contract, failure: contractFailure } =
+    await readRuntimeSchemaContractStatus(db);
   const failures: RuntimeSchemaFailure[] = [];
+  if (contractFailure) {
+    failures.push(contractFailure);
+  }
 
   for (const check of checks) {
     const operation = check.operation ?? "select";
@@ -236,18 +350,32 @@ export async function verifyRuntimeDatabaseSchema(
     }
   }
 
-  return failures;
+  return {
+    contract,
+    failures,
+  };
+}
+
+export async function verifyRuntimeDatabaseSchema(
+  db: AgoraDbClient,
+  checks: RuntimeSchemaCheck[] = REQUIRED_RUNTIME_SCHEMA_CHECKS,
+): Promise<RuntimeSchemaFailure[]> {
+  return (await collectRuntimeDatabaseSchemaState(db, checks)).failures;
 }
 
 export async function readRuntimeDatabaseSchemaStatus(
   db: AgoraDbClient,
   checks: RuntimeSchemaCheck[] = REQUIRED_RUNTIME_SCHEMA_CHECKS,
 ): Promise<RuntimeDatabaseSchemaStatus> {
-  const failures = await verifyRuntimeDatabaseSchema(db, checks);
+  const { contract, failures } = await collectRuntimeDatabaseSchemaState(
+    db,
+    checks,
+  );
 
   return {
     ok: failures.length === 0,
     checkedAt: new Date().toISOString(),
+    contract,
     failures,
     nextStep:
       failures.length > 0 ? formatRuntimeSchemaNextSteps(failures) : null,

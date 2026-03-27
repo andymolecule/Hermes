@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  appendAuthoringSessionConversationLog,
   AuthoringSessionWriteConflictError,
+  appendAuthoringSessionConversationLog,
 } from "../queries/authoring-sessions.js";
 
 const appendedRow = {
   id: "session-1",
-  poster_address: null,
+  publish_wallet_address: null,
   created_by_agent_id: "agent-1",
   trace_id: "trace-1",
   state: "awaiting_input",

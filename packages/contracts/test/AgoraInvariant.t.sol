@@ -31,6 +31,8 @@ contract AgoraInvariantHandler is Test {
     constructor() {
         usdc = new MockUSDC();
         usdc.mint(poster, 1_000_000e6);
+        usdc.mint(solverA, 1_000_000e6);
+        usdc.mint(solverB, 1_000_000e6);
 
         vm.prank(poster);
         challenge = new AgoraChallenge(
@@ -52,6 +54,11 @@ contract AgoraInvariantHandler is Test {
 
         vm.prank(poster);
         assertTrue(usdc.transfer(address(challenge), rewardAmount));
+
+        vm.prank(solverA);
+        usdc.approve(address(challenge), type(uint256).max);
+        vm.prank(solverB);
+        usdc.approve(address(challenge), type(uint256).max);
 
         fee = (rewardAmount * challenge.PROTOCOL_FEE_BPS()) / 10_000;
     }
@@ -109,11 +116,11 @@ contract AgoraInvariantHandler is Test {
         if (challenge.scoringStartedAt() == 0) return;
         if (block.timestamp >= _disputeWindowEnd()) return;
 
-        address disputer = _activeSolver();
+        (address disputer, uint256 subId) = _activeDisputeCandidate();
         if (disputer == address(0)) return;
 
         vm.prank(disputer);
-        try challenge.dispute("handler dispute") {} catch {}
+        try challenge.dispute(subId, "handler dispute") {} catch {}
     }
 
     function resolveDisputeIfReady() public {
@@ -160,25 +167,26 @@ contract AgoraInvariantHandler is Test {
     function assertEscrowConserved() public view {
         uint256 contractBalance = usdc.balanceOf(address(challenge));
         uint256 claimedTotal = claimedPoster + claimedTreasury + claimedSolverA + claimedSolverB;
-        assertEq(contractBalance + claimedTotal, rewardAmount);
+        assertEq(contractBalance + claimedTotal, rewardAmount + _optionalDisputeBond());
     }
 
     function assertEntitlementsNeverExceedReward() public view {
         uint256 posterEntitlement = _posterEntitlement();
         uint256 treasuryEntitlement = _treasuryEntitlement();
         uint256 solverEntitlement = _solverEntitlement();
+        uint256 totalEscrowed = rewardAmount + _optionalDisputeBond();
 
-        assertLe(posterEntitlement + treasuryEntitlement + solverEntitlement, rewardAmount);
-        assertLe(treasuryEntitlement, fee);
-        assertLe(solverEntitlement, rewardAmount - fee);
+        assertLe(posterEntitlement + treasuryEntitlement + solverEntitlement, totalEscrowed);
+        assertLe(posterEntitlement, rewardAmount);
+        assertLe(treasuryEntitlement, fee + _optionalDisputeBond());
+        assertLe(solverEntitlement, rewardAmount - fee + _optionalDisputeBond());
     }
 
     function assertFinalizedAccounting() public view {
         if (challenge.status() != IAgoraChallenge.Status.Finalized) return;
 
         assertEq(_posterEntitlement(), 0);
-        assertEq(_treasuryEntitlement(), fee);
-        assertEq(_solverEntitlement(), rewardAmount - fee);
+        assertEq(_treasuryEntitlement() + _solverEntitlement(), rewardAmount + _optionalDisputeBond());
         assertTrue(challenge.winnerSet());
     }
 
@@ -186,7 +194,7 @@ contract AgoraInvariantHandler is Test {
         if (challenge.status() != IAgoraChallenge.Status.Cancelled) return;
 
         assertEq(_posterEntitlement(), rewardAmount);
-        assertEq(_treasuryEntitlement(), 0);
+        assertEq(_treasuryEntitlement(), _optionalDisputeBond());
         assertEq(_solverEntitlement(), 0);
         assertFalse(challenge.winnerSet());
     }
@@ -251,14 +259,14 @@ contract AgoraInvariantHandler is Test {
         }
     }
 
-    function _activeSolver() internal view returns (address) {
-        if (subA != type(uint256).max) {
-            return solverA;
+    function _activeDisputeCandidate() internal view returns (address solver, uint256 subId) {
+        if (subA != type(uint256).max && challenge.getSubmission(subA).scored) {
+            return (solverA, subA);
         }
-        if (subB != type(uint256).max) {
-            return solverB;
+        if (subB != type(uint256).max && challenge.getSubmission(subB).scored) {
+            return (solverB, subB);
         }
-        return address(0);
+        return (address(0), type(uint256).max);
     }
 
     function _bestScoredSubmission() internal view returns (uint256) {
@@ -295,6 +303,10 @@ contract AgoraInvariantHandler is Test {
     function _solverEntitlement() internal view returns (uint256) {
         return challenge.claimableByAddress(solverA) + claimedSolverA + challenge.claimableByAddress(solverB)
             + claimedSolverB;
+    }
+
+    function _optionalDisputeBond() internal view returns (uint256) {
+        return challenge.disputeStartedAt() == 0 ? 0 : challenge.disputeBondAmount();
     }
 }
 

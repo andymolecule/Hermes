@@ -23,7 +23,7 @@ library AgoraEvents {
         uint8 indexed rank,
         uint256 amount
     );
-    event Disputed(address indexed disputer, string reason);
+    event Disputed(address indexed disputer, uint256 indexed submissionId, uint256 bondAmount, string reason);
     event DisputeResolved(uint256 indexed winningSubmissionId);
     event Cancelled();
     event Claimed(address indexed claimant, uint256 amount);

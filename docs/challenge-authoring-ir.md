@@ -7,7 +7,6 @@ authoring state and a compiled challenge spec.
 
 This is the durable interpretation layer used by:
 
-- the web `/post` flow
 - direct OpenClaw agent calls
 - any future caller that starts an authoring session through
   `/api/authoring/sessions`
@@ -64,7 +63,7 @@ surface anymore.
 The IR is the durable typed working state of the session so far. It must
 answer:
 
-- what problem the creator is trying to solve
+- what problem the owning agent is trying to solve
 - what solvers are expected to submit
 - how winning is measured
 - which artifacts are public vs hidden

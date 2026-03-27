@@ -42,10 +42,7 @@ assert.equal(transportDomainPatch.intent?.domain, "biology");
 const session = authoringSessionSchema.parse({
   id: "session-123",
   state: "awaiting_input",
-  creator: {
-    type: "agent",
-    agent_id: "agent-abc",
-  },
+  publish_wallet_address: null,
   resolved: {
     intent: {
       title: "Docking challenge against KRAS",
@@ -120,7 +117,7 @@ const session = authoringSessionSchema.parse({
   updated_at: "2026-03-22T00:00:00+00:00",
   expires_at: "2026-03-23T00:00:00+00:00",
 });
-assert.equal(session.creator.type, "agent");
+assert.equal(session.publish_wallet_address, null);
 
 const sessionResponse = authoringSessionResponseSchema.parse({
   data: session,
@@ -146,6 +143,17 @@ assert.equal(
   errorEnvelope.error.details?.revertErrorName,
   "InvalidSubmissionLimits",
 );
+
+const serviceUnavailableEnvelope = authoringSessionErrorEnvelopeSchema.parse({
+  error: {
+    code: "service_unavailable",
+    message:
+      "Authoring publish could not bind the publish wallet because the runtime is not aligned with the active schema.",
+    next_action:
+      "Reset the Supabase schema, apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, then restart the affected services.",
+  },
+});
+assert.equal(serviceUnavailableEnvelope.error.code, "service_unavailable");
 
 const artifactResponse = authoringArtifactResponseSchema.parse({
   data: {

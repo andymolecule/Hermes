@@ -1,18 +1,18 @@
-import { loadConfig } from "@agora/common";
+import { readDatabaseRuntimeConfig } from "@agora/common";
 import { type SupabaseClient, createClient } from "@supabase/supabase-js";
 
 export type AgoraDbClient = SupabaseClient;
 
 export function createSupabaseClient(useServiceKey = false): AgoraDbClient {
-  const config = loadConfig();
-  const url = config.AGORA_SUPABASE_URL;
+  const config = readDatabaseRuntimeConfig();
+  const url = config.supabaseUrl;
   if (!url) {
     throw new Error("AGORA_SUPABASE_URL is required for database access.");
   }
 
   const key = useServiceKey
-    ? config.AGORA_SUPABASE_SERVICE_KEY
-    : config.AGORA_SUPABASE_ANON_KEY;
+    ? config.supabaseServiceKey
+    : config.supabaseAnonKey;
   if (!key) {
     throw new Error(
       `Supabase key missing. Provide ${useServiceKey ? "AGORA_SUPABASE_SERVICE_KEY" : "AGORA_SUPABASE_ANON_KEY"}.`,

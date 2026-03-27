@@ -87,6 +87,19 @@
   },
   {
     "type": "function",
+    "name": "DISPUTE_BOND_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "PROTOCOL_FEE_BPS",
     "inputs": [],
     "outputs": [
@@ -175,6 +188,11 @@
     "name": "dispute",
     "inputs": [
       {
+        "name": "subId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "reason",
         "type": "string",
         "internalType": "string"
@@ -182,6 +200,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "disputeBondAmount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -205,6 +236,19 @@
         "name": "",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "disputedSubmissionId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -649,6 +693,18 @@
         "internalType": "address"
       },
       {
+        "name": "submissionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "bondAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
         "name": "reason",
         "type": "string",
         "indexed": false,
@@ -928,17 +984,17 @@
   },
   {
     "type": "error",
-    "name": "NotASolver",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "NotOracle",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NotPoster",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotSubmissionOwner",
     "inputs": []
   },
   {
@@ -970,6 +1026,11 @@
   {
     "type": "error",
     "name": "SubmissionsExist",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TransferFromFailed",
     "inputs": []
   }
 ]

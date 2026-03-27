@@ -3,6 +3,14 @@
 
 create extension if not exists "pgcrypto";
 
+create or replace function agora_runtime_contract()
+returns text
+language sql
+stable
+as $$
+  select 'agora-runtime:2026-03-27:agent-authoring-v1'::text;
+$$;
+
 create table challenges (
   id uuid primary key default gen_random_uuid(),
   chain_id integer not null,
@@ -485,8 +493,8 @@ create index idx_submission_events_code_created_at
 
 create table authoring_sessions (
   id uuid primary key default gen_random_uuid(),
-  poster_address text,
-  created_by_agent_id uuid references auth_agents(id),
+  publish_wallet_address text,
+  created_by_agent_id uuid not null references auth_agents(id),
   trace_id text,
   state text not null,
   intent_json jsonb,
@@ -513,15 +521,10 @@ create table authoring_sessions (
         'expired'
       )
     ),
-  constraint authoring_sessions_poster_address_lowercase_check
+  constraint authoring_sessions_publish_wallet_address_lowercase_check
     check (
-      poster_address is null
-      or poster_address = lower(poster_address)
-    ),
-  constraint authoring_sessions_creator_identity_check
-    check (
-      (poster_address is not null and created_by_agent_id is null)
-      or (poster_address is null and created_by_agent_id is not null)
+      publish_wallet_address is null
+      or publish_wallet_address = lower(publish_wallet_address)
     )
 );
 
@@ -531,8 +534,8 @@ create index idx_authoring_sessions_state
 create index idx_authoring_sessions_expires_at
   on authoring_sessions(expires_at);
 
-create index idx_authoring_sessions_poster
-  on authoring_sessions(poster_address);
+create index idx_authoring_sessions_publish_wallet
+  on authoring_sessions(publish_wallet_address);
 
 create index idx_authoring_sessions_published_challenge
   on authoring_sessions(published_challenge_id);
@@ -575,7 +578,7 @@ create table authoring_events (
   trace_id text not null,
   session_id uuid references authoring_sessions(id) on delete set null,
   agent_id uuid references auth_agents(id) on delete set null,
-  poster_address text,
+  publish_wallet_address text,
   route text not null,
   event text not null,
   phase text not null,
@@ -626,10 +629,10 @@ create table authoring_events (
         'completed'
       )
     ),
-  constraint authoring_events_poster_address_lowercase_check
+  constraint authoring_events_publish_wallet_address_lowercase_check
     check (
-      poster_address is null
-      or poster_address = lower(poster_address)
+      publish_wallet_address is null
+      or publish_wallet_address = lower(publish_wallet_address)
     ),
   constraint authoring_events_contract_address_lowercase_check
     check (

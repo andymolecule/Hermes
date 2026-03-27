@@ -14,6 +14,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
     uint16 public constant CONTRACT_VERSION = 2;
     uint256 public constant PROTOCOL_FEE_BPS = 1000; // 10%
+    uint16 public constant DISPUTE_BOND_BPS = 1000; // 10% of escrowed reward
     uint64 public constant SCORING_GRACE_PERIOD = 7 days;
 
     IERC20 public immutable usdc;
@@ -33,6 +34,7 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
     uint64 public scoringStartedAt;
     uint64 public disputeStartedAt;
     uint256 public winningSubmissionId;
+    uint256 public disputedSubmissionId;
     bool public winnerSet;
 
     uint256 public scoredCount;
@@ -95,6 +97,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
     function contractVersion() external pure override returns (uint16) {
         return CONTRACT_VERSION;
+    }
+
+    function disputeBondAmount() public view override returns (uint256) {
+        return (rewardAmount * DISPUTE_BOND_BPS) / 10_000;
     }
 
     modifier onlyOracle() {
@@ -219,19 +225,32 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         );
     }
 
-    function dispute(string calldata reason) external override {
+    function dispute(uint256 subId, string calldata reason) external override nonReentrant {
         if (block.timestamp <= deadline) revert AgoraErrors.DisputeWindowNotStarted();
         if (_status == Status.Disputed) revert AgoraErrors.DisputeActive();
         if (_status == Status.Finalized || _status == Status.Cancelled) revert AgoraErrors.InvalidStatus();
         if (_status != Status.Scoring) revert AgoraErrors.InvalidStatus();
-        if (solverSubmissionCount[msg.sender] == 0) revert AgoraErrors.NotASolver();
+        if (subId >= submissions.length) revert AgoraErrors.InvalidSubmission();
+
+        Submission storage submission = submissions[subId];
+        if (submission.solver != msg.sender) revert AgoraErrors.NotSubmissionOwner();
+        if (!submission.scored) revert AgoraErrors.InvalidSubmission();
 
         uint256 disputeEnd = _disputeWindowEnd();
         if (block.timestamp >= disputeEnd) revert AgoraErrors.DisputeWindowClosed();
 
+        uint256 bondAmount = disputeBondAmount();
+        uint256 balanceBefore = usdc.balanceOf(address(this));
+        usdc.safeTransferFrom(msg.sender, address(this), bondAmount);
+        uint256 balanceAfter = usdc.balanceOf(address(this));
+        if (balanceAfter != balanceBefore + bondAmount) {
+            revert AgoraErrors.TransferFromFailed();
+        }
+
         _setStatus(Status.Disputed);
         disputeStartedAt = uint64(block.timestamp);
-        emit AgoraEvents.Disputed(msg.sender, reason);
+        disputedSubmissionId = subId;
+        emit AgoraEvents.Disputed(msg.sender, subId, bondAmount, reason);
     }
 
     function resolveDispute(uint256 winnerSubId) external override onlyOracle nonReentrant {
@@ -265,6 +284,10 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
         _setStatus(Status.Finalized);
         winnerSet = true;
         winningSubmissionId = winnerSubId;
+        _queueClaim(
+            winnerSubId == disputedSubmissionId ? submissions[disputedSubmissionId].solver : treasury, disputeBondAmount()
+        );
+        disputedSubmissionId = 0;
 
         if (protocolFee > 0) {
             _queueClaim(treasury, protocolFee);
@@ -296,6 +319,8 @@ contract AgoraChallenge is IAgoraChallenge, ReentrancyGuard {
 
         _setStatus(Status.Cancelled);
         _queueClaim(poster, rewardAmount);
+        _queueClaim(treasury, disputeBondAmount());
+        disputedSubmissionId = 0;
         emit AgoraEvents.Cancelled();
     }
 

@@ -50,7 +50,7 @@ Agora is an on-chain science bounty protocol. The system is split into **on-chai
 - Submission artifact contracts: `packages/common/src/schemas/submission-contract.ts`
 - Runtime scorer staging and Docker execution: `packages/scorer/src/pipeline.ts`
 - Worker scoring orchestration: `apps/api/src/worker/scoring.ts`
-- Web posting UI: `apps/web/src/app/post/PostClient.tsx`
+- Agent authoring guide UI: `apps/web/src/app/agents/AgentsClient.tsx`
 
 ### Active Generation Boundary
 
@@ -189,7 +189,7 @@ classDiagram
         +submit(resultHash) → subId
         +postScore(subId, score, proofHash)
         +finalize()
-        +dispute(reason)
+        +dispute(submissionId, reason)
         +resolveDispute(winnerSubId)
         +cancel()
         +claim()
@@ -370,7 +370,7 @@ Manual fallback:
 - Entry points:
   - `apps/web/src/app/page.tsx` (home)
   - `apps/web/src/app/challenges/*` (explorer/detail)
-  - `apps/web/src/app/post/*` (challenge posting)
+  - `apps/web/src/app/agents/*` (agent authoring guide and bootstrap)
 - Wallet + chain:
   - `apps/web/src/lib/wagmi.tsx`
   - RainbowKit + wagmi on Base/Base Sepolia
@@ -614,12 +614,12 @@ erDiagram
 | `GET` | `/api/worker-health` | — | — | Worker readiness + runtime alignment |
 | `POST` | `/api/agents/register` | — | — | Register a direct Agora agent and mint an API key |
 | `POST` | `/api/authoring/uploads` | Rate limit | — | Ingest a direct upload or source URL into a normalized Agora artifact |
-| `GET` | `/api/authoring/sessions` | SIWE or agent bearer | — | List the authenticated caller's own authoring sessions |
-| `POST` | `/api/authoring/sessions` | SIWE or agent bearer | — | Create a new authoring session from structured intent, execution, and files |
-| `GET` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Read one private authoring session owned by the caller |
-| `PATCH` | `/api/authoring/sessions/:id` | SIWE or agent bearer | — | Patch missing or invalid session fields and continue deterministic validation |
-| `POST` | `/api/authoring/sessions/:id/publish` | SIWE or agent bearer | — | Prepare wallet tx inputs from a ready session and bind the poster wallet |
-| `POST` | `/api/authoring/sessions/:id/confirm-publish` | SIWE or agent bearer | — | Finalize a wallet-funded publish after the caller transaction succeeds |
+| `GET` | `/api/authoring/sessions` | Agent bearer | — | List the authenticated agent's own authoring sessions |
+| `POST` | `/api/authoring/sessions` | Agent bearer | — | Create a new authoring session from structured intent, execution, and files |
+| `GET` | `/api/authoring/sessions/:id` | Agent bearer | — | Read one private authoring session owned by the agent |
+| `PATCH` | `/api/authoring/sessions/:id` | Agent bearer | — | Patch missing or invalid session fields and continue deterministic validation |
+| `POST` | `/api/authoring/sessions/:id/publish` | Agent bearer | — | Prepare wallet tx inputs from a ready session and bind the publish wallet |
+| `POST` | `/api/authoring/sessions/:id/confirm-publish` | Agent bearer | — | Finalize a wallet-funded publish after the agent transaction succeeds |
 | `GET` | `/api/analytics` | — | — | Platform analytics with freshness/indexer status |
 | `GET` | `/api/pin-spec` | — | — | Pin-spec auth nonce |
 | `POST` | `/api/pin-spec` | Signed auth | — | Pin challenge spec to IPFS |
@@ -630,7 +630,7 @@ erDiagram
 Agora keeps these identity domains separate in the architecture:
 
 - **Agora agent identity** — authenticated through `auth_agents` and joined at read time from nullable `*_by_agent_id` foreign keys
-- **Wallet identity** — `poster_address`, `solver_address`, and transaction hashes that anchor on-chain actions and payouts
+- **Wallet identity** — `authoring_sessions.publish_wallet_address`, `challenges.poster_address`, `solver_address`, and transaction hashes that anchor on-chain actions and payouts
 - **Source provenance** — optional `source_*` metadata copied from publishing context or imported source material
 
 Rules:

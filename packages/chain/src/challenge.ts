@@ -18,8 +18,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient } from "./client.js";
 import { readContractStrict } from "./contract-read.js";
 import {
-  createSolverSignerFromWalletClient,
   type SolverSigner,
+  createSolverSignerFromWalletClient,
 } from "./solver-signer.js";
 import { resolveAgoraViemChain } from "./viem-chain.js";
 
@@ -145,8 +145,9 @@ export async function submitChallengeResult(
   const signer = createSolverSignerFromWalletClient({
     walletClient: getWalletClient(),
   });
-  return (await submitChallengeResultWithSigner(challengeAddress, resultHash, signer))
-    .hash;
+  return (
+    await submitChallengeResultWithSigner(challengeAddress, resultHash, signer)
+  ).hash;
 }
 
 export async function submitChallengeResultWithSigner(
@@ -227,6 +228,7 @@ export async function finalizeChallenge(challengeAddress: `0x${string}`) {
 
 export async function disputeChallenge(
   challengeAddress: `0x${string}`,
+  submissionId: bigint,
   reason: string,
 ) {
   await assertSupportedChallengeVersion(challengeAddress);
@@ -235,7 +237,7 @@ export async function disputeChallenge(
     address: challengeAddress,
     abi: AgoraChallengeAbi,
     functionName: "dispute",
-    args: [reason],
+    args: [submissionId, reason],
     chain: null,
   } as never);
 }
@@ -396,6 +398,20 @@ export async function getChallengeClaimableByAddress(
     abi: AgoraChallengeAbi,
     functionName: "claimableByAddress",
     args: [accountAddress],
+    blockNumber,
+  });
+}
+
+export async function getChallengeDisputeBondAmount(
+  challengeAddress: `0x${string}`,
+  blockNumber?: bigint,
+): Promise<bigint> {
+  const publicClient = getPublicClient();
+  return readContractStrict<bigint>({
+    publicClient,
+    address: challengeAddress,
+    abi: AgoraChallengeAbi,
+    functionName: "disputeBondAmount",
     blockNumber,
   });
 }

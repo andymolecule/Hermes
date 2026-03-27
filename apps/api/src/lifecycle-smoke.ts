@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import { generateKeyPairSync } from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -8,11 +8,13 @@ import {
   createChallenge,
   disputeChallenge,
   getChallengeClaimableByAddress,
+  getChallengeDisputeBondAmount,
   getPublicClient,
   getWalletClient,
   parseChallengeCreatedReceipt,
   parseChallengeLogs,
   parseFactoryLogs,
+  parseSubmittedReceipt,
   resolveDispute,
   startChallengeScoring,
   submitChallengeResult,
@@ -23,6 +25,7 @@ import { reconcileChallengeProjection } from "@agora/chain/indexer/settlement";
 import type { ChallengeListRow } from "@agora/chain/indexer/shared";
 import {
   SCORE_JOB_STATUS,
+  type TrustedChallengeSpecOutput,
   createChallengeExecution,
   createCsvTableEvaluationContract,
   createCsvTableSubmissionContract,
@@ -35,10 +38,10 @@ import {
   resolveRuntimePrivateKey,
   sanitizeChallengeSpecForPublish,
   sealSubmission,
-  type TrustedChallengeSpecOutput,
 } from "@agora/common";
 import {
   createSupabaseClient,
+  getChallengeById,
   getScoreJobBySubmissionId,
   getSubmissionById,
   requeueJobWithoutAttemptPenalty,
@@ -514,6 +517,329 @@ async function registerTrackedChallenge(input: {
   return { challengeId, challengeAddress };
 }
 
+async function expectJsonResponse<T>(
+  response: Response,
+  label: string,
+): Promise<T> {
+  const raw = await response.text();
+  let body: unknown;
+  try {
+    body = raw.length > 0 ? JSON.parse(raw) : null;
+  } catch {
+    throw new Error(`${label} returned non-JSON response: ${raw}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `${label} failed with ${response.status}: ${JSON.stringify(body)}`,
+    );
+  }
+
+  return body as T;
+}
+
+async function runAuthoringLifecycleSmoke(input: {
+  app: ReturnType<typeof createApp>;
+  db: ReturnType<typeof createSupabaseClient>;
+  publicClient: ReturnType<typeof getPublicClient>;
+  accountAddress: `0x${string}`;
+}) {
+  const { app, db, publicClient, accountAddress } = input;
+  const normalizedAccountAddress =
+    accountAddress.toLowerCase() as `0x${string}`;
+  const now = Date.now();
+  const latestBlock = await publicClient.getBlock();
+  const deadlineIso = new Date(
+    Number(latestBlock.timestamp + BigInt(E2E_DEADLINE_SECONDS)) * 1000,
+  ).toISOString();
+
+  console.log("\n=== AUTHORING LIFECYCLE ===\n");
+
+  const registerBody = await expectJsonResponse<{
+    data: {
+      agent_id: string;
+      api_key: string;
+    };
+  }>(
+    await app.request(
+      new Request("http://localhost/api/agents/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          telegram_bot_id: `authoring-smoke-${now}`,
+          agent_name: "Lifecycle smoke agent",
+          description: "DB-backed authoring lifecycle smoke test.",
+          key_label: "lifecycle-smoke",
+        }),
+      }),
+    ),
+    "agent register",
+  );
+  const agentId = registerBody.data.agent_id;
+  const authorization = `Bearer ${registerBody.data.api_key}`;
+  console.log("1. Agent registered:", agentId);
+
+  const createBody = await expectJsonResponse<{
+    data: {
+      id: string;
+      state: string;
+    };
+  }>(
+    await app.request(
+      new Request("http://localhost/api/authoring/sessions", {
+        method: "POST",
+        headers: {
+          authorization,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          intent: {
+            title: `Lifecycle authoring challenge ${now}`,
+            description:
+              "Predict numeric response values for a hidden holdout.",
+            payout_condition: "Lowest RMSE wins.",
+            reward_total: "1",
+            distribution: "winner_take_all",
+            deadline: deadlineIso,
+            dispute_window_hours:
+              readLifecycleE2ERuntimeConfig().disputeWindowHours,
+            domain: "omics",
+            tags: [],
+            timezone: "UTC",
+          },
+        }),
+      }),
+    ),
+    "authoring create",
+  );
+  if (createBody.data.state !== "awaiting_input") {
+    throw new Error(
+      `Authoring create should begin in awaiting_input, got ${createBody.data.state}.`,
+    );
+  }
+  const sessionId = createBody.data.id;
+  console.log("2. Session created:", sessionId);
+
+  const hiddenLabelsBytes = await fs.readFile(
+    repoPath("challenges", "test-data", "prediction", "hidden_labels.csv"),
+  );
+  const uploadForm = new FormData();
+  uploadForm.append(
+    "file",
+    new Blob([hiddenLabelsBytes], { type: "text/csv" }),
+    "hidden_labels.csv",
+  );
+  const uploadBody = await expectJsonResponse<{
+    data: {
+      artifact_id: string;
+    };
+  }>(
+    await app.request(
+      new Request("http://localhost/api/authoring/uploads", {
+        method: "POST",
+        headers: { authorization },
+        body: uploadForm,
+      }),
+    ),
+    "authoring upload",
+  );
+  const artifactId = uploadBody.data.artifact_id;
+  console.log("3. Artifact uploaded:", artifactId);
+
+  const patchBody = await expectJsonResponse<{
+    data: {
+      state: string;
+      publish_wallet_address: string | null;
+      readiness: {
+        publishable: boolean;
+      };
+      resolved: {
+        execution?: {
+          evaluation_artifact_id?: string;
+        };
+      };
+    };
+  }>(
+    await app.request(
+      new Request(`http://localhost/api/authoring/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: {
+          authorization,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          execution: {
+            metric: "rmse",
+            evaluation_artifact_id: artifactId,
+            evaluation_id_column: "id",
+            evaluation_value_column: "label",
+            submission_id_column: "id",
+            submission_value_column: "predicted_value",
+          },
+          files: [{ type: "artifact", artifact_id: artifactId }],
+        }),
+      }),
+    ),
+    "authoring patch",
+  );
+  if (patchBody.data.state !== "ready") {
+    throw new Error(
+      `Authoring patch should produce ready, got ${patchBody.data.state}.`,
+    );
+  }
+  if (patchBody.data.readiness.publishable !== true) {
+    throw new Error("Authoring patch should produce a publishable session.");
+  }
+  if (
+    patchBody.data.resolved.execution?.evaluation_artifact_id !== artifactId
+  ) {
+    throw new Error("Authoring patch did not bind the uploaded artifact.");
+  }
+  console.log("4. Session compiled to ready");
+
+  const publishBody = await expectJsonResponse<{
+    data: {
+      spec_cid: string;
+      factory_address: `0x${string}`;
+      usdc_address: `0x${string}`;
+      reward_units: string;
+      deadline_seconds: number;
+      dispute_window_hours: number;
+      minimum_score_wad: string;
+      distribution_type: number;
+      lab_tba: `0x${string}`;
+      max_submissions_total: number;
+      max_submissions_per_solver: number;
+    };
+  }>(
+    await app.request(
+      new Request(
+        `http://localhost/api/authoring/sessions/${sessionId}/publish`,
+        {
+          method: "POST",
+          headers: {
+            authorization,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            confirm_publish: true,
+            publish_wallet_address: normalizedAccountAddress,
+          }),
+        },
+      ),
+    ),
+    "authoring publish",
+  );
+  const rewardUnits = BigInt(publishBody.data.reward_units);
+  if (rewardUnits % 1_000_000n !== 0n) {
+    throw new Error(
+      `Authoring publish returned non-whole-USDC reward_units=${publishBody.data.reward_units}.`,
+    );
+  }
+  const runtimeConfig = loadConfig();
+  if (
+    publishBody.data.factory_address.toLowerCase() !==
+    runtimeConfig.AGORA_FACTORY_ADDRESS.toLowerCase()
+  ) {
+    throw new Error(
+      `Authoring publish returned factory_address=${publishBody.data.factory_address}, but the active chain runtime is configured for ${runtimeConfig.AGORA_FACTORY_ADDRESS}.`,
+    );
+  }
+  if (
+    publishBody.data.usdc_address.toLowerCase() !==
+    runtimeConfig.AGORA_USDC_ADDRESS.toLowerCase()
+  ) {
+    throw new Error(
+      `Authoring publish returned usdc_address=${publishBody.data.usdc_address}, but the active chain runtime is configured for ${runtimeConfig.AGORA_USDC_ADDRESS}.`,
+    );
+  }
+  const rewardAmountUsdc = Number(rewardUnits / 1_000_000n);
+  console.log("5. Publish preparation returned canonical wallet inputs");
+
+  const approveTxHash = await approve(
+    publishBody.data.factory_address,
+    rewardAmountUsdc,
+  );
+  await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+  console.log("6. Publish wallet approved USDC allowance:", approveTxHash);
+
+  const createTxHash = await createChallenge({
+    specCid: publishBody.data.spec_cid,
+    rewardAmount: rewardAmountUsdc,
+    deadline: publishBody.data.deadline_seconds,
+    disputeWindowHours: publishBody.data.dispute_window_hours,
+    minimumScore: BigInt(publishBody.data.minimum_score_wad),
+    distributionType: publishBody.data.distribution_type,
+    labTba: publishBody.data.lab_tba,
+    maxSubmissions: publishBody.data.max_submissions_total,
+    maxSubmissionsPerSolver: publishBody.data.max_submissions_per_solver,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: createTxHash });
+  console.log("7. Publish transaction sent:", createTxHash);
+
+  const confirmBody = await expectJsonResponse<{
+    data: {
+      state: string;
+      publish_wallet_address: string | null;
+      challenge_id: string | null;
+      contract_address: string | null;
+      tx_hash: string | null;
+    };
+  }>(
+    await app.request(
+      new Request(
+        `http://localhost/api/authoring/sessions/${sessionId}/confirm-publish`,
+        {
+          method: "POST",
+          headers: {
+            authorization,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            tx_hash: createTxHash,
+          }),
+        },
+      ),
+    ),
+    "authoring confirm-publish",
+  );
+  if (confirmBody.data.state !== "published") {
+    throw new Error(
+      `Authoring confirm-publish should produce published, got ${confirmBody.data.state}.`,
+    );
+  }
+  if (
+    confirmBody.data.publish_wallet_address?.toLowerCase() !==
+    normalizedAccountAddress
+  ) {
+    throw new Error("Authoring confirm-publish lost the bound publish wallet.");
+  }
+  if (
+    !confirmBody.data.challenge_id ||
+    !confirmBody.data.contract_address ||
+    confirmBody.data.tx_hash !== createTxHash
+  ) {
+    throw new Error(
+      "Authoring confirm-publish completed without canonical challenge references.",
+    );
+  }
+
+  const challenge = await getChallengeById(db, confirmBody.data.challenge_id);
+  if (challenge.created_by_agent_id !== agentId) {
+    throw new Error(
+      `Published challenge creator mismatch: expected ${agentId}, got ${String(challenge.created_by_agent_id)}.`,
+    );
+  }
+  if (challenge.poster_address !== normalizedAccountAddress) {
+    throw new Error(
+      `Published challenge poster mismatch: expected ${normalizedAccountAddress}, got ${String(challenge.poster_address)}.`,
+    );
+  }
+  console.log(
+    "8. Confirm-publish registered the challenge and preserved ownership",
+  );
+}
+
 async function projectFactoryReceipt(input: {
   db: ReturnType<typeof createSupabaseClient>;
   publicClient: ReturnType<typeof getPublicClient>;
@@ -793,7 +1119,10 @@ async function runLifecycleScenario(input: {
   }
   const onChainDeadlineSeconds = BigInt(Math.floor(deadlineTimestampMs / 1000));
 
-  const approveTxHash = await approve(config.AGORA_FACTORY_ADDRESS, E2E_REWARD_USDC);
+  const approveTxHash = await approve(
+    config.AGORA_FACTORY_ADDRESS,
+    E2E_REWARD_USDC,
+  );
   await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
 
   const createTxHash = await createChallenge({
@@ -890,7 +1219,13 @@ async function runLifecycleScenario(input: {
     challengeAddress,
     resultHash,
   );
-  await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
+  const submitReceipt = await publicClient.waitForTransactionReceipt({
+    hash: submitTxHash,
+  });
+  const { submissionId: onChainSubmissionId } = parseSubmittedReceipt(
+    submitReceipt,
+    challengeAddress,
+  );
   console.log("4. Submission posted:", submitTxHash);
 
   const submissionResponse = await app.request(
@@ -981,7 +1316,21 @@ async function runLifecycleScenario(input: {
   }
   console.log("8. Public verification unlocked after scoring");
 
-  const disputeTxHash = await disputeChallenge(challengeAddress, "e2e dispute");
+  const disputeBondAmount =
+    await getChallengeDisputeBondAmount(challengeAddress);
+  const disputeBondUsdc = Number(disputeBondAmount) / 1_000_000;
+  const disputeBondApproveTxHash = await approve(
+    challengeAddress,
+    disputeBondUsdc,
+  );
+  await publicClient.waitForTransactionReceipt({
+    hash: disputeBondApproveTxHash,
+  });
+  const disputeTxHash = await disputeChallenge(
+    challengeAddress,
+    onChainSubmissionId,
+    "e2e dispute",
+  );
   await publicClient.waitForTransactionReceipt({ hash: disputeTxHash });
   await projectChallengeReceipt({
     db,
@@ -1108,6 +1457,12 @@ export async function runLifecycleE2E() {
 
   const db = createSupabaseClient(true);
   const app = createApp();
+  await runAuthoringLifecycleSmoke({
+    app,
+    db,
+    publicClient,
+    accountAddress: account.address,
+  });
   const prepareScenarios = [
     prepareReproducibilityScenario,
     preparePredictionScenario,

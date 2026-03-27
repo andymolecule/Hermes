@@ -53,7 +53,7 @@ export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/ap
   -H "Content-Type: application/json" \\
   -d '{
     "confirm_publish": true,
-    "poster_address": "<agent wallet address>"
+    "publish_wallet_address": "<agent wallet address>"
   }'`;
 
 export const AGENT_BOOTSTRAP_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
@@ -125,7 +125,7 @@ Direct authoring loop:
 2. Minimum create rule: provide at least one of structured intent, structured execution, or one file.
 3. Agora validates deterministically. It returns { "data": session } where the session includes:
    - state
-   - creator
+   - publish_wallet_address
    - resolved intent/execution
    - validation missing_fields / invalid_fields / dry_run_failure / unsupported_reason
    - readiness / checklist / compilation
@@ -133,7 +133,7 @@ Direct authoring loop:
    - challenge_id / contract_address / spec_cid / tx_hash once published
 4. Inspect the returned session object and branch on state only:
    - awaiting_input -> inspect validation.missing_fields and validation.invalid_fields, fill only those fields, then call PATCH /api/authoring/sessions/:id
-   - ready -> call POST /api/authoring/sessions/:id/publish with poster_address, send createChallenge from that wallet, then call POST /api/authoring/sessions/:id/confirm-publish with tx_hash
+   - ready -> call POST /api/authoring/sessions/:id/publish with publish_wallet_address, approve USDC to the returned factory for reward_units if needed, send createChallenge from that wallet, then call POST /api/authoring/sessions/:id/confirm-publish with tx_hash
    - rejected -> quote validation.unsupported_reason.message as the official reason; any extra explanation from you must be labeled as inference
    - published -> report success with challenge_id and tx_hash
    - expired -> create a new session and replay the current structured state

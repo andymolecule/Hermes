@@ -17,8 +17,8 @@ export type AuthoringSessionState =
   | "expired";
 
 export interface AuthoringSessionInsert {
-  poster_address?: string | null;
-  created_by_agent_id?: string | null;
+  publish_wallet_address?: string | null;
+  created_by_agent_id: string;
   trace_id?: string | null;
   state: AuthoringSessionState;
   intent_json?: ChallengeIntentOutput | null;
@@ -36,8 +36,8 @@ export interface AuthoringSessionInsert {
 
 export interface AuthoringSessionRow {
   id: string;
-  poster_address: string | null;
-  created_by_agent_id: string | null;
+  publish_wallet_address: string | null;
+  created_by_agent_id: string;
   trace_id: string | null;
   state: AuthoringSessionState;
   intent_json: ChallengeIntentOutput | null;
@@ -76,8 +76,8 @@ export async function createAuthoringSession(
   const { data, error } = await db
     .from("authoring_sessions")
     .insert({
-      poster_address: normalizeAddress(payload.poster_address),
-      created_by_agent_id: payload.created_by_agent_id ?? null,
+      publish_wallet_address: normalizeAddress(payload.publish_wallet_address),
+      created_by_agent_id: payload.created_by_agent_id,
       trace_id: payload.trace_id ?? null,
       state: payload.state,
       intent_json: payload.intent_json ?? null,
@@ -125,7 +125,7 @@ export async function updateAuthoringSession(
   input: {
     id: string;
     expected_updated_at?: string;
-    poster_address?: string | null;
+    publish_wallet_address?: string | null;
     created_by_agent_id?: string | null;
     trace_id?: string | null;
     state?: AuthoringSessionState;
@@ -146,8 +146,10 @@ export async function updateAuthoringSession(
     updated_at: new Date().toISOString(),
   };
 
-  if (input.poster_address !== undefined) {
-    patch.poster_address = normalizeAddress(input.poster_address);
+  if (input.publish_wallet_address !== undefined) {
+    patch.publish_wallet_address = normalizeAddress(
+      input.publish_wallet_address,
+    );
   }
   if (input.created_by_agent_id !== undefined) {
     patch.created_by_agent_id = input.created_by_agent_id;
@@ -260,20 +262,13 @@ export async function appendAuthoringSessionConversationLog(
 
 export async function listAuthoringSessionsByCreator(
   db: AgoraDbClient,
-  input:
-    | { type: "web"; address: string }
-    | { type: "agent"; agentId: string },
+  input: { agentId: string },
 ): Promise<AuthoringSessionRow[]> {
   let query = db
     .from("authoring_sessions")
     .select("*")
     .order("updated_at", { ascending: false });
-
-  if (input.type === "web") {
-    query = query.eq("poster_address", normalizeAddress(input.address));
-  } else {
-    query = query.eq("created_by_agent_id", input.agentId);
-  }
+  query = query.eq("created_by_agent_id", input.agentId);
 
   const { data, error } = await query;
 

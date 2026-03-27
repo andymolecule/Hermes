@@ -3,10 +3,12 @@ import test from "node:test";
 import type { AuthoringSessionRow } from "@agora/db";
 import { createInternalAuthoringRoutes } from "../src/routes/internal-authoring.js";
 
-function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringSessionRow {
+function createSession(
+  overrides: Partial<AuthoringSessionRow> = {},
+): AuthoringSessionRow {
   return {
     id: overrides.id ?? "session-123",
-    poster_address: overrides.poster_address ?? null,
+    publish_wallet_address: overrides.publish_wallet_address ?? null,
     created_by_agent_id: overrides.created_by_agent_id ?? "agent-abc",
     trace_id: overrides.trace_id ?? "trace-session-123",
     state: overrides.state ?? "awaiting_input",
@@ -14,23 +16,21 @@ function createSession(overrides: Partial<AuthoringSessionRow> = {}): AuthoringS
     authoring_ir_json: overrides.authoring_ir_json ?? null,
     uploaded_artifacts_json: overrides.uploaded_artifacts_json ?? [],
     compilation_json: overrides.compilation_json ?? null,
-    conversation_log_json:
-      overrides.conversation_log_json ??
-      [
-        {
-          timestamp: "2026-03-23T10:00:00.000Z",
-          request_id: "req-1",
-          route: "create",
-          event: "turn.input.recorded",
-          actor: "caller",
-          summary: "Caller started an authoring session.",
-          state_before: null,
-          state_after: null,
-          intent: {
-            title: "Create a docking challenge for KRAS",
-          },
+    conversation_log_json: overrides.conversation_log_json ?? [
+      {
+        timestamp: "2026-03-23T10:00:00.000Z",
+        request_id: "req-1",
+        route: "create",
+        event: "turn.input.recorded",
+        actor: "caller",
+        summary: "Caller started an authoring session.",
+        state_before: null,
+        state_after: null,
+        intent: {
+          title: "Create a docking challenge for KRAS",
         },
-      ],
+      },
+    ],
     published_challenge_id: overrides.published_challenge_id ?? null,
     published_spec_json: overrides.published_spec_json ?? null,
     published_spec_cid: overrides.published_spec_cid ?? null,
@@ -159,7 +159,7 @@ test("GET /events returns filtered authoring telemetry", async () => {
             trace_id: "trace-session-123",
             session_id: "session-123",
             agent_id: "agent-abc",
-            poster_address: null,
+            publish_wallet_address: null,
             route: "create",
             event: "turn.output.recorded",
             phase: "semantic",

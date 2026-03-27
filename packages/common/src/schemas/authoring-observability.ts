@@ -147,7 +147,7 @@ export const authoringEventSchema = z
     trace_id: z.string().trim().min(1),
     session_id: optionalNonEmptyString,
     agent_id: optionalNonEmptyString,
-    poster_address: optionalNonEmptyString,
+    publish_wallet_address: optionalNonEmptyString,
     route: z.string().trim().min(1),
     event: authoringConversationLogEventSchema,
     phase: authoringTelemetryPhaseSchema,

@@ -14,38 +14,24 @@ import {
 import type { AuthoringSessionRow } from "@agora/db";
 import { Hono } from "hono";
 import { buildAuthoringIr } from "../src/lib/authoring-ir.js";
-import { createApiRequestObservabilityMiddleware } from "../src/lib/observability.js";
 import { encodeAuthoringSessionArtifactId } from "../src/lib/authoring-session-artifacts.js";
+import { createApiRequestObservabilityMiddleware } from "../src/lib/observability.js";
 import { createAuthoringSessionRoutes } from "../src/routes/authoring-sessions.js";
 import type { ApiEnv } from "../src/types.js";
 
-function withPrincipal(
-  principal:
-    | {
-        type: "agent";
-        agent_id: string;
-      }
-    | {
-        type: "web";
-        address: `0x${string}`;
-      },
-) {
+function withPrincipal(principal: { type: "agent"; agent_id: string }) {
   return async (
     c: Parameters<
       NonNullable<
         Parameters<
           typeof createAuthoringSessionRoutes
-        >[0]["requireAuthoringPrincipalMiddleware"]
+        >[0]["requireAuthoringAgentMiddleware"]
       >
     >[0],
     next: () => Promise<void>,
   ) => {
     c.set("authoringPrincipal", principal);
-    if (principal.type === "agent") {
-      c.set("agentId", principal.agent_id);
-    } else {
-      c.set("sessionAddress", principal.address);
-    }
+    c.set("agentId", principal.agent_id);
     await next();
   };
 }
@@ -200,9 +186,8 @@ function createSession(
     (overrides.uploaded_artifacts_json as never) ?? createArtifacts();
   return {
     id: overrides.id ?? "session-123",
-    poster_address:
-      overrides.poster_address ?? "0x00000000000000000000000000000000000000aa",
-    created_by_agent_id: overrides.created_by_agent_id ?? null,
+    publish_wallet_address: overrides.publish_wallet_address ?? null,
+    created_by_agent_id: overrides.created_by_agent_id ?? "agent-abc",
     trace_id: overrides.trace_id ?? "trace-session-123",
     state: overrides.state ?? "awaiting_input",
     intent_json: intent,
@@ -248,7 +233,7 @@ test("POST /sessions creates a new awaiting-input session", async () => {
   let storedSession: AuthoringSessionRow | null = null;
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -258,8 +243,8 @@ test("POST /sessions creates a new awaiting-input session", async () => {
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-new",
-        created_by_agent_id: payload.created_by_agent_id ?? null,
-        poster_address: payload.poster_address ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? "agent-abc",
+        publish_wallet_address: payload.publish_wallet_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
@@ -278,7 +263,7 @@ test("POST /sessions creates a new awaiting-input session", async () => {
         created_by_agent_id:
           payload.created_by_agent_id ??
           storedSession?.created_by_agent_id ??
-          null,
+          "agent-abc",
         state: payload.state ?? storedSession?.state ?? "awaiting_input",
         authoring_ir_json:
           payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
@@ -319,7 +304,7 @@ test("POST /sessions creates a new awaiting-input session", async () => {
   const payload = await response.json();
   assert.equal(payload.data.id, "session-new");
   assert.equal(payload.data.state, "awaiting_input");
-  assert.equal(payload.data.creator.type, "agent");
+  assert.equal(payload.data.publish_wallet_address, null);
   assert.equal(payload.data.validation.missing_fields[0]?.field, "description");
   assert.ok(storedSession);
   assert.equal(storedSession?.conversation_log_json.length, 2);
@@ -330,7 +315,7 @@ test("POST /sessions propagates trace and client telemetry into the session even
   const recordedEvents: Array<Record<string, unknown>> = [];
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -344,8 +329,8 @@ test("POST /sessions propagates trace and client telemetry into the session even
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-trace",
-        created_by_agent_id: payload.created_by_agent_id ?? null,
-        poster_address: payload.poster_address ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? "agent-abc",
+        publish_wallet_address: payload.publish_wallet_address ?? null,
         trace_id: payload.trace_id ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
@@ -398,8 +383,7 @@ test("POST /sessions propagates trace and client telemetry into the session even
       "content-type": "application/json",
       [AGORA_TRACE_ID_HEADER]: "trace-create-123",
       [AGORA_CLIENT_NAME_HEADER]: "agent-sdk",
-      [AGORA_DECISION_SUMMARY_HEADER]:
-        "retry using canonical authoring fields",
+      [AGORA_DECISION_SUMMARY_HEADER]: "retry using canonical authoring fields",
     },
     body: JSON.stringify({
       intent: {
@@ -426,7 +410,7 @@ test("POST /sessions accepts structured intent and execution", async () => {
   let capturedInput: Record<string, unknown> | null = null;
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -463,8 +447,8 @@ test("POST /sessions accepts structured intent and execution", async () => {
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-structured",
-        created_by_agent_id: payload.created_by_agent_id ?? null,
-        poster_address: payload.poster_address ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? "agent-abc",
+        publish_wallet_address: payload.publish_wallet_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
@@ -539,7 +523,7 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
   let storedSession: AuthoringSessionRow | null = null;
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -555,8 +539,8 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-missing-semantics",
-        created_by_agent_id: payload.created_by_agent_id ?? null,
-        poster_address: payload.poster_address ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? "agent-abc",
+        publish_wallet_address: payload.publish_wallet_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
@@ -576,7 +560,7 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
         created_by_agent_id:
           payload.created_by_agent_id ??
           storedSession?.created_by_agent_id ??
-          null,
+          "agent-abc",
         state: payload.state ?? storedSession?.state ?? "awaiting_input",
         authoring_ir_json:
           payload.authoring_ir_json ?? storedSession?.authoring_ir_json ?? null,
@@ -635,7 +619,7 @@ test("POST /sessions keeps missing distribution and domain in awaiting_input", a
 
 test("POST /sessions returns invalid_request for malformed artifact refs", async () => {
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -664,7 +648,7 @@ test("POST /sessions returns invalid_request for malformed artifact refs", async
 
 test("GET /sessions/:id hides sessions owned by another principal", async () => {
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-xyz",
     }),
@@ -672,7 +656,7 @@ test("GET /sessions/:id hides sessions owned by another principal", async () => 
     getAuthoringSessionById: async () =>
       createSession({
         created_by_agent_id: "agent-abc",
-        poster_address: null,
+        publish_wallet_address: null,
       }),
   });
 
@@ -687,7 +671,7 @@ test("GET /sessions/:id hides sessions owned by another principal", async () => 
 test("PATCH /sessions/:id applies structured fields and returns ready", async () => {
   let storedSession = createSession({
     created_by_agent_id: "agent-abc",
-    poster_address: null,
+    publish_wallet_address: null,
     intent_json: null,
     authoring_ir_json: buildAuthoringIr({
       intent: createIntent({ payout_condition: undefined }),
@@ -701,7 +685,7 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
   });
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -772,7 +756,7 @@ test("PATCH /sessions/:id applies structured fields and returns ready", async ()
 test("PATCH /sessions/:id keeps invalid reward_total in validation.invalid_fields", async () => {
   let storedSession = createSession({
     created_by_agent_id: "agent-abc",
-    poster_address: null,
+    publish_wallet_address: null,
     intent_json: null,
     authoring_ir_json: buildAuthoringIr({
       intent: createIntent({ reward_total: undefined }),
@@ -799,7 +783,7 @@ test("PATCH /sessions/:id keeps invalid reward_total in validation.invalid_field
   });
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -851,7 +835,7 @@ test("POST /sessions keeps invalid canonical domains in validation.invalid_field
   let storedSession: AuthoringSessionRow | null = null;
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -865,8 +849,8 @@ test("POST /sessions keeps invalid canonical domains in validation.invalid_field
     createAuthoringSession: async (_db, payload) => {
       storedSession = createSession({
         id: "session-invalid-domain",
-        created_by_agent_id: payload.created_by_agent_id ?? null,
-        poster_address: payload.poster_address ?? null,
+        created_by_agent_id: payload.created_by_agent_id ?? "agent-abc",
+        publish_wallet_address: payload.publish_wallet_address ?? null,
         state: payload.state,
         authoring_ir_json: payload.authoring_ir_json ?? null,
         uploaded_artifacts_json: (payload.uploaded_artifacts_json ??
@@ -948,7 +932,7 @@ test("GET /sessions/:id returns the persisted validation snapshot directly", asy
   };
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -956,7 +940,7 @@ test("GET /sessions/:id returns the persisted validation snapshot directly", asy
     getAuthoringSessionById: async () =>
       createSession({
         created_by_agent_id: "agent-abc",
-        poster_address: null,
+        publish_wallet_address: null,
         intent_json: null,
         authoring_ir_json: buildAuthoringIr({
           intent: createIntent({ domain: undefined }),
@@ -985,7 +969,7 @@ test("GET /sessions/:id returns the persisted validation snapshot directly", asy
 
 test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessions", async () => {
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -993,7 +977,7 @@ test("GET /sessions/:id exposes validation.unsupported_reason on rejected sessio
     getAuthoringSessionById: async () =>
       createSession({
         created_by_agent_id: "agent-abc",
-        poster_address: null,
+        publish_wallet_address: null,
         state: "rejected",
         failure_message:
           "Agora requires deterministic scoring for table-scored challenges.",
@@ -1062,7 +1046,7 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
   ];
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -1070,7 +1054,7 @@ test("GET /sessions/:id exposes artifact candidates and readiness for stale eval
     getAuthoringSessionById: async () =>
       createSession({
         created_by_agent_id: "agent-abc",
-        poster_address: null,
+        publish_wallet_address: null,
         uploaded_artifacts_json: uploadedArtifacts as never,
         authoring_ir_json: buildAuthoringIr({
           intent: createIntent(),
@@ -1148,7 +1132,7 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
   ];
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -1156,7 +1140,7 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
     getAuthoringSessionById: async () =>
       createSession({
         created_by_agent_id: "agent-abc",
-        poster_address: null,
+        publish_wallet_address: null,
         uploaded_artifacts_json: uploadedArtifacts as never,
         authoring_ir_json: buildAuthoringIr({
           intent: createIntent(),
@@ -1220,7 +1204,7 @@ test("GET /sessions/:id exposes platform blockers distinctly from input blockers
 
 test("POST /uploads ingests a URL and returns a normalized artifact", async () => {
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -1249,7 +1233,7 @@ test("POST /uploads ingests a URL and returns a normalized artifact", async () =
   assert.equal(payload.data.source_url, "https://example.com/data.csv");
 });
 
-test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish", async () => {
+test("POST /sessions/:id/publish binds publish_wallet_address for agent publish", async () => {
   const previousRpcUrl = process.env.AGORA_RPC_URL;
   const previousFactoryAddress = process.env.AGORA_FACTORY_ADDRESS;
   const previousUsdcAddress = process.env.AGORA_USDC_ADDRESS;
@@ -1257,79 +1241,6 @@ test("POST /sessions/:id/publish pins a sanitized public spec for wallet publish
   process.env.AGORA_FACTORY_ADDRESS =
     "0x00000000000000000000000000000000000000bb";
   process.env.AGORA_USDC_ADDRESS = "0x00000000000000000000000000000000000000cc";
-  let storedSession = createSession({
-    id: "session-wallet-publish",
-    created_by_agent_id: null,
-    poster_address: "0x00000000000000000000000000000000000000aa",
-    state: "ready",
-    published_spec_cid: "ipfs://stale-buggy-cid",
-    compilation_json: createCompilation(),
-  });
-  let pinnedName: string | null = null;
-  let pinnedSpec: Record<string, unknown> | null = null;
-
-  try {
-    const router = createAuthoringSessionRoutes({
-      requireAuthoringPrincipalMiddleware: withPrincipal({
-        type: "web",
-        address: "0x00000000000000000000000000000000000000aa",
-      }),
-      requireWriteQuotaImpl: allowQuota(),
-      createSupabaseClient: () => ({}) as never,
-      getAuthoringSessionById: async () => storedSession,
-      updateAuthoringSession: async (_db, payload) => {
-        storedSession = createSession({
-          ...storedSession,
-          conversation_log_json:
-            payload.conversation_log_json ??
-            storedSession.conversation_log_json ??
-            [],
-          updated_at: "2026-03-24T15:00:00.000Z",
-        });
-        return storedSession;
-      },
-      pinJsonImpl: async (name, payload) => {
-        pinnedName = name;
-        pinnedSpec = payload;
-        return "ipfs://sanitized-wallet-spec";
-      },
-    });
-
-    const response = await router.request(
-      "http://localhost/sessions/session-wallet-publish/publish",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          confirm_publish: true,
-        }),
-      },
-    );
-
-    assert.equal(response.status, 200);
-    const payload = await response.json();
-    assert.equal(payload.data.spec_cid, "ipfs://sanitized-wallet-spec");
-    assert.equal(pinnedName, "challenge-session-wallet-publish");
-    assert.ok(pinnedSpec);
-    const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
-    assert.equal(
-      parsedPinnedSpec.execution.evaluation_artifact_id,
-      "artifact-hidden",
-    );
-    const privateArtifact = parsedPinnedSpec.artifacts.find(
-      (artifact) => artifact.artifact_id === "artifact-hidden",
-    );
-    assert.ok(privateArtifact);
-    assert.equal(privateArtifact?.visibility, "private");
-    assert.ok(!("uri" in (privateArtifact as Record<string, unknown>)));
-  } finally {
-    process.env.AGORA_RPC_URL = previousRpcUrl;
-    process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
-    process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
-  }
-});
-
-test("POST /sessions/:id/publish binds poster_address for agent publish", async () => {
   let storedSession = createSession({
     id: "session-agent-publish",
     created_by_agent_id: "agent-abc",
@@ -1339,34 +1250,80 @@ test("POST /sessions/:id/publish binds poster_address for agent publish", async 
   });
   storedSession = {
     ...storedSession,
-    poster_address: null,
+    publish_wallet_address: null,
   };
   let pinnedSpec: Record<string, unknown> | null = null;
 
+  try {
+    const router = createAuthoringSessionRoutes({
+      requireAuthoringAgentMiddleware: withPrincipal({
+        type: "agent",
+        agent_id: "agent-abc",
+      }),
+      requireWriteQuotaImpl: allowQuota(),
+      createSupabaseClient: () => ({}) as never,
+      getAuthoringSessionById: async () => storedSession,
+      updateAuthoringSession: async (_db, payload) => {
+        storedSession = createSession({
+          ...storedSession,
+          publish_wallet_address:
+            payload.publish_wallet_address ??
+            storedSession.publish_wallet_address,
+          conversation_log_json:
+            payload.conversation_log_json ??
+            storedSession.conversation_log_json ??
+            [],
+          updated_at: "2026-03-22T00:05:00.000Z",
+        });
+        return storedSession;
+      },
+      pinJsonImpl: async (_name, payload) => {
+        pinnedSpec = payload;
+        return "ipfs://sanitized-agent-spec";
+      },
+    });
+
+    const response = await router.request(
+      "http://localhost/sessions/session-agent-publish/publish",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          confirm_publish: true,
+          publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.data.spec_cid, "ipfs://sanitized-agent-spec");
+    assert.equal(
+      storedSession.publish_wallet_address,
+      "0x00000000000000000000000000000000000000bb",
+    );
+    assert.ok(pinnedSpec);
+    const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
+    assert.equal(
+      parsedPinnedSpec.execution.evaluation_artifact_id,
+      "artifact-hidden",
+    );
+  } finally {
+    process.env.AGORA_RPC_URL = previousRpcUrl;
+    process.env.AGORA_FACTORY_ADDRESS = previousFactoryAddress;
+    process.env.AGORA_USDC_ADDRESS = previousUsdcAddress;
+  }
+});
+
+test("POST /sessions/:id/publish returns targeted migration guidance for legacy publish payloads", async () => {
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
     requireWriteQuotaImpl: allowQuota(),
     createSupabaseClient: () => ({}) as never,
-    getAuthoringSessionById: async () => storedSession,
-    updateAuthoringSession: async (_db, payload) => {
-      storedSession = createSession({
-        ...storedSession,
-        poster_address: payload.poster_address ?? storedSession.poster_address,
-        conversation_log_json:
-          payload.conversation_log_json ??
-          storedSession.conversation_log_json ??
-          [],
-        updated_at: "2026-03-22T00:05:00.000Z",
-      });
-      return storedSession;
-    },
-    pinJsonImpl: async (_name, payload) => {
-      pinnedSpec = payload;
-      return "ipfs://sanitized-agent-spec";
-    },
+    createAuthoringEvents: async () => [],
   });
 
   const response = await router.request(
@@ -1376,23 +1333,68 @@ test("POST /sessions/:id/publish binds poster_address for agent publish", async 
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         confirm_publish: true,
+        funding: { reward_total: "2" },
         poster_address: "0x00000000000000000000000000000000000000bb",
       }),
     },
   );
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 400);
   const payload = await response.json();
-  assert.equal(payload.data.spec_cid, "ipfs://sanitized-agent-spec");
-  assert.equal(
-    storedSession.poster_address,
-    "0x00000000000000000000000000000000000000bb",
+  assert.equal(payload.error.code, "invalid_request");
+  assert.match(payload.error.next_action, /remove `funding`/i);
+  assert.match(
+    payload.error.next_action,
+    /rename `poster_address` to `publish_wallet_address`/i,
   );
-  assert.ok(pinnedSpec);
-  const parsedPinnedSpec = challengeSpecSchema.parse(pinnedSpec);
+});
+
+test("POST /sessions/:id/publish returns service_unavailable when publish wallet binding fails", async () => {
+  const storedSession = createSession({
+    id: "session-agent-publish-runtime-mismatch",
+    created_by_agent_id: "agent-abc",
+    state: "ready",
+    published_spec_cid: "ipfs://stale-buggy-cid",
+    compilation_json: createCompilation(),
+    publish_wallet_address: null,
+  });
+
+  const router = createAuthoringSessionRoutes({
+    requireAuthoringAgentMiddleware: withPrincipal({
+      type: "agent",
+      agent_id: "agent-abc",
+    }),
+    requireWriteQuotaImpl: allowQuota(),
+    createSupabaseClient: () => ({}) as never,
+    createAuthoringEvents: async () => [],
+    getAuthoringSessionById: async () => storedSession,
+    updateAuthoringSession: async () => {
+      throw new Error(
+        "Failed to update authoring session: runtime schema drift detected",
+      );
+    },
+  });
+
+  const response = await router.request(
+    "http://localhost/sessions/session-agent-publish-runtime-mismatch/publish",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        confirm_publish: true,
+        publish_wallet_address: "0x00000000000000000000000000000000000000bb",
+      }),
+    },
+  );
+
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.equal(payload.error.code, "service_unavailable");
+  assert.match(payload.error.message, /could not bind the publish wallet/i);
+  assert.match(payload.error.next_action, /apply .*001_baseline\.sql/i);
   assert.equal(
-    parsedPinnedSpec.execution.evaluation_artifact_id,
-    "artifact-hidden",
+    payload.error.details?.cause,
+    "Failed to update authoring session: runtime schema drift detected",
   );
 });
 
@@ -1400,14 +1402,14 @@ test("POST /sessions/:id/confirm-publish registers an agent-funded publish", asy
   let storedSession = createSession({
     id: "session-agent-confirm",
     created_by_agent_id: "agent-abc",
-    poster_address: "0x00000000000000000000000000000000000000bb",
+    publish_wallet_address: "0x00000000000000000000000000000000000000bb",
     state: "ready",
     compilation_json: createCompilation(),
   });
   let capturedCreatedByAgentId: string | null | undefined;
 
   const router = createAuthoringSessionRoutes({
-    requireAuthoringPrincipalMiddleware: withPrincipal({
+    requireAuthoringAgentMiddleware: withPrincipal({
       type: "agent",
       agent_id: "agent-abc",
     }),
@@ -1419,7 +1421,8 @@ test("POST /sessions/:id/confirm-publish registers an agent-funded publish", asy
         ...storedSession,
         state: payload.state ?? storedSession.state,
         published_challenge_id:
-          payload.published_challenge_id ?? storedSession.published_challenge_id,
+          payload.published_challenge_id ??
+          storedSession.published_challenge_id,
         published_spec_json:
           payload.published_spec_json ?? storedSession.published_spec_json,
         published_spec_cid:
@@ -1476,7 +1479,10 @@ test("POST /sessions/:id/confirm-publish registers an agent-funded publish", asy
   const payload = await response.json();
   assert.equal(payload.data.state, "published");
   assert.equal(payload.data.challenge_id, "challenge-123");
-  assert.equal(payload.data.contract_address, "0x00000000000000000000000000000000000000cc");
+  assert.equal(
+    payload.data.contract_address,
+    "0x00000000000000000000000000000000000000cc",
+  );
   assert.equal(payload.data.tx_hash, "0xabc123");
   assert.equal(capturedCreatedByAgentId, "agent-abc");
 });

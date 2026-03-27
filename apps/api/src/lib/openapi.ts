@@ -19,10 +19,7 @@ function addressSchema() {
 
 export function buildOpenApiDocument(apiBaseUrl?: string) {
   const servers = apiBaseUrl ? [{ url: apiBaseUrl.replace(/\/$/, "") }] : [];
-  const authoringSecurity = [
-    { bearerAuth: [] },
-    { sessionCookieAuth: [] },
-  ] as const;
+  const authoringSecurity = [{ bearerAuth: [] }] as const;
   const release = getAgoraReleaseMetadata();
 
   return {
@@ -1057,7 +1054,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       "/api/authoring/sessions": {
         get: {
           operationId: "listAuthoringSessions",
-          summary: "List the authenticated caller's private authoring sessions",
+          summary: "List the authenticated agent's private authoring sessions",
           security: authoringSecurity,
           responses: {
             "200": {
@@ -1074,7 +1071,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         },
         post: {
           operationId: "createAuthoringSession",
-          summary: "Create a new deterministic authoring validation session",
+          summary:
+            "Create a new private authoring session for an authenticated agent",
           security: authoringSecurity,
           requestBody: {
             required: true,
@@ -1113,7 +1111,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
       "/api/authoring/sessions/{id}": {
         get: {
           operationId: "getAuthoringSession",
-          summary: "Read one private authoring session owned by the caller",
+          summary:
+            "Read one private authoring session owned by the authenticated agent",
           security: authoringSecurity,
           parameters: [
             {
@@ -1148,7 +1147,8 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         },
         patch: {
           operationId: "patchAuthoringSession",
-          summary: "Patch a private authoring session with structured fields",
+          summary:
+            "Patch an authenticated agent's private authoring session with structured fields",
           security: authoringSecurity,
           parameters: [
             {
@@ -1224,7 +1224,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
         post: {
           operationId: "confirmAuthoringSessionPublish",
           summary:
-            "Confirm a wallet-funded publish after the caller transaction succeeds",
+            "Confirm a wallet-funded publish after the agent transaction succeeds",
           security: authoringSecurity,
           parameters: [
             {
@@ -1273,7 +1273,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           in: "cookie",
           name: "agora_session",
           description:
-            "Browser poster auth via SIWE session cookie for web-owned authoring sessions.",
+            "Browser wallet auth for user-facing verification endpoints.",
         },
       },
       schemas: {
@@ -1446,26 +1446,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 artifact_id: { type: "string" },
               },
               required: ["type", "artifact_id"],
-            },
-          ],
-        },
-        AuthoringSessionCreator: {
-          oneOf: [
-            {
-              type: "object",
-              properties: {
-                type: { type: "string", enum: ["agent"] },
-                agent_id: { type: "string" },
-              },
-              required: ["type", "agent_id"],
-            },
-            {
-              type: "object",
-              properties: {
-                type: { type: "string", enum: ["web"] },
-                address: addressSchema(),
-              },
-              required: ["type", "address"],
             },
           ],
         },
@@ -1721,8 +1701,9 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "expired",
               ],
             },
-            creator: {
-              $ref: "#/components/schemas/AuthoringSessionCreator",
+            publish_wallet_address: {
+              ...addressSchema(),
+              nullable: true,
             },
             resolved: {
               $ref: "#/components/schemas/AuthoringSessionResolved",
@@ -1766,7 +1747,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           required: [
             "id",
             "state",
-            "creator",
+            "publish_wallet_address",
             "resolved",
             "validation",
             "readiness",
@@ -1910,9 +1891,18 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           type: "object",
           properties: {
             confirm_publish: { type: "boolean", enum: [true] },
-            poster_address: addressSchema(),
+            publish_wallet_address: addressSchema(),
           },
-          required: ["confirm_publish"],
+          required: ["confirm_publish", "publish_wallet_address"],
+        },
+        WalletPublishPreparationResponse: {
+          type: "object",
+          properties: {
+            data: {
+              $ref: "#/components/schemas/WalletPublishPreparation",
+            },
+          },
+          required: ["data"],
         },
         AuthoringSessionConfirmPublishRequest: {
           type: "object",
@@ -1974,15 +1964,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "object",
                   additionalProperties: true,
                 },
-              },
-              WalletPublishPreparationResponse: {
-                type: "object",
-                properties: {
-                  data: {
-                    $ref: "#/components/schemas/WalletPublishPreparation",
-                  },
-                },
-                required: ["data"],
               },
               required: ["code", "message"],
             },

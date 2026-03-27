@@ -1,13 +1,13 @@
 import {
-  authoringClientTelemetrySchema,
-  authoringEventSchema,
-  authoringTelemetryPayloadSchema,
-  authoringTelemetryRefsSchema,
   type AuthoringClientTelemetryOutput,
   type AuthoringEventListQueryOutput,
   type AuthoringEventOutput,
   type AuthoringTelemetryPayloadOutput,
   type AuthoringTelemetryRefsOutput,
+  authoringClientTelemetrySchema,
+  authoringEventSchema,
+  authoringTelemetryPayloadSchema,
+  authoringTelemetryRefsSchema,
 } from "@agora/common";
 import type { AgoraDbClient } from "../index";
 
@@ -20,7 +20,7 @@ export interface AuthoringEventInsert {
   trace_id: string;
   session_id?: string | null;
   agent_id?: string | null;
-  poster_address?: string | null;
+  publish_wallet_address?: string | null;
   route: string;
   event: AuthoringEventOutput["event"];
   phase: AuthoringEventOutput["phase"];
@@ -45,7 +45,7 @@ type AuthoringEventRow = {
   trace_id: string;
   session_id: string | null;
   agent_id: string | null;
-  poster_address: string | null;
+  publish_wallet_address: string | null;
   route: string;
   event: AuthoringEventOutput["event"];
   phase: AuthoringEventOutput["phase"];
@@ -79,7 +79,7 @@ function toAuthoringEventRow(input: AuthoringEventInsert) {
     trace_id: input.trace_id,
     session_id: input.session_id ?? null,
     agent_id: input.agent_id ?? null,
-    poster_address: normalizeAddress(input.poster_address),
+    publish_wallet_address: normalizeAddress(input.publish_wallet_address),
     route: input.route,
     event: input.event,
     phase: input.phase,
@@ -113,7 +113,7 @@ function mapAuthoringEventRow(row: AuthoringEventRow): AuthoringEventOutput {
     trace_id: row.trace_id,
     session_id: row.session_id,
     agent_id: row.agent_id,
-    poster_address: row.poster_address,
+    publish_wallet_address: row.publish_wallet_address,
     route: row.route,
     event: row.event,
     phase: row.phase,

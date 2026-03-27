@@ -8,7 +8,7 @@ It does **not** own scorer runtime config. Official scorer catalog and runtime p
 
 - `templates.ts`
   - Default challenge-type labels, runtime families, metrics, and authoring defaults
-  - Shared challenge spec candidate construction used by the web posting flow
+  - Shared challenge spec candidate construction used by the agent authoring flow
   - Shared submission-contract builders for current challenge families
 
 - `index.ts`

@@ -12,6 +12,16 @@ const apiServerRuntimeConfigSchema = configSchema.pick({
   AGORA_CHAIN_ID: true,
 });
 
+const authoringPublishRuntimeConfigSchema = configSchema.pick({
+  AGORA_CHAIN_ID: true,
+  AGORA_RPC_URL: true,
+  AGORA_FACTORY_ADDRESS: true,
+  AGORA_USDC_ADDRESS: true,
+});
+
+export const AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP =
+  "Set AGORA_CHAIN_ID, AGORA_RPC_URL, AGORA_FACTORY_ADDRESS, and AGORA_USDC_ADDRESS for this deployment, then restart the API.";
+
 const apiClientRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
 });
@@ -26,6 +36,13 @@ export interface AgoraApiServerRuntimeConfig {
 
 export interface AgoraApiClientRuntimeConfig {
   apiUrl?: string;
+}
+
+export interface AgoraAuthoringPublishRuntimeConfig {
+  chainId: number;
+  rpcUrl: string;
+  factoryAddress: `0x${string}`;
+  usdcAddress: `0x${string}`;
 }
 
 export function readApiServerRuntimeConfig(
@@ -57,5 +74,24 @@ export function readApiClientRuntimeConfig(
   );
   return {
     apiUrl: parsed.AGORA_API_URL,
+  };
+}
+
+export function readAuthoringPublishRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraAuthoringPublishRuntimeConfig {
+  const parsed = parseConfigSection(
+    authoringPublishRuntimeConfigSchema,
+    unsetBlankStringValues(env, [
+      "AGORA_RPC_URL",
+      "AGORA_FACTORY_ADDRESS",
+      "AGORA_USDC_ADDRESS",
+    ]),
+  );
+  return {
+    chainId: parsed.AGORA_CHAIN_ID,
+    rpcUrl: parsed.AGORA_RPC_URL,
+    factoryAddress: parsed.AGORA_FACTORY_ADDRESS,
+    usdcAddress: parsed.AGORA_USDC_ADDRESS,
   };
 }

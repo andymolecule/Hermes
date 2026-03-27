@@ -164,7 +164,7 @@ Minimum top-level fields:
   trace_id: string,
   session_id: string | null,
   agent_id: string | null,
-  poster_address: string | null,
+  publish_wallet_address: string | null,
   route: string,
   event: string,
   phase:

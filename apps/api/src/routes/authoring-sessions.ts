@@ -1,28 +1,30 @@
 import {
   AGORA_TRACE_ID_HEADER,
+  AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
   AgoraError,
+  type AuthoringAgentPrincipalOutput,
   type AuthoringClientTelemetryOutput,
   type AuthoringConversationLogEntryOutput,
   type AuthoringEventInput,
-  type AuthoringSessionCreatorOutput,
   CHALLENGE_LIMITS,
   SUBMISSION_LIMITS,
   confirmPublishAuthoringSessionRequestSchema,
   createAuthoringSessionRequestSchema,
   defaultMinimumScoreForExecution,
-  loadConfig,
   partialChallengeIntentTransportSchema,
   patchAuthoringSessionRequestSchema,
   publishAuthoringSessionRequestSchema,
+  readAuthoringPublishRuntimeConfig,
   sanitizeChallengeSpecForPublish,
   uploadUrlRequestSchema,
   walletPublishPreparationSchema,
 } from "@agora/common";
 import {
-  createAuthoringEvents,
   type AuthoringSessionRow,
   AuthoringSessionWriteConflictError,
+  BASELINE_SCHEMA_NEXT_STEP,
   appendAuthoringSessionConversationLog,
+  createAuthoringEvents,
   createAuthoringSession,
   createSupabaseClient,
   getAuthoringSessionById,
@@ -72,7 +74,7 @@ import {
   getRequestLogger,
   getTraceId,
 } from "../lib/observability.js";
-import { requireAuthoringPrincipal } from "../middleware/authoring-principal.js";
+import { requireAuthoringAgent } from "../middleware/authoring-principal.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
@@ -96,7 +98,7 @@ type AuthoringSessionRouteDependencies = {
   updateAuthoringSession?: typeof updateAuthoringSession;
   getChallengeById?: typeof getChallengeById;
   compileAuthoringSessionOutcome?: typeof compileAuthoringSessionOutcome;
-  requireAuthoringPrincipalMiddleware?: MiddlewareHandler<ApiEnv>;
+  requireAuthoringAgentMiddleware?: MiddlewareHandler<ApiEnv>;
   requireWriteQuotaImpl?: typeof requireWriteQuota;
   createDirectAuthoringSessionArtifact?: typeof createDirectAuthoringSessionArtifact;
   normalizeAuthoringSessionFileInputs?: typeof normalizeAuthoringSessionFileInputs;
@@ -133,11 +135,11 @@ function buildWalletPublishPreparation(input: {
     );
   }
 
-  const config = loadConfig();
+  const config = readAuthoringPublishRuntimeConfig();
   return walletPublishPreparationSchema.parse({
     spec_cid: input.specCid,
-    factory_address: config.AGORA_FACTORY_ADDRESS,
-    usdc_address: config.AGORA_USDC_ADDRESS,
+    factory_address: config.factoryAddress,
+    usdc_address: config.usdcAddress,
     reward_units: parseUnits(String(challengeSpec.reward.total), 6).toString(),
     deadline_seconds: toUnixSeconds(challengeSpec.deadline),
     dispute_window_hours:
@@ -316,42 +318,21 @@ async function appendConversationEntries(input: {
 
 function principalOwnsSession(
   session: AuthoringSessionRow,
-  principal: AuthoringSessionCreatorOutput,
+  principal: AuthoringAgentPrincipalOutput,
 ) {
-  if (principal.type === "agent") {
-    return session.created_by_agent_id === principal.agent_id;
-  }
-
-  return (
-    session.poster_address?.toLowerCase() === principal.address.toLowerCase()
-  );
+  return session.created_by_agent_id === principal.agent_id;
 }
 
-function creatorInsertFields(principal: AuthoringSessionCreatorOutput) {
-  if (principal.type === "agent") {
-    return {
-      created_by_agent_id: principal.agent_id,
-      poster_address: null,
-    };
-  }
-
+function agentOwnershipInsertFields(principal: AuthoringAgentPrincipalOutput) {
   return {
-    created_by_agent_id: null,
-    poster_address: principal.address,
+    created_by_agent_id: principal.agent_id,
+    publish_wallet_address: null,
   };
 }
 
-function creatorListFilter(principal: AuthoringSessionCreatorOutput) {
-  if (principal.type === "agent") {
-    return {
-      type: "agent" as const,
-      agentId: principal.agent_id,
-    };
-  }
-
+function agentOwnershipListFilter(principal: AuthoringAgentPrincipalOutput) {
   return {
-    type: "web" as const,
-    address: principal.address,
+    agentId: principal.agent_id,
   };
 }
 
@@ -363,24 +344,15 @@ function resolveAuthoringTraceId(
 }
 
 function telemetryIdentity(
-  principal?: AuthoringSessionCreatorOutput | null,
-  session?: Pick<AuthoringSessionRow, "created_by_agent_id" | "poster_address"> | null,
+  principal?: AuthoringAgentPrincipalOutput | null,
+  session?: Pick<
+    AuthoringSessionRow,
+    "created_by_agent_id" | "publish_wallet_address"
+  > | null,
 ) {
-  if (principal?.type === "agent") {
-    return {
-      agent_id: principal.agent_id,
-      poster_address: null,
-    };
-  }
-  if (principal?.type === "web") {
-    return {
-      agent_id: null,
-      poster_address: principal.address,
-    };
-  }
   return {
-    agent_id: session?.created_by_agent_id ?? null,
-    poster_address: session?.poster_address ?? null,
+    agent_id: principal?.agent_id ?? session?.created_by_agent_id ?? null,
+    publish_wallet_address: session?.publish_wallet_address ?? null,
   };
 }
 
@@ -405,7 +377,7 @@ function refsFromConversationPublish(
 function createTelemetryEventFromConversationEntry(input: {
   c: import("hono").Context<ApiEnv>;
   session?: AuthoringSessionRow | null;
-  principal?: AuthoringSessionCreatorOutput | null;
+  principal?: AuthoringAgentPrincipalOutput | null;
   entry: AuthoringConversationLogEntryOutput;
   phase: AuthoringEventInput["phase"];
   outcome: AuthoringEventInput["outcome"];
@@ -413,14 +385,16 @@ function createTelemetryEventFromConversationEntry(input: {
   code?: string | null;
   refs?: AuthoringEventInput["refs"];
 }) {
-  const traceId = input.entry.trace_id ?? resolveAuthoringTraceId(input.c, input.session);
+  const traceId =
+    input.entry.trace_id ?? resolveAuthoringTraceId(input.c, input.session);
   const identity = telemetryIdentity(input.principal, input.session);
   return createAuthoringEvent({
-    request_id: input.entry.request_id ?? getRequestId(input.c) ?? "unknown-request",
+    request_id:
+      input.entry.request_id ?? getRequestId(input.c) ?? "unknown-request",
     trace_id: traceId ?? "unknown-trace",
     session_id: input.session?.id ?? null,
     agent_id: identity.agent_id,
-    poster_address: identity.poster_address,
+    publish_wallet_address: identity.publish_wallet_address,
     route: input.entry.route,
     event: input.entry.event,
     phase: input.phase,
@@ -476,7 +450,7 @@ async function recordRouteTelemetryEvent(input: {
   c: import("hono").Context<ApiEnv>;
   db: ReturnType<typeof createSupabaseClient>;
   createAuthoringEventsImpl: typeof createAuthoringEvents;
-  principal?: AuthoringSessionCreatorOutput | null;
+  principal?: AuthoringAgentPrincipalOutput | null;
   session?: AuthoringSessionRow | null;
   route: string;
   event: AuthoringEventInput["event"];
@@ -504,7 +478,7 @@ async function recordRouteTelemetryEvent(input: {
           "unknown-trace",
         session_id: input.session?.id ?? null,
         agent_id: identity.agent_id,
-        poster_address: identity.poster_address,
+        publish_wallet_address: identity.publish_wallet_address,
         route: input.route,
         event: input.event,
         phase: input.phase,
@@ -549,9 +523,81 @@ function invalidRequestMessage(error: unknown) {
   return "Invalid request body.";
 }
 
+function toRequestBodyObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function buildPublishRequestNextAction(body: unknown) {
+  const record = toRequestBodyObject(body);
+  if (!record) {
+    return "Send confirm_publish: true and publish_wallet_address, then retry.";
+  }
+
+  const steps: string[] = [];
+  if ("funding" in record) {
+    steps.push("remove `funding`");
+  }
+  if ("poster_address" in record) {
+    steps.push("rename `poster_address` to `publish_wallet_address`");
+  }
+  if (!("confirm_publish" in record)) {
+    steps.push("set `confirm_publish` to true");
+  }
+  if (!("publish_wallet_address" in record) && !("poster_address" in record)) {
+    steps.push("provide `publish_wallet_address`");
+  }
+
+  if (steps.length === 0) {
+    return "Send confirm_publish: true and publish_wallet_address, then retry.";
+  }
+
+  if (steps.length === 1) {
+    const step = steps[0] ?? "retry publish";
+    return `${step.charAt(0).toUpperCase()}${step.slice(1)}, then retry.`;
+  }
+
+  const head = steps.slice(0, -1).join(", ");
+  return `${head}, and ${steps.at(-1) ?? "retry publish"}, then retry.`;
+}
+
+function isPublishRuntimeConfigError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.includes("Invalid Agora configuration.");
+}
+
+function buildPublishServiceUnavailableResponse(
+  c: import("hono").Context<ApiEnv>,
+  input: {
+    message: string;
+    nextAction: string;
+    details?: Record<string, unknown>;
+  },
+) {
+  return jsonAuthoringSessionApiError(c, {
+    status: 503,
+    code: "service_unavailable",
+    message: input.message,
+    nextAction: input.nextAction,
+    details: input.details,
+  });
+}
+
+type ParseJsonBodyOptions = {
+  invalidJsonNextAction?: string;
+  invalidRequestNextAction?:
+    | string
+    | ((body: unknown, error: z.ZodError) => string);
+};
+
 async function parseJsonBody<T extends z.ZodTypeAny>(
   c: import("hono").Context<ApiEnv>,
   schema: T,
+  options: ParseJsonBodyOptions = {},
 ) {
   let body: unknown;
 
@@ -564,20 +610,25 @@ async function parseJsonBody<T extends z.ZodTypeAny>(
         status: 400,
         code: "invalid_request",
         message: "Request body must be valid JSON.",
-        nextAction: "Fix the request body and retry.",
+        nextAction:
+          options.invalidJsonNextAction ?? "Fix the request body and retry.",
       }),
     };
   }
 
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
+    const nextAction =
+      typeof options.invalidRequestNextAction === "function"
+        ? options.invalidRequestNextAction(body, parsed.error)
+        : options.invalidRequestNextAction;
     return {
       ok: false as const,
       response: jsonAuthoringSessionApiError(c, {
         status: 400,
         code: "invalid_request",
         message: invalidRequestMessage(parsed.error),
-        nextAction: "Fix the request body and retry.",
+        nextAction: nextAction ?? "Fix the request body and retry.",
       }),
     };
   }
@@ -692,7 +743,8 @@ async function ensureSessionVisibility(
     });
     bindRequestLogger(c, {
       sessionId: expiredWithLog.id,
-      traceId: expiredWithLog.trace_id ?? resolveAuthoringTraceId(c, expiredWithLog),
+      traceId:
+        expiredWithLog.trace_id ?? resolveAuthoringTraceId(c, expiredWithLog),
     });
     return {
       ok: true as const,
@@ -842,7 +894,7 @@ async function persistAssessmentResult(input: {
   route: "create" | "patch";
   traceId: string | null;
   requestId: string | null;
-  principal: AuthoringSessionCreatorOutput;
+  principal: AuthoringAgentPrincipalOutput;
   createAuthoringEventsImpl: typeof createAuthoringEvents;
   files?: z.input<typeof createAuthoringSessionRequestSchema>["files"];
   intentPatch?: z.input<typeof createAuthoringSessionRequestSchema>["intent"];
@@ -963,8 +1015,8 @@ async function persistAssessmentResult(input: {
             outcome: "completed",
             code:
               sessionWithLog.state === "rejected"
-                ? sessionWithLog.authoring_ir_json?.validation_snapshot
-                    ?.unsupported_reason?.code ?? null
+                ? (sessionWithLog.authoring_ir_json?.validation_snapshot
+                    ?.unsupported_reason?.code ?? null)
                 : null,
           }),
         ],
@@ -978,7 +1030,7 @@ async function persistAssessmentResult(input: {
     }
 
     const session = await input.createAuthoringSessionImpl(input.db, {
-      ...creatorInsertFields(input.principal),
+      ...agentOwnershipInsertFields(input.principal),
       trace_id: input.traceId,
       state: "awaiting_input",
       authoring_ir_json: authoringIr,
@@ -1116,8 +1168,8 @@ async function persistAssessmentResult(input: {
           outcome: "completed",
           code:
             sessionWithLog.state === "rejected"
-              ? sessionWithLog.authoring_ir_json?.validation_snapshot
-                  ?.unsupported_reason?.code ?? null
+              ? (sessionWithLog.authoring_ir_json?.validation_snapshot
+                  ?.unsupported_reason?.code ?? null)
               : null,
         }),
       ],
@@ -1131,7 +1183,7 @@ async function persistAssessmentResult(input: {
   }
 
   const session = await input.createAuthoringSessionImpl(input.db, {
-    ...creatorInsertFields(input.principal),
+    ...agentOwnershipInsertFields(input.principal),
     trace_id: input.traceId,
     state,
     intent_json: assessedIntent.parsedIntent,
@@ -1184,8 +1236,8 @@ async function persistAssessmentResult(input: {
         outcome: "completed",
         code:
           sessionWithLog.state === "rejected"
-            ? sessionWithLog.authoring_ir_json?.validation_snapshot
-                ?.unsupported_reason?.code ?? null
+            ? (sessionWithLog.authoring_ir_json?.validation_snapshot
+                ?.unsupported_reason?.code ?? null)
             : null,
       }),
     ],
@@ -1216,7 +1268,7 @@ export function createAuthoringSessionRoutes(
     getChallengeById: getChallengeByIdImpl = getChallengeById,
     compileAuthoringSessionOutcome:
       compileAuthoringSessionOutcomeImpl = compileAuthoringSessionOutcome,
-    requireAuthoringPrincipalMiddleware = requireAuthoringPrincipal,
+    requireAuthoringAgentMiddleware = requireAuthoringAgent,
     requireWriteQuotaImpl = requireWriteQuota,
     createDirectAuthoringSessionArtifact:
       createDirectAuthoringSessionArtifactImpl = createDirectAuthoringSessionArtifact,
@@ -1226,11 +1278,11 @@ export function createAuthoringSessionRoutes(
     registerChallengeFromTxHashImpl = registerChallengeFromTxHash,
   } = dependencies;
 
-  router.get("/sessions", requireAuthoringPrincipalMiddleware, async (c) => {
+  router.get("/sessions", requireAuthoringAgentMiddleware, async (c) => {
     const db = createSupabaseClientImpl(true);
     const sessions = await listAuthoringSessionsByCreatorImpl(
       db,
-      creatorListFilter(c.get("authoringPrincipal")),
+      agentOwnershipListFilter(c.get("authoringPrincipal")),
     );
     return c.json({
       data: sessions.map((session) =>
@@ -1239,38 +1291,34 @@ export function createAuthoringSessionRoutes(
     });
   });
 
-  router.get(
-    "/sessions/:id",
-    requireAuthoringPrincipalMiddleware,
-    async (c) => {
-      const db = createSupabaseClientImpl(true);
-      const session = await getAuthoringSessionByIdImpl(db, c.req.param("id"));
-      const visible = await ensureSessionVisibility(
-        c,
-        db,
-        session,
-        updateAuthoringSessionImpl,
-        appendAuthoringSessionConversationLogImpl,
-        { route: "session_lookup" },
-      );
-      if (!visible.ok) {
-        return visible.response;
-      }
+  router.get("/sessions/:id", requireAuthoringAgentMiddleware, async (c) => {
+    const db = createSupabaseClientImpl(true);
+    const session = await getAuthoringSessionByIdImpl(db, c.req.param("id"));
+    const visible = await ensureSessionVisibility(
+      c,
+      db,
+      session,
+      updateAuthoringSessionImpl,
+      appendAuthoringSessionConversationLogImpl,
+      { route: "session_lookup" },
+    );
+    if (!visible.ok) {
+      return visible.response;
+    }
 
-      const challenge = await maybeReadChallenge(
-        getChallengeByIdImpl,
-        db,
-        visible.session,
-      );
-      return c.json({
-        data: buildAuthoringSessionPayload(visible.session, { challenge }),
-      });
-    },
-  );
+    const challenge = await maybeReadChallenge(
+      getChallengeByIdImpl,
+      db,
+      visible.session,
+    );
+    return c.json({
+      data: buildAuthoringSessionPayload(visible.session, { challenge }),
+    });
+  });
 
   router.post(
     "/sessions",
-    requireAuthoringPrincipalMiddleware,
+    requireAuthoringAgentMiddleware,
     requireWriteQuotaImpl("/api/authoring/sessions"),
     async (c) => {
       const parsed = await parseJsonBody(
@@ -1288,7 +1336,8 @@ export function createAuthoringSessionRoutes(
           phase: "ingress",
           actor: "system",
           outcome: "blocked",
-          summary: "Agora rejected the create request before session assessment.",
+          summary:
+            "Agora rejected the create request before session assessment.",
           httpStatus: 400,
           code: "invalid_request",
         });
@@ -1320,8 +1369,12 @@ export function createAuthoringSessionRoutes(
             code: "invalid_request",
             payload: {
               ...(parsed.data.intent ? { intent: parsed.data.intent } : {}),
-              ...(parsed.data.execution ? { execution: parsed.data.execution } : {}),
-              ...(parsed.data.files ? { files: buildLoggedFileInputs(parsed.data.files) } : {}),
+              ...(parsed.data.execution
+                ? { execution: parsed.data.execution }
+                : {}),
+              ...(parsed.data.files
+                ? { files: buildLoggedFileInputs(parsed.data.files) }
+                : {}),
               error: {
                 status: 400,
                 code: "invalid_request",
@@ -1385,7 +1438,8 @@ export function createAuthoringSessionRoutes(
         bindRequestLogger(c, {
           sessionId: result.session.id,
           traceId:
-            result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
+            result.session.trace_id ??
+            resolveAuthoringTraceId(c, result.session),
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
@@ -1419,7 +1473,7 @@ export function createAuthoringSessionRoutes(
 
   router.patch(
     "/sessions/:id",
-    requireAuthoringPrincipalMiddleware,
+    requireAuthoringAgentMiddleware,
     requireWriteQuotaImpl("/api/authoring/sessions/patch"),
     async (c) => {
       const parsed = await parseJsonBody(c, patchAuthoringSessionRequestSchema);
@@ -1615,7 +1669,8 @@ export function createAuthoringSessionRoutes(
         bindRequestLogger(c, {
           sessionId: result.session.id,
           traceId:
-            result.session.trace_id ?? resolveAuthoringTraceId(c, result.session),
+            result.session.trace_id ??
+            resolveAuthoringTraceId(c, result.session),
         });
         logConversationEntries(getRequestLogger(c), {
           sessionId: result.session.id,
@@ -1666,12 +1721,16 @@ export function createAuthoringSessionRoutes(
 
   router.post(
     "/sessions/:id/publish",
-    requireAuthoringPrincipalMiddleware,
+    requireAuthoringAgentMiddleware,
     requireWriteQuotaImpl("/api/authoring/sessions/publish"),
     async (c) => {
       const parsed = await parseJsonBody(
         c,
         publishAuthoringSessionRequestSchema,
+        {
+          invalidRequestNextAction: (body) =>
+            buildPublishRequestNextAction(body),
+        },
       );
       if (!parsed.ok) {
         await recordRouteTelemetryEvent({
@@ -1758,71 +1817,14 @@ export function createAuthoringSessionRoutes(
       }
 
       const principal = c.get("authoringPrincipal");
-      let boundPosterAddress: `0x${string}`;
-      if (principal.type === "agent") {
-        if (!parsed.data.poster_address) {
-          await appendValidationFailureLog({
-            c,
-            db,
-            session: visible.session,
-            updateAuthoringSessionImpl,
-            appendAuthoringSessionConversationLogImpl,
-            createAuthoringEventsImpl,
-            route: "publish",
-            phase: "publish",
-            status: 400,
-            code: "invalid_request",
-            message: "Agent publish requires poster_address.",
-            nextAction:
-              "Retry publish with the wallet address that will send createChallenge.",
-          });
-          return jsonAuthoringSessionApiError(c, {
-            status: 400,
-            code: "invalid_request",
-            message: "Agent publish requires poster_address.",
-            nextAction:
-              "Retry publish with the wallet address that will send createChallenge.",
-          });
-        }
-        boundPosterAddress = parsed.data.poster_address as `0x${string}`;
-      } else {
-        if (
-          parsed.data.poster_address &&
-          parsed.data.poster_address.toLowerCase() !==
-            principal.address.toLowerCase()
-        ) {
-          await appendValidationFailureLog({
-            c,
-            db,
-            session: visible.session,
-            updateAuthoringSessionImpl,
-            appendAuthoringSessionConversationLogImpl,
-            createAuthoringEventsImpl,
-            route: "publish",
-            phase: "publish",
-            status: 400,
-            code: "invalid_request",
-            message:
-              "poster_address must match the authenticated wallet for web publish.",
-            nextAction:
-              "Omit poster_address or retry with the connected SIWE wallet address.",
-          });
-          return jsonAuthoringSessionApiError(c, {
-            status: 400,
-            code: "invalid_request",
-            message:
-              "poster_address must match the authenticated wallet for web publish.",
-            nextAction:
-              "Omit poster_address or retry with the connected SIWE wallet address.",
-          });
-        }
-        boundPosterAddress = principal.address as `0x${string}`;
-      }
+      const boundPublishWalletAddress = parsed.data
+        .publish_wallet_address as `0x${string}`;
 
-      const existingPosterAddress = visible.session.poster_address?.toLowerCase();
+      const existingPublishWalletAddress =
+        visible.session.publish_wallet_address?.toLowerCase();
       if (
-        existingPosterAddress &&
-        existingPosterAddress !== boundPosterAddress.toLowerCase()
+        existingPublishWalletAddress &&
+        existingPublishWalletAddress !== boundPublishWalletAddress.toLowerCase()
       ) {
         await appendValidationFailureLog({
           c,
@@ -1836,7 +1838,7 @@ export function createAuthoringSessionRoutes(
           status: 409,
           code: "invalid_request",
           message:
-            "This session is already bound to a different poster wallet.",
+            "This session is already bound to a different publish wallet.",
           nextAction:
             "Retry publish and confirm-publish with the bound wallet, or create a new session.",
         });
@@ -1844,21 +1846,69 @@ export function createAuthoringSessionRoutes(
           status: 409,
           code: "invalid_request",
           message:
-            "This session is already bound to a different poster wallet.",
+            "This session is already bound to a different publish wallet.",
           nextAction:
             "Retry publish and confirm-publish with the bound wallet, or create a new session.",
           state: getSessionPublicState(visible.session),
         });
       }
 
-      const publishSession =
-        existingPosterAddress === boundPosterAddress.toLowerCase()
-          ? visible.session
-          : await updateAuthoringSessionImpl(db, {
-              id: visible.session.id,
-              expected_updated_at: visible.session.updated_at,
-              poster_address: boundPosterAddress,
-            });
+      let publishSession: AuthoringSessionRow;
+      try {
+        publishSession =
+          existingPublishWalletAddress ===
+          boundPublishWalletAddress.toLowerCase()
+            ? visible.session
+            : await updateAuthoringSessionImpl(db, {
+                id: visible.session.id,
+                expected_updated_at: visible.session.updated_at,
+                publish_wallet_address: boundPublishWalletAddress,
+              });
+      } catch (error) {
+        if (error instanceof AuthoringSessionWriteConflictError) {
+          return jsonAuthoringSessionApiError(c, {
+            status: 409,
+            code: "invalid_request",
+            message: error.message,
+            nextAction: "Reload the latest session and retry publish.",
+          });
+        }
+
+        await recordRouteTelemetryEvent({
+          c,
+          db,
+          createAuthoringEventsImpl,
+          principal,
+          session: visible.session,
+          route: "publish",
+          event: "publish.failed",
+          phase: "publish",
+          actor: "system",
+          outcome: "failed",
+          summary:
+            "Agora could not bind the publish wallet because the runtime is not aligned with the active schema.",
+          httpStatus: 503,
+          code: "service_unavailable",
+          payload: {
+            error: {
+              status: 503,
+              code: "service_unavailable",
+              message:
+                "Authoring publish could not bind the publish wallet because the runtime is not aligned with the active schema.",
+              next_action: BASELINE_SCHEMA_NEXT_STEP,
+            },
+          },
+        }).catch(() => null);
+
+        return buildPublishServiceUnavailableResponse(c, {
+          message:
+            "Authoring publish could not bind the publish wallet because the runtime is not aligned with the active schema.",
+          nextAction: BASELINE_SCHEMA_NEXT_STEP,
+          details: {
+            cause: error instanceof Error ? error.message : String(error),
+          },
+        });
+      }
 
       const specCid = await pinPublicChallengeSpecForSession({
         session: publishSession,
@@ -1877,10 +1927,53 @@ export function createAuthoringSessionRoutes(
           spec_cid: specCid,
         },
       });
-      const preparation = buildWalletPublishPreparation({
-        session: publishSession,
-        specCid,
-      });
+      let preparation: z.output<typeof walletPublishPreparationSchema>;
+      try {
+        preparation = buildWalletPublishPreparation({
+          session: publishSession,
+          specCid,
+        });
+      } catch (error) {
+        if (!isPublishRuntimeConfigError(error)) {
+          throw error;
+        }
+        const cause = error instanceof Error ? error.message : String(error);
+
+        await recordRouteTelemetryEvent({
+          c,
+          db,
+          createAuthoringEventsImpl,
+          principal,
+          session: publishSession,
+          route: "publish",
+          event: "publish.failed",
+          phase: "publish",
+          actor: "system",
+          outcome: "failed",
+          summary:
+            "Agora rejected publish because authoring publish runtime config is missing or invalid.",
+          httpStatus: 503,
+          code: "service_unavailable",
+          payload: {
+            error: {
+              status: 503,
+              code: "service_unavailable",
+              message:
+                "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
+              next_action: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+            },
+          },
+        }).catch(() => null);
+
+        return buildPublishServiceUnavailableResponse(c, {
+          message:
+            "Authoring publish is unavailable because the publish runtime config is missing or invalid.",
+          nextAction: AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP,
+          details: {
+            cause,
+          },
+        });
+      }
       const preparedEntry = createConversationLogEntry({
         trace_id: resolveAuthoringTraceId(c, publishSession),
         request_id: getRequestId(c) ?? null,
@@ -1934,7 +2027,7 @@ export function createAuthoringSessionRoutes(
 
   router.post(
     "/sessions/:id/confirm-publish",
-    requireAuthoringPrincipalMiddleware,
+    requireAuthoringAgentMiddleware,
     requireWriteQuotaImpl("/api/authoring/sessions/confirm-publish"),
     async (c) => {
       const parsed = await parseJsonBody(
@@ -2027,7 +2120,7 @@ export function createAuthoringSessionRoutes(
       }
 
       const principal = c.get("authoringPrincipal");
-      if (!visible.session.poster_address) {
+      if (!visible.session.publish_wallet_address) {
         await appendValidationFailureLog({
           c,
           db,
@@ -2039,18 +2132,16 @@ export function createAuthoringSessionRoutes(
           phase: "registration",
           status: 400,
           code: "invalid_request",
-          message:
-            "This session does not have a bound poster wallet yet.",
+          message: "This session does not have a bound publish wallet yet.",
           nextAction:
-            "Prepare publish from this ready session first to bind the poster wallet, then retry confirm-publish.",
+            "Prepare publish from this ready session first to bind the publish wallet, then retry confirm-publish.",
         });
         return jsonAuthoringSessionApiError(c, {
           status: 400,
           code: "invalid_request",
-          message:
-            "This session does not have a bound poster wallet yet.",
+          message: "This session does not have a bound publish wallet yet.",
           nextAction:
-            "Prepare publish from this ready session first to bind the poster wallet, then retry confirm-publish.",
+            "Prepare publish from this ready session first to bind the publish wallet, then retry confirm-publish.",
         });
       }
 
@@ -2062,9 +2153,9 @@ export function createAuthoringSessionRoutes(
           db,
           txHash: parsed.data.tx_hash as `0x${string}`,
           expectedPosterAddress: visible.session
-            .poster_address as `0x${string}`,
+            .publish_wallet_address as `0x${string}`,
           expectedSpec: visible.session.compilation_json.challenge_spec,
-          createdByAgentId: visible.session.created_by_agent_id ?? null,
+          createdByAgentId: visible.session.created_by_agent_id,
         });
       } catch (error) {
         const message =
@@ -2078,7 +2169,8 @@ export function createAuthoringSessionRoutes(
             : "invalid_request";
         const failedEntry = createConversationLogEntry({
           trace_id:
-            visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
+            visible.session.trace_id ??
+            resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "confirm_publish",
           event: "registration.failed",
@@ -2129,8 +2221,17 @@ export function createAuthoringSessionRoutes(
           logger: getRequestLogger(c),
         });
         return jsonAuthoringSessionApiError(c, {
-          status:
-            status as 400 | 401 | 403 | 404 | 409 | 410 | 422 | 429 | 500 | 503,
+          status: status as
+            | 400
+            | 401
+            | 403
+            | 404
+            | 409
+            | 410
+            | 422
+            | 429
+            | 500
+            | 503,
           code,
           message,
           nextAction:
@@ -2141,7 +2242,8 @@ export function createAuthoringSessionRoutes(
       try {
         const registrationCompletedEntry = createConversationLogEntry({
           trace_id:
-            visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
+            visible.session.trace_id ??
+            resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "confirm_publish",
           event: "registration.completed",
@@ -2157,7 +2259,9 @@ export function createAuthoringSessionRoutes(
           },
         });
         const publishCompletedEntry = createConversationLogEntry({
-          trace_id: visible.session.trace_id ?? resolveAuthoringTraceId(c, visible.session),
+          trace_id:
+            visible.session.trace_id ??
+            resolveAuthoringTraceId(c, visible.session),
           request_id: getRequestId(c) ?? null,
           route: "confirm_publish",
           event: "publish.completed",
@@ -2267,7 +2371,7 @@ export function createAuthoringSessionRoutes(
 
   router.post(
     "/uploads",
-    requireAuthoringPrincipalMiddleware,
+    requireAuthoringAgentMiddleware,
     requireWriteQuotaImpl("/api/authoring/uploads"),
     async (c) => {
       const db = createSupabaseClientImpl(true);
@@ -2330,7 +2434,8 @@ export function createAuthoringSessionRoutes(
           phase: "upload",
           actor: "system",
           outcome: "blocked",
-          summary: "Agora could not produce an artifact from the upload request.",
+          summary:
+            "Agora could not produce an artifact from the upload request.",
           httpStatus: 400,
           code: "invalid_request",
           payload: {

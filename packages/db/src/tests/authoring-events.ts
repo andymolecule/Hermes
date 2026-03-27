@@ -34,7 +34,7 @@ const createdEvents = await createAuthoringEvents(createDb, [
     trace_id: "trace-1",
     session_id: "session-1",
     agent_id: "agent-abc",
-    poster_address: "0x00000000000000000000000000000000000000AA",
+    publish_wallet_address: "0x00000000000000000000000000000000000000AA",
     route: "create",
     event: "turn.output.recorded",
     phase: "semantic",
@@ -61,7 +61,7 @@ const createdEvents = await createAuthoringEvents(createDb, [
 
 assert.equal(insertedRows.length, 1);
 assert.equal(
-  insertedRows[0]?.poster_address,
+  insertedRows[0]?.publish_wallet_address,
   "0x00000000000000000000000000000000000000aa",
 );
 assert.equal(
@@ -82,7 +82,7 @@ const listedRow = {
   trace_id: "trace-2",
   session_id: "session-2",
   agent_id: "agent-xyz",
-  poster_address: null,
+  publish_wallet_address: null,
   route: "publish",
   event: "publish.completed" as const,
   phase: "publish" as const,
@@ -102,35 +102,44 @@ const listedRow = {
   payload_json: null,
 };
 
-const listBuilder = {
-  select(columns: string) {
-    filterCalls.push(["select", columns, null]);
-    return this;
-  },
-  order(column: string, options: unknown) {
-    filterCalls.push(["order", column, options]);
-    return this;
-  },
-  limit(value: number) {
-    filterCalls.push(["limit", "limit", value]);
-    return this;
-  },
-  eq(column: string, value: unknown) {
-    filterCalls.push(["eq", column, value]);
-    return this;
-  },
-  gte(column: string, value: unknown) {
-    filterCalls.push(["gte", column, value]);
-    return this;
-  },
-  lte(column: string, value: unknown) {
-    filterCalls.push(["lte", column, value]);
-    return this;
-  },
-  then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
-    return Promise.resolve({ data: [listedRow], error: null }).then(resolve, reject);
-  },
+type MockListBuilder = Promise<{ data: [typeof listedRow]; error: null }> & {
+  select(columns: string): MockListBuilder;
+  order(column: string, options: unknown): MockListBuilder;
+  limit(value: number): MockListBuilder;
+  eq(column: string, value: unknown): MockListBuilder;
+  gte(column: string, value: unknown): MockListBuilder;
+  lte(column: string, value: unknown): MockListBuilder;
 };
+
+const listBuilder = Object.assign(
+  Promise.resolve({ data: [listedRow] as [typeof listedRow], error: null }),
+  {
+    select(columns: string) {
+      filterCalls.push(["select", columns, null]);
+      return listBuilder;
+    },
+    order(column: string, options: unknown) {
+      filterCalls.push(["order", column, options]);
+      return listBuilder;
+    },
+    limit(value: number) {
+      filterCalls.push(["limit", "limit", value]);
+      return listBuilder;
+    },
+    eq(column: string, value: unknown) {
+      filterCalls.push(["eq", column, value]);
+      return listBuilder;
+    },
+    gte(column: string, value: unknown) {
+      filterCalls.push(["gte", column, value]);
+      return listBuilder;
+    },
+    lte(column: string, value: unknown) {
+      filterCalls.push(["lte", column, value]);
+      return listBuilder;
+    },
+  },
+) as MockListBuilder;
 
 const listDb = {
   from(table: string) {

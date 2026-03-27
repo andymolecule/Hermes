@@ -31,6 +31,7 @@ export const AUTHORING_SESSION_ERROR_CODE_VALUES = [
   "not_found",
   "invalid_request",
   "session_expired",
+  "service_unavailable",
   "unsupported_task",
   "TX_REVERTED",
 ] as const;
@@ -89,20 +90,12 @@ export const authoringSessionProvenanceSchema = z
   })
   .strict();
 
-export const authoringSessionCreatorSchema = z.discriminatedUnion("type", [
-  z
-    .object({
-      type: z.literal("agent"),
-      agent_id: z.string().trim().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      type: z.literal("web"),
-      address: z.string().trim().min(1),
-    })
-    .strict(),
-]);
+export const authoringAgentPrincipalSchema = z
+  .object({
+    type: z.literal("agent"),
+    agent_id: z.string().trim().min(1),
+  })
+  .strict();
 
 export const authoringSessionArtifactSchema = z
   .object({
@@ -240,7 +233,7 @@ export const authoringSessionSchema = z
   .object({
     id: z.string().trim().min(1),
     state: authoringSessionPublicStateSchema,
-    creator: authoringSessionCreatorSchema,
+    publish_wallet_address: normalizedAddressSchema.nullable(),
     resolved: authoringSessionResolvedSchema,
     validation: authoringSessionValidationSchema,
     readiness: authoringSessionReadinessSchema,
@@ -338,7 +331,7 @@ export const patchAuthoringSessionRequestSchema = z
 export const publishAuthoringSessionRequestSchema = z
   .object({
     confirm_publish: z.literal(true),
-    poster_address: normalizedAddressSchema.optional(),
+    publish_wallet_address: normalizedAddressSchema,
   })
   .strict();
 
@@ -428,8 +421,8 @@ export type AuthoringSessionOutput = z.output<typeof authoringSessionSchema>;
 export type AuthoringSessionResponseOutput = z.output<
   typeof authoringSessionResponseSchema
 >;
-export type AuthoringSessionCreatorOutput = z.output<
-  typeof authoringSessionCreatorSchema
+export type AuthoringAgentPrincipalOutput = z.output<
+  typeof authoringAgentPrincipalSchema
 >;
 export type AuthoringSessionErrorCodeOutput = z.output<
   typeof authoringSessionErrorCodeSchema
