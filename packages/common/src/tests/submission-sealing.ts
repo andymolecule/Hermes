@@ -9,6 +9,7 @@ import {
   openSubmission,
   parseSealedSubmissionEnvelope,
   sealSubmission,
+  serializeSealedSubmissionAuthenticatedData,
   serializeSealedSubmissionEnvelope,
 } from "../index.js";
 assert.equal(
@@ -52,6 +53,19 @@ assert.equal(
   computeSubmissionSealPublicKeyFingerprint(publicKey),
   computeSubmissionSealPublicKeyFingerprint(publicKey),
   "submission seal key fingerprints should be deterministic for the same PEM",
+);
+assert.equal(
+  serializeSealedSubmissionAuthenticatedData({
+    version: "sealed_submission_v2",
+    alg: "aes-256-gcm+rsa-oaep-256",
+    kid: "generated-test-kid",
+    challengeId: "22222222-2222-2222-2222-222222222222",
+    solverAddress: "0xABCDEF0000000000000000000000000000000001",
+    fileName: "answer.txt",
+    mimeType: "text/plain",
+  }),
+  '{"version":"sealed_submission_v2","alg":"aes-256-gcm+rsa-oaep-256","kid":"generated-test-kid","challengeId":"22222222-2222-2222-2222-222222222222","solverAddress":"0xabcdef0000000000000000000000000000000001","fileName":"answer.txt","mimeType":"text/plain"}',
+  "authenticated-data serialization should stay stable for external sealers",
 );
 const serializedEnvelope = serializeSealedSubmissionEnvelope(generatedEnvelope);
 assert.deepEqual(

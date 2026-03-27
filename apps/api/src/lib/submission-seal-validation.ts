@@ -106,7 +106,7 @@ function mapWorkerValidationFailure(
       return new SubmissionSealValidationClientError(
         400,
         "SEALED_SUBMISSION_INVALID",
-        "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper. Next step: fetch /api/submissions/public-key again, reseal with @agora/common sealSubmission or agora submit, re-upload it, and retry.",
+        "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper or does not match Agora's published authenticated-data contract exactly. Next step: reseal with @agora/common sealSubmission or agora submit, or fix the custom sealer to match the published contract exactly, then re-upload and retry.",
         {
           extras: buildWorkerValidationExtras(failure),
         },

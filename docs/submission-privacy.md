@@ -224,6 +224,22 @@ That means these fields are not secret, but they cannot be modified without caus
 Canonical serialization rule:
 
 - The uploaded envelope JSON must store `solverAddress` in lowercase. Agora rejects mixed-case `solverAddress` values at upload because the canonical authenticated-data contract normalizes that field before encryption.
+- The AES-GCM authenticated data is the UTF-8 encoding of this exact JSON object with this exact key order and no extra fields:
+
+```json
+{
+  "version": "sealed_submission_v2",
+  "alg": "aes-256-gcm+rsa-oaep-256",
+  "kid": "<kid>",
+  "challengeId": "<challenge uuid>",
+  "solverAddress": "<lowercase 0x wallet>",
+  "fileName": "<original file name>",
+  "mimeType": "<original mime type>"
+}
+```
+
+- JS/TS clients should call `@agora/common` `sealSubmission` directly.
+- Custom sealers must reproduce that object exactly. Agora does not accept alternate field orders, mixed-case `solverAddress`, or mismatched `fileName` / `mimeType` bytes.
 
 ### Encrypted data
 

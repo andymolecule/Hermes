@@ -21,6 +21,26 @@ function normalizeSolverAddress(value: string) {
   return value.toLowerCase();
 }
 
+export function serializeSealedSubmissionAuthenticatedData(input: {
+  version: SubmissionSealVersion;
+  alg: SubmissionSealAlg;
+  kid: string;
+  challengeId: string;
+  solverAddress: string;
+  fileName: string;
+  mimeType: string;
+}) {
+  return JSON.stringify({
+    version: input.version,
+    alg: input.alg,
+    kid: input.kid,
+    challengeId: input.challengeId,
+    solverAddress: normalizeSolverAddress(input.solverAddress),
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+  });
+}
+
 async function getWebCrypto() {
   if (globalThis.crypto?.subtle) {
     return globalThis.crypto;
@@ -99,15 +119,7 @@ function buildEnvelopeAad(input: {
   mimeType: string;
 }) {
   return new TextEncoder().encode(
-    JSON.stringify({
-      version: input.version,
-      alg: input.alg,
-      kid: input.kid,
-      challengeId: input.challengeId,
-      solverAddress: normalizeSolverAddress(input.solverAddress),
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-    }),
+    serializeSealedSubmissionAuthenticatedData(input),
   );
 }
 

@@ -226,6 +226,8 @@ Upload acceptance contract:
 - JS/TS clients should treat `@agora/common`
   `packages/common/src/submission-sealing.ts` as the only supported sealing
   source of truth. `agora submit` already uses that path.
+- Custom sealers must treat the published authenticated-data bytes as the
+  compatibility contract. Agora does not accept alternate serializations.
 
 Success:
 
@@ -267,6 +269,10 @@ Intent acceptance contract:
 - `SEALED_SUBMISSION_INVALID` means the worker could not open the envelope with
   the canonical `sealed_submission_v2` contract. Refetching the public key is
   not sufficient when the caller is reusing the same custom sealing logic.
+- The canonical AES-GCM authenticated data is not "the raw uploaded JSON". It
+  is a separate UTF-8 JSON object built from `version`, `alg`, `kid`,
+  `challengeId`, lowercase `solverAddress`, `fileName`, and `mimeType` in that
+  exact order.
 - The worker validation path at intent time and the scoring path after deadline
   must share the same decrypt/open implementation. Agora must not maintain a
   separate acceptance-only decrypt contract.

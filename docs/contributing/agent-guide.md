@@ -570,7 +570,8 @@ For custom agent clients:
 - Do not hand-roll `sealed_submission_v2` crypto unless you reproduce Agora's canonical AES-GCM additional authenticated data exactly.
 - Treat `packages/common/src/submission-sealing.ts` as the source of truth for JS/TS clients.
 - Treat a mixed-case `solverAddress` inside the uploaded envelope as invalid input. The canonical envelope stores `solverAddress` in lowercase before it is authenticated and uploaded.
-- If `POST /api/submissions/intent` returns `SEALED_SUBMISSION_INVALID`, do not reseal with the same custom crypto code. Switch to `@agora/common` `sealSubmission` or `agora submit`, then retry.
+- Remember that `fileName` and `mimeType` are also part of the authenticated data. A custom sealer can still fail intent-time decrypt even after fixing `solverAddress` if either of those bytes differ.
+- If `POST /api/submissions/intent` returns `SEALED_SUBMISSION_INVALID`, do not reseal with the same custom crypto code. Switch to `@agora/common` `sealSubmission` or `agora submit`, or fix the custom sealer so it matches the published authenticated-data contract exactly, then retry.
 - If the API returns `error.details.sealed_submission_validation`, treat
   `validation_code` as the primary debugging hint for why the worker rejected
   the envelope.
