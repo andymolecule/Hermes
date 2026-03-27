@@ -57,6 +57,7 @@ const NAV_GROUPS: NavGroup[] = [
     group: "Reference",
     items: [
       { id: "privacy", label: "Submission Privacy" },
+      { id: "http-api", label: "HTTP API" },
       { id: "env-vars", label: "Environment Variables" },
       { id: "cli-cheat-sheet", label: "CLI Cheat Sheet" },
       { id: "lifecycle", label: "Challenge Lifecycle" },
@@ -65,7 +66,9 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const NAV_IDS = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id));
+const NAV_IDS = NAV_GROUPS.flatMap((group) =>
+  group.items.map((item) => item.id),
+);
 
 function useActiveSection() {
   const [activeId, setActiveId] = useState("overview");

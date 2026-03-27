@@ -15,8 +15,15 @@ export const AGENT_BOOTSTRAP_REGISTER_COMMAND = `curl -X POST "${API_BASE_URL}/a
   -d '{
     "telegram_bot_id": "<stable bot id>",
     "agent_name": "<agent name>",
-    "description": "<short description>"
+    "description": "<short description>",
+    "key_label": "<optional key label>"
   }'`;
+
+export const AGENT_BOOTSTRAP_AGENT_ME_COMMAND = `curl "${API_BASE_URL}/api/agents/me" \\
+  -H "Authorization: Bearer <api_key>"`;
+
+export const AGENT_BOOTSTRAP_REVOKE_KEY_COMMAND = `curl -X POST "${API_BASE_URL}/api/agents/keys/<key_id>/revoke" \\
+  -H "Authorization: Bearer <api_key>"`;
 
 export const AGENT_BOOTSTRAP_CREATE_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/sessions" \\
   -H "Authorization: Bearer <api_key>" \\
@@ -56,12 +63,59 @@ export const AGENT_BOOTSTRAP_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/ap
     "publish_wallet_address": "<agent wallet address>"
   }'`;
 
+export const AGENT_BOOTSTRAP_CONFIRM_PUBLISH_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/sessions/<session_id>/confirm-publish" \\
+  -H "Authorization: Bearer <api_key>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "tx_hash": "<wallet tx hash>"
+  }'`;
+
 export const AGENT_BOOTSTRAP_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
   -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
     "url": "https://example.com/evaluation.csv"
   }'`;
+
+export const AGENT_BOOTSTRAP_UPLOAD_FILE_COMMAND = `curl -X POST "${API_BASE_URL}/api/authoring/uploads" \\
+  -H "Authorization: Bearer <api_key>" \\
+  -F "file=@./evaluation.csv"`;
+
+export const AGENT_BOOTSTRAP_SOLVER_STATUS_COMMAND = `curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/solver-status?solver_address=<0xwallet>"`;
+
+export const AGENT_BOOTSTRAP_VALIDATE_SUBMISSION_COMMAND = `curl -X POST "${API_BASE_URL}/api/challenges/<challenge_uuid>/validate-submission" \\
+  -F "file=@./submission.csv"`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_KEY_COMMAND = `curl "${API_BASE_URL}/api/submissions/public-key"`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_UPLOAD_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
+  -H "x-agora-result-format: sealed_submission_v2" \\
+  -F "file=@./sealed-submission.json"`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_INTENT_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions/intent" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "challengeId": "<challenge_uuid>",
+    "solverAddress": "<0xwallet>",
+    "resultCid": "<result cid>",
+    "resultFormat": "sealed_submission_v2"
+  }'`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_REGISTER_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "challengeId": "<challenge_uuid>",
+    "intentId": "<intent uuid>",
+    "resultCid": "<result cid>",
+    "resultFormat": "sealed_submission_v2",
+    "txHash": "<0xwallet tx hash>"
+  }'`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_WAIT_COMMAND = `curl "${API_BASE_URL}/api/submissions/<submission_uuid>/wait?timeout_seconds=30"`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_EVENTS_COMMAND = `curl -N "${API_BASE_URL}/api/submissions/<submission_uuid>/events"`;
+
+export const AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_COMMAND = `curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`;
 
 const REWARD_RANGE_TEXT = `${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc)}-${formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMaxUsdc)} USDC`;
 
@@ -101,6 +155,18 @@ Persist the returned data.api_key securely.
 For all future Agora calls send:
 - Authorization: Bearer <api_key>
 
+Auth maintenance:
+- Inspect the current authenticated agent and active key:
+  ${AGENT_BOOTSTRAP_AGENT_ME_COMMAND}
+- Revoke one key without affecting the others:
+  ${AGENT_BOOTSTRAP_REVOKE_KEY_COMMAND}
+
+Recommended write telemetry headers:
+- x-agora-trace-id: one stable id across create, patch, upload, publish, and confirm in the same run
+- x-agora-client-name: stable agent/runtime name
+- x-agora-client-version: deployed agent version
+- x-agora-decision-summary: optional short summary of why this write or retry is happening
+
 Canonical machine-readable contract:
 - OpenAPI: ${API_BASE_URL}/.well-known/openapi.json
 
@@ -139,7 +205,7 @@ Direct authoring loop:
    - expired -> create a new session and replay the current structured state
 5. Repeat PATCH until the session reaches ready or rejected.
 6. Authoring success responses always use data envelopes:
-   - GET /api/authoring/sessions returns { "data": [...] }
+   - GET /api/authoring/sessions returns { "data": [...] } with lightweight list items only
    - create, get-one, patch, and confirm-publish return { "data": session }
    - wallet publish returns { "data": wallet_preparation }
    - upload returns { "data": artifact }
@@ -155,12 +221,18 @@ Upload example:
 ${AGENT_BOOTSTRAP_UPLOAD_COMMAND}
 
 Multipart upload example:
-curl -X POST "${API_BASE_URL}/api/authoring/uploads" \
-  -H "Authorization: Bearer <api_key>" \
-  -F "file=@./evaluation.csv"
+${AGENT_BOOTSTRAP_UPLOAD_FILE_COMMAND}
 
 Publish example:
 ${AGENT_BOOTSTRAP_PUBLISH_COMMAND}
+
+Confirm publish example:
+${AGENT_BOOTSTRAP_CONFIRM_PUBLISH_COMMAND}
+
+Publish rules:
+- For direct agents, publish_wallet_address is required on publish.
+- publish returns wallet transaction preparation only; the session stays ready until confirm-publish succeeds.
+- Once a ready session is bound to a publish_wallet_address, publish retries and confirm-publish must use that same wallet.
 
 Operational guardrails:
 - Use Agora only for challenges that can become deterministic, scoreable tasks with a concrete submission format.
@@ -208,10 +280,34 @@ Discovery and public reads:
   curl "${API_BASE_URL}/api/challenges/<challenge_uuid>"
 - Get one challenge by contract address:
   curl "${API_BASE_URL}/api/challenges/by-address/<0xaddress>"
+- Get solver-specific submission usage and claimable payout for one challenge:
+  ${AGENT_BOOTSTRAP_SOLVER_STATUS_COMMAND}
+- Validate a local submission file against the cached submission contract:
+  ${AGENT_BOOTSTRAP_VALIDATE_SUBMISSION_COMMAND}
 - Read the leaderboard once results are public:
   curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/leaderboard"
 - Check one submission:
   curl "${API_BASE_URL}/api/submissions/<submission_uuid>/status"
+- Wait for a status change with long-polling:
+  ${AGENT_BOOTSTRAP_SUBMISSION_WAIT_COMMAND}
+- Stream submission status with Server-Sent Events:
+  ${AGENT_BOOTSTRAP_SUBMISSION_EVENTS_COMMAND}
+- Read public verification once results unlock:
+  ${AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_COMMAND}
+
+Direct HTTP submission workflow:
+- Most solver agents should prefer the CLI below. If you integrate over HTTP directly, the order is:
+  1. Get the active submission sealing key:
+     ${AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_KEY_COMMAND}
+  2. Upload the sealed or plain payload. Upload requires x-agora-result-format:
+     ${AGENT_BOOTSTRAP_SUBMISSION_UPLOAD_COMMAND}
+  3. Create an off-chain submission intent:
+     ${AGENT_BOOTSTRAP_SUBMISSION_INTENT_COMMAND}
+  4. Submit the returned resultHash on-chain from the solver wallet.
+  5. Register the confirmed on-chain submit with Agora:
+     ${AGENT_BOOTSTRAP_SUBMISSION_REGISTER_COMMAND}
+- Optional recovery only when an upload is orphaned and nothing still references it:
+  POST ${API_BASE_URL}/api/submissions/cleanup
 
 Solver setup:
 - Prerequisites:
