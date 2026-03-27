@@ -1,23 +1,36 @@
 import {
+  type AgentMeResponseOutput,
+  type AgentNotificationWebhookResponseOutput,
+  type AgentNotificationWebhookUpsertRequestInput,
+  type DisableAgentNotificationWebhookResponseOutput,
+  type RegisterAgentRequestInput,
+  type RegisterAgentResponseOutput,
+  type RevokeAgentKeyResponseOutput,
+  type UpsertAgentNotificationWebhookResponseOutput,
   agentMeResponseSchema,
+  agentNotificationWebhookResponseSchema,
+  agentNotificationWebhookUpsertRequestSchema,
+  disableAgentNotificationWebhookResponseSchema,
   registerAgentRequestSchema,
   registerAgentResponseSchema,
   revokeAgentKeyParamsSchema,
   revokeAgentKeyResponseSchema,
-  type AgentMeResponseOutput,
-  type RegisterAgentRequestInput,
-  type RegisterAgentResponseOutput,
-  type RevokeAgentKeyResponseOutput,
+  upsertAgentNotificationWebhookResponseSchema,
 } from "@agora/common";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { jsonAuthoringSessionApiError } from "../lib/authoring-session-api-error.js";
+import {
+  createOrUpdateAgentNotificationWebhook,
+  disableAgentNotificationWebhookForAgent,
+  getAgentNotificationWebhook,
+} from "../lib/agent-notifications.js";
 import {
   type AgentRecord,
   getAgentFromAuthorizationHeader,
   registerAgent,
   revokeAgentKey,
 } from "../lib/auth-store.js";
+import { jsonAuthoringSessionApiError } from "../lib/authoring-session-api-error.js";
 import { requireWriteQuota } from "../middleware/rate-limit.js";
 import type { ApiEnv } from "../types.js";
 
@@ -32,6 +45,17 @@ interface AgentRoutesDeps {
     agentId: string;
     keyId: string;
   }) => Promise<RevokeAgentKeyResponseOutput["data"] | null>;
+  getAgentNotificationWebhook?: (
+    agentId: string,
+  ) => Promise<AgentNotificationWebhookResponseOutput["data"] | null>;
+  createOrUpdateAgentNotificationWebhook?: (
+    input: {
+      agentId: string;
+    } & AgentNotificationWebhookUpsertRequestInput,
+  ) => Promise<UpsertAgentNotificationWebhookResponseOutput["data"]>;
+  disableAgentNotificationWebhook?: (
+    agentId: string,
+  ) => Promise<DisableAgentNotificationWebhookResponseOutput["data"] | null>;
   requireWriteQuota?: typeof requireWriteQuota;
 }
 
@@ -40,6 +64,14 @@ export function createAgentRoutes(deps: AgentRoutesDeps = {}) {
   const getAgentFromAuthorizationHeaderImpl =
     deps.getAgentFromAuthorizationHeader ?? getAgentFromAuthorizationHeader;
   const revokeAgentKeyImpl = deps.revokeAgentKey ?? revokeAgentKey;
+  const getAgentNotificationWebhookImpl =
+    deps.getAgentNotificationWebhook ?? getAgentNotificationWebhook;
+  const createOrUpdateAgentNotificationWebhookImpl =
+    deps.createOrUpdateAgentNotificationWebhook ??
+    createOrUpdateAgentNotificationWebhook;
+  const disableAgentNotificationWebhookImpl =
+    deps.disableAgentNotificationWebhook ??
+    disableAgentNotificationWebhookForAgent;
   const requireWriteQuotaImpl = deps.requireWriteQuota ?? requireWriteQuota;
   const router = new Hono<ApiEnv>();
 
@@ -134,13 +166,127 @@ export function createAgentRoutes(deps: AgentRoutesDeps = {}) {
           status: 404,
           code: "not_found",
           message: "Agent key not found.",
-          nextAction: "Confirm the key id belongs to the authenticated agent and retry.",
+          nextAction:
+            "Confirm the key id belongs to the authenticated agent and retry.",
         });
       }
 
       return c.json(
         revokeAgentKeyResponseSchema.parse({
           data: revoked,
+        }),
+      );
+    },
+  );
+
+  router.get("/me/notifications/webhook", async (c) => {
+    const agent = await getAuthenticatedAgent(c.req.header("authorization"));
+    if (!agent) {
+      return jsonAuthoringSessionApiError(c, {
+        status: 401,
+        code: "unauthorized",
+        message: "Invalid or missing authentication.",
+        nextAction: "Register at POST /api/agents/register and retry.",
+      });
+    }
+
+    const endpoint = await getAgentNotificationWebhookImpl(agent.agentId);
+    if (!endpoint) {
+      return jsonAuthoringSessionApiError(c, {
+        status: 404,
+        code: "not_found",
+        message: "Notification webhook not found.",
+        nextAction:
+          "Register a webhook at PUT /api/agents/me/notifications/webhook and retry.",
+      });
+    }
+
+    return c.json(
+      agentNotificationWebhookResponseSchema.parse({
+        data: endpoint,
+      }),
+    );
+  });
+
+  router.put(
+    "/me/notifications/webhook",
+    requireWriteQuotaImpl("/api/agents/me/notifications/webhook"),
+    zValidator(
+      "json",
+      agentNotificationWebhookUpsertRequestSchema,
+      (result, c) => {
+        if (!result.success) {
+          return jsonAuthoringSessionApiError(c, {
+            status: 400,
+            code: "invalid_request",
+            message: "Invalid webhook registration payload.",
+            nextAction: "Provide a valid webhook URL and retry.",
+          });
+        }
+      },
+    ),
+    async (c) => {
+      const agent = await getAuthenticatedAgent(c.req.header("authorization"));
+      if (!agent) {
+        return jsonAuthoringSessionApiError(c, {
+          status: 401,
+          code: "unauthorized",
+          message: "Invalid or missing authentication.",
+          nextAction: "Register at POST /api/agents/register and retry.",
+        });
+      }
+
+      try {
+        const endpoint = await createOrUpdateAgentNotificationWebhookImpl({
+          agentId: agent.agentId,
+          ...c.req.valid("json"),
+        });
+        return c.json(
+          upsertAgentNotificationWebhookResponseSchema.parse({
+            data: endpoint,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonAuthoringSessionApiError(c, {
+          status: 400,
+          code: "invalid_request",
+          message,
+          nextAction:
+            "Provide a valid webhook URL and required runtime config, then retry.",
+        });
+      }
+    },
+  );
+
+  router.delete(
+    "/me/notifications/webhook",
+    requireWriteQuotaImpl("/api/agents/me/notifications/webhook"),
+    async (c) => {
+      const agent = await getAuthenticatedAgent(c.req.header("authorization"));
+      if (!agent) {
+        return jsonAuthoringSessionApiError(c, {
+          status: 401,
+          code: "unauthorized",
+          message: "Invalid or missing authentication.",
+          nextAction: "Register at POST /api/agents/register and retry.",
+        });
+      }
+
+      const disabled = await disableAgentNotificationWebhookImpl(agent.agentId);
+      if (!disabled) {
+        return jsonAuthoringSessionApiError(c, {
+          status: 404,
+          code: "not_found",
+          message: "Notification webhook not found.",
+          nextAction:
+            "Register a webhook first or confirm the authenticated agent id and retry.",
+        });
+      }
+
+      return c.json(
+        disableAgentNotificationWebhookResponseSchema.parse({
+          data: disabled,
         }),
       );
     },

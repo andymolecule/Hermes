@@ -1002,6 +1002,82 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/agents/me/notifications/webhook": {
+        get: {
+          operationId: "getAgentNotificationWebhook",
+          summary:
+            "Read the authenticated agent's webhook notification endpoint",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Webhook registration.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AgentNotificationWebhookResponse",
+                  },
+                },
+              },
+            },
+            "404": {
+              description: "Webhook not found.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/AuthoringSessionErrorEnvelope",
+                  },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          operationId: "upsertAgentNotificationWebhook",
+          summary:
+            "Create or update the authenticated agent's webhook notification endpoint",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/AgentNotificationWebhookUpsertRequest",
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Webhook registration updated.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/UpsertAgentNotificationWebhookResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          operationId: "disableAgentNotificationWebhook",
+          summary:
+            "Disable the authenticated agent's webhook notification endpoint",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Webhook disabled.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/DisableAgentNotificationWebhookResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/authoring/uploads": {
         post: {
           operationId: "uploadAuthoringArtifact",
@@ -1425,6 +1501,85 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 status: { type: "string", enum: ["revoked"] },
               },
               required: ["agent_id", "key_id", "status"],
+            },
+          },
+          required: ["data"],
+        },
+        AgentNotificationWebhookUpsertRequest: {
+          type: "object",
+          properties: {
+            url: { type: "string", format: "uri" },
+            rotate_secret: { type: "boolean" },
+          },
+          required: ["url"],
+        },
+        AgentNotificationWebhookBase: {
+          type: "object",
+          properties: {
+            endpoint_id: uuidSchema(),
+            url: { type: "string", format: "uri" },
+            status: { type: "string", enum: ["active", "disabled"] },
+            created_at: isoDateTimeSchema(),
+            updated_at: isoDateTimeSchema(),
+          },
+          required: [
+            "endpoint_id",
+            "url",
+            "status",
+            "created_at",
+            "updated_at",
+          ],
+        },
+        AgentNotificationWebhookResponse: {
+          type: "object",
+          properties: {
+            data: {
+              allOf: [
+                { $ref: "#/components/schemas/AgentNotificationWebhookBase" },
+                {
+                  type: "object",
+                  properties: {
+                    last_delivery_at: {
+                      ...isoDateTimeSchema(),
+                      nullable: true,
+                    },
+                    last_error: { type: "string", nullable: true },
+                  },
+                  required: ["last_delivery_at", "last_error"],
+                },
+              ],
+            },
+          },
+          required: ["data"],
+        },
+        UpsertAgentNotificationWebhookResponse: {
+          type: "object",
+          properties: {
+            data: {
+              allOf: [
+                { $ref: "#/components/schemas/AgentNotificationWebhookBase" },
+                {
+                  type: "object",
+                  properties: {
+                    signing_secret: { type: "string", nullable: true },
+                  },
+                  required: ["signing_secret"],
+                },
+              ],
+            },
+          },
+          required: ["data"],
+        },
+        DisableAgentNotificationWebhookResponse: {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              properties: {
+                endpoint_id: uuidSchema(),
+                status: { type: "string", enum: ["disabled"] },
+              },
+              required: ["endpoint_id", "status"],
             },
           },
           required: ["data"],

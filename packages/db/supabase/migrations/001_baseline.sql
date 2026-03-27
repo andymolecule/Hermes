@@ -8,7 +8,7 @@ returns text
 language sql
 stable
 as $$
-  select 'agora-runtime:2026-03-27:agent-authoring-v1'::text;
+  select 'agora-runtime:2026-03-27:agent-notifications-v1'::text;
 $$;
 
 create table challenges (
@@ -387,6 +387,63 @@ create index idx_auth_agent_keys_agent_id
 create index idx_auth_agent_keys_api_key_hash
   on auth_agent_keys(api_key_hash);
 
+create table agent_notification_endpoints (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null unique references auth_agents(id) on delete cascade,
+  webhook_url text not null,
+  signing_secret_ciphertext text not null,
+  signing_secret_key_version text not null default 'v1',
+  status text not null default 'active',
+  last_delivery_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  disabled_at timestamptz,
+  constraint agent_notification_endpoints_status_check
+    check (status in ('active', 'disabled'))
+);
+
+create index idx_agent_notification_endpoints_status
+  on agent_notification_endpoints(status);
+
+create table agent_notification_outbox (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references auth_agents(id) on delete cascade,
+  endpoint_id uuid not null references agent_notification_endpoints(id) on delete cascade,
+  challenge_id uuid not null references challenges(id) on delete cascade,
+  solver_address text not null,
+  event_type text not null,
+  dedupe_key text not null unique,
+  payload_json jsonb not null,
+  status text not null default 'queued',
+  attempts integer not null default 0,
+  max_attempts integer not null default 5,
+  next_attempt_at timestamptz not null default now(),
+  locked_at timestamptz,
+  locked_by text,
+  delivered_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint agent_notification_outbox_status_check
+    check (status in ('queued', 'delivering', 'delivered', 'failed')),
+  constraint agent_notification_outbox_attempts_check
+    check (attempts >= 0),
+  constraint agent_notification_outbox_max_attempts_check
+    check (max_attempts >= 0),
+  constraint agent_notification_outbox_solver_address_lowercase_check
+    check (solver_address = lower(solver_address))
+);
+
+create index idx_agent_notification_outbox_status_next_attempt_at
+  on agent_notification_outbox(status, next_attempt_at);
+
+create index idx_agent_notification_outbox_agent_id
+  on agent_notification_outbox(agent_id);
+
+create index idx_agent_notification_outbox_challenge_solver
+  on agent_notification_outbox(challenge_id, solver_address);
+
 alter table challenges
   add constraint challenges_created_by_agent_id_fkey
   foreign key (created_by_agent_id) references auth_agents(id);
@@ -667,6 +724,8 @@ alter table verifications enable row level security;
 alter table score_jobs enable row level security;
 alter table worker_runtime_state enable row level security;
 alter table worker_runtime_control enable row level security;
+alter table agent_notification_endpoints enable row level security;
+alter table agent_notification_outbox enable row level security;
 
 create or replace function claim_next_score_job(
   p_worker_id text,
@@ -771,6 +830,89 @@ begin
     sj.score_tx_hash,
     sj.created_at,
     sj.updated_at;
+end;
+$$;
+
+create or replace function claim_next_agent_notification(
+  p_worker_id text,
+  p_lease_ms integer default 3600000
+)
+returns table (
+  id uuid,
+  agent_id uuid,
+  endpoint_id uuid,
+  challenge_id uuid,
+  solver_address text,
+  event_type text,
+  dedupe_key text,
+  payload_json jsonb,
+  status text,
+  attempts integer,
+  max_attempts integer,
+  next_attempt_at timestamptz,
+  locked_at timestamptz,
+  locked_by text,
+  delivered_at timestamptz,
+  last_error text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+as $$
+declare
+  v_notification_id uuid;
+  v_stale_cutoff timestamptz := now() - (p_lease_ms || ' milliseconds')::interval;
+begin
+  select ano.id into v_notification_id
+  from agent_notification_outbox ano
+  where ano.status = 'delivering'
+    and ano.locked_at < v_stale_cutoff
+  order by ano.locked_at asc
+  limit 1
+  for update of ano skip locked;
+
+  if v_notification_id is null then
+  select ano.id into v_notification_id
+  from agent_notification_outbox ano
+  where ano.status = 'queued'
+    and ano.next_attempt_at <= now()
+  order by ano.next_attempt_at asc, ano.created_at asc
+  limit 1
+  for update of ano skip locked;
+  end if;
+
+  if v_notification_id is null then
+    return;
+  end if;
+
+  return query
+  update agent_notification_outbox ano
+  set
+    status = 'delivering',
+    attempts = ano.attempts + 1,
+    locked_at = now(),
+    locked_by = p_worker_id,
+    updated_at = now()
+  where ano.id = v_notification_id
+  returning
+    ano.id,
+    ano.agent_id,
+    ano.endpoint_id,
+    ano.challenge_id,
+    ano.solver_address,
+    ano.event_type,
+    ano.dedupe_key,
+    ano.payload_json,
+    ano.status,
+    ano.attempts,
+    ano.max_attempts,
+    ano.next_attempt_at,
+    ano.locked_at,
+    ano.locked_by,
+    ano.delivered_at,
+    ano.last_error,
+    ano.created_at,
+    ano.updated_at;
 end;
 $$;
 

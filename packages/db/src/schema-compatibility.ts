@@ -3,7 +3,7 @@ import type { AgoraDbClient } from "./index";
 export const BASELINE_SCHEMA_NEXT_STEP =
   "Reset the Supabase schema, apply packages/db/supabase/migrations/001_baseline.sql, reload the PostgREST schema cache, then restart the affected services.";
 export const AGORA_RUNTIME_SCHEMA_CONTRACT =
-  "agora-runtime:2026-03-27:agent-authoring-v1";
+  "agora-runtime:2026-03-27:agent-notifications-v1";
 export const AGORA_RUNTIME_SCHEMA_CONTRACT_RPC = "agora_runtime_contract";
 
 export interface RuntimeSchemaCheck {
@@ -167,6 +167,22 @@ export const REQUIRED_RUNTIME_SCHEMA_CHECKS: RuntimeSchemaCheck[] = [
     operation: "select",
     select:
       "agent_id,key_label,api_key_hash,revoked_at,created_at,last_used_at",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+  },
+  {
+    id: "agent_notification_endpoints_table",
+    table: "agent_notification_endpoints",
+    operation: "select",
+    select:
+      "agent_id,webhook_url,signing_secret_ciphertext,signing_secret_key_version,status,last_delivery_at,last_error,disabled_at",
+    nextStep: BASELINE_SCHEMA_NEXT_STEP,
+  },
+  {
+    id: "agent_notification_outbox_table",
+    table: "agent_notification_outbox",
+    operation: "select",
+    select:
+      "agent_id,endpoint_id,challenge_id,solver_address,event_type,dedupe_key,payload_json,status,attempts,max_attempts,next_attempt_at,locked_at,locked_by,delivered_at,last_error",
     nextStep: BASELINE_SCHEMA_NEXT_STEP,
   },
   {

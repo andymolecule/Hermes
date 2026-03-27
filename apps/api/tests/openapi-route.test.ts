@@ -22,6 +22,7 @@ test("openapi document is served from well-known path", async () => {
   assert.ok("/api/agents/register" in body.paths);
   assert.ok("/api/agents/me" in body.paths);
   assert.ok("/api/agents/keys/{id}/revoke" in body.paths);
+  assert.ok("/api/agents/me/notifications/webhook" in body.paths);
   assert.ok("/api/authoring/uploads" in body.paths);
   assert.ok("/api/authoring/sessions" in body.paths);
   assert.ok("/api/authoring/sessions/{id}" in body.paths);

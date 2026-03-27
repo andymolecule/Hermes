@@ -160,3 +160,107 @@ test("agent key revoke returns revoked without rotating other keys", async () =>
     },
   });
 });
+
+test("agent webhook get returns the registered endpoint", async () => {
+  const router = createAgentRoutes({
+    getAgentFromAuthorizationHeader: async () => activeAgent,
+    getAgentNotificationWebhook: async () => ({
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      url: "https://agent.example.com/webhook",
+      status: "active",
+      created_at: "2026-03-27T00:00:00.000Z",
+      updated_at: "2026-03-27T00:05:00.000Z",
+      last_delivery_at: null,
+      last_error: null,
+    }),
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/me/notifications/webhook", {
+      headers: {
+        authorization: "Bearer agora_xxxxxxxx",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    data: {
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      url: "https://agent.example.com/webhook",
+      status: "active",
+      created_at: "2026-03-27T00:00:00.000Z",
+      updated_at: "2026-03-27T00:05:00.000Z",
+      last_delivery_at: null,
+      last_error: null,
+    },
+  });
+});
+
+test("agent webhook put creates or updates the endpoint", async () => {
+  const router = createAgentRoutes({
+    getAgentFromAuthorizationHeader: async () => activeAgent,
+    createOrUpdateAgentNotificationWebhook: async () => ({
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      url: "https://agent.example.com/webhook",
+      status: "active",
+      created_at: "2026-03-27T00:00:00.000Z",
+      updated_at: "2026-03-27T00:05:00.000Z",
+      signing_secret: "whsec_secret",
+    }),
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/me/notifications/webhook", {
+      method: "PUT",
+      headers: {
+        authorization: "Bearer agora_xxxxxxxx",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        url: "https://agent.example.com/webhook",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    data: {
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      url: "https://agent.example.com/webhook",
+      status: "active",
+      created_at: "2026-03-27T00:00:00.000Z",
+      updated_at: "2026-03-27T00:05:00.000Z",
+      signing_secret: "whsec_secret",
+    },
+  });
+});
+
+test("agent webhook delete disables the endpoint", async () => {
+  const router = createAgentRoutes({
+    getAgentFromAuthorizationHeader: async () => activeAgent,
+    disableAgentNotificationWebhook: async () => ({
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      status: "disabled",
+    }),
+    requireWriteQuota: allowQuota() as never,
+  });
+
+  const response = await router.request(
+    new Request("http://localhost/me/notifications/webhook", {
+      method: "DELETE",
+      headers: {
+        authorization: "Bearer agora_xxxxxxxx",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    data: {
+      endpoint_id: "44444444-4444-4444-8444-444444444444",
+      status: "disabled",
+    },
+  });
+});

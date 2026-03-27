@@ -11,6 +11,8 @@
     "dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/index.ts",
     "worker": "node ../../scripts/run-node-with-root-env.mjs dist/worker.js",
     "worker:dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/worker.ts",
+    "notification-worker": "node ../../scripts/run-node-with-root-env.mjs dist/notification-worker.js",
+    "notification-worker:dev": "node ../../scripts/run-node-with-root-env.mjs --import tsx src/notification-worker.ts",
     "test": "node ../../scripts/run-ts-tests.mjs tests"
   },
   "dependencies": {

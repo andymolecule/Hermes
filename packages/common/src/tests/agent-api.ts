@@ -4,9 +4,12 @@ import {
   agentChallengesListResponseSchema,
   agentChallengesQuerySchema,
   agentMeResponseSchema,
+  agentNotificationWebhookResponseSchema,
   apiErrorResponseSchema,
   challengeRegistrationResponseSchema,
   challengeSolverStatusResponseSchema,
+  disableAgentNotificationWebhookResponseSchema,
+  payoutClaimableWebhookPayloadSchema,
   registerAgentRequestSchema,
   registerAgentResponseSchema,
   resolveOfficialScorerImage,
@@ -17,6 +20,7 @@ import {
   submissionStatusResponseSchema,
   submissionValidationResponseSchema,
   submissionWaitStatusResponseSchema,
+  upsertAgentNotificationWebhookResponseSchema,
 } from "../index.js";
 
 const tableMetricScorerImage = resolveOfficialScorerImage(
@@ -71,6 +75,71 @@ const revokeKeyResponse = revokeAgentKeyResponseSchema.parse({
   },
 });
 assert.equal(revokeKeyResponse.data.status, "revoked");
+
+const webhookGetResponse = agentNotificationWebhookResponseSchema.parse({
+  data: {
+    endpoint_id: "11111111-1111-4111-8111-111111111111",
+    url: "https://agent.example.com/webhook",
+    status: "active",
+    created_at: "2026-03-27T00:00:00.000Z",
+    updated_at: "2026-03-27T00:00:00.000Z",
+    last_delivery_at: null,
+    last_error: null,
+  },
+});
+assert.ok(webhookGetResponse.data);
+assert.equal(webhookGetResponse.data.status, "active");
+
+const webhookPutResponse = upsertAgentNotificationWebhookResponseSchema.parse({
+  data: {
+    endpoint_id: "11111111-1111-4111-8111-111111111111",
+    url: "https://agent.example.com/webhook",
+    status: "active",
+    created_at: "2026-03-27T00:00:00.000Z",
+    updated_at: "2026-03-27T00:00:00.000Z",
+    signing_secret: "whsec_xxxxx",
+  },
+});
+assert.equal(webhookPutResponse.data.signing_secret, "whsec_xxxxx");
+
+const webhookDeleteResponse =
+  disableAgentNotificationWebhookResponseSchema.parse({
+    data: {
+      endpoint_id: "11111111-1111-4111-8111-111111111111",
+      status: "disabled",
+    },
+  });
+assert.equal(webhookDeleteResponse.data.status, "disabled");
+
+const payoutClaimablePayload = payoutClaimableWebhookPayloadSchema.parse({
+  id: "11111111-1111-4111-8111-111111111111",
+  type: "payout.claimable",
+  occurred_at: "2026-03-27T00:00:00.000Z",
+  agent_id: "22222222-2222-4222-8222-222222222222",
+  challenge: {
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "KRAS ranking challenge",
+    address: "0x0000000000000000000000000000000000000001",
+    distribution_type: "winner_take_all",
+  },
+  solver: {
+    address: "0x0000000000000000000000000000000000000002",
+  },
+  payout: {
+    asset: "USDC",
+    decimals: 6,
+    claimable_amount: "9000000",
+  },
+  entries: [
+    {
+      submission_id: "44444444-4444-4444-8444-444444444444",
+      on_chain_submission_id: 7,
+      rank: 1,
+      amount: "9000000",
+    },
+  ],
+});
+assert.equal(payoutClaimablePayload.payout.asset, "USDC");
 
 const query = agentChallengesQuerySchema.parse({
   limit: "10",

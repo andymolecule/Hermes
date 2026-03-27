@@ -68,6 +68,7 @@ export const configSchema = z.object({
   AGORA_SUPABASE_URL: z.string().url().optional(),
   AGORA_SUPABASE_ANON_KEY: z.string().min(1).optional(),
   AGORA_SUPABASE_SERVICE_KEY: z.string().min(1).optional(),
+  AGORA_AGENT_NOTIFICATION_MASTER_KEY: z.string().min(1).optional(),
   AGORA_API_URL: z.string().url().optional(),
   AGORA_API_PORT: z
     .preprocess(

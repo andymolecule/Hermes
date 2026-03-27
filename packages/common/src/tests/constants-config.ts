@@ -14,6 +14,7 @@ import {
   isTerminalScoreJobError,
   loadConfig,
   loadIpfsConfig,
+  readAgentNotificationRuntimeConfig,
   readApiClientRuntimeConfig,
   readApiServerRuntimeConfig,
   readAuthoringCompilerRuntimeConfig,
@@ -401,6 +402,11 @@ try {
     "https://worker.internal",
   );
   assert.equal(submissionValidationRuntime.workerInternalToken, "worker-token");
+
+  const agentNotificationRuntime = readAgentNotificationRuntimeConfig({
+    AGORA_AGENT_NOTIFICATION_MASTER_KEY: "notification-master-key",
+  });
+  assert.equal(agentNotificationRuntime.masterKey, "notification-master-key");
 
   const workerInternalServerRuntime = readWorkerInternalServerRuntimeConfig({
     AGORA_SUBMISSION_SEAL_KEY_ID: "kid-1",

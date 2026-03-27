@@ -5,6 +5,7 @@ import AgoraChallengeAbiJson from "@agora/common/abi/AgoraChallenge.json" with {
 import {
   clearChallengeSettlement,
   deleteChallengeById,
+  enqueueClaimableNotificationsForChallenge,
   markChallengePayoutClaimed,
   replaceChallengePayouts,
   setChallengeFinalized,
@@ -301,6 +302,11 @@ async function repairChallengeSettlementFromLogs(input: {
       canonicalSettlement.payoutRows,
     );
   }
+
+  await syncChallengeClaimableNotifications({
+    db,
+    challengeId: challenge.id,
+  });
 }
 
 export async function resetProjectedSettlement(
@@ -357,6 +363,10 @@ export async function handleSettlementFinalizedEvent(input: {
     Number(winningSubmissionId),
     winnerSolver,
   );
+  await syncChallengeClaimableNotifications({
+    db: input.db,
+    challengeId: input.challenge.id,
+  });
 }
 
 export async function handlePayoutAllocatedEvent(input: {
@@ -412,6 +422,17 @@ export async function handleClaimedEvent(input: {
     needsRepair: updatedPayoutRows === 0,
     claimant,
   };
+}
+
+export async function syncChallengeClaimableNotifications(input: {
+  db: DbClient;
+  challengeId: string;
+}) {
+  const enqueued = await enqueueClaimableNotificationsForChallenge(
+    input.db,
+    input.challengeId,
+  );
+  return enqueued.length;
 }
 
 export async function reconcileChallengeProjection(input: {

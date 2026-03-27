@@ -38,6 +38,7 @@ export * from "./queries/worker-runtime.js";
 export * from "./queries/analytics.js";
 export * from "./queries/leaderboard.js";
 export * from "./queries/auth.js";
+export * from "./queries/agent-notifications.js";
 export * from "./queries/authoring-sessions.js";
 export * from "./queries/authoring-events.js";
 export * from "./queries/submission-events.js";

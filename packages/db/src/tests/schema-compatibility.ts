@@ -197,6 +197,20 @@ const checks: RuntimeSchemaCheck[] = [
     nextStep: "apply migration",
   },
   {
+    id: "agent_notification_endpoints_table",
+    table: "agent_notification_endpoints",
+    select:
+      "agent_id,webhook_url,signing_secret_ciphertext,signing_secret_key_version,status,last_delivery_at,last_error,disabled_at",
+    nextStep: "apply migration",
+  },
+  {
+    id: "agent_notification_outbox_table",
+    table: "agent_notification_outbox",
+    select:
+      "agent_id,endpoint_id,challenge_id,solver_address,event_type,dedupe_key,payload_json,status,attempts,max_attempts,next_attempt_at,locked_at,locked_by,delivered_at,last_error",
+    nextStep: "apply migration",
+  },
+  {
     id: "authoring_sessions_table",
     table: "authoring_sessions",
     select:
@@ -349,6 +363,26 @@ assert.equal(
 assert.equal(
   REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
     (check) =>
+      check.id === "agent_notification_endpoints_table" &&
+      check.select ===
+        "agent_id,webhook_url,signing_secret_ciphertext,signing_secret_key_version,status,last_delivery_at,last_error,disabled_at",
+  ),
+  true,
+  "runtime schema checks should guard the agent notification endpoints table",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
+      check.id === "agent_notification_outbox_table" &&
+      check.select ===
+        "agent_id,endpoint_id,challenge_id,solver_address,event_type,dedupe_key,payload_json,status,attempts,max_attempts,next_attempt_at,locked_at,locked_by,delivered_at,last_error",
+  ),
+  true,
+  "runtime schema checks should guard the agent notification outbox table",
+);
+assert.equal(
+  REQUIRED_RUNTIME_SCHEMA_CHECKS.some(
+    (check) =>
       check.id === "authoring_sessions_table" &&
       check.select?.startsWith("trace_id,state,intent_json"),
   ),
@@ -410,6 +444,28 @@ assert.equal(
   ),
   true,
   "baseline migration must report the same schema contract as AGORA_RUNTIME_SCHEMA_CONTRACT",
+);
+assert.equal(
+  baselineMigration.includes(
+    "create or replace function claim_next_agent_notification(",
+  ),
+  true,
+  "baseline migration must define the notification claim function",
+);
+assertBaselineTableContainsColumn(
+  baselineMigration,
+  "agent_notification_endpoints",
+  "signing_secret_ciphertext text not null,",
+);
+assertBaselineTableContainsColumn(
+  baselineMigration,
+  "agent_notification_outbox",
+  "dedupe_key text not null unique,",
+);
+assertBaselineTableContainsColumn(
+  baselineMigration,
+  "agent_notification_outbox",
+  "payload_json jsonb not null,",
 );
 assertBaselineTableContainsColumn(
   baselineMigration,

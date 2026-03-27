@@ -31,6 +31,9 @@ const submissionValidationRuntimeConfigSchema = configSchema.pick({
   AGORA_SUBMISSION_SEAL_KEY_ID: true,
   AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: true,
 });
+const agentNotificationRuntimeConfigSchema = configSchema.pick({
+  AGORA_AGENT_NOTIFICATION_MASTER_KEY: true,
+});
 
 export interface AgoraApiServerRuntimeConfig {
   nodeEnv: string;
@@ -55,6 +58,10 @@ export interface AgoraAuthoringPublishRuntimeConfig {
   rpcUrl: string;
   factoryAddress: `0x${string}`;
   usdcAddress: `0x${string}`;
+}
+
+export interface AgoraAgentNotificationRuntimeConfig {
+  masterKey: string;
 }
 
 export function readApiServerRuntimeConfig(
@@ -127,5 +134,22 @@ export function readAuthoringPublishRuntimeConfig(
     rpcUrl: parsed.AGORA_RPC_URL,
     factoryAddress: parsed.AGORA_FACTORY_ADDRESS,
     usdcAddress: parsed.AGORA_USDC_ADDRESS,
+  };
+}
+
+export function readAgentNotificationRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraAgentNotificationRuntimeConfig {
+  const parsed = parseConfigSection(
+    agentNotificationRuntimeConfigSchema,
+    unsetBlankStringValues(env, ["AGORA_AGENT_NOTIFICATION_MASTER_KEY"]),
+  );
+  if (!parsed.AGORA_AGENT_NOTIFICATION_MASTER_KEY) {
+    throw new Error(
+      "Agent notifications require AGORA_AGENT_NOTIFICATION_MASTER_KEY. Next step: set the webhook secret encryption key and restart the affected service.",
+    );
+  }
+  return {
+    masterKey: parsed.AGORA_AGENT_NOTIFICATION_MASTER_KEY,
   };
 }

@@ -6,6 +6,7 @@ export * from "./errors.js";
 export * from "./challenges/index.js";
 export * from "./schemas/challenge-spec.js";
 export * from "./schemas/agent-auth.js";
+export * from "./schemas/agent-notifications.js";
 export * from "./schemas/authoring-session-api.js";
 export * from "./schemas/authoring-observability.js";
 export * from "./schemas/submission-observability.js";
