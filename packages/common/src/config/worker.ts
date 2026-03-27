@@ -1,4 +1,8 @@
-import { configSchema, parseConfigSection } from "./base.js";
+import {
+  configSchema,
+  parseConfigSection,
+  unsetBlankStringValues,
+} from "./base.js";
 
 const workerTimingConfigSchema = configSchema.pick({
   AGORA_WORKER_POLL_MS: true,
@@ -15,6 +19,12 @@ const scorerExecutorRuntimeConfigSchema = configSchema.pick({
   AGORA_SCORER_EXECUTOR_URL: true,
   AGORA_SCORER_EXECUTOR_TOKEN: true,
 });
+const workerInternalServerRuntimeConfigSchema = configSchema.pick({
+  AGORA_WORKER_INTERNAL_PORT: true,
+  AGORA_WORKER_INTERNAL_TOKEN: true,
+  AGORA_SUBMISSION_SEAL_KEY_ID: true,
+  AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: true,
+});
 
 export interface AgoraWorkerTimingConfig {
   pollIntervalMs: number;
@@ -30,6 +40,12 @@ export interface AgoraScorerExecutorRuntimeConfig {
   backend: "local_docker" | "remote_http";
   url?: string;
   token?: string;
+}
+
+export interface AgoraWorkerInternalServerRuntimeConfig {
+  port: number;
+  authToken?: string;
+  sealingConfigured: boolean;
 }
 
 export function readWorkerTimingConfig(
@@ -57,5 +73,26 @@ export function readScorerExecutorRuntimeConfig(
     backend: parsed.AGORA_SCORER_EXECUTOR_BACKEND,
     url: parsed.AGORA_SCORER_EXECUTOR_URL,
     token: parsed.AGORA_SCORER_EXECUTOR_TOKEN,
+  };
+}
+
+export function readWorkerInternalServerRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraWorkerInternalServerRuntimeConfig {
+  const parsed = parseConfigSection(
+    workerInternalServerRuntimeConfigSchema,
+    unsetBlankStringValues(env, [
+      "AGORA_WORKER_INTERNAL_TOKEN",
+      "AGORA_SUBMISSION_SEAL_KEY_ID",
+      "AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM",
+    ]),
+  );
+  return {
+    port: parsed.AGORA_WORKER_INTERNAL_PORT ?? 3400,
+    authToken: parsed.AGORA_WORKER_INTERNAL_TOKEN,
+    sealingConfigured: Boolean(
+      parsed.AGORA_SUBMISSION_SEAL_KEY_ID &&
+        parsed.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+    ),
   };
 }

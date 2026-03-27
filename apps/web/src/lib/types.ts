@@ -149,6 +149,7 @@ export type WorkerHealth = {
     configured: boolean;
     keyId: string | null;
     publicKeyLoaded: boolean;
+    publicKeyFingerprint?: string | null;
     workerReady: boolean;
     healthyWorkersForActiveKey: number;
   };

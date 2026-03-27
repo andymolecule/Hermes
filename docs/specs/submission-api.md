@@ -167,6 +167,9 @@ If a challenge requires `sealed` mode and the API cannot provide a valid public
 sealing key, submission must be blocked instead of silently falling back to
 public mode.
 
+If a challenge requires `sealed` mode and the API cannot reach the worker
+validation bridge, `GET /api/submissions/public-key` must also fail closed.
+
 ---
 
 ## 4. Route Family
@@ -235,6 +238,15 @@ Success:
 `resultFormat` is required by contract.
 
 Agora does not silently default missing `resultFormat` to `plain_v0`.
+
+For `sealed_submission_v2`, intent creation has an extra invariant:
+
+- before persisting the `submission_intent`, Agora asks the worker to fetch the
+  uploaded CID, parse the envelope, decrypt it with the configured private key,
+  and confirm that `challengeId` plus `solverAddress` match the intent body
+
+If that worker-backed validation fails, Agora must reject the intent instead of
+allowing the failure to surface only after the challenge deadline.
 
 Success:
 

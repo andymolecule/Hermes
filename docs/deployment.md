@@ -283,6 +283,13 @@ This section covers non-code work for deployment across hosted systems.
 - Set the worker orchestrator to `AGORA_SCORER_EXECUTOR_BACKEND=remote_http` and `AGORA_SCORER_EXECUTOR_URL=<executor base url>`.
 - The executor is infrastructure, not an every-commit app deploy target. Update it when the executor service changes or when scorer execution semantics require it.
 
+### Sealed Submission Validation Bridge
+
+- Set `AGORA_WORKER_INTERNAL_PORT` and `AGORA_WORKER_INTERNAL_TOKEN` on the worker service.
+- Set the matching `AGORA_WORKER_INTERNAL_URL` and `AGORA_WORKER_INTERNAL_TOKEN` on the API service.
+- `GET /api/submissions/public-key` now fails closed when this bridge is missing, so sealed submission traffic cannot start from a partially configured deploy.
+- Use `pnpm deploy:verify --worker-internal-url=<worker-internal-origin> --worker-internal-token=<token>` to compare the API public-key fingerprint with the worker's public/private-key fingerprints before cutover.
+
 ### Worker Recovery Scripts
 
 - `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` requeues stale `running` jobs and retries failed jobs after an infra outage.

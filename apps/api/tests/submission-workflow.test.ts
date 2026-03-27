@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SubmissionSealValidationClientError } from "../src/lib/submission-seal-validation.js";
 import {
   SubmissionWorkflowError,
   cleanupSubmissionArtifact,
   reconcileTrackedSubmissionsForIntent,
   toSubmissionRegistrationResponse,
+  validateSubmissionIntentPayloadBoundary,
 } from "../src/lib/submission-workflow.js";
 
 test("cleanupSubmissionArtifact refuses to delete a live submission intent", async () => {
@@ -155,8 +157,10 @@ test("reconcileTrackedSubmissionsForIntent reprojects tracked unmatched rows aft
   );
   assert.equal(recordedTelemetry.length, 1);
   assert.equal(recordedTelemetry[0]?.event, "intent.reconciled_unmatched");
-  assert.equal(recordedTelemetry[0]?.challenge_address,
-    "0x1111111111111111111111111111111111111111");
+  assert.equal(
+    recordedTelemetry[0]?.challenge_address,
+    "0x1111111111111111111111111111111111111111",
+  );
 });
 
 test("toSubmissionRegistrationResponse returns the canonical envelope and warning", () => {
@@ -199,4 +203,52 @@ test("toSubmissionRegistrationResponse returns the canonical envelope and warnin
       },
     },
   });
+});
+
+test("validateSubmissionIntentPayloadBoundary skips plain payloads", async () => {
+  let called = false;
+
+  await validateSubmissionIntentPayloadBoundary(
+    {
+      challengeId: "11111111-1111-4111-8111-111111111111",
+      solverAddress: "0x2222222222222222222222222222222222222222",
+      resultCid: "ipfs://bafy-plain",
+      resultFormat: "plain_v0",
+    },
+    {
+      validateSealedSubmissionForIntentImpl: async () => {
+        called = true;
+      },
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+test("validateSubmissionIntentPayloadBoundary maps worker validation failures into workflow errors", async () => {
+  await assert.rejects(
+    validateSubmissionIntentPayloadBoundary(
+      {
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        solverAddress: "0x2222222222222222222222222222222222222222",
+        resultCid: "ipfs://bafy-sealed",
+        resultFormat: "sealed_submission_v2",
+      },
+      {
+        validateSealedSubmissionForIntentImpl: async () => {
+          throw new SubmissionSealValidationClientError(
+            400,
+            "SEALED_SUBMISSION_INVALID",
+            "Agora could not open the sealed submission payload. Next step: fetch /api/submissions/public-key again, reseal the payload with the official helper, re-upload it, and retry.",
+          );
+        },
+      },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof SubmissionWorkflowError);
+      assert.equal(error.status, 400);
+      assert.equal(error.code, "SEALED_SUBMISSION_INVALID");
+      return true;
+    },
+  );
 });

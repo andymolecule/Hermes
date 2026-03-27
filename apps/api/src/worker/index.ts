@@ -10,6 +10,7 @@ import {
   hasSubmissionSealWorkerConfig,
   isOfficialScorerImage,
   loadConfig,
+  readWorkerInternalServerRuntimeConfig,
   readWorkerTimingConfig,
   resolveChallengeExecutionFromPlanCache,
   resolveRuntimePrivateKey,
@@ -38,6 +39,7 @@ import {
   workerLogger,
 } from "../lib/observability.js";
 import { sweepChallengeLifecycle } from "./chain.js";
+import { startWorkerInternalServer } from "./internal-server.js";
 import { processJob } from "./jobs.js";
 import { sleep } from "./policy.js";
 import type { ScoreJobRow, WorkerLogFn } from "./types.js";
@@ -480,6 +482,7 @@ export async function startWorker() {
   initWorkerObservability();
   const config = loadConfig();
   const timing = readWorkerTimingConfig();
+  const workerInternalRuntime = readWorkerInternalServerRuntimeConfig();
 
   if (!resolveRuntimePrivateKey(config)) {
     throw new Error(
@@ -493,6 +496,14 @@ export async function startWorker() {
   ) {
     throw new Error(
       `Submission sealing is enabled, but the worker is missing a private key for active kid ${config.AGORA_SUBMISSION_SEAL_KEY_ID}.`,
+    );
+  }
+  if (
+    hasSubmissionSealPublicConfig(config) &&
+    !workerInternalRuntime.authToken
+  ) {
+    throw new Error(
+      "Submission sealing requires AGORA_WORKER_INTERNAL_TOKEN on the worker so the API can validate sealed payloads before intent creation.",
     );
   }
 
@@ -516,6 +527,7 @@ export async function startWorker() {
       keyId: sealKeyId,
     });
   }
+  const internalServer = startWorkerInternalServer();
 
   const db = createSupabaseClient(true);
   while (true) {
@@ -577,6 +589,7 @@ export async function startWorker() {
     runtimeWorkerId,
     host: WORKER_HOST,
     prunedRuntimeRows,
+    workerInternalPort: internalServer?.port ?? null,
     preflightedOfficialImages,
     scorerExecutionBackend: isRemoteExecutorConfigured()
       ? "remote_http"

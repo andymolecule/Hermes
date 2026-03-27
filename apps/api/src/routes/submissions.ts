@@ -7,9 +7,11 @@ import {
   SUBMISSION_SEAL_ALG,
   SUBMISSION_SEAL_VERSION,
   type SubmissionEventInput,
+  computeSubmissionSealPublicKeyFingerprint,
   hasSubmissionSealPublicConfig,
   loadConfig,
   parseSealedSubmissionEnvelope,
+  readSubmissionValidationRuntimeConfig,
   submissionCleanupRequestSchema,
   submissionIntentRequestSchema,
   submissionRegistrationRequestSchema,
@@ -34,12 +36,17 @@ import {
   getSession,
 } from "../lib/auth-store.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
-import { getRequestId, getRequestLogger, getTraceId } from "../lib/observability.js";
+import {
+  getRequestId,
+  getRequestLogger,
+  getTraceId,
+} from "../lib/observability.js";
 import {
   createSubmissionEvent,
   readSubmissionClientTelemetry,
   recordSubmissionEvents,
 } from "../lib/submission-observability.js";
+import { hasSubmissionSealValidationBridgeConfig } from "../lib/submission-seal-validation.js";
 import {
   buildPublicSubmissionVerification,
   buildSubmissionStatusEventStream,
@@ -241,12 +248,29 @@ const router = new Hono<ApiEnv>();
 
 router.get("/public-key", async (c) => {
   const config = loadConfig();
-  if (!hasSubmissionSealPublicConfig(config)) {
+  const validationRuntime = readSubmissionValidationRuntimeConfig();
+  if (
+    !canServeSubmissionSealPublicKey({
+      hasPublicSealConfig: hasSubmissionSealPublicConfig(config),
+      hasValidationBridgeConfig: hasSubmissionSealValidationBridgeConfig({
+        runtimeConfig: validationRuntime,
+      }),
+    })
+  ) {
+    if (!hasSubmissionSealPublicConfig(config)) {
+      return jsonError(c, {
+        status: 503,
+        code: "SUBMISSION_SEALING_UNAVAILABLE",
+        message:
+          "Submission sealing is not configured. Next step: retry after the API submission sealing public key is configured, or submit only to challenges that explicitly allow plain_v0 payloads.",
+      });
+    }
+
     return jsonError(c, {
       status: 503,
-      code: "SUBMISSION_SEALING_UNAVAILABLE",
+      code: "SUBMISSION_VALIDATION_UNAVAILABLE",
       message:
-        "Submission sealing is not configured. Next step: retry after the API submission sealing public key is configured, or submit only to challenges that explicitly allow plain_v0 payloads.",
+        "Submission sealing is temporarily unavailable because Agora cannot validate sealed submissions yet. Next step: retry after sealed submission validation is restored.",
     });
   }
 
@@ -256,6 +280,9 @@ router.get("/public-key", async (c) => {
       alg: SUBMISSION_SEAL_ALG,
       kid: config.AGORA_SUBMISSION_SEAL_KEY_ID,
       publicKeyPem: config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+      publicKeyFingerprint: computeSubmissionSealPublicKeyFingerprint(
+        config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM as string,
+      ),
     },
   });
 });
@@ -409,8 +436,7 @@ router.post(
       try {
         validateSealedSubmissionUpload(upload.bytes);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         await recordSubmissionRouteEvents(c, [
           createSubmissionRouteEvent(c, {
             intent_id: null,
@@ -483,7 +509,8 @@ router.post(
           outcome: "completed",
           http_status: 200,
           code: null,
-          summary: "Agora pinned the submission artifact and returned a result CID.",
+          summary:
+            "Agora pinned the submission artifact and returned a result CID.",
           refs: {
             challenge_address: null,
             tx_hash: null,
@@ -595,7 +622,8 @@ router.post(
           outcome: "blocked",
           http_status: 400,
           code: "VALIDATION_ERROR",
-          summary: "Agora rejected the submission cleanup request because the JSON body was invalid.",
+          summary:
+            "Agora rejected the submission cleanup request because the JSON body was invalid.",
           refs: {
             challenge_address: null,
             tx_hash: null,
@@ -720,7 +748,8 @@ router.post(
           solver_address: actor.optionalSessionAddress,
           route: "cleanup",
           event: "cleanup.failed",
-          phase: error instanceof SubmissionWorkflowError ? "cleanup" : "system",
+          phase:
+            error instanceof SubmissionWorkflowError ? "cleanup" : "system",
           actor: error instanceof SubmissionWorkflowError ? "caller" : "agora",
           outcome:
             error instanceof SubmissionWorkflowError && error.status < 500
@@ -1200,186 +1229,182 @@ router.post(
   },
 );
 
-router.post(
-  "/",
-  requireWriteQuota("/api/submissions"),
-  async (c) => {
-    const actor = await getOptionalSubmissionActor(c);
-    const clientTelemetry = readSubmissionClientTelemetry(c.req);
-    let rawPayload: unknown;
-    try {
-      rawPayload = await c.req.json();
-    } catch {
-      await recordSubmissionRouteEvents(c, [
-        createSubmissionRouteEvent(c, {
-          intent_id: null,
-          submission_id: null,
-          score_job_id: null,
-          challenge_id: null,
-          on_chain_submission_id: null,
-          agent_id: actor.submittedByAgentId,
-          solver_address: actor.optionalSessionAddress,
-          route: "register",
-          event: "registration.failed",
-          phase: "ingress",
-          actor: "caller",
-          outcome: "blocked",
-          http_status: 400,
-          code: "VALIDATION_ERROR",
-          summary:
-            "Agora rejected the submission registration request because the JSON body was invalid.",
-          refs: {
-            challenge_address: null,
-            tx_hash: null,
-            score_tx_hash: null,
-            result_cid: null,
-          },
-          client: clientTelemetry,
-          payload: {
-            error: toSubmissionTelemetryError({
-              status: 400,
-              code: "VALIDATION_ERROR",
-              message:
-                "Invalid submission registration payload. Next step: fix the request body and retry.",
-            }),
-          },
-        }),
-      ]);
-      return createSubmissionValidationError(
-        c,
-        "Invalid submission registration payload. Next step: fix the request body and retry.",
-      );
-    }
-
-    const parsed = submissionRegistrationRequestSchema.safeParse(rawPayload);
-    if (!parsed.success) {
-      await recordSubmissionRouteEvents(c, [
-        createSubmissionRouteEvent(c, {
-          intent_id: null,
-          submission_id: null,
-          score_job_id: null,
-          challenge_id: null,
-          on_chain_submission_id: null,
-          agent_id: actor.submittedByAgentId,
-          solver_address: actor.optionalSessionAddress,
-          route: "register",
-          event: "registration.failed",
-          phase: "ingress",
-          actor: "caller",
-          outcome: "blocked",
-          http_status: 400,
-          code: "VALIDATION_ERROR",
-          summary:
-            "Agora rejected the submission registration request because required fields were missing or invalid.",
-          refs: {
-            challenge_address: null,
-            tx_hash: null,
-            score_tx_hash: null,
-            result_cid: null,
-          },
-          client: clientTelemetry,
-          payload: {
-            error: toSubmissionTelemetryError({
-              status: 400,
-              code: "VALIDATION_ERROR",
-              message:
-                "Invalid submission registration payload. Next step: fix the request body and retry.",
-            }),
-          },
-        }),
-      ]);
-      return createSubmissionValidationError(
-        c,
-        "Invalid submission registration payload. Next step: fix the request body and retry.",
-        parsed.error.issues,
-      );
-    }
-
-    try {
-      const result = await registerSubmissionWorkflow({
-        challengeId: parsed.data.challengeId,
-        challengeAddress: parsed.data.challengeAddress,
-        intentId: parsed.data.intentId,
-        submittedByAgentId: actor.submittedByAgentId,
-        resultCid: parsed.data.resultCid,
-        resultFormat: parsed.data.resultFormat,
-        txHash: parsed.data.txHash,
-        optionalSessionAddress: actor.optionalSessionAddress,
-        requestId: getRequestId(c),
-        traceId: resolveSubmissionTraceId(c),
+router.post("/", requireWriteQuota("/api/submissions"), async (c) => {
+  const actor = await getOptionalSubmissionActor(c);
+  const clientTelemetry = readSubmissionClientTelemetry(c.req);
+  let rawPayload: unknown;
+  try {
+    rawPayload = await c.req.json();
+  } catch {
+    await recordSubmissionRouteEvents(c, [
+      createSubmissionRouteEvent(c, {
+        intent_id: null,
+        submission_id: null,
+        score_job_id: null,
+        challenge_id: null,
+        on_chain_submission_id: null,
+        agent_id: actor.submittedByAgentId,
+        solver_address: actor.optionalSessionAddress,
         route: "register",
-        clientTelemetry,
-        logger: getRequestLogger(c),
-      });
-      return c.json(
-        toSubmissionRegistrationResponse({
-          submission: result.submission,
-          challenge: result.challenge,
-          warning: result.warning,
-        }),
-        result.status,
-      );
-    } catch (error) {
-      const telemetryError =
-        error instanceof SubmissionWorkflowError
-          ? toSubmissionTelemetryError({
-              status: error.status,
-              code: error.code,
-              message: error.message,
-            })
-          : toSubmissionTelemetryError({
-              status: 500,
-              code: "SUBMISSION_REGISTRATION_FAILED",
-              message:
-                error instanceof Error
-                  ? `Submission registration failed: ${error.message}. Next step: retry, then inspect the API logs if the error persists.`
-                  : "Submission registration failed. Next step: retry, then inspect the API logs if the error persists.",
-            });
-      await recordSubmissionRouteEvents(c, [
-        createSubmissionRouteEvent(c, {
-          intent_id: parsed.data.intentId,
-          submission_id: null,
-          score_job_id: null,
-          challenge_id: null,
-          on_chain_submission_id: null,
-          agent_id: actor.submittedByAgentId,
-          solver_address: actor.optionalSessionAddress,
-          route: "register",
-          event: "registration.failed",
-          phase:
-            error instanceof SubmissionWorkflowError ? "registration" : "system",
-          actor: error instanceof SubmissionWorkflowError ? "caller" : "agora",
-          outcome:
-            error instanceof SubmissionWorkflowError && error.status < 500
-              ? "blocked"
-              : "failed",
-          http_status: telemetryError.status,
-          code: telemetryError.code ?? null,
-          summary:
-            error instanceof SubmissionWorkflowError
-              ? "Agora rejected the submission registration request."
-              : "Agora failed while confirming submission registration.",
-          refs: {
-            challenge_address: parsed.data.challengeAddress ?? null,
-            tx_hash: parsed.data.txHash,
-            score_tx_hash: null,
-            result_cid: parsed.data.resultCid,
-          },
-          client: clientTelemetry,
-          payload: {
-            registration: parsed.data,
-            result_format: parsed.data.resultFormat,
-            error: telemetryError,
-          },
-        }),
-      ]);
-      const workflowError = toSubmissionWorkflowJsonError(c, error);
-      if (workflowError) {
-        return workflowError;
-      }
-      throw error;
+        event: "registration.failed",
+        phase: "ingress",
+        actor: "caller",
+        outcome: "blocked",
+        http_status: 400,
+        code: "VALIDATION_ERROR",
+        summary:
+          "Agora rejected the submission registration request because the JSON body was invalid.",
+        refs: {
+          challenge_address: null,
+          tx_hash: null,
+          score_tx_hash: null,
+          result_cid: null,
+        },
+        client: clientTelemetry,
+        payload: {
+          error: toSubmissionTelemetryError({
+            status: 400,
+            code: "VALIDATION_ERROR",
+            message:
+              "Invalid submission registration payload. Next step: fix the request body and retry.",
+          }),
+        },
+      }),
+    ]);
+    return createSubmissionValidationError(
+      c,
+      "Invalid submission registration payload. Next step: fix the request body and retry.",
+    );
+  }
+
+  const parsed = submissionRegistrationRequestSchema.safeParse(rawPayload);
+  if (!parsed.success) {
+    await recordSubmissionRouteEvents(c, [
+      createSubmissionRouteEvent(c, {
+        intent_id: null,
+        submission_id: null,
+        score_job_id: null,
+        challenge_id: null,
+        on_chain_submission_id: null,
+        agent_id: actor.submittedByAgentId,
+        solver_address: actor.optionalSessionAddress,
+        route: "register",
+        event: "registration.failed",
+        phase: "ingress",
+        actor: "caller",
+        outcome: "blocked",
+        http_status: 400,
+        code: "VALIDATION_ERROR",
+        summary:
+          "Agora rejected the submission registration request because required fields were missing or invalid.",
+        refs: {
+          challenge_address: null,
+          tx_hash: null,
+          score_tx_hash: null,
+          result_cid: null,
+        },
+        client: clientTelemetry,
+        payload: {
+          error: toSubmissionTelemetryError({
+            status: 400,
+            code: "VALIDATION_ERROR",
+            message:
+              "Invalid submission registration payload. Next step: fix the request body and retry.",
+          }),
+        },
+      }),
+    ]);
+    return createSubmissionValidationError(
+      c,
+      "Invalid submission registration payload. Next step: fix the request body and retry.",
+      parsed.error.issues,
+    );
+  }
+
+  try {
+    const result = await registerSubmissionWorkflow({
+      challengeId: parsed.data.challengeId,
+      challengeAddress: parsed.data.challengeAddress,
+      intentId: parsed.data.intentId,
+      submittedByAgentId: actor.submittedByAgentId,
+      resultCid: parsed.data.resultCid,
+      resultFormat: parsed.data.resultFormat,
+      txHash: parsed.data.txHash,
+      optionalSessionAddress: actor.optionalSessionAddress,
+      requestId: getRequestId(c),
+      traceId: resolveSubmissionTraceId(c),
+      route: "register",
+      clientTelemetry,
+      logger: getRequestLogger(c),
+    });
+    return c.json(
+      toSubmissionRegistrationResponse({
+        submission: result.submission,
+        challenge: result.challenge,
+        warning: result.warning,
+      }),
+      result.status,
+    );
+  } catch (error) {
+    const telemetryError =
+      error instanceof SubmissionWorkflowError
+        ? toSubmissionTelemetryError({
+            status: error.status,
+            code: error.code,
+            message: error.message,
+          })
+        : toSubmissionTelemetryError({
+            status: 500,
+            code: "SUBMISSION_REGISTRATION_FAILED",
+            message:
+              error instanceof Error
+                ? `Submission registration failed: ${error.message}. Next step: retry, then inspect the API logs if the error persists.`
+                : "Submission registration failed. Next step: retry, then inspect the API logs if the error persists.",
+          });
+    await recordSubmissionRouteEvents(c, [
+      createSubmissionRouteEvent(c, {
+        intent_id: parsed.data.intentId,
+        submission_id: null,
+        score_job_id: null,
+        challenge_id: null,
+        on_chain_submission_id: null,
+        agent_id: actor.submittedByAgentId,
+        solver_address: actor.optionalSessionAddress,
+        route: "register",
+        event: "registration.failed",
+        phase:
+          error instanceof SubmissionWorkflowError ? "registration" : "system",
+        actor: error instanceof SubmissionWorkflowError ? "caller" : "agora",
+        outcome:
+          error instanceof SubmissionWorkflowError && error.status < 500
+            ? "blocked"
+            : "failed",
+        http_status: telemetryError.status,
+        code: telemetryError.code ?? null,
+        summary:
+          error instanceof SubmissionWorkflowError
+            ? "Agora rejected the submission registration request."
+            : "Agora failed while confirming submission registration.",
+        refs: {
+          challenge_address: parsed.data.challengeAddress ?? null,
+          tx_hash: parsed.data.txHash,
+          score_tx_hash: null,
+          result_cid: parsed.data.resultCid,
+        },
+        client: clientTelemetry,
+        payload: {
+          registration: parsed.data,
+          result_format: parsed.data.resultFormat,
+          error: telemetryError,
+        },
+      }),
+    ]);
+    const workflowError = toSubmissionWorkflowJsonError(c, error);
+    if (workflowError) {
+      return workflowError;
     }
-  },
-);
+    throw error;
+  }
+});
 
 export default router;

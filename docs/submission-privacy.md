@@ -135,6 +135,7 @@ sequenceDiagram
     Solver->>IPFS: upload sealed-submission.json
     IPFS-->>Solver: submission CID
     Solver->>API: POST /api/submissions/intent { challengeId, solverAddress, resultCid, resultFormat }
+    API->>Worker: open sealed CID via worker validation bridge
     API->>API: compute resultHash
     API->>DB: store submission_intent
     Solver->>Chain: submit(resultHash)
@@ -253,20 +254,22 @@ This is why the system should be described as public-hidden answer privacy durin
 ## Browser Submission Flow
 
 1. The challenge page checks `GET /api/submissions/public-key`.
-2. The API returns that public key whenever public sealing config is present.
-3. If sealing is unavailable because config is missing, the UI blocks submission instead of pretending privacy exists.
+2. The API returns that public key only when public sealing config and the worker validation bridge are both configured.
+3. If sealing is unavailable because config or validation is missing, the UI blocks submission instead of pretending privacy exists.
 4. The browser validates the selected file or text answer locally.
 5. The browser imports the API-provided RSA public key.
 6. The browser seals the submission locally as `sealed_submission_v2`.
 7. The browser uploads only `sealed-submission.json` to IPFS.
-8. The browser pre-registers a `submission_intent` and receives the canonical `resultHash`.
-9. The browser submits that `resultHash` on-chain.
-10. The browser confirms the submission with the API.
-11. Scoring requires the on-chain submission and the pre-registered `submission_intent` to be linked. If confirmation or indexing does not establish that link, the submission must be investigated instead of being treated as scoreable automatically later.
+8. During `POST /api/submissions/intent`, the API asks the worker to open the uploaded sealed CID and verify `challengeId` plus `solverAddress` before creating any durable intent.
+9. The browser receives the canonical `resultHash` only after that worker-backed validation succeeds.
+10. The browser submits that `resultHash` on-chain.
+11. The browser confirms the submission with the API.
+12. Scoring requires the on-chain submission and the pre-registered `submission_intent` to be linked. If confirmation or indexing does not establish that link, the submission must be investigated instead of being treated as scoreable automatically later.
 
 Important consequence:
 
 - If sealing is enabled, the browser never intentionally uploads plaintext answer bytes as the official submission payload.
+- If the uploaded sealed envelope cannot be opened by the worker, Agora now rejects the intent immediately instead of discovering the failure only after the challenge deadline.
 
 ---
 
@@ -312,9 +315,11 @@ The API and worker split responsibilities:
 - API serves exactly one active public key:
   - `AGORA_SUBMISSION_SEAL_KEY_ID`
   - `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
+- API uses `AGORA_WORKER_INTERNAL_URL` plus `AGORA_WORKER_INTERNAL_TOKEN` to ask the worker to validate sealed envelopes before intent creation.
 - Worker holds the matching private key:
   - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM`
   - or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
+  - and exposes a token-protected internal validation/health surface on `AGORA_WORKER_INTERNAL_PORT`
 
 ### `kid` rotation
 
@@ -327,6 +332,14 @@ This keeps rotation simple:
 
 - one active public key for new submissions
 - one worker key set containing the active private key and any temporary previous keys
+
+### Canonical sealing requirement
+
+- `sealed_submission_v2` is only supported when the client uses Agora's canonical sealing helper and preserves the AES-GCM additional authenticated data contract exactly.
+- Hand-rolled or partially reimplemented envelope builders are unsupported unless they reproduce the same authenticated data byte-for-byte.
+- Custom clients should treat the shared helper as the source of truth:
+  - `packages/common/src/submission-sealing.ts`
+- For non-TypeScript clients, publish and test against official Agora vectors before sending live submissions.
 
 ---
 
@@ -351,13 +364,17 @@ To confirm sealing is working:
 curl -sS http://localhost:3000/api/health
 curl -sS http://localhost:3000/api/worker-health
 curl -sS http://localhost:3000/api/submissions/public-key
+curl -sS \
+  -H "Authorization: Bearer $AGORA_WORKER_INTERNAL_TOKEN" \
+  http://localhost:3400/internal/sealed-submissions/healthz
 ```
 
 Expected signals:
 
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` and the active `kid` whenever sealing is configured successfully.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"`, the active `kid`, and `publicKeyFingerprint` only when sealing and worker-backed validation are configured successfully.
 - `/api/health` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
 - `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, and the same active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- `/internal/sealed-submissions/healthz` returns the worker `keyId`, `publicKeyFingerprint`, and `derivedPublicKeyFingerprint`; the worker and API fingerprints must match.
 - File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader.
 
 If the public key endpoint returns `503`, the web UI should block private submissions rather than falling back to a fake privacy claim.

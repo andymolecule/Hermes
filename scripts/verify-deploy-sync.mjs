@@ -36,6 +36,16 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--worker-internal-url") {
+      options.workerInternalUrl = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === "--worker-internal-token") {
+      options.workerInternalToken = argv[index + 1];
+      index += 1;
+      continue;
+    }
     if (arg.startsWith("--api-url=")) {
       options.apiUrl = arg.slice("--api-url=".length);
       continue;
@@ -60,6 +70,16 @@ function parseArgs(argv) {
       options.expectedApiGitSha = arg.slice("--expected-git-sha=".length);
       continue;
     }
+    if (arg.startsWith("--worker-internal-url=")) {
+      options.workerInternalUrl = arg.slice("--worker-internal-url=".length);
+      continue;
+    }
+    if (arg.startsWith("--worker-internal-token=")) {
+      options.workerInternalToken = arg.slice(
+        "--worker-internal-token=".length,
+      );
+      continue;
+    }
     if (arg === "--skip-worker") {
       options.skipWorker = true;
       continue;
@@ -69,7 +89,7 @@ function parseArgs(argv) {
       continue;
     }
     throw new Error(
-      `Unknown argument: ${arg}. Next step: use --api-url, optional --web-url, optional --expected/--expected-api/--expected-web, optional --expected-git-sha, and optional --skip-worker/--skip-web.`,
+      `Unknown argument: ${arg}. Next step: use --api-url, optional --web-url, optional --expected/--expected-api/--expected-web, optional --expected-git-sha, optional --worker-internal-url/--worker-internal-token, and optional --skip-worker/--skip-web.`,
     );
   }
 
@@ -146,6 +166,41 @@ async function fetchJson(url, label) {
   return payload;
 }
 
+async function fetchJsonWithHeaders(url, label, headers) {
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      ...headers,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  const text = await response.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `${label} returned non-JSON output. Next step: verify the URL points at the deployed Agora service and retry.`,
+    );
+  }
+
+  if (!response.ok) {
+    const detail =
+      typeof payload?.error === "string" && payload.error.trim().length > 0
+        ? payload.error
+        : typeof payload?.error?.message === "string" &&
+            payload.error.message.trim().length > 0
+          ? payload.error.message
+          : `HTTP ${response.status}`;
+    throw new Error(
+      `${label} check failed (${response.status}): ${detail}. Next step: verify the service is deployed and reachable, then retry.`,
+    );
+  }
+
+  return payload;
+}
+
 function compareRuntimeVersion(input) {
   if (input.actual === input.expected) {
     console.log(
@@ -195,8 +250,31 @@ const expectedWebRuntimeVersion =
   normalizeRuntimeVersion(options.expectedWebRuntimeVersion) ||
   normalizeRuntimeVersion(options.expectedRuntimeVersion);
 const expectedApiGitSha = normalizeGitSha(options.expectedApiGitSha);
+const workerInternalUrl = options.workerInternalUrl
+  ? normalizeBaseUrl(options.workerInternalUrl, "Worker internal URL")
+  : process.env.AGORA_WORKER_INTERNAL_URL
+    ? normalizeBaseUrl(
+        process.env.AGORA_WORKER_INTERNAL_URL,
+        "Worker internal URL",
+      )
+    : null;
+const workerInternalToken =
+  options.workerInternalToken ??
+  process.env.AGORA_WORKER_INTERNAL_TOKEN ??
+  null;
 
 const apiHealth = await fetchJson(`${apiUrl}/api/health`, "API /api/health");
+let submissionPublicKey = null;
+try {
+  submissionPublicKey = await fetchJson(
+    `${apiUrl}/api/submissions/public-key`,
+    "API /api/submissions/public-key",
+  );
+} catch (error) {
+  console.log(
+    `[INFO] Skipping submission sealing fingerprint verification: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
 const webVersion = webUrl
   ? await fetchJson(`${webUrl}/api/version`, "Web /api/version")
   : null;
@@ -234,7 +312,7 @@ if (webUrl && !webRuntimeVersion) {
 
 let ok = true;
 
-console.log(`[OK] API /api/health is healthy`);
+console.log("[OK] API /api/health is healthy");
 console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
 if (apiGitSha) {
   console.log(`[INFO] Reported API git SHA: ${apiGitSha}`);
@@ -245,7 +323,9 @@ if (apiGitSha) {
 }
 
 if (expectedApiRuntimeVersion) {
-  console.log(`[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`);
+  console.log(
+    `[INFO] Expected API runtime version: ${expectedApiRuntimeVersion}`,
+  );
   ok =
     compareRuntimeVersion({
       label: "API",
@@ -297,12 +377,11 @@ if (webUrl) {
 }
 
 if (workerHealth) {
-  const workerApiRuntimeVersion =
-    normalizeRuntimeVersion(
-      typeof workerHealth?.runtime?.apiVersion === "string"
-        ? workerHealth.runtime.apiVersion
-        : null,
-    );
+  const workerApiRuntimeVersion = normalizeRuntimeVersion(
+    typeof workerHealth?.runtime?.apiVersion === "string"
+      ? workerHealth.runtime.apiVersion
+      : null,
+  );
   const activeWorkerRuntimeVersion = normalizeRuntimeVersion(
     workerHealth?.workers?.activeRuntimeVersion,
   );
@@ -341,6 +420,71 @@ if (workerHealth) {
       "[FAIL] Worker health reports zero healthy workers on the active runtime. Next step: inspect the worker host, then retry.",
     );
     ok = false;
+  }
+}
+
+if (submissionPublicKey?.data) {
+  console.log(
+    `[INFO] API submission seal key: kid=${submissionPublicKey.data.kid}, fingerprint=${submissionPublicKey.data.publicKeyFingerprint}`,
+  );
+
+  if (workerInternalUrl && workerInternalToken) {
+    const workerSealHealth = await fetchJsonWithHeaders(
+      `${workerInternalUrl}/internal/sealed-submissions/healthz`,
+      "Worker internal /internal/sealed-submissions/healthz",
+      {
+        authorization: `Bearer ${workerInternalToken}`,
+      },
+    );
+
+    const apiSealFingerprint = submissionPublicKey.data.publicKeyFingerprint;
+    const workerSealFingerprint =
+      workerSealHealth?.sealing?.publicKeyFingerprint ?? null;
+    const workerDerivedSealFingerprint =
+      workerSealHealth?.sealing?.derivedPublicKeyFingerprint ?? null;
+    const workerSealKeyId = workerSealHealth?.sealing?.keyId ?? null;
+
+    if (workerSealHealth?.ok === true) {
+      console.log("[OK] Worker internal sealing health is healthy");
+    } else {
+      console.error(
+        "[FAIL] Worker internal sealing health is not healthy. Next step: restore the worker sealing keypair and retry.",
+      );
+      ok = false;
+    }
+
+    if (workerSealKeyId === submissionPublicKey.data.kid) {
+      console.log(
+        `[OK] Worker internal sealing key id matches API kid ${submissionPublicKey.data.kid}`,
+      );
+    } else {
+      console.error(
+        `[FAIL] Worker internal sealing key id mismatch: api=${submissionPublicKey.data.kid}, worker=${workerSealKeyId}. Next step: align the API public key and worker private key configuration, then retry.`,
+      );
+      ok = false;
+    }
+
+    if (workerSealFingerprint === apiSealFingerprint) {
+      console.log("[OK] Worker internal public-key fingerprint matches API");
+    } else {
+      console.error(
+        `[FAIL] Worker internal public-key fingerprint mismatch: api=${apiSealFingerprint}, worker=${workerSealFingerprint}. Next step: redeploy with the same submission sealing public key on both services, then retry.`,
+      );
+      ok = false;
+    }
+
+    if (workerDerivedSealFingerprint === apiSealFingerprint) {
+      console.log("[OK] Worker derived private-key fingerprint matches API");
+    } else {
+      console.error(
+        `[FAIL] Worker derived private-key fingerprint mismatch: api=${apiSealFingerprint}, worker-derived=${workerDerivedSealFingerprint}. Next step: restore the worker private key that matches the API public key, then retry.`,
+      );
+      ok = false;
+    }
+  } else {
+    console.log(
+      "[INFO] Skipping worker internal sealing fingerprint verification because --worker-internal-url/--worker-internal-token were not provided.",
+    );
   }
 }
 

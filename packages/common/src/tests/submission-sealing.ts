@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import {
   SUBMISSION_SEAL_VERSION,
   computeSubmissionResultHash,
+  computeSubmissionSealPublicKeyFingerprint,
   importSubmissionOpenPrivateKey,
   importSubmissionSealPublicKey,
   openSubmission,
@@ -46,6 +47,11 @@ assert.equal(
   generatedEnvelope.version,
   SUBMISSION_SEAL_VERSION,
   "new sealed submissions should use the current envelope version",
+);
+assert.equal(
+  computeSubmissionSealPublicKeyFingerprint(publicKey),
+  computeSubmissionSealPublicKeyFingerprint(publicKey),
+  "submission seal key fingerprints should be deterministic for the same PEM",
 );
 const serializedEnvelope = serializeSealedSubmissionEnvelope(generatedEnvelope);
 assert.deepEqual(

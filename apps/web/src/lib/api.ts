@@ -256,6 +256,7 @@ export async function getSubmissionPublicKey() {
     alg: "aes-256-gcm+rsa-oaep-256";
     kid: string;
     publicKeyPem: string;
+    publicKeyFingerprint: string;
   }>("/api/submissions/public-key");
 }
 

@@ -12,9 +12,10 @@ import {
   projectOnChainSubmissionFromRegistration,
 } from "@agora/chain/indexer/submissions";
 import {
+  type AgoraClientTelemetryOutput,
   CHALLENGE_STATUS,
   DEFAULT_SUBMISSION_PRIVACY_MODE,
-  type AgoraClientTelemetryOutput,
+  SEALED_SUBMISSION_RESULT_FORMAT,
   type SubmissionResultFormat,
   computeSubmissionResultHash,
   getRequiredSubmissionResultFormat,
@@ -43,13 +44,17 @@ import { unpinCid } from "@agora/ipfs";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { getMatchingOptionalSessionAddress } from "./auth/session-policy.js";
 import {
-  getSubmissionReadRetryMessage,
-  isInvalidOnChainSubmissionReadError,
-} from "./submission-status.js";
-import {
   createSubmissionEvent,
   recordSubmissionEvents,
 } from "./submission-observability.js";
+import {
+  SubmissionSealValidationClientError,
+  validateSealedSubmissionForIntent,
+} from "./submission-seal-validation.js";
+import {
+  getSubmissionReadRetryMessage,
+  isInvalidOnChainSubmissionReadError,
+} from "./submission-status.js";
 
 const SUBMISSION_INTENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const SUBMISSION_DEADLINE_SAFETY_WINDOW_MS = 45 * 1000;
@@ -208,6 +213,44 @@ function assertChallengeSubmissionPayload(input: {
   return privacyMode;
 }
 
+export async function validateSubmissionIntentPayloadBoundary(
+  input: {
+    challengeId: string;
+    solverAddress: string;
+    resultCid: string;
+    resultFormat: SubmissionResultFormat;
+  },
+  dependencies: {
+    validateSealedSubmissionForIntentImpl?: typeof validateSealedSubmissionForIntent;
+  } = {},
+) {
+  if (input.resultFormat !== SEALED_SUBMISSION_RESULT_FORMAT) {
+    return;
+  }
+
+  const validateSealedSubmissionForIntentImpl =
+    dependencies.validateSealedSubmissionForIntentImpl ??
+    validateSealedSubmissionForIntent;
+
+  try {
+    await validateSealedSubmissionForIntentImpl({
+      resultCid: input.resultCid,
+      challengeId: input.challengeId,
+      solverAddress: input.solverAddress,
+    });
+  } catch (error) {
+    if (error instanceof SubmissionSealValidationClientError) {
+      throw new SubmissionWorkflowError(
+        error.status as ContentfulStatusCode,
+        error.code,
+        error.message,
+        { retriable: error.options?.retriable },
+      );
+    }
+    throw error;
+  }
+}
+
 export async function reconcileTrackedSubmissionsForIntent(
   input: {
     db: ReturnType<typeof createSupabaseClient>;
@@ -327,20 +370,25 @@ export async function reconcileTrackedSubmissionsForIntent(
   };
 }
 
-export async function createSubmissionIntentWorkflow(input: {
-  challengeId?: string;
-  challengeAddress?: string;
-  solverAddress: string;
-  submittedByAgentId?: string | null;
-  resultCid: string;
-  resultFormat: SubmissionResultFormat;
-  optionalSessionAddress: string | null;
-  requestId: string;
-  traceId?: string;
-  route?: string;
-  clientTelemetry?: AgoraClientTelemetryOutput | null;
-  logger: AgoraLogger;
-}) {
+export async function createSubmissionIntentWorkflow(
+  input: {
+    challengeId?: string;
+    challengeAddress?: string;
+    solverAddress: string;
+    submittedByAgentId?: string | null;
+    resultCid: string;
+    resultFormat: SubmissionResultFormat;
+    optionalSessionAddress: string | null;
+    requestId: string;
+    traceId?: string;
+    route?: string;
+    clientTelemetry?: AgoraClientTelemetryOutput | null;
+    logger: AgoraLogger;
+  },
+  dependencies: {
+    validateSealedSubmissionForIntentImpl?: typeof validateSealedSubmissionForIntent;
+  } = {},
+) {
   const normalizedResultCid = input.resultCid.trim();
   const traceId = input.traceId ?? input.requestId;
   if (!isValidPinnedSpecCid(normalizedResultCid)) {
@@ -406,6 +454,15 @@ export async function createSubmissionIntentWorkflow(input: {
 
   const normalizedSolverAddress =
     sessionAddress ?? input.solverAddress.toLowerCase();
+  await validateSubmissionIntentPayloadBoundary(
+    {
+      challengeId: challenge.id,
+      solverAddress: normalizedSolverAddress,
+      resultCid: normalizedResultCid,
+      resultFormat: input.resultFormat,
+    },
+    dependencies,
+  );
   const resultHash = computeSubmissionResultHash(normalizedResultCid);
   const existingIntent = await findActiveSubmissionIntentByMatch(db, {
     challengeId: challenge.id,
@@ -989,7 +1046,8 @@ export async function registerSubmissionWorkflow(input: {
         outcome: responseWarning ? "completed" : "accepted",
         http_status: responseWarning ? 202 : 200,
         code: responseWarning?.code ?? null,
-        summary: "Agora confirmed submission registration and updated scoring state.",
+        summary:
+          "Agora confirmed submission registration and updated scoring state.",
         refs: {
           challenge_address: challenge.contract_address,
           tx_hash: input.txHash,

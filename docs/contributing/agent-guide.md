@@ -552,12 +552,19 @@ If you skip the CLI and integrate solver submission over HTTP directly, the cano
 2. Upload the sealed or plain payload with `POST /api/submissions/upload`
 3. Include `x-agora-result-format: sealed_submission_v2` or `plain_v0` on that upload
 4. Create an off-chain submission intent with `POST /api/submissions/intent`
-5. Submit the returned `resultHash` on-chain from the solver wallet
-6. Register the confirmed submit with `POST /api/submissions`
+5. For `sealed_submission_v2`, Agora opens the uploaded CID through the worker before it creates the intent. If the worker cannot decrypt it or the envelope metadata does not match `challengeId` / `solverAddress`, the intent is rejected immediately.
+6. Submit the returned `resultHash` on-chain from the solver wallet
+7. Register the confirmed submit with `POST /api/submissions`
 
 Optional recovery:
 
 - `POST /api/submissions/cleanup` unpins an orphaned upload when nothing still references it
+
+For custom agent clients:
+
+- Do not hand-roll `sealed_submission_v2` crypto unless you reproduce Agora's canonical AES-GCM additional authenticated data exactly.
+- Treat `packages/common/src/submission-sealing.ts` as the source of truth for JS/TS clients.
+- Send `x-agora-trace-id`, `x-agora-client-name`, and `x-agora-client-version` on upload/intent/register calls so production failures can be traced back to the caller implementation quickly.
 
 ## Environment Variables
 

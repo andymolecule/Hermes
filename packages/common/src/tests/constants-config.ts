@@ -27,6 +27,8 @@ import {
   readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readSolverWalletRuntimeConfig,
+  readSubmissionValidationRuntimeConfig,
+  readWorkerInternalServerRuntimeConfig,
   readWorkerTimingConfig,
   readX402RuntimeConfig,
   resetConfigCache,
@@ -386,6 +388,29 @@ try {
     undefined,
     "blank CLI private keys should be treated as unset rather than invalid config",
   );
+
+  const submissionValidationRuntime = readSubmissionValidationRuntimeConfig({
+    AGORA_SUBMISSION_SEAL_KEY_ID: "kid-1",
+    AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: "public-key",
+    AGORA_WORKER_INTERNAL_URL: "https://worker.internal",
+    AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
+  });
+  assert.equal(submissionValidationRuntime.sealingConfigured, true);
+  assert.equal(
+    submissionValidationRuntime.workerInternalUrl,
+    "https://worker.internal",
+  );
+  assert.equal(submissionValidationRuntime.workerInternalToken, "worker-token");
+
+  const workerInternalServerRuntime = readWorkerInternalServerRuntimeConfig({
+    AGORA_SUBMISSION_SEAL_KEY_ID: "kid-1",
+    AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: "public-key",
+    AGORA_WORKER_INTERNAL_PORT: "3456",
+    AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
+  });
+  assert.equal(workerInternalServerRuntime.sealingConfigured, true);
+  assert.equal(workerInternalServerRuntime.port, 3456);
+  assert.equal(workerInternalServerRuntime.authToken, "worker-token");
 
   const indexerRuntime = readIndexerHealthRuntimeConfig();
   assert.equal(indexerRuntime.warningLagBlocks, 42);

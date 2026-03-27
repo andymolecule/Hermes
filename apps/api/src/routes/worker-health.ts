@@ -1,4 +1,5 @@
 import {
+  computeSubmissionSealPublicKeyFingerprint,
   getAgoraReleaseMetadata,
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
@@ -243,6 +244,12 @@ router.get("/", async (c) => {
         configured: sealingConfigured,
         keyId: activeSealKeyId,
         publicKeyLoaded: Boolean(config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM),
+        publicKeyFingerprint:
+          sealingConfigured && config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM
+            ? computeSubmissionSealPublicKeyFingerprint(
+                config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+              )
+            : null,
         workerReady: workerRuntime.healthyWorkersForActiveSealKey > 0,
         healthyWorkersForActiveKey:
           workerRuntime.healthyWorkersForActiveSealKey,

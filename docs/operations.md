@@ -163,7 +163,9 @@ For the exact envelope format, trust boundary, and end-to-end flow, see [Submiss
 Required env vars:
 
 - API public config: `AGORA_SUBMISSION_SEAL_KEY_ID`, `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM`
+- API worker-validation bridge: `AGORA_WORKER_INTERNAL_URL`, `AGORA_WORKER_INTERNAL_TOKEN`
 - Worker private config: `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` or `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON`
+- Worker internal validation server: `AGORA_WORKER_INTERNAL_PORT`, `AGORA_WORKER_INTERNAL_TOKEN`
 - Shared deploy version: `AGORA_RUNTIME_VERSION` (optional override; otherwise the runtime resolves from build metadata, platform commit metadata when available, or a best-effort fallback such as `dev`)
 - Worker heartbeat tuning: `AGORA_WORKER_HEARTBEAT_MS`, `AGORA_WORKER_HEARTBEAT_STALE_MS`
 - Optional stable worker runtime id: `AGORA_WORKER_RUNTIME_ID`
@@ -173,10 +175,11 @@ Key handling rules:
 
 - The API advertises exactly one active public key via `GET /api/submissions/public-key`.
 - The active `kid` must exist in the worker private key set.
+- `POST /api/submissions/intent` now uses the worker bridge to open the uploaded sealed CID before persisting the `submission_intent`.
 - Services launched through `scripts/run-node-with-root-env.mjs` can load seal keys from disk via `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE`.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON` is the rotation path. Keep the active key plus any previous keys whose still-pending sealed submissions need to be scored.
 - `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM` is the simple single-key path. If both sources are set for the active `kid`, they must match.
-- `GET /api/submissions/public-key` returns the active public key whenever sealing is configured. Worker readiness is enforced at scoring time, not submission time.
+- `GET /api/submissions/public-key` returns the active public key only when the worker validation bridge is configured too. Sealed submission validity is now enforced at submission time as well as scoring time.
 - Set `AGORA_WORKER_RUNTIME_ID` when you intentionally run multiple scoring workers on the same host. Otherwise the worker derives a stable host-based runtime id automatically.
 
 Verification checklist:
@@ -185,6 +188,9 @@ Verification checklist:
 curl -sS http://localhost:3000/api/health
 curl -sS http://localhost:3000/api/worker-health
 curl -sS http://localhost:3000/api/submissions/public-key
+curl -sS \
+  -H "Authorization: Bearer $AGORA_WORKER_INTERNAL_TOKEN" \
+  http://localhost:3400/internal/sealed-submissions/healthz
 pnpm schema:verify
 pnpm scorers:verify
 ```
@@ -196,7 +202,8 @@ Expected results:
 - `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
 - `/api/worker-health` should not report `idle` when queued work exists. If `queued > 0` and `eligibleQueued = 0`, treat that as blocked scoring work and inspect the `startScoring()` boundary, queue backoff, and runtime alignment before assuming the worker is healthy.
 - Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
-- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` whenever sealing is configured successfully.
+- `/api/submissions/public-key` returns `version:"sealed_submission_v2"` plus `publicKeyFingerprint` whenever sealing and the worker validation bridge are configured successfully.
+- `/internal/sealed-submissions/healthz` returns the worker `keyId`, `publicKeyFingerprint`, and `derivedPublicKeyFingerprint`; both fingerprints must match the API `publicKeyFingerprint`.
 
 Existing testnet DBs:
 

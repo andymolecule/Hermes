@@ -83,8 +83,9 @@ export function canReadPublicSubmissionVerification(status: ChallengeStatus) {
 
 export function canServeSubmissionSealPublicKey(input: {
   hasPublicSealConfig: boolean;
+  hasValidationBridgeConfig: boolean;
 }) {
-  return input.hasPublicSealConfig;
+  return input.hasPublicSealConfig && input.hasValidationBridgeConfig;
 }
 
 export function isInvalidOnChainSubmissionReadError(error: unknown) {

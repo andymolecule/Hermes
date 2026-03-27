@@ -25,6 +25,12 @@ export const AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP =
 const apiClientRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
 });
+const submissionValidationRuntimeConfigSchema = configSchema.pick({
+  AGORA_WORKER_INTERNAL_URL: true,
+  AGORA_WORKER_INTERNAL_TOKEN: true,
+  AGORA_SUBMISSION_SEAL_KEY_ID: true,
+  AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: true,
+});
 
 export interface AgoraApiServerRuntimeConfig {
   nodeEnv: string;
@@ -36,6 +42,12 @@ export interface AgoraApiServerRuntimeConfig {
 
 export interface AgoraApiClientRuntimeConfig {
   apiUrl?: string;
+}
+
+export interface AgoraSubmissionValidationRuntimeConfig {
+  sealingConfigured: boolean;
+  workerInternalUrl?: string;
+  workerInternalToken?: string;
 }
 
 export interface AgoraAuthoringPublishRuntimeConfig {
@@ -74,6 +86,28 @@ export function readApiClientRuntimeConfig(
   );
   return {
     apiUrl: parsed.AGORA_API_URL,
+  };
+}
+
+export function readSubmissionValidationRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraSubmissionValidationRuntimeConfig {
+  const parsed = parseConfigSection(
+    submissionValidationRuntimeConfigSchema,
+    unsetBlankStringValues(env, [
+      "AGORA_WORKER_INTERNAL_URL",
+      "AGORA_WORKER_INTERNAL_TOKEN",
+      "AGORA_SUBMISSION_SEAL_KEY_ID",
+      "AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM",
+    ]),
+  );
+  return {
+    sealingConfigured: Boolean(
+      parsed.AGORA_SUBMISSION_SEAL_KEY_ID &&
+        parsed.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
+    ),
+    workerInternalUrl: parsed.AGORA_WORKER_INTERNAL_URL,
+    workerInternalToken: parsed.AGORA_WORKER_INTERNAL_TOKEN,
   };
 }
 

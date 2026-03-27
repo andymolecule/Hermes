@@ -85,6 +85,10 @@ function pemToDerBytes(pem: string) {
   return bytes;
 }
 
+export function computeSubmissionSealPublicKeyFingerprint(pem: string) {
+  return keccak256(toHex(pemToDerBytes(pem)));
+}
+
 function buildEnvelopeAad(input: {
   version: SubmissionSealVersion;
   alg: SubmissionSealAlg;
