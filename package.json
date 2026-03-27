@@ -16,6 +16,7 @@
     "scorers:update-digests": "node --import tsx scripts/update-scorer-digests.ts",
     "schema:verify": "node scripts/run-node-with-root-env.mjs --import tsx scripts/verify-runtime-schema.mjs",
     "deploy:verify": "node scripts/run-node-with-root-env.mjs scripts/verify-deploy-sync.mjs",
+    "wait:api-release": "node scripts/run-node-with-root-env.mjs scripts/wait-for-api-release.mjs",
     "verify:runtime": "bash scripts/verify-runtime.sh",
     "reset-bomb:testnet": "bash scripts/reset-bomb-testnet.sh",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",

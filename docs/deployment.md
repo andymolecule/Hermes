@@ -26,7 +26,8 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Railway owns runtime deployment for API, indexer, and worker orchestrator
 - GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
-- `reset-bomb:testnet` is the destructive admin-only lane; `verify:runtime` is the read-only hosted gate
+- `reset-bomb:testnet` is the destructive admin-only lane for explicit hosted schema rebuilds
+- `verify:runtime` is the read-only hosted gate
 - `smoke:cli:local` is the deterministic local CLI parity lane
 - `smoke:hosted` is the separate funded operator lane
 - Rollback if API health, indexer lag, DB consistency, or scoring verification fails
@@ -65,20 +66,24 @@ Recommended runtime release trigger:
 
 ```bash
 pnpm verify:runtime
-pnpm reset-bomb:testnet
 pnpm smoke:hosted
 ```
 
-This repo now ships four explicit runtime lanes:
+Run `pnpm reset-bomb:testnet` only when the hosted schema is incompatible with
+the current runtime or when you intentionally want a destructive clean rebuild.
+
+This repo now ships five explicit runtime lanes:
 
 - `pnpm verify:runtime`: non-destructive hosted verification. Assumes Railway
-  is rolling out the current `main` change through its native deploy path,
+  already rolled out the current `main` change through its native deploy path,
   waits for `/api/health` to be healthy and `/api/worker-health` to show
   healthy workers on the active API runtime, and stops there.
 - `pnpm reset-bomb:testnet`: destructive admin lane. Uses
   `AGORA_SUPABASE_ADMIN_DB_URL` to reset the Supabase schema, reapplies the
-  single baseline, reloads the PostgREST cache, then runs the same read-only
-  hosted verification gate.
+  single baseline, reloads the PostgREST cache, then runs the hosted runtime
+  verification gate. When `AGORA_EXPECTED_GIT_SHA` or
+  `AGORA_EXPECTED_RUNTIME_VERSION` is set, it first waits for `/api/health` to
+  expose the intended API release metadata before the destructive reset starts.
 - `pnpm smoke:hosted`: funded external smoke. Posts a small real challenge,
   submits a real result, waits for worker scoring, and verifies the public
   replay artifacts. It does not try to finalize or claim.
@@ -95,19 +100,21 @@ This repo now ships four explicit runtime lanes:
 GitHub Actions now follow the deploy boundary directly:
 
 - `CI` is the push-time code gate.
-- `Verify Runtime` runs only after `CI` succeeds on `main`, then waits for
-  Railway to finish rolling out that same commit before checking hosted
-  health.
+- `Verify Runtime` runs after `CI` succeeds on `main`, waits for Railway to
+  expose the intended API release metadata, then checks hosted schema
+  compatibility and runtime readiness without mutating the environment.
+- `Reset Bomb Testnet` is manual and destructive.
 - `Hosted Smoke` is manual and funded.
 
-This separation is intentional. `Verify Runtime` observes the live hosted
-runtime, so it must not be the pre-deploy gate Railway waits on.
+This separation is intentional. Railway still owns deploy. GitHub verifies the
+live hosted runtime automatically, while destructive reset remains an explicit
+operator action.
 
-The matching manual GitHub Actions triggers are
+The matching GitHub Actions entrypoints are
 [`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)
-for read-only hosted verification,
+for automatic plus manual read-only hosted verification,
 [`.github/workflows/reset-bomb-testnet.yml`](/Users/changyuesin/Agora/.github/workflows/reset-bomb-testnet.yml)
-for destructive reset bomb, and
+for manual destructive reset, and
 [`.github/workflows/hosted-smoke.yml`](/Users/changyuesin/Agora/.github/workflows/hosted-smoke.yml)
 for funded hosted smoke.
 
@@ -149,17 +156,16 @@ Railway deployment checks before production cutover:
   itself becomes insufficient and a new architecture is explicitly approved.
 - If Railway root directories or watch patterns are needed, keep them
   provider-native and document them clearly.
-- The only supported runtime rollout is gated and explicit:
+- The only supported hosted Base Sepolia rollout is gated and explicit:
   1. merge or push the intended runtime change to `main`
   2. let Railway deploy API, indexer, and worker natively
-  3. run `pnpm schema:verify`
-  4. run `pnpm verify:runtime` or the GitHub Actions workflow to wait for
-     `/api/health` and `/api/worker-health` to report healthy hosted runtime
-     readiness
+  3. let `Verify Runtime` wait for the intended API release and check hosted
+     schema compatibility plus `/api/health` and `/api/worker-health`
+  4. if verification reports schema incompatibility and a destructive rebuild
+     is acceptable, run `pnpm reset-bomb:testnet` or the manual workflow
   5. run `pnpm smoke:hosted` only when you intentionally want the funded
      hosted smoke lane
-  6. use `pnpm reset-bomb:testnet` only when a destructive reset is explicitly
-     required
+  6. rerun `pnpm verify:runtime` as the read-only confirmation check
 
 ---
 
@@ -180,11 +186,11 @@ Rollback if any of these occur:
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
     B --> C["3. Railway deploys API, Indexer, Worker<br/>(native deploy path)"]
-    C --> D["4. Verify hosted runtime readiness<br/>(pnpm verify:runtime)"]
+    C --> D["4. Verify hosted runtime readiness<br/>(wait for API release -> schema verify -> health verify)"]
     D --> E["5. Optional funded hosted smoke<br/>(pnpm smoke:hosted)"]
     E --> F{"All checks pass?"}
     F -->|Yes| G["✓ Live"]
-    F -->|No| H["Rollback:<br/>redeploy previous main revision<br/>or run explicit reset bomb if schema reset is required"]
+    F -->|No| H["Investigate hosted runtime failure<br/>or run explicit reset bomb if schema rebuild is required"]
 ```
 
 ### Contract Deployment

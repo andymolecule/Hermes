@@ -229,7 +229,7 @@ Current production is intentionally split across hosts:
 - Railway: `@agora/api`, `agora-indexer`, `agora-worker-orchestrator`
 - Docker-capable host or service: `agora-executor`
 
-Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should roll forward through Railway's native deploy path from `main`, then the gated verification flow from [Deployment](deployment.md) confirms schema compatibility, hosted health, worker readiness, and smoke. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
+Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should roll forward through Railway's native deploy path from `main`, then the hosted verification flow from [Deployment](deployment.md) waits for the intended API release metadata, checks schema compatibility, verifies hosted health, and only then treats the runtime as aligned. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
 
 Vercel-specific proxy rule:
 
@@ -257,9 +257,9 @@ Recommended steady-state settings:
 Operational rule:
 
 - Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
-- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the gated release sequence from [Deployment](deployment.md) for verification and explicit reset bomb when needed.
+- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the hosted verification flow from [Deployment](deployment.md) to detect schema drift and runtime readiness.
 - Do not use `Verify Runtime` as a Railway pre-deploy gate. The right order is
-  `CI` first, Railway deploy second, `Verify Runtime` third.
+  `CI` first, Railway deploy second, hosted verification third.
 
 ### Remote Executor Service
 
@@ -279,8 +279,8 @@ Expected executor host configuration:
 Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
-2. The GitHub Actions workflow and `pnpm verify:runtime` verify hosted runtime readiness; they do not deploy runtime services
-3. Operators use `pnpm reset-bomb:testnet` only when they need an explicit destructive rebuild
+2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility and runtime readiness without mutating the environment
+3. Operators use `pnpm reset-bomb:testnet` only when verification reports schema incompatibility or when they intentionally want a destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
 5. Deterministic local CLI parity stays local-only: `pnpm smoke:cli:local`
 6. The worker orchestrator writes its runtime heartbeat into `worker_runtime_state`

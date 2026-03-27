@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   AGORA_RUNTIME_SCHEMA_CONTRACT,
   AGORA_RUNTIME_SCHEMA_CONTRACT_RPC,
@@ -11,6 +14,43 @@ import {
 
 type MockResponse = { error: { message: string } | null };
 type MockRpcResponse = { data?: unknown; error: { message: string } | null };
+
+function readBaselineCreateTableLines(
+  baselineMigration: string,
+  tableName: string,
+) {
+  const tableStart = baselineMigration.indexOf(`create table ${tableName} (`);
+  assert.notEqual(
+    tableStart,
+    -1,
+    `baseline migration must define create table ${tableName}`,
+  );
+
+  const tableEnd = baselineMigration.indexOf("\n);\n", tableStart);
+  assert.notEqual(
+    tableEnd,
+    -1,
+    `baseline migration must terminate create table ${tableName}`,
+  );
+
+  return baselineMigration
+    .slice(tableStart, tableEnd)
+    .split("\n")
+    .map((line) => line.trim());
+}
+
+function assertBaselineTableContainsColumn(
+  baselineMigration: string,
+  tableName: string,
+  columnDefinition: string,
+) {
+  const tableLines = readBaselineCreateTableLines(baselineMigration, tableName);
+  assert.equal(
+    tableLines.includes(columnDefinition),
+    true,
+    `baseline migration must include ${tableName}.${columnDefinition.replace(/ .*/, "")}`,
+  );
+}
 
 function createMockDb(
   results: Record<string, MockResponse>,
@@ -348,6 +388,38 @@ assert.equal(
 await assert.rejects(
   () => assertRuntimeDatabaseSchema(failingDb as never, checks),
   /Database schema is incompatible with the current Agora runtime/,
+);
+
+const baselineMigration = readFileSync(
+  path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../supabase/migrations/001_baseline.sql",
+  ),
+  "utf8",
+);
+assert.equal(
+  baselineMigration.includes(
+    "create or replace function agora_runtime_contract()",
+  ),
+  true,
+  "baseline migration must define the runtime schema contract function",
+);
+assert.equal(
+  baselineMigration.includes(
+    `select '${AGORA_RUNTIME_SCHEMA_CONTRACT}'::text;`,
+  ),
+  true,
+  "baseline migration must report the same schema contract as AGORA_RUNTIME_SCHEMA_CONTRACT",
+);
+assertBaselineTableContainsColumn(
+  baselineMigration,
+  "authoring_sessions",
+  "publish_wallet_address text,",
+);
+assertBaselineTableContainsColumn(
+  baselineMigration,
+  "authoring_events",
+  "publish_wallet_address text,",
 );
 
 console.log("schema compatibility checks passed");

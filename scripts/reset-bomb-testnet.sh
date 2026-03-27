@@ -18,6 +18,7 @@ usage() {
 Usage: bash scripts/reset-bomb-testnet.sh
 
 Runs the destructive testnet reset bomb lane:
+0. optionally wait for Railway to expose the intended API release metadata
 1. reset the Supabase public schema from the single baseline
 2. reload the PostgREST schema cache
 3. run the read-only hosted runtime verification lane
@@ -39,6 +40,28 @@ require_env() {
 require_cmd() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing required command: $cmd"
+}
+
+wait_for_api_release_if_requested() {
+  if [[ -z "${AGORA_API_URL:-}" ]]; then
+    return
+  fi
+
+  if [[ -z "${AGORA_EXPECTED_GIT_SHA:-}" && -z "${AGORA_EXPECTED_RUNTIME_VERSION:-}" ]]; then
+    return
+  fi
+
+  require_cmd "pnpm"
+
+  echo "[STEP] Wait for hosted API release metadata"
+  local wait_args=("--api-url=$AGORA_API_URL")
+  if [[ -n "${AGORA_EXPECTED_GIT_SHA:-}" ]]; then
+    wait_args+=("--expected-git-sha=$AGORA_EXPECTED_GIT_SHA")
+  fi
+  if [[ -n "${AGORA_EXPECTED_RUNTIME_VERSION:-}" ]]; then
+    wait_args+=("--expected-runtime-version=$AGORA_EXPECTED_RUNTIME_VERSION")
+  fi
+  pnpm wait:api-release "${wait_args[@]}"
 }
 
 reset_runtime_schema() {
@@ -77,6 +100,8 @@ require_env "AGORA_SUPABASE_ADMIN_DB_URL"
 require_cmd "psql"
 
 echo "== Agora Testnet Reset Bomb =="
+wait_for_api_release_if_requested
+
 echo "[STEP] Reset Supabase public schema"
 reset_runtime_schema
 

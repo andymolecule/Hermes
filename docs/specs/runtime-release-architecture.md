@@ -63,7 +63,8 @@ This design assumes:
 
 - Railway remains the deploy owner for API, indexer, and worker orchestrator
 - GitHub Actions verifies deployments; it does not deploy runtime services
-- destructive reset remains explicit and separate from normal runtime release
+- the hosted Base Sepolia environment is disposable, but destructive reset
+  remains explicit rather than automatic
 - official scorer images remain immutable OCI artifacts
 
 ---
@@ -141,8 +142,12 @@ This design assumes:
 
 ### 3.5 Bootstrap Boundary
 
-- `reset-bomb-testnet` is destructive and rare.
+- `reset-bomb-testnet` is destructive and explicit.
 - Normal runtime release verification is non-destructive.
+- The hosted Base Sepolia environment keeps one canonical schema shape:
+  reset the public schema and apply the single baseline when an operator
+  intentionally chooses destructive rebuild.
+- Read-only verification is the primary normal release mechanism.
 - Destructive bootstrap must use `AGORA_SUPABASE_ADMIN_DB_URL`.
 - Runtime services must not require `AGORA_SUPABASE_ADMIN_DB_URL`.
 
@@ -223,10 +228,51 @@ Rules:
 - `verify` is post-deploy and must not be used as a Railway pre-deploy gate.
 - funded hosted smoke is intentionally stateful and must stay separate from the
   push-time runtime gate.
-- `reset-bomb-testnet` may reset shared state before `verify`, but it must not
-  become the default day-to-day path.
+- for the hosted Base Sepolia environment, GitHub may wait for Railway to
+  expose the intended API release metadata, then run the read-only verification
+  lane automatically for pushes to `main`
+- there is no second manifest or image-promotion control plane for runtime
+  services; the single baseline plus hosted verification is the schema contract
 
-### 4.3 Service Deployment Ownership
+### 4.3 Hosted Schema Alignment
+
+The schema contract is not carried by `release-metadata.json`.
+
+`release-metadata.json` is only for hosted runtime identity:
+
+- `releaseId`
+- `runtimeVersion`
+- optional `gitSha`
+
+The hosted schema contract comes from:
+
+- `AGORA_RUNTIME_SCHEMA_CONTRACT` in code
+- the canonical Supabase baseline at
+  `packages/db/supabase/migrations/001_baseline.sql`
+- the runtime schema checks in `packages/db/src/schema-compatibility.ts`
+- the repo test suite, which must keep the baseline contract function aligned
+  with `AGORA_RUNTIME_SCHEMA_CONTRACT`
+
+For the hosted Base Sepolia environment, the canonical runtime-affecting
+release flow is:
+
+1. merge to `main`
+2. Railway deploys API, indexer, and worker through its native deploy path
+3. GitHub waits until `/api/health` reports the intended API release metadata,
+   even if readiness is still false
+4. GitHub runs the hosted runtime verification lane
+5. if verification reports schema incompatibility and the environment can be
+   rebuilt destructively, an operator runs `reset-bomb-testnet`
+
+This is intentionally simple:
+
+- Railway owns runtime deploy
+- GitHub owns automatic verification
+- operators own destructive schema rebuild
+- there is one baseline
+- there is no incremental shared-environment migration chain
+
+### 4.4 Service Deployment Ownership
 
 For canonical shared environments:
 
@@ -237,7 +283,7 @@ For canonical shared environments:
 - treat dashboard config as operational configuration, not as a second custom
   deployment system
 
-### 4.4 Canonical Hosted Health Surface
+### 4.5 Canonical Hosted Health Surface
 
 `GET /api/health` must return one canonical hosted shape for runtime release
 verification.
@@ -262,7 +308,7 @@ Rules:
 - indexer detail remains under `/api/indexer-health`
 - `/healthz` must not diverge if it remains present as an alias
 
-### 4.5 Ingress Contract
+### 4.6 Ingress Contract
 
 Caller defaults:
 
@@ -273,7 +319,7 @@ Caller defaults:
 | CLI | API origin direct | Fewer layers, fewer proxy-specific failures |
 | Agents | API origin direct | Bearer-token traffic does not need the web proxy |
 
-### 4.6 Bootstrap Flow
+### 4.7 Bootstrap Flow
 
 `reset-bomb-testnet` exists for destructive environment reset only.
 
@@ -286,29 +332,32 @@ Flow:
 5. reset bomb reloads the PostgREST schema cache
 6. reset bomb runs the same read-only hosted verification lane as normal deploys
 
-### 4.7 Verify-Only Runtime Flow
+### 4.8 Verify-Only Runtime Flow
 
 Normal runtime release verification works like this:
 
 1. merge or push the intended runtime change to `main`
 2. Railway deploys API, indexer, and worker through its native deploy path
-3. `pnpm verify:runtime` or the GitHub workflow waits for `/api/health` to be
-   healthy and `/api/worker-health` to confirm healthy workers on the active
-   API runtime
-4. funded hosted smoke is a separate manual lane after verification, not part
+3. `pnpm verify:runtime` or the GitHub workflow waits for `/api/health` to
+   report the intended API release metadata, then checks schema compatibility
+   plus `/api/worker-health` on the active API runtime
+4. if schema verification fails and the environment can be rebuilt
+   destructively, an operator runs `pnpm reset-bomb:testnet`
+5. funded hosted smoke is a separate manual lane after verification, not part
    of the push-time gate
 
 GitHub Actions ordering rule:
 
 1. `CI` runs on push to `main`
 2. Railway deploys from `main`
-3. `Verify Runtime` runs after `CI` succeeds and observes the live hosted
-   runtime
+3. `Verify Runtime` waits for the intended API release metadata and observes
+   the live hosted runtime
+4. `Reset Bomb Testnet` remains a manual destructive lane
 
 `Verify Runtime` must not run as the pre-deploy branch gate Railway waits on,
 because it inspects the deployed environment rather than pure repo state.
 
-### 4.8 Named Hotspots and Mitigations
+### 4.9 Named Hotspots and Mitigations
 
 1. Provider boundary drift
    - Symptom: runtime services need destructive DB credentials
@@ -429,16 +478,19 @@ Actions:
 4. make deploy retries an explicit Railway concern; verify retries rerun health
    only
 5. keep `CI` as the only push-time gate and run `Verify Runtime` after deploy
-6. do not add speculative forward-migration or reset orchestration to the
-   normal release path for this phase
+6. keep the schema contract locked to the single baseline and runtime checks
+7. do not add manifest/image promotion or incremental shared-environment
+   migration orchestration for runtime services
 
 Acceptance:
 
-1. normal releases never reset the shared DB
-2. `pnpm verify:runtime` retries do not redeploy runtime services
+1. normal releases never reset the shared DB automatically
+2. `pnpm verify:runtime` retries do not redeploy runtime services or reset
+   schema
 3. `pnpm deploy:verify` remains read-only and rerunnable
 4. Railway remains the only normal deploy path for API, indexer, and worker
 5. `Verify Runtime` is post-deploy, not a pre-deploy Railway gate
+6. destructive reset remains explicit
 
 ### 6.6 Phase 5: Legacy Cleanup
 
