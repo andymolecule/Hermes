@@ -314,6 +314,7 @@ export const submissionStatusSchema = z.object({
   lastError: z.string().nullable(),
   lastErrorPhase: submissionStatusPhaseSchema.nullable(),
   scoringStatus: z.enum(["pending", "complete", "scored_awaiting_proof"]),
+  statusDetail: z.string().nullable(),
   terminal: z.boolean(),
   recommendedPollSeconds: positiveIntegerSchema,
 });

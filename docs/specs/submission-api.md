@@ -402,6 +402,7 @@ They also include:
 - `recommended_poll_seconds`
 - `last_error`
 - `last_error_phase`
+- `status_detail` (human-readable detail derived from the canonical queue/lifecycle state, for example waiting for `startScoring()` to persist)
 - `refs`
 
 ### 8.3 Required lookup keys

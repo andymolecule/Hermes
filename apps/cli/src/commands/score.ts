@@ -13,7 +13,7 @@ import { ensurePrivateKey } from "../lib/wallet";
 export function buildOracleScoreCommand() {
   const cmd = new Command("oracle-score")
     .description(
-      "Manual official scoring flow: run scorer, pin proof, and post the canonical score on-chain",
+      "Manual official scoring flow: ensure scoring has started, run scorer, pin proof, and post the canonical score on-chain",
     )
     .argument("<submissionId>", "Submission UUID")
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_ORACLE_KEY")

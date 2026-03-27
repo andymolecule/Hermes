@@ -419,6 +419,7 @@ export async function getChallengeScoreJobCounts(
 /**
  * Get the oldest eligible queued job time.
  * Used by worker-health to detect stuck queues without counting delayed backoff rows.
+ * Eligibility follows the persisted scoring projection in `challenges.status`.
  */
 export async function getOldestPendingJobTime(
   db: AgoraDbClient,

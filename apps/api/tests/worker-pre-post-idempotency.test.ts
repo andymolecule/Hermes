@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
-import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
   SubmissionRow,
   WorkerLogFn,
 } from "../src/worker/types.js";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 
 const challenge: ChallengeRow = {
   id: "challenge-1",
@@ -46,10 +46,10 @@ test("processJob skips repost when submission becomes scored before post", async
   await processJob({} as never, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => submission,
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 0n,
-      disputeWindowHours: 0n,
+      scoringStartedAt: 1n,
     }),
     getPublicClient: () => ({}) as never,
     reconcileScoredSubmission: async () => {
@@ -70,7 +70,8 @@ test("processJob skips repost when submission becomes scored before post", async
       proof: {
         inputHash: "input-hash",
         outputHash: "output-hash",
-        containerImageDigest: "ghcr.io/andymolecule/gems-match-scorer@sha256:abc",
+        containerImageDigest:
+          "ghcr.io/andymolecule/gems-match-scorer@sha256:abc",
         scorerLog: "ok",
       },
     }),
@@ -120,7 +121,7 @@ test("processJob skips posting when challenge finalizes after scoring", async ()
   await processJob({} as never, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => submission,
-    getChallengeLifecycleState: async () => {
+    getChallengeScoringState: async () => {
       lifecycleReads += 1;
       return {
         status:
@@ -128,7 +129,7 @@ test("processJob skips posting when challenge finalizes after scoring", async ()
             ? CHALLENGE_STATUS.scoring
             : CHALLENGE_STATUS.finalized,
         deadline: 0n,
-        disputeWindowHours: 0n,
+        scoringStartedAt: 1n,
       };
     },
     getPublicClient: () => ({}) as never,
@@ -143,7 +144,8 @@ test("processJob skips posting when challenge finalizes after scoring", async ()
       proof: {
         inputHash: "input-hash",
         outputHash: "output-hash",
-        containerImageDigest: "ghcr.io/andymolecule/gems-match-scorer@sha256:abc",
+        containerImageDigest:
+          "ghcr.io/andymolecule/gems-match-scorer@sha256:abc",
         scorerLog: "ok",
       },
     }),

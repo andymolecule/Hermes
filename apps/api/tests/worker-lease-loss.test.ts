@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
-import { processJob, type JobLeaseGuard } from "../src/worker/jobs.js";
-import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
+import { type JobLeaseGuard, processJob } from "../src/worker/jobs.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
   SubmissionRow,
   WorkerLogFn,
 } from "../src/worker/types.js";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 
 const challenge: ChallengeRow = {
   id: "challenge-1",
@@ -51,10 +51,10 @@ test("lost lease stops the worker before posting a score", async () => {
     {
       getChallengeById: async () => challenge,
       getSubmissionById: async () => submission,
-      getChallengeLifecycleState: async () => ({
+      getChallengeScoringState: async () => ({
         status: CHALLENGE_STATUS.scoring,
         deadline: 0n,
-        disputeWindowHours: 0n,
+        scoringStartedAt: 1n,
       }),
       getPublicClient: () => ({}) as never,
       reconcileScoredSubmission: async () => false,

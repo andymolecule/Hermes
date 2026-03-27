@@ -103,10 +103,10 @@ test("lifecycle sweep finalizes once protocol rules allow it", async () => {
   await sweepChallengeLifecycle(db as never, () => {}, {
     getPublicClient: () => ({}) as never,
     nowSeconds: () => 1_000n + 7_201n,
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 1_000n,
-      disputeWindowHours: 1n,
+      scoringStartedAt: 1_000n,
     }),
     getChallengeFinalizeState: async () => ({
       contractVersion: 2,
@@ -133,7 +133,7 @@ test("lifecycle sweep finalizes once protocol rules allow it", async () => {
   assert.equal(finalizeCalls, 1);
 });
 
-test("lifecycle sweep starts scoring once an open challenge passes its deadline on-chain", async () => {
+test("lifecycle sweep starts scoring once the challenge reads as scoring but startScoring has not landed", async () => {
   let startScoringCalls = 0;
   const db = {
     from(table: string) {
@@ -166,10 +166,10 @@ test("lifecycle sweep starts scoring once an open challenge passes its deadline 
   await sweepChallengeLifecycle(db as never, () => {}, {
     getPublicClient: () => ({}) as never,
     nowSeconds: () => 2_000n,
-    getChallengeLifecycleState: async () => ({
-      status: CHALLENGE_STATUS.open,
+    getChallengeScoringState: async () => ({
+      status: CHALLENGE_STATUS.scoring,
       deadline: 1_000n,
-      disputeWindowHours: 1n,
+      scoringStartedAt: 0n,
     }),
     getChallengeFinalizeState: async () => {
       throw new Error("finalize should not be read during startScoring");
@@ -189,7 +189,7 @@ test("lifecycle sweep starts scoring once an open challenge passes its deadline 
   assert.equal(startScoringCalls, 1);
 });
 
-test("lifecycle sweep does not retry startScoring when the chain is already scoring", async () => {
+test("lifecycle sweep treats write-active scoring as authoritative even if the DB projection still says open", async () => {
   let startScoringCalls = 0;
   let finalizeReads = 0;
   const db = {
@@ -223,10 +223,10 @@ test("lifecycle sweep does not retry startScoring when the chain is already scor
   await sweepChallengeLifecycle(db as never, () => {}, {
     getPublicClient: () => ({}) as never,
     nowSeconds: () => 2_000n,
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 1_000n,
-      disputeWindowHours: 1n,
+      scoringStartedAt: 1_500n,
     }),
     getChallengeFinalizeState: async () => {
       finalizeReads += 1;
@@ -254,7 +254,7 @@ test("lifecycle sweep does not retry startScoring when the chain is already scor
   });
 
   assert.equal(startScoringCalls, 0);
-  assert.equal(finalizeReads, 0);
+  assert.equal(finalizeReads, 1);
 });
 
 test("lifecycle sweep skips challenges whose finalize-state read lacks scoringStartedAt", async () => {
@@ -296,10 +296,10 @@ test("lifecycle sweep skips challenges whose finalize-state read lacks scoringSt
     {
       getPublicClient: () => ({}) as never,
       nowSeconds: () => 1_000n + 7_201n,
-      getChallengeLifecycleState: async () => ({
+      getChallengeScoringState: async () => ({
         status: CHALLENGE_STATUS.scoring,
         deadline: 1_000n,
-        disputeWindowHours: 1n,
+        scoringStartedAt: 1_000n,
       }),
       getChallengeFinalizeState: async () => {
         throw new Error(
@@ -320,5 +320,8 @@ test("lifecycle sweep skips challenges whose finalize-state read lacks scoringSt
   );
 
   assert.equal(finalizeCalls, 0);
-  assert.equal(logs.some((entry) => entry.level === "warn"), false);
+  assert.equal(
+    logs.some((entry) => entry.level === "warn"),
+    false,
+  );
 });

@@ -113,6 +113,24 @@ function sanitizeScoreJobError(error: string | null) {
   return error.length > 300 ? `${error.slice(0, 297)}...` : error;
 }
 
+function resolveSubmissionStatusDetail(input: {
+  scoreJob: ScoreJobRow | null;
+}) {
+  if (input.scoreJob?.status !== "queued") {
+    return null;
+  }
+
+  if (input.scoreJob.last_error === "challenge_scoring_not_started") {
+    return "Deadline passed, but scoring has not started on-chain yet.";
+  }
+
+  if (input.scoreJob.last_error === "challenge_not_in_scoring") {
+    return "Challenge is not in scoring yet. Official scoring starts after the deadline and persisted startScoring().";
+  }
+
+  return null;
+}
+
 function resolveSubmissionStatusPhase(input: {
   submission: SubmissionRow | null;
   scoreJob: ScoreJobRow | null;
@@ -175,6 +193,9 @@ export function buildSubmissionStatusPayload(input: {
     unmatchedSubmission: input.unmatchedSubmission,
   });
   const lastError = sanitizeScoreJobError(input.scoreJob?.last_error ?? null);
+  const statusDetail = resolveSubmissionStatusDetail({
+    scoreJob: input.scoreJob,
+  });
 
   let scoringStatus: "pending" | "complete" | "scored_awaiting_proof";
   if (!input.submission?.scored) {
@@ -238,6 +259,7 @@ export function buildSubmissionStatusPayload(input: {
         }
       : null,
     scoringStatus,
+    statusDetail,
     terminal,
     recommendedPollSeconds,
   };
@@ -337,6 +359,7 @@ function getSubmissionStatusSignature(
     scored: payload.submission?.scored ?? null,
     score: payload.submission?.score ?? null,
     scoringStatus: payload.scoringStatus,
+    statusDetail: payload.statusDetail,
     terminal: payload.terminal,
     jobStatus: payload.job?.status ?? null,
     attempts: payload.job?.attempts ?? null,

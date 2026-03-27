@@ -264,6 +264,9 @@ export function ActivityPanel() {
               <div className="feed-detail">
                 Oldest eligible queued:{" "}
                 {formatRelativeAge(workerHealth.metrics.oldestQueuedAgeMs)}
+                {workerHealth.metrics.blockedQueuedCount > 0
+                  ? ` · ${workerHealth.metrics.blockedQueuedCount} blocked`
+                  : ""}
               </div>
             )}
             {workerHealth?.sealing && (

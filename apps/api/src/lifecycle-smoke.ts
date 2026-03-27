@@ -16,7 +16,6 @@ import {
   parseFactoryLogs,
   parseSubmittedReceipt,
   resolveDispute,
-  startChallengeScoring,
   submitChallengeResult,
 } from "@agora/chain";
 import { processChallengeLog } from "@agora/chain/indexer/challenge-events";
@@ -48,6 +47,7 @@ import {
 } from "@agora/db";
 import { pinFile, pinJSON } from "@agora/ipfs";
 import { createApp } from "./app.js";
+import { sweepChallengeLifecycle } from "./worker/chain.js";
 import { processJob } from "./worker/jobs.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -1278,16 +1278,18 @@ async function runLifecycleScenario(input: {
 
   await advanceTimeTo(publicClient, onChainDeadlineSeconds + 1n);
 
-  const startTxHash = await startChallengeScoring(challengeAddress);
-  await publicClient.waitForTransactionReceipt({ hash: startTxHash });
-  await projectChallengeReceipt({
+  await sweepChallengeLifecycle(db, (_level, message) =>
+    console.log(`[worker:lifecycle] ${message}`),
+  );
+  const latestBlock = await publicClient.getBlock({ blockTag: "latest" });
+  await reconcileChallengeProjection({
     db,
     publicClient,
     challenge,
     challengeFromBlock: createReceipt.blockNumber,
-    txHash: startTxHash,
+    blockNumber: latestBlock.number,
   });
-  console.log("6. startScoring projected:", startTxHash);
+  console.log("6. Lifecycle sweep started scoring and projection reconciled");
 
   const scoreJob = await waitForSubmissionScoreJob({
     db,

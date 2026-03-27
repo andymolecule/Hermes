@@ -1,17 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  CHALLENGE_STATUS,
-  SUBMISSION_CID_MISSING_ERROR,
-} from "@agora/common";
+import { CHALLENGE_STATUS, SUBMISSION_CID_MISSING_ERROR } from "@agora/common";
 import { processJob } from "../src/worker/jobs.js";
-import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 import type {
   ChallengeRow,
   ScoreJobRow,
   SubmissionRow,
   WorkerLogFn,
 } from "../src/worker/types.js";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 
 const challenge: ChallengeRow = {
   id: "challenge-1",
@@ -57,10 +54,10 @@ test("missing submission CID is skipped instead of failed", async () => {
       ...baseSubmission,
       submission_cid: null,
     }),
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 0n,
-      disputeWindowHours: 0n,
+      scoringStartedAt: 1n,
     }),
     getPublicClient: () => ({}) as never,
     reconcileScoredSubmission: async () => false,
@@ -70,7 +67,9 @@ test("missing submission CID is skipped instead of failed", async () => {
       return null;
     },
     failJob: async () => {
-      throw new Error("failJob should not be called for missing submission CID");
+      throw new Error(
+        "failJob should not be called for missing submission CID",
+      );
     },
   });
 
@@ -90,10 +89,10 @@ test("invalid submission outcomes are skipped instead of failed", async () => {
   await processJob({} as never, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => baseSubmission,
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 0n,
-      disputeWindowHours: 0n,
+      scoringStartedAt: 1n,
     }),
     getPublicClient: () => ({}) as never,
     reconcileScoredSubmission: async () => false,
@@ -125,10 +124,10 @@ test("terminal official scorer configuration errors are skipped in the catch pat
   await processJob({} as never, job, log, {
     getChallengeById: async () => challenge,
     getSubmissionById: async () => baseSubmission,
-    getChallengeLifecycleState: async () => ({
+    getChallengeScoringState: async () => ({
       status: CHALLENGE_STATUS.scoring,
       deadline: 0n,
-      disputeWindowHours: 0n,
+      scoringStartedAt: 1n,
     }),
     getPublicClient: () => ({}) as never,
     reconcileScoredSubmission: async () => false,

@@ -338,7 +338,7 @@ sequenceDiagram
     participant Chain as Base
     participant DB as Supabase
 
-    Note over Worker: Deadline passes → challenge enters Scoring
+    Note over Worker: Deadline passes → worker persists startScoring() before claiming jobs
 
     Worker->>IPFS: Fetch evaluation bundle + submission
     Worker->>Executor: Execute scorer request
@@ -727,6 +727,7 @@ flowchart TB
 Projection rules:
 - On-chain contracts are authoritative for lifecycle status, payout entitlements, and claimability.
 - Supabase is a projection and operational cache. Fairness-sensitive visibility checks use chain `status()` rather than trusting projected status alone.
+- Score-job eligibility follows the persisted scoring boundary (`scoringStartedAt > 0` / `startScoring()` landed), not the read-side deadline-derived `status()` alone.
 - Public leaderboard, win rate, and earned USDC derive from projected settlement rows in `challenge_payouts`, not score heuristics.
 - Agent analytics and agent leaderboards are separate read models and should derive from authenticated agent foreign keys on challenges and submission intents rather than wallet strings or provenance handles.
 - The hot path is event-driven: active challenges are polled continuously, while full challenge reconciliation is reserved for targeted repair and operator commands such as `agora repair-challenge`.

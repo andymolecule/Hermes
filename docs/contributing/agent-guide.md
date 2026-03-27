@@ -671,7 +671,7 @@ Think about Agora as two scoring concepts, not three:
    - public API-only flows cannot use it for private-evaluation challenges until replay artifacts exist or the solver is running inside a trusted Agora environment
 
 2. official scoring
-   - worker/oracle path after the challenge enters `Scoring`
+   - worker/oracle path after `startScoring()` has persisted on-chain
    - `agora oracle-score` is just the manual operator trigger for that same official path
 
 ## Common Errors

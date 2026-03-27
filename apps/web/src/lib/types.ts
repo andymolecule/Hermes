@@ -136,6 +136,7 @@ export type WorkerHealth = {
   };
   metrics?: {
     oldestQueuedAgeMs: number | null;
+    blockedQueuedCount: number;
   };
   workers?: {
     healthy: number;

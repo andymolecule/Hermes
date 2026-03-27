@@ -43,6 +43,7 @@ const basePayload = {
   lastError: null,
   lastErrorPhase: null,
   scoringStatus: "pending" as const,
+  statusDetail: null,
   terminal: false,
   recommendedPollSeconds: 15,
 };

@@ -40,6 +40,7 @@ type SubmissionStatusPayload = {
     lockedAt: string | null;
   } | null;
   scoringStatus: "pending" | "complete" | "scored_awaiting_proof";
+  statusDetail: string | null;
   terminal: boolean;
   recommendedPollSeconds: number;
   waitedMs?: number;
@@ -53,6 +54,7 @@ function sleep(ms: number) {
 function getSubmissionStatusSignature(data: SubmissionStatusPayload) {
   return JSON.stringify({
     scoringStatus: data.scoringStatus,
+    statusDetail: data.statusDetail,
     terminal: data.terminal,
     jobStatus: data.job?.status ?? null,
     attempts: data.job?.attempts ?? null,
@@ -78,6 +80,10 @@ function renderSubmissionStatus(data: SubmissionStatusPayload) {
       scored_at: data.submission.scored_at ?? "",
     },
   ] as Record<string, unknown>[]);
+
+  if (data.statusDetail) {
+    printWarning(data.statusDetail);
+  }
 
   if (data.job) {
     printWarning("Score job");
