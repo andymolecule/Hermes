@@ -127,13 +127,13 @@ assert.equal(
 );
 assert.equal(
   CHALLENGE_LIMITS.rewardMinUsdc,
-  0.1,
-  "challenge limits should allow low-cost testnet rewards",
+  1,
+  "challenge limits should match the current on-chain minimum reward floor",
 );
 assert.equal(
   formatRewardLimitUsdc(CHALLENGE_LIMITS.rewardMinUsdc),
-  "0.10",
-  "reward limit formatting should keep sub-dollar bounds explicit",
+  "1",
+  "reward limit formatting should match the current on-chain minimum",
 );
 assert.equal(
   CHALLENGE_LIMITS.disputeWindowMinHours,

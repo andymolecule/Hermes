@@ -21,7 +21,7 @@ export const PROTOCOL_FEE_BPS = 1_000 as const;
 export const PROTOCOL_FEE_PERCENT = PROTOCOL_FEE_BPS / 100;
 
 export const CHALLENGE_LIMITS = {
-  rewardMinUsdc: 0.1,
+  rewardMinUsdc: 1,
   rewardMaxUsdc: 30,
   rewardDecimals: 6,
   disputeWindowMinHours: 168,

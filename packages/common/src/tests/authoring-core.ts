@@ -59,24 +59,24 @@ assert.equal("timezone" in parsedIntentWithoutOptionalMetadata, false);
 
 const lowCostIntent = challengeIntentSchema.safeParse({
   ...baseIntent,
-  reward_total: "0.10",
+  reward_total: "1",
 });
 
 assert.equal(
   lowCostIntent.success,
   true,
-  "challenge intent should accept the reduced low-cost testnet reward floor",
+  "challenge intent should accept the on-chain minimum reward floor",
 );
 
 const belowMinimumIntent = challengeIntentSchema.safeParse({
   ...baseIntent,
-  reward_total: "0.09",
+  reward_total: "0.99",
 });
 
 assert.equal(
   belowMinimumIntent.success,
   false,
-  "challenge intent should still reject rewards below the low-cost floor",
+  "challenge intent should reject rewards below the on-chain minimum floor",
 );
 
 const missingDistribution = challengeIntentSchema.safeParse({
