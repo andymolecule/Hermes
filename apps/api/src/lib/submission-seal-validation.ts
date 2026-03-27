@@ -2,6 +2,7 @@ import {
   type SealedSubmissionValidationCode,
   readSubmissionValidationRuntimeConfig,
   sealedSubmissionValidationFailureSchema,
+  submissionSealWorkerHealthResponseSchema,
   sealedSubmissionValidationRequestSchema,
   sealedSubmissionValidationResponseSchema,
 } from "@agora/common";
@@ -95,23 +96,9 @@ function buildTransportFailure(message: string) {
   );
 }
 
-export async function validateSealedSubmissionForIntent(input: {
-  resultCid: string;
-  challengeId: string;
-  solverAddress: string;
-  fetchImpl?: typeof fetch;
-  runtimeConfig?: ReturnType<typeof readSubmissionValidationRuntimeConfig>;
-}) {
-  const runtimeConfig =
-    input.runtimeConfig ?? readSubmissionValidationRuntimeConfig();
-  if (!runtimeConfig.sealingConfigured) {
-    throw new SubmissionSealValidationClientError(
-      503,
-      "SUBMISSION_SEALING_UNAVAILABLE",
-      "Sealed submission validation is unavailable because submission sealing is not configured. Next step: retry after sealing is restored.",
-      { retriable: true },
-    );
-  }
+function requireWorkerValidationBridge(
+  runtimeConfig: ReturnType<typeof readSubmissionValidationRuntimeConfig>,
+) {
   if (!runtimeConfig.workerInternalUrl || !runtimeConfig.workerInternalToken) {
     throw new SubmissionSealValidationClientError(
       503,
@@ -120,26 +107,32 @@ export async function validateSealedSubmissionForIntent(input: {
       { retriable: true },
     );
   }
+}
 
-  const body = sealedSubmissionValidationRequestSchema.parse({
-    resultCid: input.resultCid,
-    challengeId: input.challengeId,
-    solverAddress: input.solverAddress,
-  });
+async function fetchWorkerValidationPayload(input: {
+  runtimeConfig: ReturnType<typeof readSubmissionValidationRuntimeConfig>;
+  path: string;
+  method?: "GET" | "POST";
+  body?: string;
+  fetchImpl?: typeof fetch;
+}) {
+  requireWorkerValidationBridge(input.runtimeConfig);
   const fetchImpl = input.fetchImpl ?? fetch;
+  const workerInternalUrl = input.runtimeConfig.workerInternalUrl as string;
+  const workerInternalToken = input.runtimeConfig.workerInternalToken as string;
 
   let response: Response;
   try {
     response = await fetchImpl(
-      `${runtimeConfig.workerInternalUrl.replace(/\/$/, "")}/internal/sealed-submissions/validate`,
+      `${workerInternalUrl.replace(/\/$/, "")}${input.path}`,
       {
-        method: "POST",
+        method: input.method ?? "GET",
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${runtimeConfig.workerInternalToken}`,
-          "content-type": "application/json",
+          authorization: `Bearer ${workerInternalToken}`,
+          ...(input.body ? { "content-type": "application/json" } : {}),
         },
-        body: JSON.stringify(body),
+        body: input.body,
         signal: AbortSignal.timeout(SUBMISSION_VALIDATION_TIMEOUT_MS),
       },
     );
@@ -160,6 +153,68 @@ export async function validateSealedSubmissionForIntent(input: {
       "Agora received a non-JSON response from the worker validation service.",
     );
   }
+
+  return {
+    response,
+    payload,
+  };
+}
+
+export async function readSubmissionSealWorkerHealth(input?: {
+  fetchImpl?: typeof fetch;
+  runtimeConfig?: ReturnType<typeof readSubmissionValidationRuntimeConfig>;
+}) {
+  const runtimeConfig =
+    input?.runtimeConfig ?? readSubmissionValidationRuntimeConfig();
+  const { response, payload } = await fetchWorkerValidationPayload({
+    runtimeConfig,
+    path: "/internal/sealed-submissions/healthz",
+    fetchImpl: input?.fetchImpl,
+  });
+  const parsed = submissionSealWorkerHealthResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw buildTransportFailure(
+      "Agora received an invalid worker sealing health response.",
+    );
+  }
+  if (!response.ok) {
+    throw buildTransportFailure(
+      "Agora received an unhealthy worker sealing health response.",
+    );
+  }
+  return parsed.data;
+}
+
+export async function validateSealedSubmissionForIntent(input: {
+  resultCid: string;
+  challengeId: string;
+  solverAddress: string;
+  fetchImpl?: typeof fetch;
+  runtimeConfig?: ReturnType<typeof readSubmissionValidationRuntimeConfig>;
+}) {
+  const runtimeConfig =
+    input.runtimeConfig ?? readSubmissionValidationRuntimeConfig();
+  if (!runtimeConfig.sealingConfigured) {
+    throw new SubmissionSealValidationClientError(
+      503,
+      "SUBMISSION_SEALING_UNAVAILABLE",
+      "Sealed submission validation is unavailable because submission sealing is not configured. Next step: retry after sealing is restored.",
+      { retriable: true },
+    );
+  }
+
+  const body = sealedSubmissionValidationRequestSchema.parse({
+    resultCid: input.resultCid,
+    challengeId: input.challengeId,
+    solverAddress: input.solverAddress,
+  });
+  const { response, payload } = await fetchWorkerValidationPayload({
+    runtimeConfig,
+    path: "/internal/sealed-submissions/validate",
+    method: "POST",
+    body: JSON.stringify(body),
+    fetchImpl: input.fetchImpl,
+  });
 
   const parsed = sealedSubmissionValidationResponseSchema.safeParse(payload);
   if (!parsed.success) {

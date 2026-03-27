@@ -4,6 +4,7 @@ import {
   getAgoraRuntimeVersion,
   hasSubmissionSealPublicConfig,
   loadConfig,
+  readSubmissionValidationRuntimeConfig,
 } from "@agora/common";
 import {
   createSupabaseClient,
@@ -17,6 +18,7 @@ import {
   summarizeWorkerRuntimeStates,
 } from "@agora/db";
 import { Hono } from "hono";
+import { readSubmissionSealWorkerHealth } from "../lib/submission-seal-validation.js";
 import type { ApiEnv } from "../types.js";
 
 type WorkerStatus = "ok" | "warning" | "idle";
@@ -174,6 +176,7 @@ router.get("/", async (c) => {
   try {
     const db = createSupabaseClient(true);
     const config = loadConfig();
+    const validationRuntime = readSubmissionValidationRuntimeConfig();
     const activeSealKeyId = hasSubmissionSealPublicConfig(config)
       ? (config.AGORA_SUBMISSION_SEAL_KEY_ID as string)
       : null;
@@ -186,6 +189,7 @@ router.get("/", async (c) => {
       oldestRunningStartedAt,
       runningOverThreshold,
       workerRuntimeStates,
+      workerSealHealth,
     ] = await Promise.all([
       getScoreJobCounts(db),
       getEligibleQueuedJobCount(db),
@@ -194,6 +198,9 @@ router.get("/", async (c) => {
       getOldestRunningStartedAt(db),
       runningOverThresholdCount(db, RUNNING_STALE_THRESHOLD_MS),
       listWorkerRuntimeStates(db),
+      readSubmissionSealWorkerHealth({
+        runtimeConfig: validationRuntime,
+      }).catch(() => null),
     ]);
     const workerRuntime = summarizeWorkerRuntimeStates(workerRuntimeStates, {
       activeSealKeyId,
@@ -250,6 +257,9 @@ router.get("/", async (c) => {
                 config.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM,
               )
             : null,
+        derivedPublicKeyFingerprint:
+          workerSealHealth?.sealing?.derivedPublicKeyFingerprint ?? null,
+        selfCheckOk: workerSealHealth?.sealing?.selfCheckOk ?? null,
         workerReady: workerRuntime.healthyWorkersForActiveSealKey > 0,
         healthyWorkersForActiveKey:
           workerRuntime.healthyWorkersForActiveSealKey,

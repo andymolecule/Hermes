@@ -199,7 +199,7 @@ Expected results:
 
 - `/api/health` returns `{"ok":true,"service":"api","runtimeVersion":"..."}` for API liveness plus deployed version.
 - API responses include `x-request-id`; if you pass one in the request header, the API preserves it for end-to-end correlation.
-- `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- `/api/worker-health` reports a fresh worker heartbeat, `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, and `sealing.workerReady=true` for the active `keyId`. It also exposes `sealing.publicKeyFingerprint`, `sealing.derivedPublicKeyFingerprint`, and `sealing.selfCheckOk` so hosted verification can confirm the worker private key still matches the API public key. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
 - `/api/worker-health` should not report `idle` when queued work exists. If `queued > 0` and `eligibleQueued = 0`, treat that as blocked scoring work and inspect the `startScoring()` boundary, queue backoff, and runtime alignment before assuming the worker is healthy.
 - Authoring has no dedicated health endpoint. Validate it with a create/patch/publish canary and inspect API logs or session rows directly when investigating backlog or expiry issues.
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"` plus `publicKeyFingerprint` whenever sealing and the worker validation bridge are configured successfully.

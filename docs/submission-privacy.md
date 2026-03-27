@@ -373,7 +373,7 @@ Expected signals:
 
 - `/api/submissions/public-key` returns `version:"sealed_submission_v2"`, the active `kid`, and `publicKeyFingerprint` only when sealing and worker-backed validation are configured successfully.
 - `/api/health` reports API liveness plus `runtimeVersion`. It does not imply a scoring worker is ready.
-- `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, and the same active `keyId`. `healthyWorkersNotOnActiveRuntimeVersion` is diagnostic only unless active healthy workers drop to zero.
+- `/api/worker-health` reports `workers.healthy > 0`, `workers.healthyWorkersForActiveRuntimeVersion > 0`, `sealing.workerReady=true`, the same active `keyId`, plus `sealing.publicKeyFingerprint`, `sealing.derivedPublicKeyFingerprint`, and `sealing.selfCheckOk=true` when the worker private key matches the API public key.
 - `/internal/sealed-submissions/healthz` returns the worker `keyId`, `publicKeyFingerprint`, and `derivedPublicKeyFingerprint`; the worker and API fingerprints must match.
 - File-backed key loading is supported through `AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE`, `AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE`, and `AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE` when services are launched through the shared runtime loader.
 

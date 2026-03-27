@@ -427,6 +427,39 @@ if (submissionPublicKey?.data) {
   console.log(
     `[INFO] API submission seal key: kid=${submissionPublicKey.data.kid}, fingerprint=${submissionPublicKey.data.publicKeyFingerprint}`,
   );
+  const apiSealFingerprint = submissionPublicKey.data.publicKeyFingerprint;
+  const workerHealthSealFingerprint =
+    workerHealth?.sealing?.publicKeyFingerprint ?? null;
+  const workerHealthDerivedSealFingerprint =
+    workerHealth?.sealing?.derivedPublicKeyFingerprint ?? null;
+  const workerHealthSelfCheckOk = workerHealth?.sealing?.selfCheckOk ?? null;
+
+  if (workerHealthSealFingerprint === apiSealFingerprint) {
+    console.log("[OK] Worker-health public-key fingerprint matches API");
+  } else if (workerHealthSealFingerprint) {
+    console.error(
+      `[FAIL] Worker-health public-key fingerprint mismatch: api=${apiSealFingerprint}, worker-health=${workerHealthSealFingerprint}. Next step: redeploy with the same submission sealing public key on both services, then retry.`,
+    );
+    ok = false;
+  }
+
+  if (workerHealthDerivedSealFingerprint === apiSealFingerprint) {
+    console.log("[OK] Worker-health derived private-key fingerprint matches API");
+  } else if (workerHealthDerivedSealFingerprint) {
+    console.error(
+      `[FAIL] Worker-health derived private-key fingerprint mismatch: api=${apiSealFingerprint}, worker-health-derived=${workerHealthDerivedSealFingerprint}. Next step: restore the worker private key that matches the API public key, then retry.`,
+    );
+    ok = false;
+  }
+
+  if (workerHealthSelfCheckOk === true) {
+    console.log("[OK] Worker-health sealing self-check is healthy");
+  } else if (workerHealthSelfCheckOk === false) {
+    console.error(
+      "[FAIL] Worker-health sealing self-check is unhealthy. Next step: restore the matching worker private key and retry.",
+    );
+    ok = false;
+  }
 
   if (workerInternalUrl && workerInternalToken) {
     const workerSealHealth = await fetchJsonWithHeaders(
@@ -437,7 +470,6 @@ if (submissionPublicKey?.data) {
       },
     );
 
-    const apiSealFingerprint = submissionPublicKey.data.publicKeyFingerprint;
     const workerSealFingerprint =
       workerSealHealth?.sealing?.publicKeyFingerprint ?? null;
     const workerDerivedSealFingerprint =

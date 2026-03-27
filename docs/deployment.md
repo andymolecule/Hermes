@@ -288,7 +288,8 @@ This section covers non-code work for deployment across hosted systems.
 - Set `AGORA_WORKER_INTERNAL_PORT` and `AGORA_WORKER_INTERNAL_TOKEN` on the worker service.
 - Set the matching `AGORA_WORKER_INTERNAL_URL` and `AGORA_WORKER_INTERNAL_TOKEN` on the API service.
 - `GET /api/submissions/public-key` now fails closed when this bridge is missing, so sealed submission traffic cannot start from a partially configured deploy.
-- Use `pnpm deploy:verify --worker-internal-url=<worker-internal-origin> --worker-internal-token=<token>` to compare the API public-key fingerprint with the worker's public/private-key fingerprints before cutover.
+- `pnpm deploy:verify` now compares the API public-key fingerprint with `/api/worker-health.sealing.publicKeyFingerprint` and `/api/worker-health.sealing.derivedPublicKeyFingerprint`, so the default hosted verify lane can catch API/worker key drift without Railway-private access.
+- `pnpm deploy:verify --worker-internal-url=<worker-internal-origin> --worker-internal-token=<token>` remains the optional deep check when you want to query the worker's private validation server directly from a network that can reach Railway internal services.
 
 ### Worker Recovery Scripts
 
