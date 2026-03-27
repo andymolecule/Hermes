@@ -32,6 +32,7 @@ export const AUTHORING_SESSION_ERROR_CODE_VALUES = [
   "unauthorized",
   "not_found",
   "invalid_request",
+  "agent_telemetry_required",
   "session_expired",
   "service_unavailable",
   "unsupported_task",

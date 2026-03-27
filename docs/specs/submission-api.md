@@ -38,7 +38,10 @@ Cryptographic envelope details remain authoritative in
 5. Cleanup is best-effort and must not turn a confirmed registration into a
    terminal 500.
 6. Status endpoints must expose canonical machine-readable lifecycle phases.
-7. Submission routes use the same success and error envelopes as authoring.
+7. Authenticated direct-agent submission write routes must include
+   `X-Agora-Trace-Id`, `X-Agora-Client-Name`, and
+   `X-Agora-Client-Version`.
+8. Submission routes use the same success and error envelopes as authoring.
 
 ---
 
@@ -130,8 +133,6 @@ Auth required.
 
 Revokes one key without affecting the rest.
 
----
-
 ## 3. Submission Privacy Modes
 
 ### 3.1 Modes
@@ -194,6 +195,12 @@ Challenge-scoped helper routes remain:
 - `GET /api/challenges/:id/solver-status`
 - `POST /api/challenges/:id/validate-submission`
 
+If the caller is an authenticated direct agent, every submission write route in
+this family (`upload`, `cleanup`, `intent`, and finalize via
+`POST /api/submissions`) must include `X-Agora-Trace-Id`,
+`X-Agora-Client-Name`, and `X-Agora-Client-Version`. Agora rejects missing
+required headers with `AGENT_TELEMETRY_REQUIRED`.
+
 ---
 
 ## 5. Flow Contract
@@ -230,6 +237,10 @@ Upload acceptance contract:
   compatibility contract. Agora does not accept alternate serializations.
   The authoritative machine-readable fixture is
   [`docs/fixtures/sealed-submission-v2-conformance.json`](../fixtures/sealed-submission-v2-conformance.json).
+- If the caller is an authenticated direct agent,
+  `POST /api/submissions/upload` must include `X-Agora-Trace-Id`,
+  `X-Agora-Client-Name`, and `X-Agora-Client-Version`. Agora rejects missing
+  required telemetry headers with `AGENT_TELEMETRY_REQUIRED`.
 
 Success:
 
@@ -303,6 +314,10 @@ Diagnostic contract:
 - Callers must treat `error.code` as the stable contract and use
   `error.details.sealed_submission_validation.validation_code` as a debugging
   hint, not a replacement status surface.
+- If the caller is an authenticated direct agent,
+  `POST /api/submissions/intent` must include the same required telemetry
+  headers. Agora records the blocked attempt in `submission_events` before it
+  returns `AGENT_TELEMETRY_REQUIRED`.
 
 Success:
 
@@ -342,6 +357,11 @@ This route:
 - upserts the canonical submission row
 - ensures score-job creation if applicable
 - performs cleanup as best-effort follow-up only
+
+If the caller is an authenticated direct agent, `POST /api/submissions` and
+`POST /api/submissions/cleanup` must include the same required telemetry
+headers. Agora records the blocked attempt in `submission_events` before it
+returns `AGENT_TELEMETRY_REQUIRED`.
 
 ### 5.6 Finalize idempotency
 

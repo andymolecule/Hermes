@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AGORA_CLIENT_NAME_HEADER,
+  AGORA_CLIENT_VERSION_HEADER,
   AGORA_DECISION_SUMMARY_HEADER,
   AGORA_TRACE_ID_HEADER,
 } from "@agora/common";
@@ -103,4 +104,60 @@ test("authoring principal middleware records auth telemetry for rejected callers
     events[0]?.client?.decision_summary,
     "retry after missing bearer token",
   );
+});
+
+test("authoring principal middleware rejects authenticated writes without required telemetry headers", async () => {
+  const events: Array<Record<string, unknown>> = [];
+  const app = new Hono<ApiEnv>();
+  app.use("*", createApiRequestObservabilityMiddleware());
+  app.use(
+    "*",
+    createRequireAuthoringAgent({
+      getAgentFromAuthorizationHeader: async () => ({
+        agentId: "agent-abc",
+        telegramBotId: "bot_123456",
+        agentName: null,
+        description: null,
+        keyId: "22222222-2222-4222-8222-222222222222",
+        keyLabel: null,
+        keyStatus: "active",
+        keyCreatedAt: "2026-03-22T00:00:00.000Z",
+        keyLastUsedAt: null,
+        keyRevokedAt: null,
+      }),
+      createSupabaseClient: () => ({}) as never,
+      createAuthoringEvents: async (_db, newEvents) => {
+        events.push(...(newEvents as Array<Record<string, unknown>>));
+        return [] as never;
+      },
+    }),
+  );
+  app.post("/", () => new Response("ok"));
+
+  const response = await app.request("http://localhost/", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer agora_xxxxxxxx",
+      [AGORA_TRACE_ID_HEADER]: "trace-auth-123",
+      [AGORA_CLIENT_NAME_HEADER]: "agent-sdk",
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: {
+      code: "agent_telemetry_required",
+      message:
+        "Authenticated agent writes must include x-agora-trace-id, x-agora-client-name, and x-agora-client-version.",
+      next_action:
+        "Retry with x-agora-trace-id, x-agora-client-name, and x-agora-client-version headers on every authenticated write request.",
+      details: {
+        missing_headers: [AGORA_CLIENT_VERSION_HEADER],
+        invalid_headers: [],
+      },
+    },
+  });
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.code, "agent_telemetry_required");
+  assert.equal(events[0]?.outcome, "blocked");
 });

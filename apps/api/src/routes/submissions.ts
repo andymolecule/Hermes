@@ -35,6 +35,11 @@ import {
   getAgentFromAuthorizationHeader,
   getSession,
 } from "../lib/auth-store.js";
+import {
+  buildRequiredAgentTelemetryDetails,
+  buildRequiredAgentTelemetryNextAction,
+  listRequiredAgentTelemetryHeaderIssues,
+} from "../lib/client-telemetry.js";
 import { jsonWithEtag } from "../lib/http-cache.js";
 import {
   getRequestId,
@@ -172,6 +177,85 @@ async function getOptionalSubmissionActor(c: Context<ApiEnv>) {
     optionalSessionAddress: sessionAddress,
     submittedByAgentId: agent?.agentId ?? null,
   };
+}
+
+type OptionalSubmissionActor = Awaited<
+  ReturnType<typeof getOptionalSubmissionActor>
+>;
+
+function buildSubmissionTelemetryRequirementMessage() {
+  return "Authenticated direct-agent submission writes must include x-agora-trace-id, x-agora-client-name, and x-agora-client-version.";
+}
+
+async function requireSubmissionAgentTelemetryHeaders(input: {
+  c: Context<ApiEnv>;
+  actor: OptionalSubmissionActor;
+  route: "upload" | "cleanup" | "intent" | "register";
+  event:
+    | "upload.failed"
+    | "cleanup.failed"
+    | "intent.failed"
+    | "registration.failed";
+  solverAddress?: string | null;
+  resultCid?: string | null;
+  intentId?: string | null;
+  challengeAddress?: string | null;
+}) {
+  if (!input.actor.submittedByAgentId) {
+    return null;
+  }
+
+  const issues = listRequiredAgentTelemetryHeaderIssues(input.c.req);
+  if (issues.length === 0) {
+    return null;
+  }
+
+  const details = buildRequiredAgentTelemetryDetails(issues);
+  const message = buildSubmissionTelemetryRequirementMessage();
+  await recordSubmissionRouteEvents(input.c, [
+    createSubmissionRouteEvent(input.c, {
+      intent_id: input.intentId ?? null,
+      submission_id: null,
+      score_job_id: null,
+      challenge_id: null,
+      on_chain_submission_id: null,
+      agent_id: input.actor.submittedByAgentId,
+      solver_address:
+        input.solverAddress ?? input.actor.optionalSessionAddress ?? null,
+      route: input.route,
+      event: input.event,
+      phase: "ingress",
+      actor: "caller",
+      outcome: "blocked",
+      http_status: 400,
+      code: "AGENT_TELEMETRY_REQUIRED",
+      summary:
+        "Agora rejected the authenticated submission write because required telemetry headers were missing or invalid.",
+      refs: {
+        challenge_address: input.challengeAddress ?? null,
+        tx_hash: null,
+        score_tx_hash: null,
+        result_cid: input.resultCid ?? null,
+      },
+      payload: {
+        error: toSubmissionTelemetryError({
+          status: 400,
+          code: "AGENT_TELEMETRY_REQUIRED",
+          message,
+          nextAction: buildRequiredAgentTelemetryNextAction(),
+          details,
+        }),
+      },
+    }),
+  ]);
+
+  return jsonError(input.c, {
+    status: 400,
+    code: "AGENT_TELEMETRY_REQUIRED",
+    message,
+    nextAction: buildRequiredAgentTelemetryNextAction(),
+    extras: details,
+  });
 }
 
 function createSubmissionValidationError(
@@ -318,6 +402,15 @@ router.post(
   requireWriteQuota("/api/submissions/upload"),
   async (c) => {
     const actor = await getOptionalSubmissionActor(c);
+    const telemetryGuard = await requireSubmissionAgentTelemetryHeaders({
+      c,
+      actor,
+      route: "upload",
+      event: "upload.failed",
+    });
+    if (telemetryGuard) {
+      return telemetryGuard;
+    }
     const clientTelemetry = readSubmissionClientTelemetry(c.req);
     const upload = await readSubmissionUpload(c);
     if (!upload) {
@@ -627,6 +720,15 @@ router.post(
   requireWriteQuota("/api/submissions/cleanup"),
   async (c) => {
     const actor = await getOptionalSubmissionActor(c);
+    const telemetryGuard = await requireSubmissionAgentTelemetryHeaders({
+      c,
+      actor,
+      route: "cleanup",
+      event: "cleanup.failed",
+    });
+    if (telemetryGuard) {
+      return telemetryGuard;
+    }
     const clientTelemetry = readSubmissionClientTelemetry(c.req);
     let rawPayload: unknown;
     try {
@@ -1088,6 +1190,15 @@ router.post(
   requireWriteQuota("/api/submissions/intent"),
   async (c) => {
     const actor = await getOptionalSubmissionActor(c);
+    const telemetryGuard = await requireSubmissionAgentTelemetryHeaders({
+      c,
+      actor,
+      route: "intent",
+      event: "intent.failed",
+    });
+    if (telemetryGuard) {
+      return telemetryGuard;
+    }
     const clientTelemetry = readSubmissionClientTelemetry(c.req);
     let rawPayload: unknown;
     try {
@@ -1259,6 +1370,15 @@ router.post(
 
 router.post("/", requireWriteQuota("/api/submissions"), async (c) => {
   const actor = await getOptionalSubmissionActor(c);
+  const telemetryGuard = await requireSubmissionAgentTelemetryHeaders({
+    c,
+    actor,
+    route: "register",
+    event: "registration.failed",
+  });
+  if (telemetryGuard) {
+    return telemetryGuard;
+  }
   const clientTelemetry = readSubmissionClientTelemetry(c.req);
   let rawPayload: unknown;
   try {

@@ -23,6 +23,7 @@ import authoringSessionRoutes from "./routes/authoring-sessions.js";
 import challengeRoutes from "./routes/challenges.js";
 import indexerHealthRoutes from "./routes/indexer-health.js";
 import internalAuthoringRoutes from "./routes/internal-authoring.js";
+import internalRunRoutes from "./routes/internal-runs.js";
 import internalSubmissionRoutes from "./routes/internal-submissions.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import pinSpecRoutes from "./routes/pin-spec.js";
@@ -105,7 +106,7 @@ export function createApp(
         }
         return runtimeConfig.corsOrigins.includes(origin) ? origin : undefined;
       },
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowHeaders: [
         "Content-Type",
         "Authorization",
@@ -114,6 +115,10 @@ export function createApp(
         "X-PAYMENT-RESPONSE",
         "X-402-PAYMENT",
         "X-Request-Id",
+        "X-Agora-Trace-Id",
+        "X-Agora-Client-Name",
+        "X-Agora-Client-Version",
+        "X-Agora-Decision-Summary",
       ],
       exposeHeaders: ["X-Request-Id"],
       credentials: true,
@@ -176,6 +181,7 @@ export function createApp(
   app.route("/api/indexer-health", indexerHealthRoutes);
   app.route("/api/leaderboard", leaderboardRoutes);
   app.route("/api/internal/authoring", internalAuthoringRoutes);
+  app.route("/api/internal/runs", internalRunRoutes);
   app.route("/api/internal/submissions", internalSubmissionRoutes);
   app.route("/api/pin-spec", pinSpecRoutes);
   app.route("/api/authoring", authoringSessionRoutes);

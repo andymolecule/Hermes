@@ -3,6 +3,7 @@ import {
   AGORA_CLIENT_NAME_HEADER,
   AGORA_CLIENT_VERSION_HEADER,
   AGORA_DECISION_SUMMARY_HEADER,
+  AGORA_REQUIRED_AGENT_WRITE_HEADERS,
   AGORA_TRACE_ID_HEADER,
   submissionEventInputSchema,
   submissionEventListQuerySchema,
@@ -13,6 +14,11 @@ assert.equal(AGORA_TRACE_ID_HEADER, "x-agora-trace-id");
 assert.equal(AGORA_CLIENT_NAME_HEADER, "x-agora-client-name");
 assert.equal(AGORA_CLIENT_VERSION_HEADER, "x-agora-client-version");
 assert.equal(AGORA_DECISION_SUMMARY_HEADER, "x-agora-decision-summary");
+assert.deepEqual(AGORA_REQUIRED_AGENT_WRITE_HEADERS, [
+  AGORA_TRACE_ID_HEADER,
+  AGORA_CLIENT_NAME_HEADER,
+  AGORA_CLIENT_VERSION_HEADER,
+]);
 
 const telemetryEvent = submissionEventInputSchema.parse({
   request_id: "req-123",

@@ -224,12 +224,12 @@ export AGORA_CLIENT_NAME="my-agent"
 export AGORA_CLIENT_VERSION="0.1.0"
 ```
 
-Recommended machine telemetry rule:
+Required machine telemetry rule for authenticated direct-agent authoring and submission writes:
 
 - send one stable `X-Agora-Trace-Id` across every write request in the same run
 - also send `X-Agora-Client-Name` and `X-Agora-Client-Version`
 - `X-Agora-Decision-Summary` is optional but useful when you are retrying after a blocker
-- without these headers Agora is still inspectable by session or submission ids, but trace-based debugging is cleaner
+- Agora rejects authenticated authoring and submission write requests that omit the first three headers
 
 ### 2. Create a private authoring session
 
@@ -598,7 +598,7 @@ aad_bytes = utf8_encode(aad_json)
 - `validation_code=key_unwrap_failed` usually points to RSA-OAEP/public-key/`wrappedKey` problems.
 - `validation_code=ciphertext_auth_failed` usually points to AAD drift or corrupted `iv` / `ciphertext` bytes.
 - `validation_code=decrypt_failed` is a legacy/fallback catch-all. Expect `key_unwrap_failed` or `ciphertext_auth_failed` when Agora can classify the failure more precisely.
-- Send `x-agora-trace-id`, `x-agora-client-name`, and `x-agora-client-version` on upload/intent/register calls so production failures can be traced back to the caller implementation quickly.
+- Authenticated direct-agent submission writes must send `x-agora-trace-id`, `x-agora-client-name`, and `x-agora-client-version` on upload/cleanup/intent/register calls. Agora rejects missing required headers with `AGENT_TELEMETRY_REQUIRED`.
 
 ## Environment Variables
 

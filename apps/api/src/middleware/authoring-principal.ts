@@ -10,6 +10,11 @@ import {
   createAuthoringEvent,
   readAuthoringClientTelemetry,
 } from "../lib/authoring-session-observability.js";
+import {
+  buildRequiredAgentTelemetryDetails,
+  buildRequiredAgentTelemetryNextAction,
+  listRequiredAgentTelemetryHeaderIssues,
+} from "../lib/client-telemetry.js";
 import { bindRequestLogger } from "../lib/observability.js";
 import {
   getRequestId,
@@ -108,6 +113,71 @@ function setPrincipalContext(
   });
 }
 
+async function recordAuthoringTelemetryRequirementFailure(
+  c: Context<ApiEnv>,
+  deps: Pick<
+    Required<AuthoringPrincipalMiddlewareDeps>,
+    "createSupabaseClient" | "createAuthoringEvents"
+  >,
+  agentId: string,
+) {
+  const route = resolveAuthoringRouteLabel(c);
+  const issues = listRequiredAgentTelemetryHeaderIssues(c.req);
+  const details = buildRequiredAgentTelemetryDetails(issues);
+  const message =
+    "Authenticated agent writes must include x-agora-trace-id, x-agora-client-name, and x-agora-client-version.";
+  const event = createAuthoringEvent({
+    request_id: getRequestId(c) ?? "unknown-request",
+    trace_id: getTraceId(c) ?? getRequestId(c) ?? "unknown-trace",
+    session_id: null,
+    agent_id: agentId,
+    publish_wallet_address: null,
+    route,
+    event: route === "upload" ? "upload.failed" : "turn.validation_failed",
+    phase: "ingress",
+    actor: "system",
+    outcome: "blocked",
+    http_status: 400,
+    code: "agent_telemetry_required",
+    state_before: null,
+    state_after: null,
+    summary:
+      "Agora rejected the authenticated authoring write because required telemetry headers were missing or invalid.",
+    refs: {},
+    client: readAuthoringClientTelemetry(c.req) ?? null,
+    payload: {
+      error: {
+        status: 400,
+        code: "agent_telemetry_required",
+        message,
+        next_action: buildRequiredAgentTelemetryNextAction(),
+        details,
+      },
+    },
+  });
+  try {
+    await deps.createAuthoringEvents(deps.createSupabaseClient(true), [event]);
+  } catch (error) {
+    getRequestLogger(c)?.warn(
+      {
+        event: "authoring.telemetry.write_failed",
+        route,
+        phase: "ingress",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to write authoring telemetry requirement event",
+    );
+  }
+
+  return jsonAuthoringSessionApiError(c, {
+    status: 400,
+    code: "agent_telemetry_required",
+    message,
+    nextAction: buildRequiredAgentTelemetryNextAction(),
+    details,
+  });
+}
+
 export function createRequireAuthoringAgent(
   deps: AuthoringPrincipalMiddlewareDeps = {},
 ): MiddlewareHandler<ApiEnv> {
@@ -139,6 +209,19 @@ export function createRequireAuthoringAgent(
       type: "agent",
       agent_id: agent.agentId,
     });
+    if (c.req.method !== "GET") {
+      const issues = listRequiredAgentTelemetryHeaderIssues(c.req);
+      if (issues.length > 0) {
+        return recordAuthoringTelemetryRequirementFailure(
+          c,
+          {
+            createSupabaseClient: createSupabaseClientImpl,
+            createAuthoringEvents: createAuthoringEventsImpl,
+          },
+          agent.agentId,
+        );
+      }
+    }
     await next();
   };
 }

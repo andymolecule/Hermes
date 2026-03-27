@@ -13,6 +13,11 @@ export const AGORA_TRACE_ID_HEADER = "x-agora-trace-id";
 export const AGORA_CLIENT_NAME_HEADER = "x-agora-client-name";
 export const AGORA_CLIENT_VERSION_HEADER = "x-agora-client-version";
 export const AGORA_DECISION_SUMMARY_HEADER = "x-agora-decision-summary";
+export const AGORA_REQUIRED_AGENT_WRITE_HEADERS = [
+  AGORA_TRACE_ID_HEADER,
+  AGORA_CLIENT_NAME_HEADER,
+  AGORA_CLIENT_VERSION_HEADER,
+] as const;
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 const optionalNonEmptyString = z.string().trim().min(1).nullable().optional();
@@ -47,6 +52,7 @@ export const authoringConversationLogErrorSchema = z
     code: z.string().trim().min(1).nullable().optional(),
     message: z.string().trim().min(1),
     next_action: z.string().trim().min(1).nullable().optional(),
+    details: z.record(z.unknown()).optional(),
   })
   .strict();
 

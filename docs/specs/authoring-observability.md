@@ -1,7 +1,8 @@
 # Authoring Telemetry And Conversation Observability
 
-> Status: Active design target
-> Scope: Internal telemetry for authoring-session pilot rollouts and operator debugging.
+> Status: Locked internal contract
+> Scope: Internal telemetry for authoring-session rollouts, cross-ledger run
+> debugging, and operator analytics.
 > Public session API contract remains governed by `docs/specs/authoring-session-api.md`.
 
 ---
@@ -230,15 +231,22 @@ Rules:
 To avoid polluting the public semantic contract, pilot telemetry metadata should
 travel in headers, not authoring request bodies.
 
-Supported internal headers:
+Required on authenticated direct-agent authoring write requests:
 
 - `X-Agora-Trace-Id`
 - `X-Agora-Client-Name`
 - `X-Agora-Client-Version`
+
+Optional:
+
 - `X-Agora-Decision-Summary`
 
 `X-Agora-Decision-Summary` is optional, short, and explicit. It is not hidden
 chain-of-thought.
+
+The required header set is enforced on authenticated write routes so one
+`trace_id` can correlate a full direct-agent run across authoring and
+submission flows.
 
 ## 6. Canonical Event Taxonomy
 
