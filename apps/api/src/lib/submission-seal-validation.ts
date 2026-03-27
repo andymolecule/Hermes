@@ -6,6 +6,7 @@ import {
   sealedSubmissionValidationResponseSchema,
   submissionSealWorkerHealthResponseSchema,
 } from "@agora/common";
+import { buildSubmissionHelperGuidance } from "./submission-helper-guidance.js";
 
 const SUBMISSION_VALIDATION_TIMEOUT_MS = 10_000;
 
@@ -35,6 +36,15 @@ function buildWorkerValidationExtras(
       public_key_fingerprint: failure.publicKeyFingerprint,
       derived_public_key_fingerprint: failure.derivedPublicKeyFingerprint,
     },
+  };
+}
+
+function buildValidationGuidanceExtras(
+  failure: typeof sealedSubmissionValidationFailureSchema._output,
+) {
+  return {
+    ...buildWorkerValidationExtras(failure),
+    submission_helper: buildSubmissionHelperGuidance(),
   };
 }
 
@@ -107,34 +117,34 @@ function mapWorkerValidationFailure(
         "SEALED_SUBMISSION_INVALID",
         "Agora could not parse the sealed submission envelope. Next step: ensure challengeId is a UUID, solverAddress is lowercase, and iv, wrappedKey, and ciphertext are base64url without '=' padding, then re-upload and retry.",
         {
-          extras: buildWorkerValidationExtras(failure),
+          extras: buildValidationGuidanceExtras(failure),
         },
       );
     case "key_unwrap_failed":
       return new SubmissionSealValidationClientError(
         400,
         "SEALED_SUBMISSION_INVALID",
-        "Agora could not unwrap the sealed submission key. This usually means wrappedKey was not produced using Agora's active RSA-OAEP SHA-256 public key or was not encoded as base64url without '=' padding. Next step: reseal with @agora/common sealSubmission or fix the custom sealer to use RSA-OAEP with SHA-256, then re-upload and retry.",
+        "Agora could not unwrap the sealed submission key. This usually means wrappedKey was not produced using Agora's active RSA-OAEP SHA-256 public key or was not encoded as base64url without '=' padding. Next step: reseal with agora prepare-submission or fix the custom sealer to use RSA-OAEP with SHA-256, then re-upload and retry.",
         {
-          extras: buildWorkerValidationExtras(failure),
+          extras: buildValidationGuidanceExtras(failure),
         },
       );
     case "ciphertext_auth_failed":
       return new SubmissionSealValidationClientError(
         400,
         "SEALED_SUBMISSION_INVALID",
-        "Agora could not authenticate the sealed submission ciphertext. This usually means the AES-GCM authenticated data or ciphertext bytes do not match Agora's published sealed_submission_v2 contract exactly. Next step: reseal from the original plaintext with @agora/common sealSubmission, or fix the custom sealer to match version, alg, kid, challengeId, lowercase solverAddress, fileName, mimeType, iv, and ciphertext exactly, then re-upload and retry.",
+        "Agora could not authenticate the sealed submission ciphertext. This usually means the AES-GCM authenticated data or ciphertext bytes do not match Agora's published sealed_submission_v2 contract exactly. Next step: reseal from the original plaintext with agora prepare-submission, or fix the custom sealer to match version, alg, kid, challengeId, lowercase solverAddress, fileName, mimeType, iv, and ciphertext exactly, then re-upload and retry.",
         {
-          extras: buildWorkerValidationExtras(failure),
+          extras: buildValidationGuidanceExtras(failure),
         },
       );
     case "decrypt_failed":
       return new SubmissionSealValidationClientError(
         400,
         "SEALED_SUBMISSION_INVALID",
-        "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper or does not match Agora's published wire contract exactly. Next step: reseal with @agora/common sealSubmission or agora submit, or fix the custom sealer to match the published contract exactly, then re-upload and retry.",
+        "Agora could not open the sealed submission payload. This usually means the envelope was not produced by Agora's canonical sealed_submission_v2 helper or does not match Agora's published wire contract exactly. Next step: reseal with agora prepare-submission or agora submit, or fix the custom sealer to match the published contract exactly, then re-upload and retry.",
         {
-          extras: buildWorkerValidationExtras(failure),
+          extras: buildValidationGuidanceExtras(failure),
         },
       );
     default: {

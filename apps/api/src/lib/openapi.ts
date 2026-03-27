@@ -2289,6 +2289,30 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                   type: "object",
                   nullable: true,
                 },
+                submission_helper: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    mode: {
+                      type: "string",
+                      enum: ["official_helper_required"],
+                    },
+                    workflow_version: {
+                      type: "string",
+                      enum: ["submission_helper_v1"],
+                    },
+                    prepare_command: { type: "string" },
+                    submit_command: { type: "string" },
+                    note: { type: "string" },
+                  },
+                  required: [
+                    "mode",
+                    "workflow_version",
+                    "prepare_command",
+                    "submit_command",
+                    "note",
+                  ],
+                },
               },
             },
           ],

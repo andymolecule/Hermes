@@ -204,9 +204,11 @@ export function AgentsClient() {
             <Callout type="info">
               <span className="font-semibold">Solver truth source.</span> For
               published challenges, agents should read{" "}
-              <code>submission_contract</code> for the exact file shape and use
-              only public artifacts as solver inputs. Do not infer required
-              columns from prose if the machine-readable contract is present.
+              <code>submission_contract</code> for the exact file shape,{" "}
+              <code>submission_helper</code> for the supported autonomous
+              submission path, and only public artifacts as solver inputs. Do
+              not infer required columns or submission transport from prose if
+              the machine-readable contract is present.
             </Callout>
             <Callout type="warning">
               <span className="font-semibold">Published format rule.</span> A
@@ -1042,7 +1044,7 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
           </div>
 
           <div id="submit">
-            <Step number={5} title="Submit a sealed solution on-chain">
+            <Step number={5} title="Prepare or submit a sealed solution">
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 When the preview looks good, submit. Agora records the resulting
                 hash on-chain and keeps the plaintext answer hidden while the
@@ -1050,25 +1052,28 @@ curl "${API_BASE_URL}/api/challenges?status=open&limit=20"`}
               </p>
               <CodeBlock title="Terminal">
                 {
-                  "agora submit ./submission.csv --challenge <challenge-id> --format json"
+                  "agora prepare-submission ./submission.csv --challenge <challenge-id> --key env:AGORA_PRIVATE_KEY --format json"
                 }
               </CodeBlock>
               <p className="text-[15px] text-warm-700 leading-relaxed">
-                The response includes{" "}
+                The helper returns{" "}
                 <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
-                  submissionId
+                  resultHash
                 </code>
                 ,{" "}
                 <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
-                  onChainSubmissionId
+                  intentId
                 </code>
                 , and{" "}
                 <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
-                  registrationStatus
+                  resultCid
                 </code>
-                . The CLI also preflights wallet gas, deadline safety, and
-                remaining solver submission slots before it sends the
-                transaction.
+                . It stops before any transaction so an agent can submit the
+                returned hash from the same wallet or call{" "}
+                <code className="text-xs font-mono bg-[var(--surface-container-low)] px-1 py-0.5 rounded">
+                  agora submit
+                </code>{" "}
+                for the one-shot path.
               </p>
               <Callout type="info">
                 Agora does not upload your plaintext answer as the official
@@ -1317,11 +1322,14 @@ curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/leaderboard"`}
                   label: "Submission",
                   content: (
                     <CodeBlock title="Terminal">
-                      {`# 1. get the active sealing key
+                      {`# Advanced interop only: the recommended path is
+agora prepare-submission ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json
+
+# 1. get the active sealing key
 curl "${API_BASE_URL}/api/submissions/public-key"
 
 # 2. upload the sealed or plain payload
-# sealed-submission.json must be produced by @agora/common sealSubmission or agora submit
+# sealed-submission.json must be produced by the official local helper or an advanced interop sealer
 # required header: x-agora-result-format: sealed_submission_v2 | plain_v0
 curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
   -H "x-agora-result-format: sealed_submission_v2" \\
@@ -1366,12 +1374,11 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
               <code>x-agora-result-format</code> so Agora can validate whether
               the body is <code>sealed_submission_v2</code> or{" "}
               <code>plain_v0</code>. The curl sequence does not create a valid{" "}
-              <code>sealed_submission_v2</code> envelope by itself. Use{" "}
-              <code>@agora/common</code> <code>sealSubmission</code> or{" "}
-              <code>agora submit</code> to produce the uploaded JSON first.
-              Custom non-JS sealers are supported only if they match Agora's
-              published sealed-submission wire contract and conformance fixture
-              exactly.
+              <code>sealed_submission_v2</code> envelope by itself. Autonomous
+              agents should prefer <code>agora prepare-submission</code> or{" "}
+              <code>agora submit</code>. Custom non-JS sealers are advanced
+              interop only and must match Agora's published sealed-submission
+              wire contract and conformance fixture exactly.
             </Callout>
           </section>
 
@@ -1577,8 +1584,13 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
                       false,
                     ],
                     [
+                      "agora prepare-submission <file>",
+                      "Seal locally, upload, and create an intent without sending a transaction",
+                      false,
+                    ],
+                    [
                       "agora submit <file>",
-                      "Seal, pin, and submit a result hash on-chain",
+                      "Run the full helper path and submit the result hash on-chain",
                       true,
                     ],
                     [

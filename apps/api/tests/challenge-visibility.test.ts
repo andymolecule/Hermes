@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CHALLENGE_STATUS } from "@agora/common";
-import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 import {
   canExposeChallengeResults,
   getChallengeLeaderboardData,
@@ -10,6 +9,7 @@ import {
   listChallengesFromQuery,
   listChallengesQuerySchema,
 } from "../src/routes/challenges-shared.js";
+import { createExecutionPlanFixture } from "./execution-plan-fixture.js";
 
 const reproducibilityExecutionPlan = createExecutionPlanFixture();
 
@@ -54,6 +54,10 @@ test("open challenge detail redacts submissions and leaderboard", async () => {
   );
   assert.equal(data.challenge.status, CHALLENGE_STATUS.open);
   assert.equal(data.challenge.submissions_count, 1);
+  assert.equal(
+    data.challenge.submission_helper?.mode,
+    "official_helper_required",
+  );
   assert.deepEqual(data.submissions, []);
   assert.deepEqual(data.leaderboard, []);
 });

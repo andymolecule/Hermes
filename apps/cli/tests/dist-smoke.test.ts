@@ -51,6 +51,7 @@ test("built CLI boots without bundled CJS runtime errors", () => {
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /Agora CLI/);
+    assert.match(result.stdout, /prepare-submission/);
   });
 });
 

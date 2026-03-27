@@ -10,6 +10,7 @@ import { buildFinalizeCommand } from "./commands/finalize";
 import { buildGetCommand } from "./commands/get";
 import { buildListCommand } from "./commands/list";
 import { buildPostCommand } from "./commands/post";
+import { buildPrepareSubmissionCommand } from "./commands/prepare-submission";
 import { buildReindexCommand } from "./commands/reindex";
 import { buildRepairChallengeCommand } from "./commands/repair-challenge";
 import { buildRetryFailedJobsCommand } from "./commands/retry-failed-jobs";
@@ -44,6 +45,7 @@ async function main() {
   program.addCommand(buildSubmissionStatusCommand());
   program.addCommand(buildFinalizeCommand());
   program.addCommand(buildClaimCommand());
+  program.addCommand(buildPrepareSubmissionCommand());
   program.addCommand(buildSubmitCommand());
   program.addCommand(buildDoctorCommand());
   program.addCommand(buildScoreLocalCommand());

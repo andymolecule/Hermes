@@ -8,6 +8,7 @@ import { resolveOfficialScorerImage } from "@agora/common";
 import { buildGetCommand } from "../src/commands/get.js";
 import { resolveArtifactFileName } from "../src/commands/get.js";
 import { buildListCommand } from "../src/commands/list.js";
+import { buildPrepareSubmissionCommand } from "../src/commands/prepare-submission.js";
 import { buildStatusCommand } from "../src/commands/status.js";
 import { buildSubmissionStatusCommand } from "../src/commands/submission-status.js";
 
@@ -108,7 +109,7 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
               domain: "longevity",
               challenge_type: "prediction",
               reward_amount: 42,
-              deadline: "2026-03-20T00:00:00.000Z",
+              deadline: "2026-04-20T00:00:00.000Z",
               status: "open",
               submissions_count: 2,
               spec_cid: "ipfs://spec",
@@ -274,6 +275,165 @@ test("get and status commands rely on AGORA_API_URL only", async () => {
   } finally {
     process.env = originalEnv;
     global.fetch = originalFetch;
+  }
+});
+
+test("prepare-submission works with AGORA_API_URL and a private key env only", async () => {
+  const originalEnv = { ...process.env };
+  const originalFetch = global.fetch;
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agora-prepare-cli-"));
+  const filePath = path.join(tempDir, "submission.csv");
+  fs.writeFileSync(filePath, "prediction\n0.5\n");
+  process.env = {
+    AGORA_API_URL: "https://api.example",
+    AGORA_PRIVATE_KEY: `0x${"11".repeat(32)}`,
+  };
+
+  global.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === `/api/challenges/${challengeId}`) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge: {
+              id: challengeId,
+              title: "Challenge",
+              description: "desc",
+              domain: "longevity",
+              challenge_type: "prediction",
+              reward_amount: 42,
+              deadline: "2026-04-20T00:00:00.000Z",
+              status: "open",
+              contract_address: challengeAddress,
+              factory_address: factoryAddress,
+              factory_challenge_id: 7,
+              execution: {
+                template: "official_table_metric_v1",
+                metric: "r2",
+                comparator: "maximize",
+                scorer_image: tableMetricScorerImage,
+              },
+              submission_privacy_mode: "sealed",
+              submission_contract: {
+                version: "v1",
+                kind: "csv_table",
+                file: {
+                  extension: ".csv",
+                  mime: "text/csv",
+                  max_bytes: 1024,
+                },
+                columns: {
+                  required: ["prediction"],
+                  value: "prediction",
+                  allow_extra: false,
+                },
+              },
+              refs: {
+                challengeId,
+                challengeAddress,
+                factoryAddress,
+                factoryChallengeId: 7,
+              },
+            },
+            artifacts: {
+              public: [],
+              private: [],
+              spec_cid: null,
+              spec_url: null,
+            },
+            submissions: [],
+            leaderboard: [],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname.endsWith("/solver-status")) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            challenge_id: challengeId,
+            challenge_address: challengeAddress,
+            solver_address: "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+            status: "open",
+            max_submissions_per_solver: 3,
+            submissions_used: 0,
+            submissions_remaining: 3,
+            has_reached_submission_limit: false,
+            can_submit: true,
+            claimable: "0",
+            can_claim: false,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions/public-key") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            version: "sealed_submission_v2",
+            alg: "aes-256-gcm+rsa-oaep-256",
+            kid: "submission-seal",
+            publicKeyPem:
+              "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt47epMY+8JZYRAVG3tx5\n99KDJVN3eJ5idtbFhzvvGyti4ENCRGaBcEy43VJv8zyf0ZuD3Ak9wD279CslcZey\nAVy4W5d1hLo3ECpw36YscGTjxEnvwgky+HegHiIRhdZKF2kDgpwVL9X55B2BtVTv\nJw9ktEs5Us2FFrPsTPWbZk1jIDwssrHLcim6QZj9GckX78++LA6tFOF9KJSy5Lml\npay4IpyySc810nOAhOHSiORtP8S53d2WcdFjM6Gu4TJB716Wq+W58CsL7NekQFa0\niGfKka8k3Jl1hKI3vGpO4F2Ks/zlSnDLr44UkZ8FzhaFiltQuqkoVjzi117RHKrO\nQwIDAQAB\n-----END PUBLIC KEY-----\n",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions/upload") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            resultCid: "ipfs://bafybeipreparecli",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions/intent" && init?.method === "POST") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            intentId: "33333333-3333-4333-8333-333333333333",
+            resultHash:
+              "0x1111111111111111111111111111111111111111111111111111111111111111",
+            expiresAt: "2026-03-20T00:05:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    throw new Error(`Unexpected fetch: ${url.pathname}`);
+  };
+
+  try {
+    const logs = await withConsoleCapture(async () => {
+      await buildPrepareSubmissionCommand().parseAsync(
+        [
+          filePath,
+          "--challenge",
+          challengeId,
+          "--key",
+          "env:AGORA_PRIVATE_KEY",
+          "--format",
+          "json",
+        ],
+        { from: "user" },
+      );
+    });
+    const payload = JSON.parse(logs.join("\n")) as { workflowVersion: string };
+    assert.equal(payload.workflowVersion, "submission_helper_v1");
+  } finally {
+    process.env = originalEnv;
+    global.fetch = originalFetch;
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 

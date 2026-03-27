@@ -239,7 +239,7 @@ test("validateSubmissionIntentPayloadBoundary maps worker validation failures in
           throw new SubmissionSealValidationClientError(
             400,
             "SEALED_SUBMISSION_INVALID",
-            "Agora could not authenticate the sealed submission ciphertext. This usually means the AES-GCM authenticated data or ciphertext bytes do not match Agora's published sealed_submission_v2 contract exactly. Next step: reseal from the original plaintext with @agora/common sealSubmission, or fix the custom sealer to match version, alg, kid, challengeId, lowercase solverAddress, fileName, mimeType, iv, and ciphertext exactly, then re-upload and retry.",
+            "Agora could not authenticate the sealed submission ciphertext. This usually means the AES-GCM authenticated data or ciphertext bytes do not match Agora's published sealed_submission_v2 contract exactly. Next step: reseal from the original plaintext with agora prepare-submission, or fix the custom sealer to match version, alg, kid, challengeId, lowercase solverAddress, fileName, mimeType, iv, and ciphertext exactly, then re-upload and retry.",
             {
               extras: {
                 sealed_submission_validation: {
