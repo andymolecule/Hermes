@@ -1,6 +1,5 @@
 "use client";
 
-import { Landmark } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,13 +37,11 @@ function TopNav() {
           "0 1px 0 var(--ghost-border), 0 20px 40px rgba(28, 28, 24, 0.03)",
       }}
     >
-      <div className="grid grid-cols-[auto_1fr] items-center w-full gap-4 px-4 sm:px-6">
-        {/* Left: Logo */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center w-full px-3 sm:px-5">
         <Link
           href="/"
-          className="flex items-center gap-2.5 no-underline text-[var(--text-primary)]"
+          className="justify-self-start no-underline text-[var(--text-primary)] pl-1 sm:pl-2"
         >
-          <Landmark className="w-6 h-6" strokeWidth={2.5} />
           <span
             className="font-display font-bold tracking-tight text-[1.25rem]"
             style={{ letterSpacing: "-0.03em" }}
@@ -53,8 +50,7 @@ function TopNav() {
           </span>
         </Link>
 
-        {/* Center: Nav */}
-        <nav className="flex items-center justify-center gap-1 overflow-x-auto px-2">
+        <nav className="flex items-center justify-center gap-1 px-2">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -69,6 +65,11 @@ function TopNav() {
             </Link>
           ))}
         </nav>
+
+        <div
+          aria-hidden="true"
+          className="justify-self-end w-[4.5rem] sm:w-[5.5rem]"
+        />
       </div>
     </header>
   );
