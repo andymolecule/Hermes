@@ -1,5 +1,0 @@
-{
-  "required_sections": ["incident_id", "severity", "timeline", "actions_taken"],
-  "allowed_severity": ["low", "medium", "high"],
-  "notes": "Reports must be machine-parseable JSON."
-}

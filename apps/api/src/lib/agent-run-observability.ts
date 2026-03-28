@@ -1,7 +1,4 @@
 import {
-  agentRunAnalyticsResponseSchema,
-  agentRunDetailResponseSchema,
-  agentRunListResponseSchema,
   type AgentRunAnalyticsResponseOutput,
   type AgentRunDetailResponseOutput,
   type AgentRunListQueryOutput,
@@ -12,11 +9,14 @@ import {
   type AgoraClientTelemetryOutput,
   type AuthoringEventOutput,
   type SubmissionEventOutput,
+  agentRunAnalyticsResponseSchema,
+  agentRunDetailResponseSchema,
+  agentRunListResponseSchema,
 } from "@agora/common";
 import {
+  type AgoraDbClient,
   listAuthoringEvents,
   listSubmissionEvents,
-  type AgoraDbClient,
 } from "@agora/db";
 
 const RUN_EVENT_FETCH_MULTIPLIER = 20;
@@ -186,9 +186,9 @@ function summarizeTimeline(
   }
 
   if (!latestClient) {
-    latestClient = descendingTimeline.find((entry) =>
-      hasMeaningfulClient(entry.client),
-    )?.client ?? null;
+    latestClient =
+      descendingTimeline.find((entry) => hasMeaningfulClient(entry.client))
+        ?.client ?? null;
   }
 
   return {
@@ -321,7 +321,9 @@ export async function listAgentRuns(input: {
   const grouped = groupTimelineByTrace(timeline);
   const runs = [...grouped.entries()]
     .map(([traceId, events]) => summarizeTimeline(traceId, events))
-    .sort((left, right) => compareIsoDesc(left.last_event_at, right.last_event_at));
+    .sort((left, right) =>
+      compareIsoDesc(left.last_event_at, right.last_event_at),
+    );
 
   return agentRunListResponseSchema.parse({
     runs: applyRunFilters(runs, input.filters).slice(0, requestedRuns),
@@ -390,11 +392,17 @@ export function summarizeAgentRuns(input: {
       total_runs: input.runs.length,
       status_counts: statusCounts,
       top_codes: [...codeCounts.entries()]
-        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .sort(
+          (left, right) =>
+            right[1] - left[1] || left[0].localeCompare(right[0]),
+        )
         .slice(0, 10)
         .map(([code, count]) => ({ code, count })),
       top_clients: [...clientCounts.entries()]
-        .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+        .sort(
+          (left, right) =>
+            right[1] - left[1] || left[0].localeCompare(right[0]),
+        )
         .slice(0, 10)
         .map(([key, count]) => {
           const [client_name, client_version] = key.split("::", 2);

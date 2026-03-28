@@ -4,8 +4,8 @@ import {
   type ConfirmationContractOutput,
   type DryRunPreviewOutput,
   type OfficialScorerTemplateIdOutput,
-  type TrustedChallengeSpecOutput,
   PROTOCOL_FEE_PERCENT,
+  type TrustedChallengeSpecOutput,
   getOfficialScorerMetric,
   lookupOfficialScorer,
 } from "@agora/common";

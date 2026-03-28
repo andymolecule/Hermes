@@ -1,7 +1,0 @@
-{
-  "required_fields": ["incident_id", "severity", "timeline", "actions_taken"],
-  "non_empty_array_fields": ["timeline", "actions_taken"],
-  "allowed_string_values": {
-    "severity": ["low", "medium", "high"]
-  }
-}

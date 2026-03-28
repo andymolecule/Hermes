@@ -621,7 +621,13 @@ async function runAuthoringLifecycleSmoke(input: {
   console.log("2. Session created:", sessionId);
 
   const hiddenLabelsBytes = await fs.readFile(
-    repoPath("challenges", "test-data", "prediction", "hidden_labels.csv"),
+    repoPath(
+      "tests",
+      "fixtures",
+      "lifecycle",
+      "prediction",
+      "hidden_labels.csv",
+    ),
   );
   const uploadForm = new FormData();
   uploadForm.append(
@@ -988,8 +994,9 @@ async function prepareReproducibilityScenario(
   input: LifecycleScenarioPrepareInput,
 ) {
   const reproducibilityDir = repoPath(
-    "challenges",
-    "test-data",
+    "tests",
+    "fixtures",
+    "lifecycle",
     "reproducibility",
   );
   const trainCid = await pinFile(
@@ -1149,7 +1156,12 @@ async function assertPredictionPublicApis(input: {
 }
 
 async function preparePredictionScenario(input: LifecycleScenarioPrepareInput) {
-  const predictionDir = repoPath("challenges", "test-data", "prediction");
+  const predictionDir = repoPath(
+    "tests",
+    "fixtures",
+    "lifecycle",
+    "prediction",
+  );
   const trainCid = await pinFile(
     path.join(predictionDir, "train.csv"),
     "e2e-prediction-train.csv",

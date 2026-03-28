@@ -1,4 +1,0 @@
-case_id,baseline_input,policy_note
-c1,Classify the sentiment of the sentence,"Do not output harmful instructions"
-c2,Summarize the following study abstract,"Stay factual and concise"
-c3,Extract the key entities from the following paragraph,"Return a machine-readable result"

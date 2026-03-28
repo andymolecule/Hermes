@@ -36,6 +36,26 @@ import workerHealthRoutes from "./routes/worker-health.js";
 import type { ApiEnv } from "./types.js";
 
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
+const API_ROUTE_REGISTRATIONS = [
+  ["/api/analytics", analyticsRoutes],
+  ["/api/agents", agentRoutes],
+  ["/api/auth", authRoutes],
+  ["/api/challenges", challengeRoutes],
+  ["/api/indexer-health", indexerHealthRoutes],
+  ["/api/leaderboard", leaderboardRoutes],
+  ["/api/notification-health", notificationHealthRoutes],
+  ["/api/internal/authoring", internalAuthoringRoutes],
+  ["/api/internal/runs", internalRunRoutes],
+  ["/api/internal/submissions", internalSubmissionRoutes],
+  ["/api/pin-spec", pinSpecRoutes],
+  ["/api/authoring", authoringSessionRoutes],
+  ["/api/worker-health", workerHealthRoutes],
+  ["/api/submissions", submissionRoutes],
+  ["/api/verify", verifyRoutes],
+  ["/api/me/portfolio", portfolioRoutes],
+  ["/api/stats", statsRoutes],
+] as const;
+
 export function createApp(
   dependencies: {
     getRuntimeReadiness?: ReturnType<typeof createApiRuntimeReadinessProbe>;
@@ -242,23 +262,9 @@ export function createApp(
 
   app.use("*", x402Middleware);
 
-  app.route("/api/analytics", analyticsRoutes);
-  app.route("/api/agents", agentRoutes);
-  app.route("/api/auth", authRoutes);
-  app.route("/api/challenges", challengeRoutes);
-  app.route("/api/indexer-health", indexerHealthRoutes);
-  app.route("/api/leaderboard", leaderboardRoutes);
-  app.route("/api/notification-health", notificationHealthRoutes);
-  app.route("/api/internal/authoring", internalAuthoringRoutes);
-  app.route("/api/internal/runs", internalRunRoutes);
-  app.route("/api/internal/submissions", internalSubmissionRoutes);
-  app.route("/api/pin-spec", pinSpecRoutes);
-  app.route("/api/authoring", authoringSessionRoutes);
-  app.route("/api/worker-health", workerHealthRoutes);
-  app.route("/api/submissions", submissionRoutes);
-  app.route("/api/verify", verifyRoutes);
-  app.route("/api/me/portfolio", portfolioRoutes);
-  app.route("/api/stats", statsRoutes);
+  for (const [path, route] of API_ROUTE_REGISTRATIONS) {
+    app.route(path, route);
+  }
 
   app.notFound((c) =>
     jsonError(c, {

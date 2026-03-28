@@ -1,6 +1,0 @@
-HEADER    TEST TARGET STRUCTURE
-ATOM      1  N   ALA A   1      11.104  13.207   9.126  1.00 20.00           N
-ATOM      2  CA  ALA A   1      12.224  12.356   8.744  1.00 20.00           C
-ATOM      3  C   ALA A   1      13.421  13.182   8.291  1.00 20.00           C
-ATOM      4  O   ALA A   1      14.540  12.666   8.270  1.00 20.00           O
-END

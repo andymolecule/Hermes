@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import {
   AgoraError,
-  authoringSessionArtifactSchema,
-  authoringSessionFileInputSchema,
   type AuthoringArtifactOutput,
+  type authoringSessionArtifactSchema,
+  type authoringSessionFileInputSchema,
 } from "@agora/common";
 import { pinFile } from "@agora/ipfs";
-import { z } from "zod";
+import type { z } from "zod";
 import {
   detectAuthoringArtifactColumns,
   normalizeExternalArtifactsForDraft,
@@ -24,7 +24,8 @@ type AuthoringSessionFileInputInput = z.input<
   typeof authoringSessionFileInputSchema
 >;
 
-export interface StoredAuthoringSessionArtifact extends AuthoringArtifactOutput {
+export interface StoredAuthoringSessionArtifact
+  extends AuthoringArtifactOutput {
   source_url?: string | null;
   role?: string | null;
 }
@@ -93,7 +94,9 @@ export function decodeAuthoringSessionArtifactId(artifactId: string) {
     );
   }
 
-  const payload = decodeArtifactPayload(artifactId.slice(ARTIFACT_REF_PREFIX.length));
+  const payload = decodeArtifactPayload(
+    artifactId.slice(ARTIFACT_REF_PREFIX.length),
+  );
   return {
     id: artifactId,
     uri: payload.uri,
@@ -195,7 +198,9 @@ export async function createDirectAuthoringSessionArtifact(input: {
   let tempFilePath: string | null = null;
 
   try {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "agora-authoring-upload-"));
+    tempDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "agora-authoring-upload-"),
+    );
     tempFilePath = path.join(tempDir, `${randomUUID()}-${safeFileName}`);
     await fs.writeFile(tempFilePath, Buffer.from(input.bytes));
     const uri = await pinFileImpl(tempFilePath, safeFileName);

@@ -17,8 +17,15 @@
   "files": {
     "ignore": [
       "**/node_modules/**",
+      ".next/**",
+      "**/.next/**",
+      ".vercel/**",
+      "**/.vercel/**",
       ".turbo/**",
       "**/dist/**",
+      "coverage/**",
+      "**/coverage/**",
+      ".claude/settings.local.json",
       "packages/contracts/lib/**",
       "packages/contracts/out/**",
       "packages/contracts/cache/**",

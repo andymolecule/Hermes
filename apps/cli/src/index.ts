@@ -33,27 +33,33 @@ async function main() {
     .version(pkg.version)
     .showHelpAfterError();
 
-  program.addCommand(buildConfigCommand());
-  program.addCommand(buildPostCommand());
-  program.addCommand(buildCleanFailedJobsCommand());
-  program.addCommand(buildRepairChallengeCommand());
-  program.addCommand(buildReindexCommand());
-  program.addCommand(buildListCommand());
-  program.addCommand(buildGetCommand());
-  program.addCommand(buildStatusCommand());
-  program.addCommand(buildSessionTimelineCommand());
-  program.addCommand(buildSubmissionStatusCommand());
-  program.addCommand(buildFinalizeCommand());
-  program.addCommand(buildClaimCommand());
-  program.addCommand(buildPrepareSubmissionCommand());
-  program.addCommand(buildSubmitCommand());
-  program.addCommand(buildDoctorCommand());
-  program.addCommand(buildScoreLocalCommand());
-  program.addCommand(buildOracleScoreCommand());
-  program.addCommand(buildVerifyCommand());
-  program.addCommand(buildVerifyPublicCommand());
-  program.addCommand(buildValidateCommand());
-  program.addCommand(buildRetryFailedJobsCommand());
+  const commandBuilders: Array<() => Command> = [
+    buildConfigCommand,
+    buildPostCommand,
+    buildCleanFailedJobsCommand,
+    buildRepairChallengeCommand,
+    buildReindexCommand,
+    buildListCommand,
+    buildGetCommand,
+    buildStatusCommand,
+    buildSessionTimelineCommand,
+    buildSubmissionStatusCommand,
+    buildFinalizeCommand,
+    buildClaimCommand,
+    buildPrepareSubmissionCommand,
+    buildSubmitCommand,
+    buildDoctorCommand,
+    buildScoreLocalCommand,
+    buildOracleScoreCommand,
+    buildVerifyCommand,
+    buildVerifyPublicCommand,
+    buildValidateCommand,
+    buildRetryFailedJobsCommand,
+  ];
+
+  for (const buildCommand of commandBuilders) {
+    program.addCommand(buildCommand());
+  }
 
   await program.parseAsync(process.argv);
 }

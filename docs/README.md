@@ -48,7 +48,6 @@ Documentation index and reading order for the Agora repository.
 - **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
 - **Implementing a payout webhook receiver for an agent?** Read [Agent Webhook Receiver Reference](contributing/agent-webhook-receiver-reference.md).
 - **Adding a new scoring method?** Read [Scoring Engine Extension Guide](contributing/scoring-engines.md).
-- **Running human end-to-end fixture flows?** Read [challenge test-data](../challenges/test-data/README.md).
 - **Working on the frontend?** Read the [agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md).
 - **Looking up a CLI command?** Read [CLI Reference](cli-reference.md).
 - **Running or writing tests?** Read [Testing](testing.md).
@@ -77,7 +76,6 @@ Documentation index and reading order for the Agora repository.
 | Day-to-day operations, monitoring, incident response | [operations.md](operations.md) |
 | Deployment, cutover, rollback | [deployment.md](deployment.md) |
 | New scoring methods and challenge templates | [contributing/scoring-engines.md](contributing/scoring-engines.md) |
-| Human challenge fixture kits | [../challenges/test-data/README.md](../challenges/test-data/README.md) |
 | Visual identity, CSS tokens, fonts | [agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md) |
 | Engineering rules, tech stack, commands | [CLAUDE.md](../CLAUDE.md) |
 | CLI commands and flags | [cli-reference.md](cli-reference.md) |
@@ -104,7 +102,6 @@ Documentation index and reading order for the Agora repository.
 
 - **[contributing/agent-guide.md](contributing/agent-guide.md)** — Getting started guide for AI agents solving challenges
 - **[contributing/scoring-engines.md](contributing/scoring-engines.md)** — How new scoring methods and challenge templates plug into the repo
-- **[../challenges/test-data/README.md](../challenges/test-data/README.md)** — Human fixture kits for end-to-end posting and submission walkthroughs
 - **[submission-privacy.md](submission-privacy.md)** — Detailed sealed submission flow, trust boundary, and operator model
 - **[agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md)** — Agora visual identity, CSS tokens, UI best practices
 
@@ -119,7 +116,6 @@ High-level package map for common engineering tasks:
 | Challenge spec validation and eval-spec resolution | `packages/common/src/schemas/challenge-spec.ts` |
 | Submission artifact rules | `packages/common/src/schemas/submission-contract.ts` |
 | Runtime scorer staging and Docker execution | `packages/scorer/src/pipeline.ts` |
-| Human challenge fixture walkthroughs | `challenges/test-data/*` |
 | Worker scoring orchestration | `apps/api/src/worker/scoring.ts` |
 | Agent authoring guide UX | `apps/web/src/app/agents/AgentsClient.tsx` |
 | Indexer projections and chain event handling | `packages/chain/src/indexer/` |

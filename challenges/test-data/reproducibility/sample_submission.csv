@@ -1,7 +1,0 @@
-sample_id,normalized_signal,condition
-r1,0.512,control
-r2,0.742,treated
-r3,0.588,control
-r4,0.825,treated
-r5,0.497,control
-r6,0.905,treated

@@ -1,4 +1,0 @@
-run_id,temperature_c,ph,catalyst_pct,response_score
-base1,40,6.8,0.5,0.61
-base2,55,7.0,0.7,0.72
-base3,70,7.3,1.1,0.69

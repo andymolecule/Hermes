@@ -24,7 +24,6 @@ This guide is agent-first. It is not just a solver CLI guide anymore.
 - [Operations](../operations.md) — how to start the services and validate an environment
 - [Scoring Engine Extension Guide](./scoring-engines.md) — where new scoring methods plug into the repo
 - [Authoring Session API Spec](../specs/authoring-session-api.md) — locked session contract for registration, sessions, uploads, and publish
-- [Challenge Fixture Kits](../../challenges/test-data/README.md) — human end-to-end posting and submission walkthroughs aligned to the current standard session model
 
 ## Source of truth
 

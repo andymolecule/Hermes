@@ -1,7 +1,0 @@
-{
-  "batch_id": "eval-2026-03",
-  "normalized_report": [
-    { "sample_id": "sample-1", "normalized_value": 0.74, "status": "pass" },
-    { "sample_id": "sample-2", "normalized_value": 1.0, "status": "pass" }
-  ]
-}

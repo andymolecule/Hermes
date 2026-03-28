@@ -1,20 +1,20 @@
 import {
-  authoringConversationLogEntrySchema,
-  authoringClientTelemetrySchema,
-  authoringEventInputSchema,
-  type AuthoringSessionArtifactOutput,
   type AuthoringClientTelemetryOutput,
   type AuthoringConversationLogEntryOutput,
   type AuthoringEventInput,
+  type AuthoringSessionArtifactOutput,
   type AuthoringSessionFileInputOutput,
+  authoringClientTelemetrySchema,
+  authoringConversationLogEntrySchema,
+  authoringEventInputSchema,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import type { AuthoringSessionRow } from "@agora/db";
-import { readAgoraClientTelemetry } from "./client-telemetry.js";
 import {
   type StoredAuthoringSessionArtifact,
   toAuthoringSessionArtifactPayload,
 } from "./authoring-session-artifacts.js";
+import { readAgoraClientTelemetry } from "./client-telemetry.js";
 
 function sanitizeUrl(value?: string | null) {
   if (!value) {
@@ -60,7 +60,8 @@ export function buildLoggedArtifacts(
   return artifacts.map((artifact) =>
     toAuthoringSessionArtifactPayload({
       ...artifact,
-      source_url: sanitizeUrl(artifact.source_url) ?? artifact.source_url ?? null,
+      source_url:
+        sanitizeUrl(artifact.source_url) ?? artifact.source_url ?? null,
     }),
   );
 }

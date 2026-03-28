@@ -119,7 +119,9 @@ const resolved = [];
 
 for (const row of rows) {
   try {
-    const digest = await resolveOciImageToDigest(row.scorerImageTag, { env: {} });
+    const digest = await resolveOciImageToDigest(row.scorerImageTag, {
+      env: {},
+    });
     if (digest !== row.scorerImage) {
       throw new Error(
         `pinned digest drift detected: expected ${row.scorerImage}, resolved ${digest}`,

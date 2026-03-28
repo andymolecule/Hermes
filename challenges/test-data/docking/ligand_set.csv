@@ -1,5 +1,0 @@
-ligand_id,smiles
-lig1,CCOC1=CC=CC=C1
-lig2,CCN(CC)CCOC1=CC=CC=C1
-lig3,CN1CCC(CC1)OC2=CC=CC=C2
-lig4,CCOC(=O)N1CCC(CC1)OC2=CC=CC=C2

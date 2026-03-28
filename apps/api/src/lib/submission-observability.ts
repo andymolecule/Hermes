@@ -1,18 +1,20 @@
 import {
-  submissionEventInputSchema,
   type AgoraClientTelemetryOutput,
   type SubmissionEventInput,
+  submissionEventInputSchema,
 } from "@agora/common";
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
+  type AgoraDbClient,
   createSubmissionEvents,
   createSupabaseClient,
-  type AgoraDbClient,
 } from "@agora/db";
 import { readAgoraClientTelemetry } from "./client-telemetry.js";
 
 function isDbClient(value: unknown): value is AgoraDbClient {
-  return typeof (value as { from?: unknown } | null | undefined)?.from === "function";
+  return (
+    typeof (value as { from?: unknown } | null | undefined)?.from === "function"
+  );
 }
 
 export function createSubmissionEvent(

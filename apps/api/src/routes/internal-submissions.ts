@@ -4,8 +4,8 @@ import {
 } from "@agora/common";
 import {
   createSupabaseClient,
-  listUnmatchedSubmissionsForChallenge,
   listSubmissionEvents,
+  listUnmatchedSubmissionsForChallenge,
 } from "@agora/db";
 import { Hono } from "hono";
 import { toApiErrorResponse } from "../lib/api-error.js";
@@ -25,8 +25,7 @@ export function createInternalSubmissionRoutes(
   const {
     createSupabaseClient: createSupabaseClientImpl = createSupabaseClient,
     listUnmatchedSubmissionsForChallenge:
-      listUnmatchedSubmissionsForChallengeImpl =
-        listUnmatchedSubmissionsForChallenge,
+      listUnmatchedSubmissionsForChallengeImpl = listUnmatchedSubmissionsForChallenge,
     listSubmissionEvents: listSubmissionEventsImpl = listSubmissionEvents,
   } = dependencies;
 

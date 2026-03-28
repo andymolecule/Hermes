@@ -78,9 +78,7 @@ export function buildFreshnessPayload(input: {
   };
 }
 
-export function createAnalyticsRouter(
-  deps: AnalyticsRouteDeps = defaultDeps,
-) {
+export function createAnalyticsRouter(deps: AnalyticsRouteDeps = defaultDeps) {
   const router = new Hono<ApiEnv>();
   let cached: { data: PlatformAnalytics; ts: number } | null = null;
 

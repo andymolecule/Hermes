@@ -1,0 +1,69 @@
+{
+  "id": "opaque-json-match",
+  "table_scorer_support": "custom_workflow_required",
+  "intent_family": "exact_artifact_match",
+  "artifacts_root": "uploads",
+  "prompt_variants_root": "prompt-variants",
+  "compile_invariants": {
+    "evaluator_archetype": "exact_artifact_match",
+    "metric": "exact_match",
+    "artifact_roles": [
+      {
+        "file_name": "source_records.json",
+        "role": "public_inputs",
+        "visibility": "public"
+      },
+      {
+        "file_name": "reference_output.json",
+        "role": "hidden_reference",
+        "visibility": "private"
+      }
+    ],
+    "submission_contract": {
+      "kind": "opaque_file",
+      "extension": ".json",
+      "mime": "application/json"
+    }
+  },
+  "acceptable_compile_states": ["awaiting_input"],
+  "disallowed_outcomes": {
+    "disallowed_templates": ["official_table_metric_v1"],
+    "recommended_actions": []
+  },
+  "prompt_variants": [
+    {
+      "id": "direct-poster-brief",
+      "file": "prompt-variants/direct-poster-brief.md",
+      "acceptable_compile_states": ["awaiting_input"],
+      "expected_follow_up_topics": [
+        "confirm exact-match winning rule",
+        "public versus hidden artifact split",
+        "reward",
+        "distribution",
+        "submission window"
+      ]
+    },
+    {
+      "id": "ops-chat-brief",
+      "file": "prompt-variants/ops-chat-brief.md",
+      "acceptable_compile_states": ["awaiting_input"],
+      "expected_follow_up_topics": [
+        "which JSON stays hidden",
+        "what exact match means",
+        "reward",
+        "distribution"
+      ]
+    },
+    {
+      "id": "minimal-thread-brief",
+      "file": "prompt-variants/minimal-thread-brief.md",
+      "acceptable_compile_states": ["awaiting_input"],
+      "expected_follow_up_topics": [
+        "submission artifact format",
+        "hidden reference artifact",
+        "reward",
+        "submission window"
+      ]
+    }
+  ]
+}

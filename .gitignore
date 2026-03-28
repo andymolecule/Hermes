@@ -19,7 +19,7 @@ out/
 cache/
 broadcast/
 
-# Local test data (scratch — committed test fixtures live in challenges/test-data/)
+# Local test data (scratch — committed internal fixtures live in tests/fixtures/)
 /test-data/
 
 # Supabase
