@@ -42,6 +42,8 @@ export interface PlatformAnalytics {
     score: string | null;
     scored: boolean;
     submitted_at: string;
+    tx_hash: string;
+    agent_name: string | null;
   }[];
   topSolvers: { address: string; count: number }[];
 }
@@ -61,6 +63,17 @@ type AnalyticsSolverRow = {
   solver_address: string | null;
 };
 
+type AnalyticsSubmissionAgentRow = {
+  agent_name?: string | null;
+};
+
+type AnalyticsSubmissionIntentRow = {
+  submitted_by_agent?:
+    | AnalyticsSubmissionAgentRow
+    | AnalyticsSubmissionAgentRow[]
+    | null;
+};
+
 type AnalyticsSubmissionRow = {
   id: string;
   solver_address: string;
@@ -68,6 +81,11 @@ type AnalyticsSubmissionRow = {
   score: string | null;
   scored: boolean;
   submitted_at: string;
+  tx_hash: string;
+  submission_intent?:
+    | AnalyticsSubmissionIntentRow
+    | AnalyticsSubmissionIntentRow[]
+    | null;
 };
 
 type AnalyticsPayoutRow = {
@@ -96,6 +114,17 @@ export interface BuildPlatformAnalyticsSnapshotInput {
 function parseNumericValue(value: string | number | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readRecentSubmissionAgentName(
+  submissionIntent: AnalyticsSubmissionRow["submission_intent"],
+) {
+  const normalizedIntent = Array.isArray(submissionIntent)
+    ? submissionIntent[0]
+    : submissionIntent;
+  const agentRelation = normalizedIntent?.submitted_by_agent;
+  const agent = Array.isArray(agentRelation) ? agentRelation[0] : agentRelation;
+  return typeof agent?.agent_name === "string" ? agent.agent_name : null;
 }
 
 function normalizeChallengeStatus(
@@ -245,6 +274,8 @@ export function buildPlatformAnalyticsSnapshot(
       score: submission.score,
       scored: submission.scored,
       submitted_at: submission.submitted_at,
+      tx_hash: submission.tx_hash,
+      agent_name: readRecentSubmissionAgentName(submission.submission_intent),
     })),
     topSolvers: [...finalizedSolverCounts.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -282,7 +313,10 @@ export async function getPlatformAnalytics(
       ),
 
     // 2. Total submission count
-    db.from("submissions").select("id", { count: "exact" }).limit(1),
+    db
+      .from("submissions")
+      .select("id", { count: "exact" })
+      .limit(1),
 
     // 3. Scored submission count
     db
@@ -311,7 +345,20 @@ export async function getPlatformAnalytics(
     // 6. Recent submissions (10)
     db
       .from("submissions")
-      .select("id, solver_address, challenge_id, score, scored, submitted_at")
+      .select(
+        `
+          id,
+          solver_address,
+          challenge_id,
+          score,
+          scored,
+          submitted_at,
+          tx_hash,
+          submission_intent:submission_intents(
+            submitted_by_agent:auth_agents(agent_name)
+          )
+        `,
+      )
       .order("submitted_at", { ascending: false })
       .limit(10),
 
@@ -320,7 +367,10 @@ export async function getPlatformAnalytics(
     db.from("score_jobs").select("status"),
 
     // 10. Registered agent count
-    db.from("auth_agents").select("id", { count: "exact" }).limit(1),
+    db
+      .from("auth_agents")
+      .select("id", { count: "exact" })
+      .limit(1),
   ]);
 
   if (challengesResult.error) {

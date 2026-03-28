@@ -100,6 +100,8 @@ export type AnalyticsData = {
     score: string | null;
     scored: boolean;
     submitted_at: string;
+    tx_hash: string;
+    agent_name: string | null;
   }[];
   topSolvers: { address: string; count: number }[];
   freshness: {

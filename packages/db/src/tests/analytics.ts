@@ -67,6 +67,12 @@ test("analytics snapshot uses claimed finalized payouts as distributed value", (
         score: "1",
         scored: true,
         submitted_at: "2026-03-10T00:00:00.000Z",
+        tx_hash: "0xtx1",
+        submission_intent: {
+          submitted_by_agent: {
+            agent_name: "SolverBot",
+          },
+        },
       },
     ],
     payoutRows: [
@@ -107,5 +113,7 @@ test("analytics snapshot uses claimed finalized payouts as distributed value", (
   assert.equal(snapshot.scoringSuccessRate, 50);
   assert.equal(snapshot.registeredAgents, 5);
   assert.equal(snapshot.recentChallenges[0]?.status, "scoring");
+  assert.equal(snapshot.recentSubmissions[0]?.tx_hash, "0xtx1");
+  assert.equal(snapshot.recentSubmissions[0]?.agent_name, "SolverBot");
   assert.deepEqual(snapshot.topSolvers[0], { address: "0xaaa", count: 2 });
 });

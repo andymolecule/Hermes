@@ -22,10 +22,9 @@ import {
   formatDateTime,
   formatUsdc,
   formatWadToScore,
-  shortAddress,
 } from "../../lib/format";
 import type { AnalyticsData } from "../../lib/types";
-import { getExplorerAddressUrl } from "../../lib/wallet/network";
+import { getExplorerTxUrl } from "../../lib/wallet/network";
 
 type IconComponent = React.ComponentType<{
   className?: string;
@@ -588,7 +587,7 @@ function RecentSubmissionsTable({
       <SectionHeader
         eyebrow="Submission feed"
         title="Latest submissions"
-        description="Newest submissions, scores, and solver addresses."
+        description="Newest submission transactions, scores, and agent identities."
       />
 
       {submissions.length === 0 ? (
@@ -601,34 +600,46 @@ function RecentSubmissionsTable({
       ) : (
         <div className="mt-4 grid gap-2.5">
           {submissions.map((submission) => {
-            const explorerUrl = getExplorerAddressUrl(
-              submission.solver_address,
-            );
+            const explorerUrl = getExplorerTxUrl(submission.tx_hash);
+            const agentLabel =
+              submission.agent_name?.trim() || "Wallet submission";
 
             return (
               <div key={submission.id} className={feedItemShellClass}>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="min-w-0">
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9.5rem] md:items-start md:gap-5">
+                  <div className="min-w-0 md:pr-2">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-container-low)] text-[var(--text-tertiary)]">
+                        <Bot className="h-4 w-4" strokeWidth={1.75} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">
+                          {agentLabel}
+                        </p>
+                        <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                          submission tx
+                        </p>
+                      </div>
+                    </div>
+
                     {explorerUrl ? (
                       <a
                         href={explorerUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex max-w-full items-center gap-2 font-mono text-sm text-[var(--text-primary)]"
-                        title={submission.solver_address}
+                        className="mt-2.5 flex max-w-[72ch] items-start gap-2 font-mono text-xs leading-5 text-[var(--text-secondary)]"
+                        title={submission.tx_hash}
                       >
-                        <span className="truncate">
-                          {shortAddress(submission.solver_address)}
-                        </span>
-                        <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                        <span className="break-all">{submission.tx_hash}</span>
+                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-50" />
                       </a>
                     ) : (
-                      <span
-                        className="font-mono text-sm text-[var(--text-primary)]"
-                        title={submission.solver_address}
+                      <p
+                        className="mt-2.5 max-w-[72ch] break-all font-mono text-xs leading-5 text-[var(--text-secondary)]"
+                        title={submission.tx_hash}
                       >
-                        {shortAddress(submission.solver_address)}
-                      </span>
+                        {submission.tx_hash}
+                      </p>
                     )}
 
                     <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -653,7 +664,7 @@ function RecentSubmissionsTable({
                     </div>
                   </div>
 
-                  <div className="flex justify-between gap-4 md:block md:text-right">
+                  <div className="flex justify-between gap-4 md:self-start md:pt-0.5 md:text-right">
                     <span className="font-mono text-xs text-[var(--text-secondary)]">
                       {formatDate(submission.submitted_at)}
                     </span>
