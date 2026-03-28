@@ -180,6 +180,23 @@ function ensureBackgroundProcessGroupsStarted(appName) {
   );
 }
 
+function pruneStoppedMachines(appName) {
+  const machines = runCommandForJson(
+    "flyctl",
+    ["machine", "list", "--app", appName, "--json"],
+    "Failed to inspect Fly machines before pruning stopped machines. Next step: verify flyctl access to the app and retry.",
+  );
+
+  const stoppedMachines = machines.filter((machine) => machine.state === "stopped");
+  for (const machine of stoppedMachines) {
+    runCommand(
+      "flyctl",
+      ["machine", "destroy", machine.id, "--app", appName, "--force"],
+      `Failed to prune stopped Fly machine ${machine.id}. Next step: inspect the machine state in Fly and retry the cleanup.`,
+    );
+  }
+}
+
 function run() {
   const options = parseArgs(process.argv.slice(2));
   const appName = options.appName?.trim() || requireFlyAppName(process.env);
@@ -214,6 +231,7 @@ function run() {
   );
 
   ensureBackgroundProcessGroupsStarted(appName);
+  pruneStoppedMachines(appName);
 }
 
 try {
