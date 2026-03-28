@@ -3,7 +3,7 @@ import {
   isProductionRuntime,
   readApiServerRuntimeConfig,
 } from "@agora/common";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { jsonError, toApiErrorResponse } from "./lib/api-error.js";
 import {
@@ -95,6 +95,28 @@ export function createApp(
     return "API runtime authoring publish config is incompatible with the current deployment.";
   }
 
+  async function respondWithApiHealth(c: Context<ApiEnv>) {
+    const readiness = await getRuntimeReadiness();
+    const status = readiness.ok ? 200 : 503;
+    getRequestLogger(c).info(
+      {
+        event: "api.health.probe",
+        readinessOk: readiness.ok,
+        status,
+        checkedAt: readiness.checkedAt,
+        databaseSchemaOk: readiness.readiness.databaseSchema.ok,
+        authoringPublishConfigOk: readiness.readiness.authoringPublishConfig.ok,
+      },
+      "API health probe served",
+    );
+
+    if (c.req.method === "HEAD") {
+      return c.body(null, status);
+    }
+
+    return c.json(buildApiHealthPayload(readiness), status);
+  }
+
   app.use("*", createApiRequestObservabilityMiddleware());
 
   app.use(
@@ -140,15 +162,9 @@ export function createApp(
     await next();
   });
 
-  app.get("/healthz", async (c) => {
-    const readiness = await getRuntimeReadiness();
-    return c.json(buildApiHealthPayload(readiness), readiness.ok ? 200 : 503);
-  });
+  app.on(["GET", "HEAD"], "/healthz", respondWithApiHealth);
   // Alias under /api/ so Railway's edge proxy cannot shadow it.
-  app.get("/api/health", async (c) => {
-    const readiness = await getRuntimeReadiness();
-    return c.json(buildApiHealthPayload(readiness), readiness.ok ? 200 : 503);
-  });
+  app.on(["GET", "HEAD"], "/api/health", respondWithApiHealth);
   app.get("/.well-known/openapi.json", (c) =>
     c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),
   );

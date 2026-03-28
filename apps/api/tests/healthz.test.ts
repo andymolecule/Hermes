@@ -115,6 +115,20 @@ test("api health preserves a caller supplied x-request-id", async () => {
   assert.equal(response.headers.get("x-request-id"), "req-observe-123");
 });
 
+test("api health answers HEAD probes without a body", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () => createRuntimeReadiness(),
+  });
+  const response = await app.request(
+    new Request("http://localhost/api/health", {
+      method: "HEAD",
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "");
+});
+
 test("api health returns 503 when runtime schema readiness fails", async () => {
   const app = createApp({
     getRuntimeReadiness: async () =>
@@ -173,6 +187,33 @@ test("api health returns 503 when runtime schema readiness fails", async () => {
   );
 });
 
+test("api health returns 503 for failed HEAD probes without a body", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () =>
+      createRuntimeReadiness({
+        databaseSchemaOk: false,
+        databaseFailures: [
+          {
+            checkId: "database_schema_probe",
+            table: "runtime",
+            operation: "select",
+            select: "schema",
+            message: "warmup",
+            nextStep: "retry health probe",
+          },
+        ],
+      }),
+  });
+  const response = await app.request(
+    new Request("http://localhost/api/health", {
+      method: "HEAD",
+    }),
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(await response.text(), "");
+});
+
 test("healthz remains an alias for direct-process probes", async () => {
   const app = createApp({
     getRuntimeReadiness: async () => createRuntimeReadiness(),
@@ -180,6 +221,20 @@ test("healthz remains an alias for direct-process probes", async () => {
 
   const response = await app.request(new Request("http://localhost/healthz"));
   assert.equal(response.status, 200);
+});
+
+test("healthz answers HEAD probes without a body", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () => createRuntimeReadiness(),
+  });
+
+  const response = await app.request(
+    new Request("http://localhost/healthz", {
+      method: "HEAD",
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "");
 });
 
 test("api routes fail closed when runtime schema readiness fails", async () => {

@@ -152,6 +152,7 @@ Railway deployment checks before production cutover:
   `Verify Runtime` is intentionally post-deploy and would create a circular
   gate.
 - Set the API service health check path to `/api/health` with a `30` second timeout so Railway refuses to activate a runtime that is already returning `503`.
+- Keep `/api/health` and `/healthz` fast and probe-safe for both `GET` and `HEAD`. Health probe responses should be visible in API logs through the `api.health.probe` event so failed promotions can be diagnosed from the application side.
 - Set `AGORA_EXPECT_RELEASE_METADATA=true` on shared Railway runtime services once the hosted release metadata path is proven. This makes startup fail loud if release identity falls back to `unknown`, `repo_git`, or placeholder `dev`.
 - Do not replace Railway-native runtime deploys with a custom manifest/image
   promotion path.
