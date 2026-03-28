@@ -45,6 +45,14 @@ const scoreJobStatusSchema = z.enum([...SCORE_JOB_STATUSES] as [
 const nonNegativeIntegerSchema = z.number().int().nonnegative();
 const positiveIntegerSchema = z.number().int().positive();
 const chainIdSchema = z.number().int().nonnegative();
+const releaseMetadataSourceSchema = z.enum([
+  "baked",
+  "override",
+  "provider_env",
+  "repo_git",
+  "legacy_file",
+  "unknown",
+]);
 const challengeTargetFields = {
   challengeId: challengeIdSchema.optional(),
   challengeAddress: normalizedAddressSchema.optional(),
@@ -262,6 +270,11 @@ export const challengeRegistrationResponseSchema = z.object({
 export const indexerHealthResponseSchema = z.object({
   ok: z.boolean(),
   status: z.string(),
+  service: z.literal("indexer"),
+  releaseId: z.string(),
+  gitSha: z.string().nullable(),
+  runtimeVersion: z.string(),
+  identitySource: releaseMetadataSourceSchema,
   configured: z.object({
     chainId: chainIdSchema,
     factoryAddress: addressSchema,

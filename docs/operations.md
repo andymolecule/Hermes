@@ -271,6 +271,11 @@ Recommended steady-state settings:
 - `Branch connected to production`: `main`
 - Native Railway auto-deploy: enabled
 - If `Wait for CI` is enabled, point it only at the repo `CI` workflow
+- API health check path: `/api/health`
+- API health check timeout: `30` seconds
+- Shared runtime release identity: set `AGORA_EXPECT_RELEASE_METADATA=true`
+  after confirming the hosted release metadata path reports a non-placeholder
+  `identitySource` such as `baked` or `provider_env`
 - No dashboard watch-path filtering
 - Build/start commands:
   - API build: `pnpm turbo build --filter=@agora/api`
@@ -305,7 +310,7 @@ Expected executor host configuration:
 Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
-2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility and runtime readiness without mutating the environment
+2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility, `/api/worker-health`, and `/api/indexer-health` without mutating the environment
 3. Operators use `pnpm reset-bomb:testnet` only when verification reports schema incompatibility or when they intentionally want a destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
 5. Deterministic local CLI parity stays local-only: `pnpm smoke:cli:local`
@@ -318,10 +323,12 @@ Steady-state flow:
 Release prerequisites:
 
 - Railway auto-deploy remains enabled for API, indexer, and worker orchestrator
-- `/api/health` must be healthy and report a runtime version before the release gate passes
+- `/api/health` must be healthy and report a runtime version plus a canonical `identitySource` before the release gate passes
 - `/api/worker-health` must report healthy workers on the active API runtime before the release gate passes
+- `/api/indexer-health` must report the same runtime version and a canonical `identitySource` before the release gate passes
 - `gitSha` on Railway is best-effort provenance, not a hard hosted release gate
 - `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive reset bomb
+- Any PR or direct push that changes `packages/db/src/schema-compatibility.ts` or `packages/db/supabase/migrations/001_baseline.sql` must include `[runtime-schema-change]` in the PR title or commit message so CI fails loud until the destructive reset plan is acknowledged
 
 ---
 

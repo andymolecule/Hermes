@@ -11,6 +11,12 @@ const runtimeIdentity = {
   factoryAddress: "0x14e9f4d792cf613e5c33bb4deb51d5a0eb09e045",
   usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
 };
+const release = {
+  releaseId: "93f6fe47c5e5",
+  gitSha: "93f6fe47c5e536c331a3912698fcf438d96826f5",
+  runtimeVersion: "93f6fe47c5e5",
+  identitySource: "provider_env",
+};
 
 const healthConfig = {
   confirmationDepth: 3,
@@ -43,6 +49,7 @@ test("indexer health measures lag from the high-water cursor, not the replay cur
   );
   const snapshot = buildIndexerHealthSnapshot({
     runtimeIdentity,
+    release,
     healthConfig,
     chainHead: 3_003,
     indexedHead: 3_000,
@@ -61,6 +68,10 @@ test("indexer health measures lag from the high-water cursor, not the replay cur
   assert.equal(snapshot.finalizedHead, 3_000);
   assert.equal(snapshot.lagBlocks, 0);
   assert.equal(snapshot.status, "ok");
+  assert.equal(snapshot.service, "indexer");
+  assert.equal(snapshot.releaseId, release.releaseId);
+  assert.equal(snapshot.runtimeVersion, release.runtimeVersion);
+  assert.equal(snapshot.identitySource, release.identitySource);
   assert.deepEqual(snapshot.unmatchedSubmissions, {
     total: 0,
     stale: 0,
@@ -75,6 +86,7 @@ test("indexer health warns when stale unmatched submissions are present", () => 
   );
   const snapshot = buildIndexerHealthSnapshot({
     runtimeIdentity,
+    release,
     healthConfig,
     chainHead: 3_003,
     indexedHead: 3_000,

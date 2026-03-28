@@ -57,6 +57,7 @@ export function createApp(
       releaseId: release.releaseId,
       gitSha: release.gitSha,
       runtimeVersion: release.runtimeVersion,
+      identitySource: release.identitySource,
       checkedAt: readiness.checkedAt,
       readiness: readiness.readiness,
     };

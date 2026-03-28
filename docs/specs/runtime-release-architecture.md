@@ -105,11 +105,15 @@ This design assumes:
   - `releaseId`
   - `gitSha`
   - `runtimeVersion`
+  - `identitySource`
 - `releaseId` and `runtimeVersion` should stay aligned.
 - When Railway or the build environment exposes git metadata cleanly,
   `releaseId` and `runtimeVersion` should align to the short commit SHA.
 - `gitSha` is best-effort provenance. When present, it should be the full
   40-character SHA.
+- `identitySource` must explain where hosted release identity came from:
+  `baked`, `override`, `provider_env`, `repo_git`, `legacy_file`, or
+  `unknown`.
 - Hosted Railway deploys may still report `"dev"` when no build or platform
   metadata is available. That does not block runtime readiness by itself.
 - Explicit overrides are optional and should be introduced only when the team
@@ -188,7 +192,8 @@ Hosted runtime services expose this logical shape:
 {
   "releaseId": "dev",
   "gitSha": null,
-  "runtimeVersion": "dev"
+  "runtimeVersion": "dev",
+  "identitySource": "unknown"
 }
 ```
 
@@ -199,6 +204,8 @@ Rules:
   not depend on them carrying an exact git SHA.
 - Platform git metadata may improve provenance when available, but hosted
   verification must still pass when `gitSha` is absent.
+- Shared hosted verification should reject ambiguous identity sources such as
+  `unknown` or `repo_git`.
 
 ### 4.2 Runtime Release Pipeline
 
@@ -243,6 +250,7 @@ The schema contract is not carried by `release-metadata.json`.
 - `releaseId`
 - `runtimeVersion`
 - optional `gitSha`
+- `identitySource`
 
 The hosted schema contract comes from:
 
@@ -297,6 +305,7 @@ Minimum logical fields:
   "releaseId": "dev",
   "gitSha": null,
   "runtimeVersion": "dev",
+  "identitySource": "unknown",
   "checkedAt": "2026-03-26T11:35:39.379Z"
 }
 ```

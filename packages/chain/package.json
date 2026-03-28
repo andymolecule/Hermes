@@ -37,7 +37,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/tests/challenge-definition.test.ts src/tests/challenge-state.test.ts src/tests/factory.test.ts src/tests/indexer-polling.test.ts src/tests/indexer-projection-helpers.test.ts src/tests/indexer-status-projection.ts src/tests/solver-signer.test.ts src/tests/tx-preflight.test.ts src/tests/tx-write.test.ts src/tests/viem-chain.test.ts && node --import tsx src/tests/chain-integration.ts",
+    "test": "node --import tsx --test src/tests/challenge-definition.test.ts src/tests/challenge-state.test.ts src/tests/factory.test.ts src/tests/indexer-polling.test.ts src/tests/indexer-projection-helpers.test.ts src/tests/indexer-schema-mismatch.test.ts src/tests/indexer-status-projection.ts src/tests/solver-signer.test.ts src/tests/tx-preflight.test.ts src/tests/tx-write.test.ts src/tests/viem-chain.test.ts && node --import tsx src/tests/chain-integration.ts",
     "indexer": "node ../../scripts/run-node-with-root-env.mjs dist/indexer.js",
     "indexer:local": "node dist/indexer.js"
   },

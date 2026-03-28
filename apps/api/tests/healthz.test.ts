@@ -70,6 +70,7 @@ test("api health reports API liveness without worker sealing state", async () =>
     releaseId: string;
     gitSha: string | null;
     runtimeVersion: string;
+    identitySource: string;
     checkedAt: string;
     readiness: {
       databaseSchema: {
@@ -93,6 +94,7 @@ test("api health reports API liveness without worker sealing state", async () =>
   assert.equal(typeof body.releaseId, "string");
   assert.equal(typeof body.gitSha === "string" || body.gitSha === null, true);
   assert.equal(typeof body.runtimeVersion, "string");
+  assert.equal(typeof body.identitySource, "string");
   assert.equal(body.checkedAt, "2026-03-25T00:00:00.000Z");
   assert.equal(body.readiness.databaseSchema.ok, true);
   assert.equal(body.readiness.databaseSchema.contract.ok, true);

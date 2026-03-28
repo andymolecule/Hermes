@@ -13,6 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: recursive
 
       - name: Setup pnpm
@@ -23,6 +24,9 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+
+      - name: Acknowledge runtime schema changes
+        run: node scripts/check-runtime-schema-change.mjs
 
       - name: Setup Foundry
         uses: foundry-rs/foundry-toolchain@v1

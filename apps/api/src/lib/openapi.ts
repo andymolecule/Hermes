@@ -1361,6 +1361,17 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             releaseId: { type: "string" },
             gitSha: { type: ["string", "null"] },
             runtimeVersion: { type: "string" },
+            identitySource: {
+              type: "string",
+              enum: [
+                "baked",
+                "override",
+                "provider_env",
+                "repo_git",
+                "legacy_file",
+                "unknown",
+              ],
+            },
             checkedAt: isoDateTimeSchema(),
             readiness: {
               type: "object",
@@ -1373,6 +1384,7 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "releaseId",
             "gitSha",
             "runtimeVersion",
+            "identitySource",
             "checkedAt",
             "readiness",
           ],

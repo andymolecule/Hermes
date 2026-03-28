@@ -45,7 +45,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker orchestrator.
 8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure `/api/health` and `/api/worker-health` expose a stable runtime version. Exact `gitSha` reporting on Railway is best-effort; do not add provider-metadata plumbing unless the team explicitly chooses that tradeoff.
+9. Ensure `/api/health`, `/api/worker-health`, and `/api/indexer-health` expose a stable runtime version and a non-ambiguous `identitySource`. For shared hosted services, prefer `AGORA_EXPECT_RELEASE_METADATA=true` once baked metadata or provider git metadata is confirmed to be present.
 10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.
 11. Build and run preflight:
 
@@ -76,8 +76,9 @@ This repo now ships five explicit runtime lanes:
 
 - `pnpm verify:runtime`: non-destructive hosted verification. Assumes Railway
   already rolled out the current `main` change through its native deploy path,
-  waits for `/api/health` to be healthy and `/api/worker-health` to show
-  healthy workers on the active API runtime, and stops there.
+  waits for `/api/health` to be healthy, `/api/worker-health` to show healthy
+  workers on the active API runtime, `/api/indexer-health` to report the same
+  runtime identity, and stops there.
 - `pnpm reset-bomb:testnet`: destructive admin lane. Uses
   `AGORA_SUPABASE_ADMIN_DB_URL` to reset the Supabase schema, reapplies the
   single baseline, reloads the PostgREST cache, then runs the hosted runtime
@@ -150,12 +151,15 @@ Railway deployment checks before production cutover:
   workflow. Do not make Railway wait on `Verify Runtime`, because
   `Verify Runtime` is intentionally post-deploy and would create a circular
   gate.
+- Set the API service health check path to `/api/health` with a `30` second timeout so Railway refuses to activate a runtime that is already returning `503`.
+- Set `AGORA_EXPECT_RELEASE_METADATA=true` on shared Railway runtime services once the hosted release metadata path is proven. This makes startup fail loud if release identity falls back to `unknown`, `repo_git`, or placeholder `dev`.
 - Do not replace Railway-native runtime deploys with a custom manifest/image
   promotion path.
 - Do not use repo-local `railway.toml` files for these services unless Railway
   itself becomes insufficient and a new architecture is explicitly approved.
 - If Railway root directories or watch patterns are needed, keep them
   provider-native and document them clearly.
+- Any PR or direct push that changes `packages/db/src/schema-compatibility.ts` or `packages/db/supabase/migrations/001_baseline.sql` must include `[runtime-schema-change]` in the PR title or commit message. CI treats that token as the explicit acknowledgment that the hosted reset plan has been reviewed.
 - The only supported hosted Base Sepolia rollout is gated and explicit:
   1. merge or push the intended runtime change to `main`
   2. let Railway deploy API, indexer, and worker natively

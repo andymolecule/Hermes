@@ -163,6 +163,13 @@ export type ApiHealth = {
   releaseId: string;
   gitSha: string | null;
   runtimeVersion: string;
+  identitySource:
+    | "baked"
+    | "override"
+    | "provider_env"
+    | "repo_git"
+    | "legacy_file"
+    | "unknown";
   checkedAt: string;
 };
 
@@ -209,6 +216,17 @@ export type SubmissionVerification = {
 export type IndexerHealth = {
   ok: boolean;
   status: "ok" | "warning" | "critical" | "empty" | "error";
+  service?: "indexer";
+  releaseId?: string;
+  gitSha?: string | null;
+  runtimeVersion?: string;
+  identitySource?:
+    | "baked"
+    | "override"
+    | "provider_env"
+    | "repo_git"
+    | "legacy_file"
+    | "unknown";
   chainHead?: number;
   finalizedHead?: number;
   indexedHead?: number | null;

@@ -14,6 +14,17 @@ const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
   "GIT_COMMIT_SHA",
 ] as const;
 const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
+export const AGORA_RELEASE_METADATA_SOURCES = [
+  "baked",
+  "override",
+  "provider_env",
+  "repo_git",
+  "legacy_file",
+  "unknown",
+] as const;
+export type AgoraReleaseMetadataSource =
+  (typeof AGORA_RELEASE_METADATA_SOURCES)[number];
+const releaseMetadataSourceSchema = z.enum(AGORA_RELEASE_METADATA_SOURCES);
 
 export const configSchema = z.object({
   AGORA_RPC_URL: z.string().url(),
@@ -99,6 +110,7 @@ export const configSchema = z.object({
     .transform((value) => value.toLowerCase())
     .optional(),
   AGORA_RUNTIME_VERSION: z.string().min(1).optional(),
+  AGORA_RELEASE_METADATA_SOURCE: releaseMetadataSourceSchema.optional(),
   AGORA_SCORER_EXECUTOR_BACKEND:
     scorerExecutorBackendSchema.default("local_docker"),
   AGORA_SCORER_EXECUTOR_URL: z.string().url().optional(),
@@ -262,6 +274,7 @@ export interface AgoraReleaseMetadata {
   releaseId: string;
   gitSha: string | null;
   runtimeVersion: string;
+  identitySource: AgoraReleaseMetadataSource;
 }
 
 function formatZodError(error: z.ZodError): string {
@@ -321,6 +334,20 @@ function normalizeReleaseId(value: unknown): string | null {
   return trimmed;
 }
 
+function normalizeReleaseMetadataSource(
+  value: unknown,
+): AgoraReleaseMetadataSource | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return AGORA_RELEASE_METADATA_SOURCES.includes(
+    trimmed as AgoraReleaseMetadataSource,
+  )
+    ? (trimmed as AgoraReleaseMetadataSource)
+    : null;
+}
+
 function isDevPlaceholder(value: string | null) {
   return value?.toLowerCase() === "dev";
 }
@@ -372,6 +399,39 @@ export function resolveAgoraRuntimeVersionFromEnv(
   return resolveAgoraReleaseIdFromEnv(env);
 }
 
+export function resolveAgoraReleaseMetadataSource(
+  env: Record<string, string | undefined> = process.env,
+): AgoraReleaseMetadataSource {
+  const explicitSource = normalizeReleaseMetadataSource(
+    env.AGORA_RELEASE_METADATA_SOURCE,
+  );
+  if (explicitSource) {
+    return explicitSource;
+  }
+
+  const explicitReleaseId = normalizeReleaseId(env.AGORA_RELEASE_ID);
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    env.AGORA_RUNTIME_VERSION,
+  );
+  const explicitGitSha = normalizeGitSha(env.AGORA_RELEASE_GIT_SHA);
+
+  if (
+    (explicitReleaseId && !isDevPlaceholder(explicitReleaseId)) ||
+    (explicitRuntimeVersion && !isDevPlaceholder(explicitRuntimeVersion)) ||
+    explicitGitSha
+  ) {
+    return "override";
+  }
+
+  for (const key of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
+    if (normalizeGitSha(env[key])) {
+      return "provider_env";
+    }
+  }
+
+  return "unknown";
+}
+
 export function withResolvedReleaseMetadata(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
@@ -385,12 +445,16 @@ export function withResolvedReleaseMetadata(
     AGORA_RELEASE_ID: releaseId ?? env.AGORA_RELEASE_ID,
     AGORA_RELEASE_GIT_SHA: gitSha,
   });
+  const identitySource =
+    normalizeReleaseMetadataSource(env.AGORA_RELEASE_METADATA_SOURCE) ??
+    resolveAgoraReleaseMetadataSource(env);
 
   return {
     ...env,
     AGORA_RELEASE_ID: releaseId ?? undefined,
     AGORA_RELEASE_GIT_SHA: gitSha,
     AGORA_RUNTIME_VERSION: runtimeVersion ?? "dev",
+    AGORA_RELEASE_METADATA_SOURCE: identitySource,
   };
 }
 
@@ -676,7 +740,10 @@ export function isProductionRuntime(
 export function getAgoraRuntimeVersion(
   config?: Pick<
     AgoraConfig,
-    "AGORA_RELEASE_ID" | "AGORA_RELEASE_GIT_SHA" | "AGORA_RUNTIME_VERSION"
+    | "AGORA_RELEASE_ID"
+    | "AGORA_RELEASE_GIT_SHA"
+    | "AGORA_RUNTIME_VERSION"
+    | "AGORA_RELEASE_METADATA_SOURCE"
   > | null,
 ): string {
   return getAgoraReleaseMetadata(config).runtimeVersion;
@@ -685,7 +752,10 @@ export function getAgoraRuntimeVersion(
 export function getAgoraReleaseMetadata(
   config?: Pick<
     AgoraConfig,
-    "AGORA_RELEASE_ID" | "AGORA_RELEASE_GIT_SHA" | "AGORA_RUNTIME_VERSION"
+    | "AGORA_RELEASE_ID"
+    | "AGORA_RELEASE_GIT_SHA"
+    | "AGORA_RUNTIME_VERSION"
+    | "AGORA_RELEASE_METADATA_SOURCE"
   > | null,
 ): AgoraReleaseMetadata {
   const resolvedEnv =
@@ -695,6 +765,7 @@ export function getAgoraReleaseMetadata(
           AGORA_RELEASE_ID: config.AGORA_RELEASE_ID,
           AGORA_RELEASE_GIT_SHA: config.AGORA_RELEASE_GIT_SHA,
           AGORA_RUNTIME_VERSION: config.AGORA_RUNTIME_VERSION,
+          AGORA_RELEASE_METADATA_SOURCE: config.AGORA_RELEASE_METADATA_SOURCE,
         });
 
   const releaseId =
@@ -705,11 +776,16 @@ export function getAgoraReleaseMetadata(
     resolvedEnv?.AGORA_RUNTIME_VERSION ??
     resolveAgoraRuntimeVersionFromEnv() ??
     releaseId;
+  const identitySource =
+    normalizeReleaseMetadataSource(
+      resolvedEnv?.AGORA_RELEASE_METADATA_SOURCE,
+    ) ?? resolveAgoraReleaseMetadataSource(resolvedEnv ?? process.env);
 
   return {
     releaseId,
     gitSha,
     runtimeVersion,
+    identitySource,
   };
 }
 

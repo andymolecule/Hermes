@@ -169,6 +169,7 @@ test("getApiHealth uses the proxied api health route in the browser", async () =
         releaseId: "sha-test",
         gitSha: "sha-testsha-testsha-testsha-testsha-test12",
         runtimeVersion: "sha-test",
+        identitySource: "provider_env",
         checkedAt: "2026-03-15T12:00:00.000Z",
       }),
       {

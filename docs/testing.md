@@ -157,12 +157,15 @@ Requires a running Docker daemon.
 Runs the hosted runtime verification lane:
 - runtime schema compatibility
 - official scorer pullability
-- hosted `/api/health` and `/api/worker-health` readiness
+- hosted `/api/health`, `/api/worker-health`, and `/api/indexer-health` readiness
 
 This command is read-only. It does not reset the DB and it does not post on-chain smoke traffic.
 When `AGORA_EXPECTED_GIT_SHA` is set, this gate also requires `/api/health.gitSha`
 to match the expected commit. That is the clean way to catch provider deploy
 drift without rebuilding a second deploy system.
+The hosted gate now also requires `identitySource` to be one of `baked`,
+`override`, or `provider_env` on the API and indexer surfaces so shared
+environments fail loud when release identity falls back to an ambiguous source.
 
 Workflow boundary:
 
