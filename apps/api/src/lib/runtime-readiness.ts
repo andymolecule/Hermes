@@ -10,7 +10,8 @@ import {
   readRuntimeDatabaseSchemaStatus,
 } from "@agora/db";
 
-const READINESS_CACHE_TTL_MS = 5_000;
+const READINESS_REFRESH_INTERVAL_MS = 5_000;
+const READINESS_SCHEMA_TIMEOUT_MS = 8_000;
 
 export interface ApiRuntimeReadiness {
   ok: boolean;
@@ -32,6 +33,11 @@ export interface RuntimeReadinessFailure {
   checkId: string;
   message: string;
   nextStep: string;
+}
+
+interface RuntimeReadinessProbeOptions {
+  readinessRefreshIntervalMs?: number;
+  readinessSchemaTimeoutMs?: number;
 }
 
 function toRuntimeReadinessFailure(message: string): RuntimeSchemaFailure {
@@ -64,12 +70,59 @@ function toAuthoringPublishConfigFailure(
   };
 }
 
+function toWarmupReadiness() {
+  return {
+    ok: false,
+    checkedAt: new Date().toISOString(),
+    readiness: {
+      databaseSchema: {
+        ok: false,
+        contract: toMissingContractStatus(),
+        failures: [
+          toRuntimeReadinessFailure("Runtime readiness is still warming up."),
+        ],
+      },
+      authoringPublishConfig: {
+        ok: false,
+        failures: [
+          toAuthoringPublishConfigFailure(
+            "Authoring publish readiness is still warming up.",
+          ),
+        ],
+      },
+    },
+  } satisfies ApiRuntimeReadiness;
+}
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(onTimeout());
+        }, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export function createApiRuntimeReadinessProbe(
   dependencies: {
     createSupabaseClientImpl?: typeof createSupabaseClient;
     readRuntimeDatabaseSchemaStatusImpl?: typeof readRuntimeDatabaseSchemaStatus;
     readAuthoringPublishRuntimeConfigImpl?: typeof readAuthoringPublishRuntimeConfig;
-  } = {},
+  } & RuntimeReadinessProbeOptions = {},
 ) {
   const createDb =
     dependencies.createSupabaseClientImpl ?? createSupabaseClient;
@@ -79,16 +132,17 @@ export function createApiRuntimeReadinessProbe(
   const readAuthoringPublishRuntime =
     dependencies.readAuthoringPublishRuntimeConfigImpl ??
     readAuthoringPublishRuntimeConfig;
+  const refreshIntervalMs =
+    dependencies.readinessRefreshIntervalMs ?? READINESS_REFRESH_INTERVAL_MS;
+  const schemaTimeoutMs =
+    dependencies.readinessSchemaTimeoutMs ?? READINESS_SCHEMA_TIMEOUT_MS;
 
-  let cached: ApiRuntimeReadiness | null = null;
+  let db: ReturnType<typeof createSupabaseClient> | null = null;
+  let cached: ApiRuntimeReadiness = toWarmupReadiness();
   let cachedAt = 0;
   let inFlight: Promise<ApiRuntimeReadiness> | null = null;
 
-  return async function getRuntimeReadiness() {
-    const now = Date.now();
-    if (cached && now - cachedAt < READINESS_CACHE_TTL_MS) {
-      return cached;
-    }
+  const refreshReadiness = async () => {
     if (inFlight) {
       return inFlight;
     }
@@ -97,8 +151,15 @@ export function createApiRuntimeReadinessProbe(
       let contract = toMissingContractStatus();
       let failures: RuntimeSchemaFailure[] = [];
       try {
-        const db = createDb(true);
-        const status = await readSchemaStatus(db);
+        db ??= createDb(true);
+        const status = await withTimeout(
+          readSchemaStatus(db),
+          schemaTimeoutMs,
+          () =>
+            new Error(
+              `Timed out waiting for database schema readiness after ${schemaTimeoutMs}ms.`,
+            ),
+        );
         contract = status.contract;
         failures = status.failures;
       } catch (error) {
@@ -143,5 +204,20 @@ export function createApiRuntimeReadinessProbe(
     })();
 
     return inFlight;
+  };
+
+  void refreshReadiness();
+  if (refreshIntervalMs > 0) {
+    const timer = setInterval(() => {
+      void refreshReadiness();
+    }, refreshIntervalMs);
+    timer.unref?.();
+  }
+
+  return async function getRuntimeReadiness() {
+    if (!inFlight && Date.now() - cachedAt >= refreshIntervalMs) {
+      void refreshReadiness();
+    }
+    return cached;
   };
 }
