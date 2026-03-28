@@ -600,8 +600,20 @@ function RecentSubmissionsTable({
       ) : (
         <div className="mt-4 grid gap-2.5">
           {submissions.map((submission) => {
+            const agentName =
+              typeof submission.agent_name === "string"
+                ? submission.agent_name.trim()
+                : "";
+            const agentId =
+              typeof submission.agent_id === "string"
+                ? submission.agent_id.trim()
+                : "";
             const agentLabel =
-              submission.agent_name?.trim() || "Wallet submission";
+              agentName.length > 0
+                ? agentName
+                : agentId.length > 0
+                  ? agentId
+                  : "Wallet submission";
             const normalizedTxHash =
               typeof submission.tx_hash === "string"
                 ? submission.tx_hash.trim()

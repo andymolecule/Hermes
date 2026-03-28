@@ -101,6 +101,7 @@ export type AnalyticsData = {
     scored: boolean;
     submitted_at: string;
     tx_hash?: string | null;
+    agent_id?: string | null;
     agent_name?: string | null;
   }[];
   topSolvers: { address: string; count: number }[];

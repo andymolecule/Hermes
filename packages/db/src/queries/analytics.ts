@@ -43,6 +43,7 @@ export interface PlatformAnalytics {
     scored: boolean;
     submitted_at: string;
     tx_hash: string;
+    agent_id: string | null;
     agent_name: string | null;
   }[];
   topSolvers: { address: string; count: number }[];
@@ -68,6 +69,7 @@ type AnalyticsSubmissionAgentRow = {
 };
 
 type AnalyticsSubmissionIntentRow = {
+  submitted_by_agent_id?: string | null;
   submitted_by_agent?:
     | AnalyticsSubmissionAgentRow
     | AnalyticsSubmissionAgentRow[]
@@ -125,6 +127,17 @@ function readRecentSubmissionAgentName(
   const agentRelation = normalizedIntent?.submitted_by_agent;
   const agent = Array.isArray(agentRelation) ? agentRelation[0] : agentRelation;
   return typeof agent?.agent_name === "string" ? agent.agent_name : null;
+}
+
+function readRecentSubmissionAgentId(
+  submissionIntent: AnalyticsSubmissionRow["submission_intent"],
+) {
+  const normalizedIntent = Array.isArray(submissionIntent)
+    ? submissionIntent[0]
+    : submissionIntent;
+  return typeof normalizedIntent?.submitted_by_agent_id === "string"
+    ? normalizedIntent.submitted_by_agent_id
+    : null;
 }
 
 function normalizeChallengeStatus(
@@ -275,6 +288,7 @@ export function buildPlatformAnalyticsSnapshot(
       scored: submission.scored,
       submitted_at: submission.submitted_at,
       tx_hash: submission.tx_hash,
+      agent_id: readRecentSubmissionAgentId(submission.submission_intent),
       agent_name: readRecentSubmissionAgentName(submission.submission_intent),
     })),
     topSolvers: [...finalizedSolverCounts.entries()]
@@ -355,6 +369,7 @@ export async function getPlatformAnalytics(
           submitted_at,
           tx_hash,
           submission_intent:submission_intents(
+            submitted_by_agent_id,
             submitted_by_agent:auth_agents(agent_name)
           )
         `,
