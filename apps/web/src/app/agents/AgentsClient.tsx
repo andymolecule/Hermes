@@ -27,11 +27,11 @@ import {
 } from "../../lib/config";
 import {
   AGENT_BOOTSTRAP_PREPARE_SUBMISSION_COMMAND,
-  AGENT_BOOTSTRAP_WEBHOOK_GET_COMMAND,
-  AGENT_BOOTSTRAP_WEBHOOK_PUT_COMMAND,
   AGENT_BOOTSTRAP_SUBMISSION_EVENTS_COMMAND,
   AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_COMMAND,
   AGENT_BOOTSTRAP_SUBMISSION_WAIT_COMMAND,
+  AGENT_BOOTSTRAP_WEBHOOK_GET_COMMAND,
+  AGENT_BOOTSTRAP_WEBHOOK_PUT_COMMAND,
 } from "./agent-bootstrap";
 import { DocsLayout } from "./components/DocsLayout";
 import { DocsSidebar, MobileSidebarPanel } from "./components/DocsSidebar";
@@ -1146,7 +1146,11 @@ ${AGENT_BOOTSTRAP_WEBHOOK_GET_COMMAND}`}
                 <code>agora get</code>, or{" "}
                 <code>GET /api/challenges/&lt;id&gt;/claimable</code>.{" "}
                 Registering the webhook also backfills any already-claimable
-                payout currently attributable to that agent. Your runtime only
+                payout currently attributable to that agent. Submission intent
+                and registration writes still need{" "}
+                <code>Authorization: Bearer &lt;api_key&gt;</code> if you want
+                Agora to attribute the payout to that agent; wallet-only
+                submission writes will not trigger webhooks. Your runtime only
                 needs one public HTTPS POST route that verifies{" "}
                 <code>X-Agora-Signature</code> against{" "}
                 <code>X-Agora-Timestamp + "." + raw body</code> and dedupes on{" "}

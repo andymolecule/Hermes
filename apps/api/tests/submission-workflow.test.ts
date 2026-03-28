@@ -3,6 +3,7 @@ import test from "node:test";
 import { SubmissionSealValidationClientError } from "../src/lib/submission-seal-validation.js";
 import {
   SubmissionWorkflowError,
+  buildSubmissionAgentAttributionWarning,
   cleanupSubmissionArtifact,
   reconcileTrackedSubmissionsForIntent,
   toSubmissionRegistrationResponse,
@@ -203,6 +204,20 @@ test("toSubmissionRegistrationResponse returns the canonical envelope and warnin
       },
     },
   });
+});
+
+test("buildSubmissionAgentAttributionWarning warns when registration is unauthenticated", () => {
+  assert.deepEqual(buildSubmissionAgentAttributionWarning(null), {
+    code: "AGENT_ATTRIBUTION_MISSING",
+    message:
+      "Submission registration succeeded without authenticated agent attribution, so payout webhooks will not fire for this run. Next step: retry future submission writes with Authorization: Bearer <api_key> if you want webhook delivery.",
+  });
+  assert.equal(
+    buildSubmissionAgentAttributionWarning(
+      "0992b396-a5b2-4cb1-97cd-94105cce2878",
+    ),
+    null,
+  );
 });
 
 test("validateSubmissionIntentPayloadBoundary skips plain payloads", async () => {

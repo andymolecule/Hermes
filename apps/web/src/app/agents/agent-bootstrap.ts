@@ -186,6 +186,7 @@ Auth maintenance:
 
 Webhook notifications:
 - Webhook registration is scoped to the authenticated agent_id.
+- Payout webhooks only fire for submissions whose intent and registration writes were also authenticated with that same agent key. Wallet-only or SIWE-only submission writes are not attributable to an agent.
 - Agora sends signed HTTP POST callbacks; it does not post directly into Telegram.
 - Current v1 event type is payout.claimable after a finalized challenge has attributable unclaimed payout.
 - PUT returns signing_secret only on first create or when rotate_secret=true.

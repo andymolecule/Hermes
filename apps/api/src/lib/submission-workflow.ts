@@ -149,6 +149,20 @@ interface SubmissionRegistrationWarning {
   message: string;
 }
 
+export function buildSubmissionAgentAttributionWarning(
+  submittedByAgentId?: string | null,
+): SubmissionRegistrationWarning | null {
+  if (submittedByAgentId) {
+    return null;
+  }
+
+  return {
+    code: "AGENT_ATTRIBUTION_MISSING",
+    message:
+      "Submission registration succeeded without authenticated agent attribution, so payout webhooks will not fire for this run. Next step: retry future submission writes with Authorization: Bearer <api_key> if you want webhook delivery.",
+  };
+}
+
 export function toSubmissionRegistrationResponse(input: {
   submission: NonNullable<SubmissionRow>;
   challenge: ChallengeRow;
@@ -1026,7 +1040,10 @@ export async function registerSubmissionWorkflow(input: {
           code: "SCORE_JOB_WARNING",
           message: scoreJob.warning,
         }
-      : null);
+      : buildSubmissionAgentAttributionWarning(input.submittedByAgentId));
+  const responseStatus =
+    warning || scoreJob.warning ? (202 as ContentfulStatusCode) : 200;
+  const responseOutcome = responseStatus === 200 ? "accepted" : "completed";
 
   await recordSubmissionEvents({
     db,
@@ -1046,8 +1063,8 @@ export async function registerSubmissionWorkflow(input: {
         event: "registration.confirmed",
         phase: "registration",
         actor: "agora",
-        outcome: responseWarning ? "completed" : "accepted",
-        http_status: responseWarning ? 202 : 200,
+        outcome: responseOutcome,
+        http_status: responseStatus,
         code: responseWarning?.code ?? null,
         summary:
           "Agora confirmed submission registration and updated scoring state.",
@@ -1082,6 +1099,6 @@ export async function registerSubmissionWorkflow(input: {
     submission: submissionRow,
     challenge,
     warning: responseWarning,
-    status: (responseWarning ? 202 : 200) as ContentfulStatusCode,
+    status: responseStatus,
   };
 }
