@@ -63,6 +63,23 @@ export function createApp(
     };
   }
 
+  function buildProcessHealthPayload(
+    readiness: Awaited<ReturnType<typeof getRuntimeReadiness>>,
+  ) {
+    const release = getAgoraReleaseMetadata();
+    return {
+      ok: true,
+      service: "api",
+      releaseId: release.releaseId,
+      gitSha: release.gitSha,
+      runtimeVersion: release.runtimeVersion,
+      identitySource: release.identitySource,
+      checkedAt: readiness.checkedAt,
+      ready: readiness.ok,
+      warming: !readiness.ok,
+    };
+  }
+
   function collectRuntimeReadinessNextAction(
     readiness: Awaited<ReturnType<typeof getRuntimeReadiness>>,
   ) {
@@ -95,24 +112,25 @@ export function createApp(
     return "API runtime authoring publish config is incompatible with the current deployment.";
   }
 
+  function readProbeHeaders(c: Context<ApiEnv>) {
+    return {
+      host: c.req.header("host") ?? null,
+      forwardedHost: c.req.header("x-forwarded-host") ?? null,
+      forwardedProto: c.req.header("x-forwarded-proto") ?? null,
+      origin: c.req.header("origin") ?? null,
+      userAgent: c.req.header("user-agent") ?? null,
+    };
+  }
+
   async function respondWithApiHealth(c: Context<ApiEnv>) {
     const readiness = await getRuntimeReadiness();
     const status = readiness.ok ? 200 : 503;
-    const host = c.req.header("host") ?? null;
-    const forwardedHost = c.req.header("x-forwarded-host") ?? null;
-    const forwardedProto = c.req.header("x-forwarded-proto") ?? null;
-    const origin = c.req.header("origin") ?? null;
-    const userAgent = c.req.header("user-agent") ?? null;
     getRequestLogger(c).info(
       {
         event: "api.health.probe",
         readinessOk: readiness.ok,
         status,
-        host,
-        forwardedHost,
-        forwardedProto,
-        origin,
-        userAgent,
+        ...readProbeHeaders(c),
         checkedAt: readiness.checkedAt,
         databaseSchemaOk: readiness.readiness.databaseSchema.ok,
         authoringPublishConfigOk: readiness.readiness.authoringPublishConfig.ok,
@@ -125,6 +143,28 @@ export function createApp(
     }
 
     return c.json(buildApiHealthPayload(readiness), status);
+  }
+
+  async function respondWithProcessHealth(c: Context<ApiEnv>) {
+    const readiness = await getRuntimeReadiness();
+    getRequestLogger(c).info(
+      {
+        event: "api.healthz.probe",
+        readinessOk: readiness.ok,
+        status: 200,
+        ...readProbeHeaders(c),
+        checkedAt: readiness.checkedAt,
+        databaseSchemaOk: readiness.readiness.databaseSchema.ok,
+        authoringPublishConfigOk: readiness.readiness.authoringPublishConfig.ok,
+      },
+      "API liveness probe served",
+    );
+
+    if (c.req.method === "HEAD") {
+      return c.body(null, 200);
+    }
+
+    return c.json(buildProcessHealthPayload(readiness), 200);
   }
 
   app.use("*", createApiRequestObservabilityMiddleware());
@@ -172,8 +212,8 @@ export function createApp(
     await next();
   });
 
-  app.on(["GET", "HEAD"], "/healthz", respondWithApiHealth);
-  // Alias under /api/ so Railway's edge proxy cannot shadow it.
+  app.on(["GET", "HEAD"], "/healthz", respondWithProcessHealth);
+  // Readiness stays under /api/ so hosted traffic still fails closed.
   app.on(["GET", "HEAD"], "/api/health", respondWithApiHealth);
   app.get("/.well-known/openapi.json", (c) =>
     c.json(buildOpenApiDocument(runtimeConfig.apiUrl)),

@@ -221,6 +221,14 @@ test("healthz remains an alias for direct-process probes", async () => {
 
   const response = await app.request(new Request("http://localhost/healthz"));
   assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    ok: boolean;
+    ready: boolean;
+    warming: boolean;
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.ready, true);
+  assert.equal(body.warming, false);
 });
 
 test("healthz answers HEAD probes without a body", async () => {
@@ -235,6 +243,36 @@ test("healthz answers HEAD probes without a body", async () => {
   );
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+});
+
+test("healthz stays live while readiness is still warming up", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () =>
+      createRuntimeReadiness({
+        databaseSchemaOk: false,
+        databaseFailures: [
+          {
+            checkId: "database_schema_probe",
+            table: "runtime",
+            operation: "select",
+            select: "schema",
+            message: "warmup",
+            nextStep: "retry health probe",
+          },
+        ],
+      }),
+  });
+
+  const response = await app.request(new Request("http://localhost/healthz"));
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    ok: boolean;
+    ready: boolean;
+    warming: boolean;
+  };
+  assert.equal(body.ok, true);
+  assert.equal(body.ready, false);
+  assert.equal(body.warming, true);
 });
 
 test("health routes stay healthy under Railway's documented healthcheck host", async () => {
@@ -263,6 +301,41 @@ test("health routes stay healthy under Railway's documented healthcheck host", a
   );
   assert.equal(apiHealthResponse.status, 200);
   assert.equal(await apiHealthResponse.text(), "");
+});
+
+test("healthz stays 200 under Railway's documented host during warmup", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () =>
+      createRuntimeReadiness({
+        databaseSchemaOk: false,
+        databaseFailures: [
+          {
+            checkId: "database_schema_probe",
+            table: "runtime",
+            operation: "select",
+            select: "schema",
+            message: "warmup",
+            nextStep: "retry health probe",
+          },
+        ],
+      }),
+  });
+
+  const response = await app.request(
+    new Request("http://localhost/healthz", {
+      headers: {
+        host: "healthcheck.railway.app",
+        "user-agent": "Railway/Healthcheck",
+      },
+    }),
+  );
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    ready: boolean;
+    warming: boolean;
+  };
+  assert.equal(body.ready, false);
+  assert.equal(body.warming, true);
 });
 
 test("api routes fail closed when runtime schema readiness fails", async () => {
