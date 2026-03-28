@@ -24,6 +24,8 @@ export const AUTHORING_PUBLISH_RUNTIME_CONFIG_NEXT_STEP =
 
 const apiClientRuntimeConfigSchema = configSchema.pick({
   AGORA_API_URL: true,
+  AGORA_AGENT_API_KEY: true,
+  AGORA_RUNTIME_VERSION: true,
 });
 const submissionValidationRuntimeConfigSchema = configSchema.pick({
   AGORA_WORKER_INTERNAL_URL: true,
@@ -45,6 +47,8 @@ export interface AgoraApiServerRuntimeConfig {
 
 export interface AgoraApiClientRuntimeConfig {
   apiUrl?: string;
+  agentApiKey?: string;
+  runtimeVersion?: string;
 }
 
 export interface AgoraSubmissionValidationRuntimeConfig {
@@ -89,10 +93,16 @@ export function readApiClientRuntimeConfig(
 ): AgoraApiClientRuntimeConfig {
   const parsed = parseConfigSection(
     apiClientRuntimeConfigSchema,
-    unsetBlankStringValues(env, ["AGORA_API_URL"]),
+    unsetBlankStringValues(env, [
+      "AGORA_API_URL",
+      "AGORA_AGENT_API_KEY",
+      "AGORA_RUNTIME_VERSION",
+    ]),
   );
   return {
     apiUrl: parsed.AGORA_API_URL,
+    agentApiKey: parsed.AGORA_AGENT_API_KEY,
+    runtimeVersion: parsed.AGORA_RUNTIME_VERSION,
   };
 }
 

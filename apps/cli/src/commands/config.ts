@@ -14,6 +14,7 @@ import { printJson, printTable } from "../lib/output";
 const CONFIG_KEYS = [
   "rpc_url",
   "api_url",
+  "agent_api_key",
   "pinata_jwt",
   "private_key",
   "factory_address",

@@ -11,6 +11,7 @@ import {
 export interface CliConfig {
   rpc_url?: string;
   api_url?: string;
+  agent_api_key?: string;
   authoring_operator_token?: string;
   pinata_jwt?: string;
   private_key?: string;
@@ -38,6 +39,7 @@ function toEnvConfig(config: CliConfig): Record<string, string | undefined> {
   return filterDefined({
     AGORA_RPC_URL: config.rpc_url,
     AGORA_API_URL: config.api_url,
+    AGORA_AGENT_API_KEY: config.agent_api_key,
     AGORA_AUTHORING_OPERATOR_TOKEN: config.authoring_operator_token,
     AGORA_PINATA_JWT: config.pinata_jwt,
     AGORA_PRIVATE_KEY: config.private_key,
@@ -57,6 +59,7 @@ function fromRuntimeConfig(
   return filterDefined({
     rpc_url: config.AGORA_RPC_URL,
     api_url: config.AGORA_API_URL,
+    agent_api_key: config.AGORA_AGENT_API_KEY,
     authoring_operator_token: config.AGORA_AUTHORING_OPERATOR_TOKEN,
     pinata_jwt: config.AGORA_PINATA_JWT,
     private_key: config.AGORA_PRIVATE_KEY,
@@ -149,6 +152,7 @@ export function applyConfigToEnv(config: CliConfig) {
 
   setIfMissing("AGORA_RPC_URL", validated.rpc_url);
   setIfMissing("AGORA_API_URL", validated.api_url);
+  setIfMissing("AGORA_AGENT_API_KEY", validated.agent_api_key);
   setIfMissing(
     "AGORA_AUTHORING_OPERATOR_TOKEN",
     validated.authoring_operator_token,

@@ -361,12 +361,27 @@ try {
 
   const blankApiClientRuntime = readApiClientRuntimeConfig({
     AGORA_API_URL: "",
+    AGORA_AGENT_API_KEY: "",
   });
   assert.equal(
     blankApiClientRuntime.apiUrl,
     undefined,
     "blank API client URLs should be treated as unset so CLI preflight can report a missing config error",
   );
+  assert.equal(
+    blankApiClientRuntime.agentApiKey,
+    undefined,
+    "blank API client agent keys should be treated as unset rather than invalid config",
+  );
+
+  const apiClientRuntime = readApiClientRuntimeConfig({
+    AGORA_API_URL: "https://api.agora.example",
+    AGORA_AGENT_API_KEY: "agora_agent_secret",
+    AGORA_RUNTIME_VERSION: "runtime-2026-03-28",
+  });
+  assert.equal(apiClientRuntime.apiUrl, "https://api.agora.example");
+  assert.equal(apiClientRuntime.agentApiKey, "agora_agent_secret");
+  assert.equal(apiClientRuntime.runtimeVersion, "runtime-2026-03-28");
 
   const defaultAuthoringCompilerRuntime = readAuthoringCompilerRuntimeConfig({
     AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: undefined,
@@ -387,6 +402,7 @@ try {
 
   const blankCliRuntime = readCliRuntimeConfig({
     AGORA_API_URL: "",
+    AGORA_AGENT_API_KEY: "",
     AGORA_RPC_URL: "",
     AGORA_PRIVATE_KEY: "",
   });
@@ -394,6 +410,11 @@ try {
     blankCliRuntime.AGORA_API_URL,
     undefined,
     "blank CLI API URLs should be treated as unset rather than invalid config",
+  );
+  assert.equal(
+    blankCliRuntime.AGORA_AGENT_API_KEY,
+    undefined,
+    "blank CLI agent keys should be treated as unset rather than invalid config",
   );
   assert.equal(
     blankCliRuntime.AGORA_RPC_URL,

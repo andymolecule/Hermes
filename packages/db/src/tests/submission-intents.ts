@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { CHALLENGE_STATUS } from "@agora/common";
 import {
+  attachSubmissionIntentAgentAttributionIfMissing,
   createSubmissionIntent,
   ensureScoreJobForRegisteredSubmission,
   findActiveSubmissionIntentByMatch,
@@ -109,6 +110,67 @@ async function testFindActiveSubmissionIntentByMatchUsesCanonicalLookup() {
   });
 
   assert.equal(intent?.id, "intent-1");
+}
+
+async function testAttachSubmissionIntentAgentAttributionIfMissing() {
+  const state = {
+    payload: null as Record<string, unknown> | null,
+  };
+
+  const db = {
+    from(table: string) {
+      assert.equal(table, "submission_intents");
+      return {
+        update(payload: Record<string, unknown>) {
+          state.payload = payload;
+          return {
+            eq(field: string, value: string) {
+              assert.equal(field, "id");
+              assert.equal(value, "intent-1");
+              return this;
+            },
+            is(field: string, value: null) {
+              assert.equal(field, "submitted_by_agent_id");
+              assert.equal(value, null);
+              return {
+                select(selection: string) {
+                  assert.equal(selection, "*");
+                  return {
+                    async maybeSingle() {
+                      return {
+                        data: {
+                          id: "intent-1",
+                          challenge_id: "challenge-1",
+                          solver_address: "0xsolver",
+                          submitted_by_agent_id: "agent-abc",
+                          result_hash: "0xhash",
+                          submission_cid: "ipfs://bafy-test",
+                          trace_id: "trace-1",
+                          expires_at: "2026-03-11T00:00:00.000Z",
+                          created_at: "2026-03-10T00:00:00.000Z",
+                        },
+                        error: null,
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as never;
+
+  const intent = await attachSubmissionIntentAgentAttributionIfMissing(db, {
+    intentId: "intent-1",
+    agentId: "agent-abc",
+  });
+
+  assert.deepEqual(state.payload, {
+    submitted_by_agent_id: "agent-abc",
+  });
+  assert.equal(intent?.submitted_by_agent_id, "agent-abc");
 }
 
 async function testEnsureScoreJobQueuesRegisteredSubmission() {
@@ -303,6 +365,7 @@ async function testEnsureScoreJobSkipsLimitViolation() {
 
 await testCreateSubmissionIntentNormalizesPayload();
 await testFindActiveSubmissionIntentByMatchUsesCanonicalLookup();
+await testAttachSubmissionIntentAgentAttributionIfMissing();
 await testEnsureScoreJobQueuesRegisteredSubmission();
 await testEnsureScoreJobSkipsLimitViolation();
 console.log("submission intent tests passed");

@@ -73,6 +73,32 @@ export async function createSubmissionIntent(
   return data as SubmissionIntentRow;
 }
 
+export async function attachSubmissionIntentAgentAttributionIfMissing(
+  db: AgoraDbClient,
+  input: {
+    intentId: string;
+    agentId: string;
+  },
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .update({
+      submitted_by_agent_id: input.agentId,
+    })
+    .eq("id", input.intentId)
+    .is("submitted_by_agent_id", null)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to attach submission intent agent attribution: ${error.message}`,
+    );
+  }
+
+  return (data as SubmissionIntentRow | null) ?? null;
+}
+
 export async function findActiveSubmissionIntentByMatch(
   db: AgoraDbClient,
   input: {

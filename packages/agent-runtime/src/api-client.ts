@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto";
 import {
+  AGORA_CLIENT_NAME_HEADER,
+  AGORA_CLIENT_VERSION_HEADER,
   AGORA_ERROR_CODES,
+  AGORA_TRACE_ID_HEADER,
   type AgentChallengesQuery,
   AgoraError,
+  type TrustedChallengeSpecOutput,
   agentChallengeDetailResponseSchema,
   agentChallengeLeaderboardResponseSchema,
   agentChallengesListResponseSchema,
@@ -21,8 +26,23 @@ import {
   submissionStatusResponseSchema,
   submissionUploadResponseSchema,
   submissionWaitStatusResponseSchema,
-  type TrustedChallengeSpecOutput,
 } from "@agora/common";
+
+const AGENT_RUNTIME_CLIENT_NAME = "agora-agent-runtime";
+
+function buildOptionalAuthenticatedSubmissionHeaders() {
+  const runtime = readApiClientRuntimeConfig();
+  if (!runtime.agentApiKey) {
+    return {};
+  }
+
+  return {
+    authorization: `Bearer ${runtime.agentApiKey}`,
+    [AGORA_TRACE_ID_HEADER]: randomUUID(),
+    [AGORA_CLIENT_NAME_HEADER]: AGENT_RUNTIME_CLIENT_NAME,
+    [AGORA_CLIENT_VERSION_HEADER]: runtime.runtimeVersion ?? "dev",
+  };
+}
 
 function isAddressRef(value: string) {
   return /^0x[a-fA-F0-9]{40}$/.test(value);
@@ -310,6 +330,7 @@ export async function uploadSubmissionArtifactToApi(
     {
       method: "POST",
       headers: {
+        ...buildOptionalAuthenticatedSubmissionHeaders(),
         ...(input.contentType ? { "content-type": input.contentType } : {}),
         ...(input.fileName ? { "x-file-name": input.fileName } : {}),
         "x-agora-result-format": input.resultFormat,
@@ -339,6 +360,7 @@ export async function createSubmissionIntentWithApi(
     pathname: "/api/submissions/intent",
     init: {
       method: "POST",
+      headers: buildOptionalAuthenticatedSubmissionHeaders(),
       body: JSON.stringify(payload),
     },
     parse: (json) => submissionIntentResponseSchema.parse(json),
@@ -364,6 +386,7 @@ export async function registerSubmissionWithApi(
     pathname: "/api/submissions",
     init: {
       method: "POST",
+      headers: buildOptionalAuthenticatedSubmissionHeaders(),
       body: JSON.stringify(payload),
     },
     parse: (json) => submissionRegistrationResponseSchema.parse(json),
@@ -385,6 +408,7 @@ export async function cleanupSubmissionArtifactWithApi(
     pathname: "/api/submissions/cleanup",
     init: {
       method: "POST",
+      headers: buildOptionalAuthenticatedSubmissionHeaders(),
       body: JSON.stringify(payload),
     },
     parse: (json) => submissionCleanupResponseSchema.parse(json),

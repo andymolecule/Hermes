@@ -148,6 +148,140 @@ test("submission endpoints parse canonical API responses", async () => {
   }
 });
 
+test("submission write endpoints attach agent auth when configured", async () => {
+  const originalFetch = global.fetch;
+  const originalAgentApiKey = process.env.AGORA_AGENT_API_KEY;
+  const originalRuntimeVersion = process.env.AGORA_RUNTIME_VERSION;
+  process.env.AGORA_AGENT_API_KEY = "agora_agent_secret";
+  process.env.AGORA_RUNTIME_VERSION = "runtime-2026-03-28";
+
+  const capturedHeaders: Array<Record<string, string>> = [];
+  global.fetch = async (input, init) => {
+    const headers = new Headers(init?.headers);
+    capturedHeaders.push(Object.fromEntries(headers.entries()));
+    const url = new URL(String(input));
+
+    if (url.pathname === "/api/submissions/upload") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            resultCid: "ipfs://sealed-submission",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions/intent") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            intentId: "22222222-2222-4222-8222-222222222222",
+            resultHash:
+              "0x1111111111111111111111111111111111111111111111111111111111111111",
+            expiresAt: "2026-03-13T00:00:00.000Z",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url.pathname === "/api/submissions") {
+      return new Response(
+        JSON.stringify({
+          data: {
+            submission: {
+              id: "22222222-2222-4222-8222-222222222222",
+              challenge_id: "11111111-1111-4111-8111-111111111111",
+              challenge_address: "0x0000000000000000000000000000000000000001",
+              on_chain_sub_id: 9,
+              solver_address: "0x0000000000000000000000000000000000000001",
+              refs: {
+                submissionId: "22222222-2222-4222-8222-222222222222",
+                challengeId: "11111111-1111-4111-8111-111111111111",
+                challengeAddress: "0x0000000000000000000000000000000000000001",
+                onChainSubmissionId: 9,
+              },
+            },
+            phase: "registration_confirmed",
+            warning: null,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        data: {
+          cleanedIntent: true,
+          unpinned: true,
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  try {
+    await uploadSubmissionArtifactToApi(
+      {
+        bytes: new TextEncoder().encode('{"ok":true}'),
+        fileName: "sealed-submission.json",
+        contentType: "application/json",
+        resultFormat: "sealed_submission_v2",
+      },
+      "https://api.example",
+    );
+    await createSubmissionIntentWithApi(
+      {
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        solverAddress: "0x0000000000000000000000000000000000000001",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
+      },
+      "https://api.example",
+    );
+    await registerSubmissionWithApi(
+      {
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        intentId: "22222222-2222-4222-8222-222222222222",
+        resultCid: "ipfs://result",
+        resultFormat: "sealed_submission_v2",
+        txHash:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+      },
+      "https://api.example",
+    );
+    await cleanupSubmissionArtifactWithApi(
+      {
+        resultCid: "ipfs://sealed-submission",
+        intentId: "22222222-2222-4222-8222-222222222222",
+      },
+      "https://api.example",
+    );
+
+    assert.equal(capturedHeaders.length, 4);
+    for (const headers of capturedHeaders) {
+      assert.equal(headers.authorization, "Bearer agora_agent_secret");
+      assert.equal(headers["x-agora-client-name"], "agora-agent-runtime");
+      assert.equal(headers["x-agora-client-version"], "runtime-2026-03-28");
+      assert.match(headers["x-agora-trace-id"] ?? "", /^[0-9a-f-]{36}$/i);
+    }
+  } finally {
+    global.fetch = originalFetch;
+    if (originalAgentApiKey === undefined) {
+      Reflect.deleteProperty(process.env, "AGORA_AGENT_API_KEY");
+    } else {
+      process.env.AGORA_AGENT_API_KEY = originalAgentApiKey;
+    }
+    if (originalRuntimeVersion === undefined) {
+      Reflect.deleteProperty(process.env, "AGORA_RUNTIME_VERSION");
+    } else {
+      process.env.AGORA_RUNTIME_VERSION = originalRuntimeVersion;
+    }
+  }
+});
+
 test("submission wait endpoint parses long-poll metadata", async () => {
   const originalFetch = global.fetch;
   let requestedUrl = "";

@@ -28,6 +28,7 @@ import {
 import type { AgoraLogger } from "@agora/common/server-observability";
 import {
   SubmissionOnChainWriteConflictError,
+  attachSubmissionIntentAgentAttributionIfMissing,
   countSubmissionIntentsBySubmissionCid,
   countSubmissionsBySubmissionCid,
   createSubmissionIntent,
@@ -494,7 +495,7 @@ export async function createSubmissionIntentWorkflow(
     );
   }
 
-  const intent =
+  const createdIntent =
     existingIntent ??
     (await createSubmissionIntent(db, {
       challenge_id: challenge.id,
@@ -507,6 +508,15 @@ export async function createSubmissionIntentWorkflow(
       }),
       trace_id: traceId,
     }));
+  const intent =
+    existingIntent &&
+    !createdIntent.submitted_by_agent_id &&
+    input.submittedByAgentId
+      ? ((await attachSubmissionIntentAgentAttributionIfMissing(db, {
+          intentId: createdIntent.id,
+          agentId: input.submittedByAgentId,
+        })) ?? createdIntent)
+      : createdIntent;
 
   input.logger.info(
     {
@@ -693,7 +703,14 @@ export async function registerSubmissionWorkflow(input: {
     resultFormat: input.resultFormat,
   });
 
-  const intent = await getSubmissionIntentById(db, input.intentId);
+  const rawIntent = await getSubmissionIntentById(db, input.intentId);
+  const intent =
+    rawIntent && !rawIntent.submitted_by_agent_id && input.submittedByAgentId
+      ? ((await attachSubmissionIntentAgentAttributionIfMissing(db, {
+          intentId: rawIntent.id,
+          agentId: input.submittedByAgentId,
+        })) ?? rawIntent)
+      : rawIntent;
   if (!intent) {
     throw new SubmissionWorkflowError(
       404,

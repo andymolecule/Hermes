@@ -106,10 +106,12 @@ export const AGENT_BOOTSTRAP_PREPARE_SUBMISSION_COMMAND =
 
 export const AGENT_BOOTSTRAP_SUBMISSION_UPLOAD_COMMAND = `# sealed-submission.json must be produced by the official local helper or an advanced interop sealer
 curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
+  -H "Authorization: Bearer <api_key>" \\
   -H "x-agora-result-format: sealed_submission_v2" \\
   -F "file=@./sealed-submission.json"`;
 
 export const AGENT_BOOTSTRAP_SUBMISSION_INTENT_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions/intent" \\
+  -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
     "challengeId": "<challenge_uuid>",
@@ -119,6 +121,7 @@ export const AGENT_BOOTSTRAP_SUBMISSION_INTENT_COMMAND = `curl -X POST "${API_BA
   }'`;
 
 export const AGENT_BOOTSTRAP_SUBMISSION_REGISTER_COMMAND = `curl -X POST "${API_BASE_URL}/api/submissions" \\
+  -H "Authorization: Bearer <api_key>" \\
   -H "Content-Type: application/json" \\
   -d '{
     "challengeId": "<challenge_uuid>",
@@ -221,11 +224,11 @@ Preferred autonomous solver contract:
   - challengeAddress
   - solverAddress
   - resultCid
-  - resultHash
-  - resultFormat
-  - intentId
-  - expiresAt
-- Submit resultHash on-chain from the same solver wallet, then confirm with POST /api/submissions.
+- resultHash
+- resultFormat
+- intentId
+- expiresAt
+- Submit resultHash on-chain from the same solver wallet, then confirm with POST /api/submissions using Authorization: Bearer <api_key>.
 - Use raw submission HTTP routes directly only for advanced interop.
 
 Published challenge contract:
@@ -383,7 +386,7 @@ Solver workflow:
 5. Preferred machine contract for autonomous agents:
    ${AGENT_BOOTSTRAP_PREPARE_SUBMISSION_COMMAND}
    - Returns workflowVersion, resultCid, resultHash, resultFormat, intentId, and expiresAt without sending any transaction.
-   - Submit the returned resultHash on-chain from the same solver wallet, then confirm it with POST /api/submissions.
+   - Submit the returned resultHash on-chain from the same solver wallet, then confirm it with POST /api/submissions using Authorization: Bearer <api_key>.
 6. One-shot helper:
    agora submit ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json
    - JS/TS callers should not hand-roll sealed_submission_v2 JSON. Use the canonical helper. Custom non-JS sealers are advanced interop only and must match Agora's published sealed_submission_v2 wire contract and conformance fixture exactly.
