@@ -24,7 +24,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
-- Fly now owns the live runtime deployment for API, indexer, and worker orchestrator
+- Fly now owns the live runtime deployment for API, notification worker, indexer, and worker orchestrator
 - Shared production Fly runtime uses `sin` as the primary region
 - The canonical hosted runtime runbook is [docs/fly-runtime-cutover.md](fly-runtime-cutover.md)
 - GitHub workflows and local operator commands verify hosted runtime readiness; deploy ownership stays explicit and Fly-backed
@@ -46,10 +46,11 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker orchestrator.
-8. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
-9. Ensure `/api/health`, `/api/worker-health`, and `/api/indexer-health` expose a stable runtime version and a non-ambiguous `identitySource`. For shared hosted services, prefer `AGORA_EXPECT_RELEASE_METADATA=true` once baked metadata or provider git metadata is confirmed to be present.
-10. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.
-11. Build and run preflight:
+8. Set `AGORA_AGENT_NOTIFICATION_MASTER_KEY` anywhere the notification worker or webhook-management API can run.
+9. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
+10. Ensure `/api/health`, `/api/worker-health`, and `/api/indexer-health` expose a stable runtime version and a non-ambiguous `identitySource`. For shared hosted services, prefer `AGORA_EXPECT_RELEASE_METADATA=true` once baked metadata or provider git metadata is confirmed to be present.
+11. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.
+12. Build and run preflight:
 
 ```bash
 pnpm install
@@ -136,8 +137,8 @@ The funded hosted smoke lane additionally requires:
 - chain, wallet, and Pinata values
 - a small real USDC balance in the smoke wallet
 
-Fly should remain the only hosted runtime platform for API, indexer, and
-worker orchestrator.
+Fly should remain the only hosted runtime platform for API, notification
+worker, indexer, and worker orchestrator.
 
 Notes:
 
@@ -149,7 +150,7 @@ Notes:
 Fly deployment checks before production cutover:
 
 - Use the repo-native `Deploy Fly Runtime` workflow as the only shared deploy
-  path for API, indexer, and worker orchestrator.
+  path for API, notification worker, indexer, and worker orchestrator.
 - Keep Fly liveness on `/healthz`.
 - Keep Fly primary placement explicit in [fly.toml](/Users/changyuesin/Agora/fly.toml). Shared production should stay pinned to `sin` unless an approved cutover changes regions.
 - Keep `/api/health` and `/healthz` fast and probe-safe for both `GET` and `HEAD`. Health probe responses should be visible in API logs through the `api.health.probe` event so failed promotions can be diagnosed from the application side.
@@ -187,7 +188,7 @@ Rollback if any of these occur:
 ```mermaid
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
-    B --> C["3. Deploy Fly runtime<br/>(app, worker, indexer)"]
+    B --> C["3. Deploy Fly runtime<br/>(app, worker, notifications, indexer)"]
     C --> D["4. Verify hosted runtime readiness<br/>(wait for API release -> schema verify -> health verify)"]
     D --> E["5. Optional funded hosted smoke<br/>(pnpm smoke:hosted)"]
     E --> F{"All checks pass?"}

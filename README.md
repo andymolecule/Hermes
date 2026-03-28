@@ -122,6 +122,7 @@ Run services:
 ```bash
 pnpm --filter @agora/api start        # API on :3000 (loads root .env)
 pnpm --filter @agora/api worker       # Scoring worker (loads root .env)
+pnpm --filter @agora/api notification-worker # Notification worker (loads root .env)
 pnpm --filter @agora/chain indexer    # Chain indexer (loads root .env)
 ```
 

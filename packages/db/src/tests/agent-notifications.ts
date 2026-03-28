@@ -3,8 +3,10 @@ import {
   claimNextAgentNotification,
   disableAgentNotificationEndpoint,
   enqueueAgentNotification,
+  enqueueClaimableNotificationsForAgent,
   enqueueClaimableNotificationsForChallenge,
   getAgentNotificationEndpointById,
+  listClaimableNotificationCandidatesForAgent,
   listClaimableNotificationCandidatesForChallenge,
   upsertAgentNotificationEndpoint,
 } from "../queries/agent-notifications.js";
@@ -357,6 +359,26 @@ const candidateDb = {
     if (table === "submission_intents") {
       return {
         select(selection: string) {
+          if (selection === "challenge_id") {
+            return {
+              eq(field: string, value: string) {
+                assert.equal(field, "submitted_by_agent_id");
+                assert.equal(value, "22222222-2222-4222-8222-222222222222");
+                return createAwaitableQuery({
+                  data: [
+                    {
+                      challenge_id: "challenge-1",
+                    },
+                    {
+                      challenge_id: "challenge-1",
+                    },
+                  ],
+                  error: null,
+                });
+              },
+            };
+          }
+
           assert.equal(selection, "id,submitted_by_agent_id");
           return {
             in(field: string, values: string[]) {
@@ -437,6 +459,13 @@ assert.deepEqual(
   candidate.entries.map((entry) => entry.rank),
   [1, 2],
 );
+
+const agentCandidates = await listClaimableNotificationCandidatesForAgent(
+  candidateDb,
+  "22222222-2222-4222-8222-222222222222",
+);
+assert.equal(agentCandidates.length, 1);
+assert.equal(agentCandidates[0]?.challenge_id, candidate.challenge_id);
 
 const mixedAttributionCandidateDb = {
   from(table: string) {
@@ -535,5 +564,12 @@ assert.equal(
   (queuedNotifications[0]?.payload_json as { type?: string }).type,
   "payout.claimable",
 );
+
+const queuedAgentNotifications = await enqueueClaimableNotificationsForAgent(
+  enqueueClaimableDb,
+  "22222222-2222-4222-8222-222222222222",
+  "2026-03-27T00:10:00.000Z",
+);
+assert.equal(queuedAgentNotifications.length, 1);
 
 console.log("agent notification query checks passed");

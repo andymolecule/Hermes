@@ -663,6 +663,63 @@ export async function listClaimableNotificationCandidatesForChallenge(
   );
 }
 
+async function listChallengeIdsWithAgentSubmissions(
+  db: AgoraDbClient,
+  agentId: string,
+) {
+  const { data, error } = await db
+    .from("submission_intents")
+    .select("challenge_id")
+    .eq("submitted_by_agent_id", agentId);
+
+  if (error) {
+    throw new Error(
+      `Failed to load submission intent challenges for notifications: ${error.message}`,
+    );
+  }
+
+  return [
+    ...new Set(
+      ((data ?? []) as Array<{ challenge_id: string | null }>)
+        .map((row) => row.challenge_id)
+        .filter((value): value is string => typeof value === "string"),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+export async function listClaimableNotificationCandidatesForAgent(
+  db: AgoraDbClient,
+  agentId: string,
+): Promise<ClaimableNotificationCandidate[]> {
+  const challengeIds = await listChallengeIdsWithAgentSubmissions(db, agentId);
+  if (challengeIds.length === 0) {
+    return [];
+  }
+
+  const candidates: ClaimableNotificationCandidate[] = [];
+  for (const challengeId of challengeIds) {
+    const challengeCandidates =
+      await listClaimableNotificationCandidatesForChallenge(db, challengeId);
+    candidates.push(
+      ...challengeCandidates.filter((candidate) => candidate.agent_id === agentId),
+    );
+  }
+
+  return candidates.sort((left, right) =>
+    candidateGroupKey({
+      agentId: left.agent_id,
+      challengeId: left.challenge_id,
+      solverAddress: left.solver_address,
+    }).localeCompare(
+      candidateGroupKey({
+        agentId: right.agent_id,
+        challengeId: right.challenge_id,
+        solverAddress: right.solver_address,
+      }),
+    ),
+  );
+}
+
 function buildClaimableNotificationPayload(input: {
   candidate: ClaimableNotificationCandidate;
   occurredAt: string;
@@ -690,15 +747,11 @@ function buildClaimableNotificationPayload(input: {
   });
 }
 
-export async function enqueueClaimableNotificationsForChallenge(
+async function enqueueClaimableNotificationCandidates(
   db: AgoraDbClient,
-  challengeId: string,
+  candidates: ClaimableNotificationCandidate[],
   occurredAt = new Date().toISOString(),
 ) {
-  const candidates = await listClaimableNotificationCandidatesForChallenge(
-    db,
-    challengeId,
-  );
   const enqueued: AgentNotificationOutboxRow[] = [];
 
   for (const candidate of candidates) {
@@ -721,4 +774,28 @@ export async function enqueueClaimableNotificationsForChallenge(
   }
 
   return enqueued;
+}
+
+export async function enqueueClaimableNotificationsForChallenge(
+  db: AgoraDbClient,
+  challengeId: string,
+  occurredAt = new Date().toISOString(),
+) {
+  const candidates = await listClaimableNotificationCandidatesForChallenge(
+    db,
+    challengeId,
+  );
+  return enqueueClaimableNotificationCandidates(db, candidates, occurredAt);
+}
+
+export async function enqueueClaimableNotificationsForAgent(
+  db: AgoraDbClient,
+  agentId: string,
+  occurredAt = new Date().toISOString(),
+) {
+  const candidates = await listClaimableNotificationCandidatesForAgent(
+    db,
+    agentId,
+  );
+  return enqueueClaimableNotificationCandidates(db, candidates, occurredAt);
 }

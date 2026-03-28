@@ -6,6 +6,7 @@ import {
 import {
   createSupabaseClient,
   disableAgentNotificationEndpoint,
+  enqueueClaimableNotificationsForAgent,
   getAgentNotificationEndpointByAgentId,
   upsertAgentNotificationEndpoint,
 } from "@agora/db";
@@ -76,6 +77,7 @@ export async function createOrUpdateAgentNotificationWebhook(input: {
     signing_secret_ciphertext: ciphertext,
     signing_secret_key_version: AGENT_NOTIFICATION_SECRET_KEY_VERSION,
   });
+  await enqueueClaimableNotificationsForAgent(db, input.agentId);
 
   return {
     endpoint_id: row.id,

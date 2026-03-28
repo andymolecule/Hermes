@@ -23,14 +23,14 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 
 ## Summary
 
-- Four processes in production: API, Indexer, Worker Orchestrator, Executor
-- Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Fly, executor on a Docker-capable host or service
+- Five processes in production: API, Notification Worker, Indexer, Worker Orchestrator, Executor
+- Typical hosted split: web on Vercel, API + notification worker + indexer + worker orchestrator on Fly, executor on a Docker-capable host or service
 - Shared production Fly runtime is pinned to `sin`, and cutover should not leave a dormant second runtime provider behind
 - The API is the canonical remote agent surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
-- Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
+- Indexer polls factory logs every 30s and only continuously polls active challenges; the scoring worker polls `score_jobs` after challenges enter Scoring; the notification worker drains `agent_notification_outbox`
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via `/api/health`, `/api/indexer-health`, `/api/worker-health`, and `agora doctor`
+- Health monitoring via `/api/health`, `/api/indexer-health`, `/api/worker-health`, `agora doctor`, and notification delivery logs/outbox state
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -44,6 +44,7 @@ flowchart TB
         API["Hono API<br/>pnpm --filter @agora/api start<br/>:3000 (backend)"]
         Indexer["Chain Indexer<br/>pnpm --filter @agora/chain indexer"]
         Worker["Worker Orchestrator<br/>pnpm --filter @agora/api worker"]
+        Notify["Notification Worker<br/>pnpm --filter @agora/api notification-worker"]
         Executor["Executor Service<br/>pnpm --filter @agora/executor dev<br/>:3200 (optional when remote_http)"]
     end
 
@@ -51,6 +52,7 @@ flowchart TB
         RPC["Base Sepolia RPC<br/>(Alchemy)"]
         Supa["Supabase<br/>(Postgres)"]
         Pin["Pinata<br/>(IPFS)"]
+        Hooks["Agent Webhook Endpoints"]
     end
 
     API --> Supa
@@ -62,6 +64,8 @@ flowchart TB
     Worker --> Pin
     Worker --> RPC
     Worker --> Executor
+    Notify --> Supa
+    Notify --> Hooks
     Web --> API
 ```
 
@@ -76,6 +80,7 @@ Run services:
 ```bash
 pnpm --filter @agora/api start        # API on :3000
 pnpm --filter @agora/api worker       # Worker orchestrator
+pnpm --filter @agora/api notification-worker # Notification worker
 pnpm --filter @agora/chain indexer    # Chain indexer
 ```
 
@@ -99,24 +104,27 @@ pnpm --filter @agora/web dev -- --port 3100
 
 ```mermaid
 flowchart LR
-    subgraph Processes["4 Production Processes"]
+    subgraph Processes["5 Production Processes"]
         API["agora-api<br/>REST API + web backend<br/>:3000"]
         Idx["agora-indexer<br/>Chain → Supabase<br/>poll every 30s"]
         Worker["agora-worker-orchestrator<br/>Polls score_jobs<br/>Posts scores on-chain"]
+        Notify["agora-notification-worker<br/>Polls agent_notification_outbox<br/>Posts payout webhooks"]
         Executor["agora-executor<br/>Runs scorer containers"]
     end
 
     subgraph Shared["Shared State"]
-        DB["Supabase<br/>(score_jobs table)"]
+        DB["Supabase<br/>(score_jobs + notification outbox)"]
     end
 
     API -->|"creates score_jobs"| DB
     Idx -->|"creates score_jobs"| DB
     Worker -->|"claims + updates"| DB
+    Notify -->|"claims + updates"| DB
 
     Worker -->|"execute scorer"| Executor
     Worker -->|"postScore()"| Chain["Base"]
     Idx -->|"getLogs()"| Chain
+    Notify -->|"POST payout.claimable"| Hooks["Agent Webhook Endpoints"]
 ```
 
 | Process | Entrypoint | Role |
@@ -124,16 +132,18 @@ flowchart LR
 | `agora-api` | `apps/api/dist/index.js` | REST API + web backend |
 | `agora-indexer` | `packages/chain/dist/indexer.js` | Chain event poller -> Supabase |
 | `agora-worker` | `apps/api/dist/worker.js` | Orchestrates score jobs, persists proof data, posts scores on-chain |
+| `agora-notification-worker` | `apps/api/dist/notification-worker.js` | Delivers signed `payout.claimable` webhooks from `agent_notification_outbox` |
 | `agora-executor` | `apps/executor/dist/index.js` | Docker-only scorer execution service |
 
 Architecture boundary:
 
 - Clients now pre-register `submission_intents` before the on-chain submit. API submit confirmation still provides the fast path, but the indexer can also recover a `submissions` row directly from the reserved intent when the on-chain `solver` + `result_hash` match, and then create or revive the corresponding `score_jobs`.
 - Worker polls `score_jobs` but only claims jobs after the persisted `startScoring()` transition has landed and been projected into `challenges.status = scoring`, and only when the worker runtime matches the active scoring runtime version declared by the API.
+- Notification delivery is deliberately separate from scoring. The notification worker drains `agent_notification_outbox` and posts signed `payout.claimable` webhooks so payout callbacks are not blocked by scorer or oracle readiness.
 - Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains a Fly rollout guard if API and worker machines drift briefly during a rolling deploy or manual recovery.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `agent_notification_endpoints` plus `agent_notification_outbox` drive payout webhooks, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains a Fly rollout guard if API and worker machines drift briefly during a rolling deploy or manual recovery.
 - Official scorer-template challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Read-side challenge visibility and write-side scoring readiness intentionally differ after the deadline. Use contract `status()` for public visibility decisions and `scoringStartedAt > 0` for score posting, dispute timing, finalization timing, and score-job eligibility.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
@@ -152,6 +162,16 @@ The worker treats scorer availability as a runtime readiness problem, not a cras
 6. Readiness is retried in the background every minute.
 7. During scoring, the runner uses the configured executor backend. In production this should be the remote executor so Fly only runs orchestration code, not Docker itself.
 8. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
+
+---
+
+### Notification Delivery Flow
+
+Notification delivery stays separate from scoring readiness.
+
+1. Settlement projection or repair enqueues `payout.claimable` rows once a finalized challenge has attributable unclaimed payout.
+2. The notification worker claims `agent_notification_outbox` jobs, decrypts the per-agent signing secret with `AGORA_AGENT_NOTIFICATION_MASTER_KEY`, and POSTs signed bodies to active webhook endpoints.
+3. There is no dedicated HTTP health endpoint for notification delivery yet. When callbacks stall, inspect notification-worker logs plus `agent_notification_outbox.last_error` and `agent_notification_endpoints.last_delivery_at`.
 
 ---
 

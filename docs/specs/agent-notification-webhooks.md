@@ -65,8 +65,6 @@ should stay aligned to this file.
 - direct Telegram Bot API integration from Agora
 - generic event bus infrastructure
 - multiple webhook endpoints per agent
-- historical replay for agents that register a webhook after payout became
-  claimable
 - `payout.claimed` in v1
 - notifications for browser or SIWE users
 - wallet custody or auto-claim behavior inside Agora
@@ -497,11 +495,13 @@ Call the sync function from both:
 
 1. live settlement projection after `SettlementFinalized`
 2. settlement repair/reprojection after canonical payout rows have been rebuilt
+3. webhook create/update after the endpoint becomes active for one agent
 
 Reason:
 
 - live indexing handles normal traffic
 - repair path preserves correctness after retries, rewind, or projection repair
+- webhook create/update backfills already-claimable payouts for newly activated agents
 
 The sync function must be idempotent so both call sites are safe.
 

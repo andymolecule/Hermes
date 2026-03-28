@@ -21,6 +21,7 @@ primary_region = "sin"
 [processes]
   app = "node scripts/run-node-with-root-env.mjs apps/api/dist/index.js"
   worker = "node scripts/run-node-with-root-env.mjs apps/api/dist/worker.js"
+  notifications = "node scripts/run-node-with-root-env.mjs apps/api/dist/notification-worker.js"
   indexer = "node scripts/run-node-with-root-env.mjs packages/chain/dist/indexer.js"
 
 [http_service]

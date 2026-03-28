@@ -10,6 +10,7 @@ This runbook covers:
 
 - `@agora/api`
 - `@agora/api` worker orchestrator
+- `@agora/api` notification worker
 - `@agora/chain` indexer
 
 The executor stays separate on a Docker-capable host or service.
@@ -27,7 +28,7 @@ The executor stays separate on a Docker-capable host or service.
 
 - one Fly app
 - one Docker image
-- three process groups: `app`, `worker`, `indexer`
+- four process groups: `app`, `worker`, `notifications`, `indexer`
 - public API served from `https://<fly-app-name>.fly.dev`
 - worker bridge served privately at
   `http://worker.process.<fly-app-name>.internal:3400`
@@ -38,6 +39,7 @@ The executor stays separate on a Docker-capable host or service.
 - `FLY_APP_NAME`
 - chain and Supabase `AGORA_*` secrets
 - `AGORA_WORKER_INTERNAL_TOKEN`
+- `AGORA_AGENT_NOTIFICATION_MASTER_KEY`
 - `AGORA_SCORER_EXECUTOR_URL`
 - `AGORA_SCORER_EXECUTOR_TOKEN`
 - sealing keys, if sealed submissions remain enabled
@@ -58,7 +60,7 @@ The deploy workflow:
 3. derives `AGORA_WORKER_INTERNAL_URL=http://worker.process.<app>.internal:3400`
 4. stamps `AGORA_RELEASE_ID`, `AGORA_RUNTIME_VERSION`, and
    `AGORA_RELEASE_GIT_SHA` from the commit SHA
-5. deploys the runtime image to Fly
+5. deploys the runtime image to Fly for `app`, `worker`, `notifications`, and `indexer`
 6. verifies the hosted runtime
 
 ## Manual Operator Flow
@@ -77,6 +79,7 @@ pnpm fly:deploy
 - `/api/health` is hosted readiness
 - `/api/worker-health` is scoring readiness
 - `/api/indexer-health` is projection readiness
+- notification delivery is monitored through notification-worker logs and `agent_notification_outbox`; there is no dedicated `/api/notification-health` endpoint yet
 
 Shared environments should set `AGORA_EXPECT_RELEASE_METADATA=true`.
 
@@ -98,7 +101,7 @@ Rollback keeps the same data plane:
 If a Fly deploy fails:
 
 1. restore the previous healthy Fly image or machine set
-2. confirm `/api/health`, `/api/worker-health`, and `/api/indexer-health`
+2. confirm `/api/health`, `/api/worker-health`, and `/api/indexer-health`, then inspect notification-worker logs and outbox backlog if webhooks stalled
 3. rerun `pnpm verify:runtime`
 
 ## Steady-State Rules
@@ -106,4 +109,4 @@ If a Fly deploy fails:
 - keep Fly config in-repo
 - keep release identity stamped from the commit SHA
 - do not hand-edit long-lived hosted runtime identity on the platform
-- do not split API, worker, and indexer across separate hosted deploy owners
+- do not split API, worker, notifications, and indexer across separate hosted deploy owners

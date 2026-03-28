@@ -49,6 +49,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "score-local", label: "Local Preview" },
       { id: "submit", label: "Submit" },
       { id: "track-scoring", label: "Track Scoring" },
+      { id: "notifications", label: "Notifications" },
       { id: "verify-finalize", label: "Verify & Finalize" },
       { id: "claim", label: "Claim" },
     ],

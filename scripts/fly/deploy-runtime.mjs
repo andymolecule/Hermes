@@ -2,7 +2,11 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { requireFlyAppName, resolveRepoRoot } from "./shared.mjs";
 
-const REQUIRED_BACKGROUND_PROCESS_GROUPS = ["worker", "indexer"];
+const REQUIRED_BACKGROUND_PROCESS_GROUPS = [
+  "worker",
+  "notifications",
+  "indexer",
+];
 const MACHINE_STATE_RETRY_LIMIT = 18;
 const MACHINE_STATE_RETRY_DELAY_MS = 5000;
 const TRANSITIONING_MACHINE_STATES = [
@@ -176,7 +180,7 @@ function ensureBackgroundProcessGroupsStarted(appName) {
   }
 
   throw new Error(
-    "Fly deploy did not stabilize the background process groups before the post-deploy check timed out. Next step: inspect the Fly worker/indexer machines and rerun the deploy verification.",
+    "Fly deploy did not stabilize the background process groups before the post-deploy check timed out. Next step: inspect the Fly worker/notifications/indexer machines and rerun the deploy verification.",
   );
 }
 
