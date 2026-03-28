@@ -1,3 +1,5 @@
+import type { ApiRuntimeReadiness } from "./runtime-readiness.js";
+
 const PUBLIC_API_RUNTIME_CHECK_TIMEOUT_MS = 5_000;
 
 export interface PublicApiRuntimeSyncStatus {
@@ -20,6 +22,31 @@ interface PublicApiRuntimeSyncOptions {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
+
+interface SyncActiveRuntimeVersionOnceOptions {
+  apiUrl?: string;
+  runtimeVersion: string;
+  getRuntimeReadiness: () => Promise<ApiRuntimeReadiness>;
+  upsertActiveRuntimeVersion: (runtimeVersion: string) => Promise<void>;
+  readPublicApiRuntimeSyncStatusImpl?: typeof readPublicApiRuntimeSyncStatus;
+}
+
+export type ActiveRuntimeVersionSyncResult =
+  | {
+      ok: false;
+      state: "readiness_unhealthy";
+      readiness: ApiRuntimeReadiness;
+    }
+  | {
+      ok: false;
+      state: "waiting_for_public_release";
+      publicRuntimeStatus: PublicApiRuntimeSyncStatus;
+    }
+  | {
+      ok: true;
+      state: "active";
+      publicRuntimeStatus: PublicApiRuntimeSyncStatus;
+    };
 
 function resolvePublicApiHealthUrl(apiUrl: string) {
   return new URL("/api/health", apiUrl).toString();
@@ -117,4 +144,38 @@ export async function readPublicApiRuntimeSyncStatus(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function syncActiveRuntimeVersionOnce(
+  input: SyncActiveRuntimeVersionOnceOptions,
+): Promise<ActiveRuntimeVersionSyncResult> {
+  const readiness = await input.getRuntimeReadiness();
+  if (!readiness.ok) {
+    return {
+      ok: false,
+      state: "readiness_unhealthy",
+      readiness,
+    };
+  }
+
+  const publicRuntimeStatus = await (
+    input.readPublicApiRuntimeSyncStatusImpl ?? readPublicApiRuntimeSyncStatus
+  )({
+    apiUrl: input.apiUrl,
+    runtimeVersion: input.runtimeVersion,
+  });
+  if (!publicRuntimeStatus.ok) {
+    return {
+      ok: false,
+      state: "waiting_for_public_release",
+      publicRuntimeStatus,
+    };
+  }
+
+  await input.upsertActiveRuntimeVersion(input.runtimeVersion);
+  return {
+    ok: true,
+    state: "active",
+    publicRuntimeStatus,
+  };
 }

@@ -6,7 +6,6 @@ import {
 import {
   WORKER_RUNTIME_TYPE,
   createSupabaseClient,
-  readRuntimeDatabaseSchemaStatus,
   upsertActiveWorkerRuntimeVersion,
 } from "@agora/db";
 import { serve } from "@hono/node-server";
@@ -16,39 +15,49 @@ import {
   captureApiException,
   initApiObservability,
 } from "./lib/observability.js";
-import { readPublicApiRuntimeSyncStatus } from "./lib/runtime-control-sync.js";
+import { syncActiveRuntimeVersionOnce } from "./lib/runtime-control-sync.js";
+import { createApiRuntimeReadinessProbe } from "./lib/runtime-readiness.js";
 
 const API_RUNTIME_CONTROL_SYNC_INTERVAL_MS = 30_000;
 
 function startActiveRuntimeVersionSyncLoop(
   db: ReturnType<typeof createSupabaseClient>,
   runtimeVersion: string,
+  getRuntimeReadiness: ReturnType<typeof createApiRuntimeReadinessProbe>,
   apiUrl?: string,
 ) {
   let lastSyncState: string | null = null;
 
   const tick = async () => {
     try {
-      const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
-      if (!schemaStatus.ok) {
-        if (lastSyncState !== "schema_unhealthy") {
+      const result = await syncActiveRuntimeVersionOnce({
+        apiUrl,
+        runtimeVersion,
+        getRuntimeReadiness,
+        upsertActiveRuntimeVersion: async (activeRuntimeVersion) => {
+          await upsertActiveWorkerRuntimeVersion(db, {
+            worker_type: WORKER_RUNTIME_TYPE.scoring,
+            active_runtime_version: activeRuntimeVersion,
+          });
+        },
+      });
+
+      if (!result.ok && result.state === "readiness_unhealthy") {
+        if (lastSyncState !== "readiness_unhealthy") {
           apiLogger.warn(
             {
-              event: "api.runtime_schema_parked",
-              failures: schemaStatus.failures,
+              event: "api.runtime_readiness_parked",
+              readiness: result.readiness.readiness,
             },
-            "API runtime control sync parked until database schema is healthy",
+            "API runtime control sync parked until API readiness is healthy",
           );
         }
-        lastSyncState = "schema_unhealthy";
+        lastSyncState = "readiness_unhealthy";
         return;
       }
 
-      const publicRuntimeStatus = await readPublicApiRuntimeSyncStatus({
-        apiUrl,
-        runtimeVersion,
-      });
-      if (!publicRuntimeStatus.ok) {
+      if (!result.ok) {
+        const publicRuntimeStatus = result.publicRuntimeStatus;
         const stateKey = [
           "waiting_for_public_release",
           publicRuntimeStatus.reason,
@@ -79,17 +88,13 @@ function startActiveRuntimeVersionSyncLoop(
         return;
       }
 
-      await upsertActiveWorkerRuntimeVersion(db, {
-        worker_type: WORKER_RUNTIME_TYPE.scoring,
-        active_runtime_version: runtimeVersion,
-      });
-
       if (lastSyncState !== "active") {
         apiLogger.info(
           {
             event: "api.runtime_schema_ready",
             runtimeVersion,
-            publicRuntimeVersion: publicRuntimeStatus.observedRuntimeVersion,
+            publicRuntimeVersion:
+              result.publicRuntimeStatus.observedRuntimeVersion,
           },
           "API runtime control sync resumed",
         );
@@ -120,11 +125,19 @@ async function start() {
   const port = config.AGORA_API_PORT ?? 3000;
   const db = createSupabaseClient(true);
   const runtimeVersion = getAgoraRuntimeVersion(config);
-  const app = createApp();
+  const getRuntimeReadiness = createApiRuntimeReadinessProbe({
+    createSupabaseClientImpl: () => db,
+  });
+  const app = createApp({ getRuntimeReadiness });
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
 
   serve({ fetch: app.fetch, port });
-  startActiveRuntimeVersionSyncLoop(db, runtimeVersion, config.AGORA_API_URL);
+  startActiveRuntimeVersionSyncLoop(
+    db,
+    runtimeVersion,
+    getRuntimeReadiness,
+    config.AGORA_API_URL,
+  );
 
   apiLogger.info(
     {
