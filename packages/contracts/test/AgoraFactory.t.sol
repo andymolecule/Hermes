@@ -42,7 +42,7 @@ contract AgoraFactoryTest is Test {
             "cid",
             10e6,
             uint64(block.timestamp + 1 days),
-            168,
+            0,
             0,
             uint8(IAgoraChallenge.DistributionType.WinnerTakeAll),
             address(0),
@@ -52,6 +52,7 @@ contract AgoraFactoryTest is Test {
         assertEq(id, 0);
         assertEq(usdc.balanceOf(challengeAddr), 10e6);
         assertEq(usdc.balanceOf(poster), 1_000_000e6 - 10e6);
+        assertEq(AgoraChallenge(challengeAddr).disputeWindowHours(), 0);
     }
 
     function testCreateChallengeWithLabTBA() public {

@@ -146,7 +146,7 @@ pnpm smoke:hosted
 Hosted smoke override example:
 
 ```bash
-AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=168 pnpm smoke:hosted
+AGORA_E2E_DEADLINE_MINUTES=30 AGORA_E2E_DISPUTE_WINDOW_HOURS=0 pnpm smoke:hosted
 ```
 
 ## Deployment

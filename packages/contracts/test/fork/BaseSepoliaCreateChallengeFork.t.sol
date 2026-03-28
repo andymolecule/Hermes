@@ -31,7 +31,7 @@ contract BaseSepoliaCreateChallengeForkTest is BaseSepoliaForkTest {
             "fork-spec-cid",
             REWARD_AMOUNT,
             uint64(block.timestamp + 1 days),
-            168,
+            0,
             0,
             uint8(IAgoraChallenge.DistributionType.WinnerTakeAll),
             address(0),

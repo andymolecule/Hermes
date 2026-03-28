@@ -706,6 +706,10 @@ export async function startWorker() {
           } finally {
             leaseGuard.stop();
           }
+
+          // Re-run lifecycle settlement immediately after scoring work changes
+          // on-chain state so zero-window challenges become claimable promptly.
+          lastFinalizeSweepAt = 0;
         }
       } catch (error) {
         if (error instanceof WorkerFatalExitError) {

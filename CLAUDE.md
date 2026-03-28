@@ -152,7 +152,7 @@ See @.env.example for the full documented list.
 - **AgoraChallenge** — submissions, scoring, dispute flow, payouts
 - Status flow: Open → Scoring → Finalized | Disputed → Finalized | Cancelled
 - Distribution types: WinnerTakeAll, TopThree (60/25/15), Proportional
-- Dispute window: poster-configurable, 168–2160 hours (7–90 days)
+- Dispute window: poster-configurable, 0–2160 hours (0–90 days); current testnet default is 0 hours for fast iteration
 - See @docs/architecture.md for full contract diagrams
 
 ## When You're Stuck

@@ -158,7 +158,7 @@ stream and falls back to long-polling when the stream endpoint is unavailable.
 
 ### `agora finalize <id>`
 
-Finalize a challenge after deadline + dispute window have elapsed.
+Finalize a challenge once scoring is complete and any configured dispute window has elapsed.
 
 ```bash
 agora finalize ch-001 --format json

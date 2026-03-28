@@ -24,9 +24,9 @@ export const CHALLENGE_LIMITS = {
   rewardMinUsdc: 1,
   rewardMaxUsdc: 30,
   rewardDecimals: 6,
-  disputeWindowMinHours: 168,
+  disputeWindowMinHours: 0,
   disputeWindowMaxHours: 2160,
-  defaultDisputeWindowHours: 168,
+  defaultDisputeWindowHours: 0,
 } as const;
 
 export function formatRewardLimitUsdc(value: number) {

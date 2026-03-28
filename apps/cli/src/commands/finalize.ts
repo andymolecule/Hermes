@@ -25,7 +25,7 @@ type ChallengeRecord = {
 
 export function buildFinalizeCommand() {
   const cmd = new Command("finalize")
-    .description("Finalize a challenge after deadline + dispute window")
+    .description("Finalize a challenge once settlement is open")
     .argument("<id>", "Challenge id")
     .option("--key <ref>", "Private key reference, e.g. env:AGORA_PRIVATE_KEY")
     .option("--format <format>", "table or json", "table")
@@ -82,7 +82,7 @@ export function buildFinalizeCommand() {
           throw new AgoraError("Finalize transaction reverted.", {
             code: AGORA_ERROR_CODES.txReverted,
             nextAction:
-              "Confirm the dispute window has ended and all required scores are posted before retrying.",
+              "Confirm all required scores are posted and the challenge is finalizable, then retry.",
           });
         }
         spinner.succeed(`Finalized: ${txHash}`);

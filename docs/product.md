@@ -131,7 +131,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A["⏰ Dispute window passes<br/>(current runtime policy is 7–90 days)"] --> B{"Any disputes?"}
+    A["⏰ Scoring completes<br/>and any review window elapses<br/>(current testnet default is 0h)"] --> B{"Any disputes?"}
     B -->|No| C["Anyone can call<br/>finalize()"]
     B -->|Yes| D["Oracle resolves<br/>the dispute"]
     D --> C
@@ -182,7 +182,7 @@ flowchart TB
     subgraph Solver["Solver Safety"]
         SS1["Test locally before submitting<br/>(free, unlimited)"]
         SS2["Scores are verifiable<br/>(re-run Docker)"]
-        SS3["Dispute window<br/>(challenge unfair scores)"]
+        SS3["Optional dispute window<br/>(0h default on current testnet)"]
     end
     subgraph System["System Safety"]
         SY1["USDC in contract escrow<br/>(nobody can steal it)"]
@@ -301,7 +301,7 @@ flowchart TB
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | Protocol fee | 10% | Only on successful finalization |
-| Dispute window | 168–2160 hours (7–90 days) | Matches current deployed contract policy |
+| Dispute window | 0 hours by default on testnet; 0–2160 hours supported | Fast iteration settles immediately after scoring unless a longer review window is explicitly configured |
 | Official scorer timeout | 5–20 minutes | Base runner fallback is 30 minutes when no execution-template override applies |
 | Container memory | 512 MB – 4 GB | Execution-template-dependent; base runner fallback is 256 MB |
 | Container CPUs | 1 – 2 | Execution-template-dependent; base runner fallback is 0.5 CPU |

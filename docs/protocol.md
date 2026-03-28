@@ -23,7 +23,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 - Challenges follow a strict state machine: Open → Scoring → Finalized (or Disputed → Finalized, or Cancelled).
 - 10% protocol fee (hardcoded, 1000 bps) flows to treasury on finalization.
 - Scoring is deterministic Docker execution; proof bundles are pinned to IPFS with hashes stored on-chain.
-- Dispute window is poster-configurable within the deployed contract bounds (currently 168–2160 hours / 7–90 days).
+- Dispute window is poster-configurable within the deployed contract bounds (currently 0–2160 hours / 0–90 days, with a 0-hour default on testnet for fast iteration).
 - Anyone can independently verify scores by re-running the scorer container.
 - Contract generation: one active v2 factory at a time; `contractVersion()` for diagnostics.
 
@@ -47,7 +47,7 @@ This doc is authoritative for: challenge lifecycle states, settlement rules, pay
 | `submit()` | — | Yes | — | — |
 | `startScoring()` | — | — | — | Yes (after deadline) |
 | `postScore()` | — | — | Yes | — |
-| `finalize()` | — | — | — | Yes (after dispute window, once all submissions are scored or scoring grace elapses) |
+| `finalize()` | — | — | — | Yes (once all submissions are scored and any dispute window has elapsed, or scoring grace elapses) |
 | `dispute(submissionId, reason)` | — | Yes (only for caller-owned scored submissions, with bond) | — | — |
 | `resolveDispute()` | — | — | Yes | — |
 | `cancel()` | Yes (if 0 subs) | — | — | — |
@@ -66,7 +66,7 @@ stateDiagram-v2
     Open --> Cancelled : cancel() [0 submissions]
     Scoring --> Scoring : postScore()
     Scoring --> Disputed : dispute(submissionId, reason)
-    Scoring --> Finalized : finalize() [after dispute window + all scored, or grace elapsed]
+    Scoring --> Finalized : finalize() [all scored + any dispute window elapsed, or grace elapsed]
     Disputed --> Finalized : resolveDispute()
     Disputed --> Cancelled : timeoutRefund() [30 days]
     Finalized --> [*] : claim()
@@ -142,7 +142,7 @@ sequenceDiagram
     participant Treasury
     participant Winner
 
-    Note over Challenge: All submissions scored, dispute window elapsed
+    Note over Challenge: All submissions scored, any dispute window elapsed (0h default on current testnet)
 
     Oracle->>Challenge: finalize()
     Challenge->>Challenge: Calculate 10% protocol fee
@@ -240,7 +240,7 @@ The authoritative schema for challenge specification files.
 | `artifacts[].description` | string | Optional human-facing artifact description. |
 | `tags` | string[] | Freeform tags for discovery. |
 | `minimum_score` | decimal | Minimum score threshold for payout eligibility. |
-| `dispute_window_hours` | integer | Dispute window in hours (currently 168–2160 / 7–90 days). |
+| `dispute_window_hours` | integer | Dispute window in hours (currently 0–2160 / 0–90 days; current testnet default is 0). |
 | `lab_tba` | address | Optional Molecule Protocol lab TBA address. |
 | `max_submissions_total` | integer | Maximum submissions per challenge (1–10000). |
 | `max_submissions_per_solver` | integer | Maximum submissions per solver per challenge (1–1000). |

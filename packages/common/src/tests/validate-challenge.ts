@@ -74,7 +74,7 @@ const sample = {
     distribution: "winner_take_all",
   },
   deadline: "2026-03-20T00:00:00Z",
-  dispute_window_hours: 168,
+  dispute_window_hours: 0,
 };
 
 const result = trustedChallengeSpecSchema.safeParse(sample);

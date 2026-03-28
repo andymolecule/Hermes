@@ -20,8 +20,8 @@ Quick reference for key terms used across Agora documentation and code.
 |------|-----------|
 | **Open** | Challenge is accepting submissions. No public leaderboard or score computation. |
 | **Scoring** | Deadline has passed. Submissions closed. Worker decrypts sealed submissions and computes scores. |
-| **Finalized** | Dispute window elapsed. Payouts allocated. Winners can call `claim()`. |
-| **Disputed** | A dispute was raised during the dispute window. Oracle must resolve it. |
+| **Finalized** | Settlement is open. Payouts allocated. Winners can call `claim()`. |
+| **Disputed** | A dispute was raised during a configured dispute window. Oracle must resolve it. |
 | **Cancelled** | Challenge cancelled (0 submissions before deadline, or dispute timeout after 30 days). USDC refunded. |
 
 ## On-Chain Concepts
@@ -34,7 +34,7 @@ Quick reference for key terms used across Agora documentation and code.
 | **Result hash** | `keccak256` of the submission CID. Stored on-chain as tamper-proof record. |
 | **Proof bundle** | IPFS-pinned package of all inputs, outputs, and container metadata needed to reproduce a score. Hash stored on-chain. |
 | **Distribution type** | How rewards are split: `WinnerTakeAll` (100%), `TopThree` (60/25/15), or `Proportional` (score-weighted). |
-| **Dispute window** | Poster-configurable period after scoring during which disputes can be raised. Current deployed policy is 168–2160 hours (7–90 days). |
+| **Dispute window** | Poster-configurable period after scoring during which disputes can be raised. Current deployed bounds are 0–2160 hours, and the current testnet default is 0 hours for fast iteration. |
 
 ## Scoring
 

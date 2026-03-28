@@ -264,7 +264,7 @@ Local deterministic CLI parity (`pnpm smoke:cli:local` / `./scripts/local-cli-sm
 1. Post through the real CLI
 2. Submit through the real CLI
 3. Wait for worker scoring and verify public replay artifacts
-4. Advance the local dispute window
+4. Advance the local settlement boundary when needed
 5. Finalize and claim through the real CLI
 
 Hosted funded smoke (`pnpm smoke:hosted` / `./scripts/hosted-smoke.sh`):
@@ -290,7 +290,7 @@ AGORA_PRIVATE_KEY
 # Optional overrides
 AGORA_E2E_SCORER_IMAGE="ghcr.io/andymolecule/gems-match-scorer:v1"
 AGORA_E2E_DEADLINE_MINUTES="10"
-AGORA_E2E_DISPUTE_WINDOW_HOURS="168"    # contract minimum
+AGORA_E2E_DISPUTE_WINDOW_HOURS="0"      # current testnet default
 
 # Optional fork-test vars
 AGORA_BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
@@ -302,7 +302,7 @@ For the direct deterministic contract harness, run `pnpm smoke:lifecycle:local`.
 Both local lanes now provision their own isolated local Supabase + Anvil stack
 automatically, so they no longer depend on the root `.env` already pointing at
 local services.
-The local lifecycle config enforces the hardened 168 hour dispute window.
+The local lifecycle config now defaults to a zero-hour dispute window so CLI parity matches the current fast-iteration testnet policy.
 `pnpm smoke:hosted` is the funded external/manual lane against the currently deployed factory generation.
 Run `pnpm verify:runtime` before funded hosted smoke when you want a read-only readiness gate first.
 
@@ -324,10 +324,10 @@ pnpm verify:runtime
 # Funded hosted smoke
 pnpm smoke:hosted
 
-# Fast local mode (shorter deadline, minimum dispute window)
+# Fast local mode (shorter deadline, zero-hour dispute window)
 AGORA_CHAIN_ID=31337 \
 AGORA_E2E_DEADLINE_MINUTES=30 \
-AGORA_E2E_DISPUTE_WINDOW_HOURS=168 \
+AGORA_E2E_DISPUTE_WINDOW_HOURS=0 \
 pnpm smoke:cli:local
 ```
 

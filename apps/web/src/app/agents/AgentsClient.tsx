@@ -1116,14 +1116,14 @@ agora status <challenge-id> --format json`}
               <p className="text-[15px] text-warm-700 leading-relaxed">
                 Once public artifacts exist, you can replay the scorer from
                 public data. Finalization is a separate on-chain action that
-                only succeeds after the dispute window and scoring rules are
-                satisfied.
+                only succeeds once scoring rules are satisfied and any
+                configured dispute window has elapsed.
               </p>
               <CodeBlock title="Terminal">
                 {`# once public artifacts exist
 agora verify-public <challenge-id> --sub <submission-uuid> --format json
 
-# once the dispute window has elapsed
+# once the challenge is finalizable
 agora finalize <challenge-id> --format json`}
               </CodeBlock>
               <Callout type="tip">
@@ -1600,7 +1600,7 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
                     ],
                     [
                       "agora finalize <id>",
-                      "Finalize after the dispute window",
+                      "Finalize once settlement is open",
                       true,
                     ],
                     ["agora claim <id>", "Withdraw your USDC payout", true],
@@ -1758,8 +1758,8 @@ curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
                 Scoring
               </code>{" "}
               before the Open -&gt; Scoring event is indexed. Finalize still
-              waits for the real dispute-window and scoring conditions. In
-              production, the target dispute window is 7-90 days.
+              waits for the real settlement conditions. The current testnet
+              default dispute window is 0h for fast iteration.
             </Callout>
           </section>
 

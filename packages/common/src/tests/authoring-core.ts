@@ -14,7 +14,7 @@ const baseIntent = {
   reward_total: "30",
   distribution: "winner_take_all" as const,
   deadline: "2026-12-31T00:00:00.000Z",
-  dispute_window_hours: 168,
+  dispute_window_hours: 0,
   domain: "drug_discovery",
   tags: ["docking"],
   timezone: "UTC",
@@ -41,7 +41,7 @@ const validSubmitRequest = submitAuthoringSessionRequestSchema.parse({
 });
 
 assert.equal(validSubmitRequest.uploaded_artifacts?.length, 2);
-assert.equal(validSubmitRequest.intent?.dispute_window_hours, 168);
+assert.equal(validSubmitRequest.intent?.dispute_window_hours, 0);
 
 const parsedIntentWithoutOptionalMetadata = challengeIntentSchema.parse({
   title: baseIntent.title,

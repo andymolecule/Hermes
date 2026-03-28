@@ -354,7 +354,7 @@ sequenceDiagram
     Worker->>IPFS: Pin proof bundle → proofCid
     Worker->>Chain: postScore(subId, 923e15, hash(proofCid))
 
-    Note over Chain: After deadline + dispute window...
+    Note over Chain: After scoring completes and any dispute window elapses (0h default on current testnet)...
 
     Chain->>Chain: finalize()
     Chain->>Chain: 10% → treasury, 90% → winner payout

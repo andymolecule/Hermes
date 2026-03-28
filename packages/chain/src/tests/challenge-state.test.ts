@@ -68,6 +68,25 @@ test("finalize readiness is anchored to scoring start, not deadline", () => {
   assert.equal(derived.reviewEndsAtSeconds, 10_000n + 168n * 3_600n);
 });
 
+test("zero-hour dispute windows finalize immediately after all scores land", () => {
+  const derived = deriveChallengeFinalizeReadState(
+    {
+      status: CHALLENGE_STATUS.scoring,
+      disputeWindowHours: 0n,
+      scoringStartedAt: 10_000n,
+      scoringGracePeriod: 7_200n,
+      submissionCount: 1n,
+      scoredCount: 1n,
+    },
+    10_001n,
+  );
+
+  assert.equal(derived.canFinalize, true);
+  assert.equal(derived.finalizeBlockedReason, null);
+  assert.equal(derived.reviewEndsAtSeconds, 10_000n);
+  assert.equal(derived.earliestFinalizeAtSeconds, 10_000n);
+});
+
 test("finalize readiness waits for scoring start before deriving timestamps", () => {
   const derived = deriveChallengeFinalizeReadState(
     {

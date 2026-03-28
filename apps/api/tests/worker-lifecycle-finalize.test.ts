@@ -38,6 +38,22 @@ test("finalizes after dispute window when all submissions are scored", () => {
   assert.equal(shouldFinalize, true);
 });
 
+test("finalizes immediately after scoring when the dispute window is zero", () => {
+  const shouldFinalize = shouldAttemptChallengeFinalize(
+    {
+      status: CHALLENGE_STATUS.scoring,
+      disputeWindowHours: 0n,
+      scoringStartedAt: 5_000n,
+      scoringGracePeriod: 7_200n,
+      submissionCount: 2n,
+      scoredCount: 2n,
+    },
+    5_001n,
+  );
+
+  assert.equal(shouldFinalize, true);
+});
+
 test("finalizes after scoring grace even when some submissions remain unscored", () => {
   const shouldFinalize = shouldAttemptChallengeFinalize(
     {

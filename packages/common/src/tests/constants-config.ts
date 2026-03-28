@@ -143,12 +143,12 @@ assert.equal(
 );
 assert.equal(
   CHALLENGE_LIMITS.disputeWindowMinHours,
-  168,
+  0,
   "challenge limits should enforce the on-chain dispute window minimum",
 );
 assert.equal(
   readLifecycleE2ERuntimeConfig({}).disputeWindowHours,
-  168,
+  0,
   "lifecycle E2E should default to the on-chain minimum dispute window",
 );
 assert.equal(
@@ -161,7 +161,7 @@ assert.equal(
 assert.throws(
   () =>
     readLifecycleE2ERuntimeConfig({
-      AGORA_E2E_DISPUTE_WINDOW_HOURS: "24",
+      AGORA_E2E_DISPUTE_WINDOW_HOURS: "-1",
     }),
   /AGORA_E2E_DISPUTE_WINDOW_HOURS/,
   "lifecycle E2E should reject dispute windows below the local contract minimum",
