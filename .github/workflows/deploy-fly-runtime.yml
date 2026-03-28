@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   deploy-fly-runtime:
-    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) && secrets.FLY_API_TOKEN != '' && vars.FLY_APP_NAME != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -65,6 +65,17 @@ jobs:
 
       - name: Setup flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Validate Fly deploy inputs
+        run: |
+          missing=()
+          [ -n "${FLY_API_TOKEN}" ] || missing+=("FLY_API_TOKEN")
+          [ -n "${FLY_APP_NAME}" ] || missing+=("FLY_APP_NAME")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required Fly deploy inputs: ${missing[*]}"
+            echo "Next step: populate the matching GitHub secret or variable and retry the workflow."
+            exit 1
+          fi
 
       - name: Deploy runtime to Fly
         run: node scripts/fly/deploy-runtime.mjs --app "$FLY_APP_NAME"
