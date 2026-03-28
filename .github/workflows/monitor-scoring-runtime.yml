@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL }}
+      AGORA_API_HEALTH_URL: ${{ vars.AGORA_API_HEALTH_URL || format('https://{0}.fly.dev/api/health', vars.FLY_APP_NAME) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
         id: health
         run: |
           set -euo pipefail
-          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/api/health}"
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agora-runtime-prod.fly.dev/api/health}"
           AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/api/health}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           node scripts/ops/check-worker-health.mjs summary \
@@ -51,7 +51,7 @@ jobs:
         if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
-          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agoraapi-production-2708.up.railway.app/api/health}"
+          AGORA_API_HEALTH_URL="${AGORA_API_HEALTH_URL:-https://agora-runtime-prod.fly.dev/api/health}"
           AGORA_API_BASE_URL="${AGORA_API_HEALTH_URL%/api/health}"
           AGORA_WORKER_HEALTH_URL="$AGORA_API_BASE_URL/api/worker-health"
           EXPECTED_RUNTIME_VERSION="${{ steps.health.outputs.api_runtime }}"
@@ -64,5 +64,5 @@ jobs:
         if: steps.health.outputs.needs_heal == 'true'
         run: |
           set -euo pipefail
-          echo "Scoring runtime monitor detected an unhealthy state. Next step: inspect the Railway worker-orchestrator and executor service."
+          echo "Scoring runtime monitor detected an unhealthy state. Next step: inspect the Fly worker process group and executor service."
           exit 1

@@ -372,12 +372,12 @@ if (webUrl && !webRuntimeVersion) {
 let ok = true;
 
 console.log("[OK] API /api/health is healthy");
-console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
+  console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
 if (apiGitSha) {
   console.log(`[INFO] Reported API git SHA: ${apiGitSha}`);
 } else {
   console.log(
-    "[INFO] API /api/health did not report gitSha. Railway git metadata is treated as best-effort in this verification mode.",
+    "[INFO] API /api/health did not report gitSha. Hosted git provenance is treated as best-effort in this verification mode.",
   );
 }
 

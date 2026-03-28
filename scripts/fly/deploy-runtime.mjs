@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { requireFlyAppName, resolveRepoRoot } from "./shared.mjs";
 
+const REQUIRED_BACKGROUND_PROCESS_GROUPS = ["worker", "indexer"];
+
 function parseArgs(argv) {
   const options = {
     appName: null,
@@ -72,6 +74,64 @@ function runCommand(command, args, errorMessage) {
   }
 }
 
+function runCommandForJson(command, args, errorMessage) {
+  const result = spawnSync(command, args, {
+    cwd: resolveRepoRoot(),
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    env: process.env,
+  });
+
+  if (result.error) {
+    throw new Error(`${errorMessage} (${result.error.message})`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim();
+    throw new Error(stderr ? `${errorMessage} (${stderr})` : errorMessage);
+  }
+
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(
+      `${errorMessage} (received invalid JSON from ${command}). Next step: inspect the Fly CLI output and retry.`,
+    );
+  }
+}
+
+function ensureBackgroundProcessGroupsStarted(appName) {
+  const machines = runCommandForJson(
+    "flyctl",
+    ["machine", "list", "--app", appName, "--json"],
+    "Failed to inspect Fly machines after deploy. Next step: verify flyctl access to the app and retry.",
+  );
+
+  for (const processGroup of REQUIRED_BACKGROUND_PROCESS_GROUPS) {
+    const groupMachines = machines.filter(
+      (machine) => machine.process_group === processGroup,
+    );
+    const hasStartedMachine = groupMachines.some(
+      (machine) => machine.state === "started",
+    );
+    if (hasStartedMachine) {
+      continue;
+    }
+
+    const candidate = groupMachines.find((machine) => machine.state === "stopped");
+    if (!candidate) {
+      throw new Error(
+        `Fly deploy left process group ${processGroup} without any started or stopped machine to recover. Next step: inspect the Fly app state and re-provision that process group before retrying.`,
+      );
+    }
+
+    runCommand(
+      "flyctl",
+      ["machine", "start", candidate.id, "--app", appName],
+      `Fly deploy left process group ${processGroup} stopped. Next step: inspect the process-group machine and retry after fixing the startup issue.`,
+    );
+  }
+}
+
 function run() {
   const options = parseArgs(process.argv.slice(2));
   const appName = options.appName?.trim() || requireFlyAppName(process.env);
@@ -104,6 +164,8 @@ function run() {
     ],
     "Fly runtime deploy failed. Next step: inspect flyctl deploy output, fix the failing process group or health check, and retry.",
   );
+
+  ensureBackgroundProcessGroupsStarted(appName);
 }
 
 try {

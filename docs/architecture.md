@@ -77,7 +77,7 @@ flowchart TB
     end
 
     subgraph Compute["Compute Layer"]
-        Orchestrator["Worker Orchestrator<br/>(Railway)"]
+        Orchestrator["Worker Orchestrator<br/>(Fly)"]
         Executor["Executor Service<br/>(Docker-capable host)"]
         Scorer["Docker Scorer<br/>(sandboxed)"]
         Indexer["Chain Indexer<br/>(event poller)"]
@@ -773,7 +773,7 @@ flowchart TB
 
     subgraph Edge["Edge / Hosting"]
         Vercel["Vercel<br/>(Next.js frontend)"]
-        Fly1["Fly.io / Railway<br/>(Hono API)"]
+        Fly1["Fly.io<br/>(Hono API)"]
     end
 
     subgraph Infra["Infrastructure"]

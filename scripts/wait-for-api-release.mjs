@@ -190,7 +190,7 @@ function printUsage() {
 
 This waits until /api/health reports the expected hosted API release metadata.
 It accepts both healthy and unhealthy /api/health responses so schema alignment
-can wait for Railway to finish rolling out the new code before a reset.`);
+can wait for the hosted runtime to finish rolling out the new code before a reset.`);
 }
 
 async function waitForApiRelease(input) {
@@ -234,7 +234,7 @@ async function waitForApiRelease(input) {
   }
 
   throw new Error(
-    `Timed out waiting for hosted API release metadata. Next step: verify Railway deployed the intended revision and that /api/health reports releaseId/runtimeVersion/gitSha. Last observed state: ${JSON.stringify(lastObserved)}`,
+    `Timed out waiting for hosted API release metadata. Next step: verify the hosted runtime deployed the intended revision and that /api/health reports releaseId/runtimeVersion/gitSha. Last observed state: ${JSON.stringify(lastObserved)}`,
   );
 }
 

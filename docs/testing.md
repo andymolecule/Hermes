@@ -174,8 +174,8 @@ Workflow boundary:
   succeeds.
 - `Hosted Smoke` is manual and funded.
 
-Do not treat `Verify Runtime` as a Railway pre-deploy branch gate. It checks
-the live hosted runtime, so making Railway wait on it before deployment
+Do not treat `Verify Runtime` as a pre-deploy branch gate. It checks
+the live hosted runtime, so making the deploy workflow wait on it before deployment
 creates a circular dependency.
 
 ### `pnpm smoke:lifecycle`

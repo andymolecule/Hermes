@@ -3,7 +3,6 @@ import fs from "node:fs";
 
 export const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
   "VERCEL_GIT_COMMIT_SHA",
-  "RAILWAY_GIT_COMMIT_SHA",
   "GITHUB_SHA",
   "RENDER_GIT_COMMIT",
   "CI_COMMIT_SHA",

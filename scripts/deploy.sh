@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-API_TARGET="${AGORA_DEPLOY_API_TARGET:-none}"       # none|fly|railway
-INDEXER_TARGET="${AGORA_DEPLOY_INDEXER_TARGET:-none}" # none|fly|railway
+API_TARGET="${AGORA_DEPLOY_API_TARGET:-none}"       # none|fly
+INDEXER_TARGET="${AGORA_DEPLOY_INDEXER_TARGET:-none}" # none|fly
 RPC_URL="${AGORA_RPC_URL:-}"
 PRIVATE_KEY="${AGORA_PRIVATE_KEY:-}"
 USDC_ADDRESS="${AGORA_USDC_ADDRESS:-}"
@@ -130,27 +130,14 @@ deploy_fly() {
   popd >/dev/null
 }
 
-deploy_railway() {
-  local app_dir="$1"
-  if ! command -v railway >/dev/null 2>&1; then
-    echo "railway CLI not found; skipping Railway deploy for $app_dir"
-    return 0
-  fi
-  pushd "$app_dir" >/dev/null
-  railway up
-  popd >/dev/null
-}
-
 case "$API_TARGET" in
   fly) deploy_fly "apps/api" ;;
-  railway) deploy_railway "apps/api" ;;
   none) echo "Skipping API deployment (AGORA_DEPLOY_API_TARGET=none)." ;;
   *) echo "Unsupported API target: $API_TARGET"; exit 1 ;;
 esac
 
 case "$INDEXER_TARGET" in
   fly) deploy_fly "packages/chain" ;;
-  railway) deploy_railway "packages/chain" ;;
   none) echo "Skipping indexer deployment (AGORA_DEPLOY_INDEXER_TARGET=none)." ;;
   *) echo "Unsupported indexer target: $INDEXER_TARGET"; exit 1 ;;
 esac

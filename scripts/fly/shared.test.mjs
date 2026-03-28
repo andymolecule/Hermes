@@ -24,7 +24,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
     AGORA_SUPABASE_SERVICE_KEY: "service",
     AGORA_WEB_URL: "https://agora-web.example",
     AGORA_CORS_ORIGINS: "https://agora-web.example",
-    AGORA_WORKER_INTERNAL_URL: "http://agora.railway.internal:3400",
+    AGORA_WORKER_INTERNAL_URL: "http://stale.internal.invalid:3400",
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
     AGORA_SCORER_EXECUTOR_BACKEND: "remote_http",
     AGORA_SCORER_EXECUTOR_URL: "https://executor.example",

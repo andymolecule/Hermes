@@ -24,7 +24,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 ## Summary
 
 - Four processes in production: API, Indexer, Worker Orchestrator, Executor
-- Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Railway, executor on a Docker-capable host or service
+- Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Fly, executor on a Docker-capable host or service
 - The API is the canonical remote agent surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
@@ -132,7 +132,7 @@ Architecture boundary:
 - Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Railway.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Fly.
 - Official scorer-template challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Read-side challenge visibility and write-side scoring readiness intentionally differ after the deadline. Use contract `status()` for public visibility decisions and `scoringStartedAt > 0` for score posting, dispute timing, finalization timing, and score-job eligibility.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
@@ -149,7 +149,7 @@ The worker treats scorer availability as a runtime readiness problem, not a cras
    - `remote_http`: verify the executor service is reachable and ask it to preflight official images
 5. If executor health or image preflight fails, the process stays up, keeps heartbeating, and skips job claims until readiness recovers.
 6. Readiness is retried in the background every minute.
-7. During scoring, the runner uses the configured executor backend. In production this should be the remote executor so Railway only runs orchestration code, not Docker itself.
+7. During scoring, the runner uses the configured executor backend. In production this should be the remote executor so Fly only runs orchestration code, not Docker itself.
 8. Official images without a repo digest are rejected. A locally built image is not accepted as a substitute for a published official artifact.
 
 ---
@@ -252,45 +252,35 @@ pnpm --filter @agora/executor start  # only when AGORA_SCORER_EXECUTOR_BACKEND=r
 Current production is intentionally split across hosts:
 
 - Vercel: `agora-web`
-- Railway: `@agora/api`, `agora-indexer`, `agora-worker-orchestrator`
+- Fly: `agora-runtime-prod` with `app`, `worker`, and `indexer` process groups
 - Docker-capable host or service: `agora-executor`
 
-Vercel redeploys directly from GitHub `main` via its native integration. Railway runtime services should roll forward through Railway's native deploy path from `main`, then the hosted verification flow from [Deployment](deployment.md) waits for the intended API release metadata, checks schema compatibility, verifies hosted health, and only then treats the runtime as aligned. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
+Vercel redeploys directly from GitHub `main` via its native integration. Fly runtime services should roll forward through [`Deploy Fly Runtime`](/Users/changyuesin/Agora/.github/workflows/deploy-fly-runtime.yml), then the hosted verification flow from [Deployment](deployment.md) waits for the intended API release metadata, checks schema compatibility, verifies hosted health, and only then treats the runtime as aligned. The executor should be treated as infrastructure: update it when the executor service itself changes, not on every app commit.
 
 Vercel-specific proxy rule:
 
 - Set server-side `AGORA_API_URL` to the backend API origin, not the web origin. The same-origin web `/api/*` proxy depends on this and will fail closed if it is pointed back at the web host.
 
-### Railway Dashboard Settings
+### Fly Runtime Settings
 
-Railway API and indexer are intentionally dashboard-managed.
+Fly runtime settings are intentionally repo-managed through
+[fly.toml](/Users/changyuesin/Agora/fly.toml).
 
 Recommended steady-state settings:
 
-- `Source Repo`: `andymolecule/Agora`
-- `Branch connected to production`: `main`
-- Native Railway auto-deploy: enabled
-- If `Wait for CI` is enabled, point it only at the repo `CI` workflow
-- API health check path: `/api/health`
-- API health check timeout: `30` seconds
-- Shared runtime release identity: set `AGORA_EXPECT_RELEASE_METADATA=true`
-  after confirming the hosted release metadata path reports a non-placeholder
-  `identitySource` such as `baked` or `provider_env`
-- No dashboard watch-path filtering
-- Build/start commands:
-  - API build: `pnpm turbo build --filter=@agora/api`
-  - API start: `pnpm --filter @agora/api start`
-  - Indexer build: `pnpm turbo build --filter=@agora/chain`
-  - Indexer start: `pnpm --filter @agora/chain indexer`
-  - Worker orchestrator build: `pnpm turbo build --filter=@agora/api`
-  - Worker orchestrator start: `pnpm --filter @agora/api worker`
+- App name: `agora-runtime-prod`
+- Runtime process groups: `app`, `worker`, `indexer`
+- Platform liveness route: `/healthz`
+- Shared runtime release identity: `AGORA_EXPECT_RELEASE_METADATA=true`
+- Public API URL derived from the Fly app name
+- Worker internal URL derived from the Fly app name and private DNS
 
 Operational rule:
 
-- Do not reintroduce repo-local `railway.toml` service configs for API or indexer unless Railway's native deploy path is intentionally being replaced.
-- Do not add a second deploy control plane on top of Railway. Let Railway handle runtime rollout from `main`, then use the hosted verification flow from [Deployment](deployment.md) to detect schema drift and runtime readiness.
-- Do not use `Verify Runtime` as a Railway pre-deploy gate. The right order is
-  `CI` first, Railway deploy second, hosted verification third.
+- Do not bypass [fly.toml](/Users/changyuesin/Agora/fly.toml) with ad hoc shared-production config drift.
+- Do not add a second deploy control plane on top of Fly. Use the repo-native deploy workflow, then use the hosted verification flow from [Deployment](deployment.md) to detect schema drift and runtime readiness.
+- Do not use `Verify Runtime` as a pre-deploy gate. The right order is
+  `CI` first, Fly deploy second, hosted verification third.
 
 ### Remote Executor Service
 
@@ -303,13 +293,13 @@ Production scoring should run with:
 Expected executor host configuration:
 
 - Docker daemon available locally
-- `apps/executor` deployed and reachable by the Railway worker orchestrator
+- `apps/executor` deployed and reachable by the Fly worker orchestrator
 - `AGORA_EXECUTOR_AUTH_TOKEN` matches the orchestrator token
 - `NODE_ENV=production` requires `AGORA_EXECUTOR_AUTH_TOKEN`; the executor will fail fast without it
 
 Steady-state flow:
 
-1. Runtime-affecting pushes to `main` deploy through Railway's native runtime deploy path
+1. Runtime-affecting pushes to `main` deploy through the canonical Fly runtime workflow
 2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility, `/api/worker-health`, and `/api/indexer-health` without mutating the environment
 3. Operators use `pnpm reset-bomb:testnet` only when verification reports schema incompatibility or when they intentionally want a destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
@@ -322,11 +312,11 @@ Steady-state flow:
 
 Release prerequisites:
 
-- Railway auto-deploy remains enabled for API, indexer, and worker orchestrator
+- Fly remains the only hosted runtime owner for API, indexer, and worker orchestrator
 - `/api/health` must be healthy and report a runtime version plus a canonical `identitySource` before the release gate passes
 - `/api/worker-health` must report healthy workers on the active API runtime before the release gate passes
 - `/api/indexer-health` must report the same runtime version and a canonical `identitySource` before the release gate passes
-- `gitSha` on Railway is best-effort provenance, not a hard hosted release gate
+- `gitSha` on Fly is expected through the stamped runtime metadata and should stay aligned with `AGORA_RELEASE_GIT_SHA`
 - `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive reset bomb
 - Any PR or direct push that changes `packages/db/src/schema-compatibility.ts` or `packages/db/supabase/migrations/001_baseline.sql` must include `[runtime-schema-change]` in the PR title or commit message so CI fails loud until the destructive reset plan is acknowledged
 
@@ -559,19 +549,19 @@ agora reindex --from-block <block_number>
 ### Worker Stalled
 
 1. Check `GET /api/worker-health` — if `status: "warning"`, the oldest queued job has been waiting > 5 minutes.
-2. Tail worker logs from Railway and executor logs from the executor host/service.
+2. Tail worker logs from Fly and executor logs from the executor host/service.
 3. Common causes:
    - Executor unavailable -> inspect the worker `latestError`, check `GET <executor-url>/healthz`, then verify network reachability and the shared bearer token.
    - Docker daemon not running or unreachable on the executor host -> restart Docker there, then retry readiness checks.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the executor host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Railway worker orchestrator so it redeploys on the active API revision.
+   - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Fly worker process so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Wallet-funded authoring publishes interrupted before the caller sent the chain transaction -> rerun `POST /api/authoring/sessions/:id/publish` with the same bound wallet and use the returned executable tx payloads.
    - Wallet-funded authoring publishes interrupted after the caller sent the chain transaction -> inspect the session row, confirm the `tx_hash`, and retry `POST /api/authoring/sessions/:id/confirm-publish` with the original `tx_hash` instead of replaying the authoring flow.
    - Terminal validation/configuration rows lingering in `failed` -> inspect with `agora clean-failed-jobs` and skip only the rows that are truly unrecoverable.
-4. If the worker orchestrator process itself crashed: redeploy or restart the Railway worker service. If the executor crashed, restart the executor service on its host and re-check the executor `/healthz` endpoint.
+4. If the worker orchestrator process itself crashed: redeploy or restart the Fly worker process. If the executor crashed, restart the executor service on its host and re-check the executor `/healthz` endpoint.
 
 ### Managed Authoring Backlog
 

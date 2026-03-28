@@ -18,7 +18,7 @@ usage() {
 Usage: bash scripts/reset-bomb-testnet.sh
 
 Runs the destructive testnet reset bomb lane:
-0. optionally wait for Railway to expose the intended API release metadata
+0. optionally wait for the hosted runtime to expose the intended API release metadata
 1. reset the Supabase public schema from the single baseline
 2. reload the PostgREST schema cache
 3. run the read-only hosted runtime verification lane

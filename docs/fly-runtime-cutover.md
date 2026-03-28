@@ -1,85 +1,69 @@
-# Fly Runtime Cutover
+# Fly Runtime Hosting
 
 ## Purpose
 
-How to move the Agora runtime services from Railway to Fly without reintroducing
-provider drift between API, worker, and indexer.
+Canonical runbook for Agora runtime hosting on Fly.
 
 ## Scope
 
-This cutover covers:
+This runbook covers:
 
 - `@agora/api`
 - `@agora/api` worker orchestrator
 - `@agora/chain` indexer
 
-This cutover does **not** move the scorer executor. Keep the executor on a
-Docker-capable host or service and continue pointing the worker at
-`AGORA_SCORER_EXECUTOR_URL`.
+The executor stays separate on a Docker-capable host or service.
 
-## What ships in-repo
-
-The Fly lane is now repo-native:
+## Repo-Native Fly Assets
 
 - [fly.toml](/Users/changyuesin/Agora/fly.toml)
 - [Dockerfile](/Users/changyuesin/Agora/Dockerfile)
+- [.github/workflows/deploy-fly-runtime.yml](/Users/changyuesin/Agora/.github/workflows/deploy-fly-runtime.yml)
+- [scripts/fly/deploy-runtime.mjs](/Users/changyuesin/Agora/scripts/fly/deploy-runtime.mjs)
 - [scripts/fly/shared.mjs](/Users/changyuesin/Agora/scripts/fly/shared.mjs)
 - [scripts/fly/sync-secrets.mjs](/Users/changyuesin/Agora/scripts/fly/sync-secrets.mjs)
-- [scripts/fly/deploy-runtime.mjs](/Users/changyuesin/Agora/scripts/fly/deploy-runtime.mjs)
-- [.github/workflows/deploy-fly-runtime.yml](/Users/changyuesin/Agora/.github/workflows/deploy-fly-runtime.yml)
 
-Design choices:
+## Runtime Topology
 
 - one Fly app
 - one Docker image
-- three Fly process groups: `app`, `worker`, `indexer`
-- public API traffic goes through Fly Proxy on `3000`
-- worker validation bridge stays private on Fly 6PN at
-  `worker.process.<app>.internal:3400`
-- release metadata is stamped per deploy from the git SHA and enforced with
-  `AGORA_EXPECT_RELEASE_METADATA=true`
+- three process groups: `app`, `worker`, `indexer`
+- public API served from `https://<fly-app-name>.fly.dev`
+- worker bridge served privately at
+  `http://worker.process.<fly-app-name>.internal:3400`
 
-## Prerequisites
+## Required Platform Inputs
 
-1. Create the Fly app once.
-
-```bash
-fly apps create <fly-app-name>
-```
-
-2. Add the GitHub deploy token:
-
-- secret: `FLY_API_TOKEN`
-- variable: `FLY_APP_NAME`
-
-3. Mirror the runtime secrets that the Fly workflow needs:
-
-- existing `AGORA_*` chain and Supabase secrets
+- `FLY_API_TOKEN`
+- `FLY_APP_NAME`
+- chain and Supabase `AGORA_*` secrets
 - `AGORA_WORKER_INTERNAL_TOKEN`
 - `AGORA_SCORER_EXECUTOR_URL`
 - `AGORA_SCORER_EXECUTOR_TOKEN`
-- any submission sealing keys if sealed submissions stay enabled
+- sealing keys, if sealed submissions remain enabled
 
-4. Keep the executor reachable from Fly. This migration does not replace the
-executor host.
+## Deploy Flow
 
-## Deploy flow
+The canonical hosted runtime deploy path is:
 
-The deploy workflow triggers after `CI` succeeds on `main` and then:
+1. `CI`
+2. `Deploy Fly Runtime`
+3. `Verify Runtime`
+4. optional `Hosted Smoke`
 
-1. stages Fly secrets with `flyctl secrets import --stage`
-2. derives `AGORA_API_URL` as `https://<app>.fly.dev`
-3. derives `AGORA_WORKER_INTERNAL_URL` as
-   `http://worker.process.<app>.internal:3400`
+The deploy workflow:
+
+1. stages Fly secrets
+2. derives `AGORA_API_URL=https://<app>.fly.dev`
+3. derives `AGORA_WORKER_INTERNAL_URL=http://worker.process.<app>.internal:3400`
 4. stamps `AGORA_RELEASE_ID`, `AGORA_RUNTIME_VERSION`, and
-   `AGORA_RELEASE_GIT_SHA` from the git SHA
-5. deploys via `flyctl deploy --remote-only`
-6. runs [verify-runtime.sh](/Users/changyuesin/Agora/scripts/verify-runtime.sh)
-   against the Fly public API
+   `AGORA_RELEASE_GIT_SHA` from the commit SHA
+5. deploys the runtime image to Fly
+6. verifies the hosted runtime
 
-## Local operator flow
+## Manual Operator Flow
 
-If you need to deploy manually from a trusted machine:
+For trusted emergency use only:
 
 ```bash
 export FLY_API_TOKEN=...
@@ -87,63 +71,39 @@ export FLY_APP_NAME=<fly-app-name>
 pnpm fly:deploy
 ```
 
-The deploy script stages the runtime secrets before it calls `flyctl deploy`.
+## Health Model
 
-## Health model on Fly
+- `/healthz` is Fly liveness
+- `/api/health` is hosted readiness
+- `/api/worker-health` is scoring readiness
+- `/api/indexer-health` is projection readiness
 
-- Fly Proxy liveness check: `GET /healthz`
-- Independent readiness check: `GET /api/health`
-- Worker bridge is private-only and binds to `fly-local-6pn`
-- API reaches the worker bridge over Fly internal DNS
+Shared environments should set `AGORA_EXPECT_RELEASE_METADATA=true`.
 
-This split is deliberate:
-
-- `/healthz` keeps deploy routing simple
-- `/api/health` stays fail-closed for schema and readiness
-- `verify:runtime` still checks `/api/health`, `/api/worker-health`, and
-  `/api/indexer-health`
-
-## Cutover sequence
-
-1. Ensure the Fly deploy workflow has completed successfully.
-2. Confirm the public Fly runtime is healthy:
+## Verification
 
 ```bash
 AGORA_API_URL=https://<fly-app-name>.fly.dev pnpm verify:runtime
+pnpm deploy:verify --api-url=https://<fly-app-name>.fly.dev --skip-web
 ```
-
-3. Update any external consumers that still point to Railway:
-
-- GitHub `AGORA_API_URL` secret
-- Vercel server-side `AGORA_API_URL`
-- agent/operator machines
-
-4. Keep Railway live only until the Fly runtime has served stable traffic long
-enough for confidence.
-
-5. Once Fly is accepted as the live runtime, stop Railway runtime deploys so
-there is only one deploy owner again.
 
 ## Rollback
 
-Rollback is straightforward because the data plane stays the same:
+Rollback keeps the same data plane:
 
 - Supabase stays the same
-- Base Sepolia stays the same
+- Base stays the same
 - executor stays the same
 
-If Fly deploy health or runtime verification fails:
+If a Fly deploy fails:
 
-1. point consumers back to the previous Railway API origin
-2. keep the existing Supabase schema and chain state in place
-3. fix the Fly runtime issue
-4. redeploy Fly and rerun `pnpm verify:runtime`
+1. restore the previous healthy Fly image or machine set
+2. confirm `/api/health`, `/api/worker-health`, and `/api/indexer-health`
+3. rerun `pnpm verify:runtime`
 
-## Why this is cleaner than Railway
+## Steady-State Rules
 
-The Fly migration fixes the specific category of drift that kept recurring:
-
-- API, worker, and indexer now deploy from one image and one commit
-- public and internal networking are explicit in config
-- staged secrets plus git-stamped release metadata remove manual version drift
-- the worker bridge no longer depends on a provider-specific wildcard bind
+- keep Fly config in-repo
+- keep release identity stamped from the commit SHA
+- do not hand-edit long-lived hosted runtime identity on the platform
+- do not split API, worker, and indexer across separate hosted deploy owners

@@ -178,7 +178,6 @@ try {
   process.env.AGORA_CHAIN_ID = undefined;
   process.env.AGORA_X402_NETWORK = undefined;
   process.env.VERCEL_GIT_COMMIT_SHA = undefined;
-  process.env.RAILWAY_GIT_COMMIT_SHA = undefined;
   process.env.GITHUB_SHA = undefined;
   process.env.RENDER_GIT_COMMIT = undefined;
   process.env.CI_COMMIT_SHA = undefined;
@@ -273,7 +272,7 @@ try {
 
   process.env.AGORA_RUNTIME_VERSION = "dev";
   process.env.VERCEL_GIT_COMMIT_SHA = undefined;
-  process.env.RAILWAY_GIT_COMMIT_SHA =
+  process.env.SOURCE_VERSION =
     "A61B3299F42EACD5D27A01E87B4C019FABCDEF01";
   resetConfigCache();
   const placeholderRuntimeConfig = loadConfig();

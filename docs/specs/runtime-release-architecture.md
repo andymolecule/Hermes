@@ -1,563 +1,221 @@
 # Runtime Release Architecture
 
 > Status: LOCKED
-> Scope: Runtime deploy ownership, release identity, hosted health, ingress
-> defaults, and the destructive reset bomb boundary.
+> Scope: hosted runtime ownership, release identity, health contracts, and destructive reset boundaries
 
 Read after:
 
 - [Architecture](../architecture.md)
-- [Operations](../operations.md)
 - [Deployment](../deployment.md)
-- [Machine Contract Migration](machine-contract-migration.md)
+- [Operations](../operations.md)
 
 ---
 
-## 0. Clarifying Scope
+## Purpose
 
-### 0.1 Why This Doc Exists
-
-Recent release failures were mostly boundary failures, not business-logic
-failures. The repo had multiple systems trying to answer the same questions in
-different ways:
-
-- what revision is actually running
-- who owns runtime deployment
-- which health route is canonical
-- when destructive reset is allowed
-- which parts of the system require immutable artifacts
-
-This document locks the simpler model so runtime operations stop drifting.
-
-### 0.2 What This Doc Is Authoritative For
-
-- the canonical identity of a hosted runtime release
-- the boundary between Railway-native runtime deploys and GitHub verification
-- the destructive reset bomb boundary
-- the canonical hosted API health contract
-- the ingress split between browser traffic and agent/CLI traffic
-- which artifact discipline remains mandatory for scorer containers
-
-### 0.3 What This Doc Is Not For
-
-- contract lifecycle or payout logic
-- challenge authoring or submission business behavior
-- UI design or copy
-- step-by-step Railway dashboard usage, unless it defines a lasting boundary
-- executor redesign beyond the runtime boundaries it touches
-
-### 0.4 Authority Rule
-
-If this doc conflicts with:
-
-- bash scripts under `scripts/`
-- GitHub workflows
-- older deployment or operations wording
-- current dashboard habits
-
-this doc wins for the runtime release architecture.
-
-Note: the repo may contain migration assets for a future provider move. Those
-assets do not become canonical until the hosted cutover is explicitly executed.
-
-### 0.5 Migration Assumption
-
-This design assumes:
-
-- Railway remains the deploy owner for API, indexer, and worker orchestrator
-- GitHub Actions verifies deployments; it does not deploy runtime services
-- the hosted Base Sepolia environment is disposable, but destructive reset
-  remains explicit rather than automatic
-- official scorer images remain immutable OCI artifacts
-
-The repo may also ship a Fly migration lane for future cutover work. Until that
-cutover happens, this locked doc still describes the live runtime boundary.
+This document locks the hosted runtime model so API, worker, and indexer keep
+one clear source of deploy ownership and one clear set of health contracts.
 
 ---
 
-## 1. Design Goals
+## Canonical Hosted Model
 
-1. Hosted runtime services must report stable release metadata, with exact git
-   provenance when the host platform can surface it cleanly.
-2. Runtime deployment ownership must be obvious: Railway deploys, GitHub
-   verifies, operators bootstrap explicitly when needed.
-3. Runtime release and web release must remain separate domains.
-4. `GET /api/health` must be the canonical hosted health surface.
-5. The worker runtime fence through `worker_runtime_state` and
-   `worker_runtime_control` must remain in place.
-6. Destructive schema reset must require an admin-only DB connection that
-   runtime services do not need.
-7. Official scorer images must keep digest-pinned artifact discipline.
-8. The release path must stay understandable without a custom release control
-   plane layered on top of Railway.
+- Fly is the hosted runtime platform for API, worker orchestrator, and indexer.
+- The runtime runs as one Fly app, one image, and three process groups:
+  `app`, `worker`, `indexer`.
+- Vercel remains the hosted web platform.
+- The executor remains separate infrastructure on a Docker-capable host or
+  service.
 
----
+Deploy ownership:
 
-## 2. Non-Goals
+1. `CI` validates code.
+2. `Deploy Fly Runtime` stages secrets and deploys the runtime image to Fly.
+3. `Verify Runtime` checks the live hosted surfaces after deploy.
+4. `Hosted Smoke` stays optional and funded.
 
-- building or promoting GHCR runtime-service images for API, indexer, or worker
-- manifest-driven Railway deployment for runtime services
-- replacing Railway or Vercel immediately
-- hiding every platform-specific setting behind repo automation
-- redesigning the worker/executor topology in this phase
+GitHub Actions may build, deploy to Fly, verify, and smoke. Shared production
+should not depend on ad hoc local laptop deploys.
 
 ---
 
-## 3. Locked Invariants
+## Design Goals
 
-### 3.1 Runtime Identity
-
-- Hosted runtime services must surface:
-  - `releaseId`
-  - `gitSha`
-  - `runtimeVersion`
-  - `identitySource`
-- `releaseId` and `runtimeVersion` should stay aligned.
-- When Railway or the build environment exposes git metadata cleanly,
-  `releaseId` and `runtimeVersion` should align to the short commit SHA.
-- `gitSha` is best-effort provenance. When present, it should be the full
-  40-character SHA.
-- `identitySource` must explain where hosted release identity came from:
-  `baked`, `override`, `provider_env`, `repo_git`, `legacy_file`, or
-  `unknown`.
-- Hosted Railway deploys may still report `"dev"` when no build or platform
-  metadata is available. That does not block runtime readiness by itself.
-- Explicit overrides are optional and should be introduced only when the team
-  deliberately accepts provider-specific metadata sync complexity.
-
-### 3.2 Deploy Ownership
-
-- Railway is the canonical deploy owner for API, indexer, and worker
-  orchestrator.
-- Shared environments deploy from Railway-native repo builds or Railway-managed
-  build config.
-- GitHub Actions may build, test, verify, and smoke, but must not mutate
-  Railway service config or promote runtime-service images.
-- Local operator laptops are not the canonical deploy source for shared
-  environments.
-
-### 3.3 Hosted Health Contract
-
-- The canonical hosted API liveness/readiness route is `GET /api/health`.
-- `/api/worker-health` and `/api/indexer-health` remain detail routes.
-- `/healthz` may remain as a local or direct-process alias, but hosted docs,
-  monitors, and verification must use `/api/health`.
-
-### 3.4 Release Domains
-
-- Runtime release and web release are separate domains.
-- Runtime verification may skip web verification entirely.
-- Browser auth/session traffic continues to use the web-origin proxy.
-- Agents and CLI default to the API origin directly.
-
-### 3.5 Bootstrap Boundary
-
-- `reset-bomb-testnet` is destructive and explicit.
-- Normal runtime release verification is non-destructive.
-- The hosted Base Sepolia environment keeps one canonical schema shape:
-  reset the public schema and apply the single baseline when an operator
-  intentionally chooses destructive rebuild.
-- Read-only verification is the primary normal release mechanism.
-- Destructive bootstrap must use `AGORA_SUPABASE_ADMIN_DB_URL`.
-- Runtime services must not require `AGORA_SUPABASE_ADMIN_DB_URL`.
-
-### 3.6 Worker Fence Contract
-
-- The API keeps the active scoring runtime version in
-  `worker_runtime_control` only while the runtime schema is healthy and the
-  public API release matches the running runtime.
-- Worker heartbeats publish runtime version through `worker_runtime_state`.
-- Older workers may continue heartbeating but must not claim new jobs after the
-  active runtime version changes.
-- The fence value must align with the hosted API runtime version, even when
-  that version is a best-effort value such as `"dev"`.
-
-### 3.7 Scorer Artifact Discipline
-
-- Official scorer images remain immutable OCI artifacts.
-- Challenge persistence must keep scorer images digest-pinned.
-- Hidden evaluation data must not be baked into scorer images.
-- Runtime-service deployment simplicity does not relax scorer reproducibility
-  rules.
-
-### 3.8 Error Contract
-
-- Public API failures must resolve to structured JSON envelopes.
-- Validation and domain failures should become classified `AgoraError`s.
-- Platform 502/503 responses should represent actual upstream failure, not
-  routine validation or deployment drift.
+1. Hosted runtime ownership is obvious.
+2. API, worker, and indexer share one release identity.
+3. Liveness and readiness stay separate.
+4. Failed or unready API candidates must not take over worker runtime control.
+5. Schema rebuilds remain explicit and destructive.
+6. Official scorer images remain immutable OCI artifacts.
+7. Hosted verification stays readable and provider-specific only where needed.
 
 ---
 
-## 4. Target Model
+## Non-Goals
 
-### 4.1 Runtime Release Metadata
+- reintroducing a second runtime control plane
+- deploying API, worker, and indexer from separate hosted providers
+- making destructive schema reset automatic
+- weakening the worker runtime fence
 
-Hosted runtime services expose this logical shape:
+---
 
-```json
-{
-  "releaseId": "dev",
-  "gitSha": null,
-  "runtimeVersion": "dev",
-  "identitySource": "unknown"
-}
-```
+## Locked Invariants
 
-Rules:
+### Runtime Identity
 
-- `releaseId` and `runtimeVersion` stay aligned in the normal hosted case.
-- Build-generated `release-metadata.json` files may exist, but readiness must
-  not depend on them carrying an exact git SHA.
-- Platform git metadata may improve provenance when available, but hosted
-  verification must still pass when `gitSha` is absent.
-- Shared hosted verification should reject ambiguous identity sources such as
-  `unknown` or `repo_git`.
-
-### 4.2 Runtime Release Pipeline
-
-The runtime release path has four stages:
-
-1. `build`
-   - build the repo
-   - run repo-native verification commands
-2. `platform deploy`
-   - Railway deploys API, indexer, and worker through its native deploy path
-3. `verify`
-   - wait for `/api/health` to return healthy release metadata
-   - wait for `/api/worker-health` to show healthy workers on the active API
-     runtime
-4. `funded hosted smoke`
-   - optional operator lane
-   - post a small real challenge against the deployed runtime
-   - submit, wait for scoring, and verify the public replay artifacts
-
-Rules:
-
-- Railway owns `platform deploy`.
-- GitHub Actions and local operator commands own `build`, `verify`, and the
-  optional funded smoke lane.
-- `verify` is read-only.
-- `CI` is the only push-time code gate that Railway may wait on.
-- `verify` is post-deploy and must not be used as a Railway pre-deploy gate.
-- funded hosted smoke is intentionally stateful and must stay separate from the
-  push-time runtime gate.
-- for the hosted Base Sepolia environment, GitHub may wait for Railway to
-  expose the intended API release metadata, then run the read-only verification
-  lane automatically for pushes to `main`
-- there is no second manifest or image-promotion control plane for runtime
-  services; the single baseline plus hosted verification is the schema contract
-
-### 4.3 Hosted Schema Alignment
-
-The schema contract is not carried by `release-metadata.json`.
-
-`release-metadata.json` is only for hosted runtime identity:
+Hosted runtime surfaces must expose:
 
 - `releaseId`
 - `runtimeVersion`
-- optional `gitSha`
+- `gitSha`
 - `identitySource`
 
-The hosted schema contract comes from:
+Rules:
 
-- `AGORA_RUNTIME_SCHEMA_CONTRACT` in code
-- the canonical Supabase baseline at
-  `packages/db/supabase/migrations/001_baseline.sql`
-- the runtime schema checks in `packages/db/src/schema-compatibility.ts`
-- the repo test suite, which must keep the baseline contract function aligned
-  with `AGORA_RUNTIME_SCHEMA_CONTRACT`
+- `releaseId` and `runtimeVersion` should align in the normal hosted case.
+- `gitSha` should be the full commit SHA when available.
+- `identitySource` must explain whether identity came from `baked`,
+  `override`, `provider_env`, `legacy_file`, `repo_git`, or `unknown`.
+- Shared hosted environments should reject ambiguous identity by setting
+  `AGORA_EXPECT_RELEASE_METADATA=true`.
 
-For the hosted Base Sepolia environment, the canonical runtime-affecting
-release flow is:
+### Health Contract
 
-1. merge to `main`
-2. Railway deploys API, indexer, and worker through its native deploy path
-3. GitHub waits until `/api/health` reports the intended API release metadata,
-   even if readiness is still false
-4. GitHub runs the hosted runtime verification lane
-5. if verification reports schema incompatibility and the environment can be
-   rebuilt destructively, an operator runs `reset-bomb-testnet`
+- `/healthz` is the platform liveness route.
+- `/api/health` is the canonical hosted readiness route.
+- `/api/worker-health` and `/api/indexer-health` remain the hosted detail
+  routes.
+- Deploy routing should depend on `/healthz`.
+- Hosted verification should depend on `/api/health`,
+  `/api/worker-health`, and `/api/indexer-health`.
 
-This is intentionally simple:
+### Worker Fence
 
-- Railway owns runtime deploy
-- GitHub owns automatic verification
-- operators own destructive schema rebuild
-- there is one baseline
-- there is no incremental shared-environment migration chain
+- The API may write `worker_runtime_control` only while runtime readiness is
+  healthy and the public API release matches the running runtime.
+- Workers publish heartbeat and readiness in `worker_runtime_state`.
+- Workers may keep heartbeating when inactive, but they must not claim new jobs
+  unless their runtime version matches `worker_runtime_control`.
 
-### 4.4 Service Deployment Ownership
+### Bootstrap Boundary
 
-For canonical shared environments:
+- `pnpm verify:runtime` is read-only.
+- `pnpm reset-bomb:testnet` is destructive and explicit.
+- Destructive rebuild requires `AGORA_SUPABASE_ADMIN_DB_URL`.
+- Long-running runtime services must not require
+  `AGORA_SUPABASE_ADMIN_DB_URL`.
+- The supported hosted schema lane is still: wipe schema, apply
+  [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql),
+  reload PostgREST cache, restart services.
 
-- keep Railway auto-deploy enabled for runtime services
-- do not replace Railway-native deploys with a manifest promotion layer
-- if Railway watch patterns or root directories are needed, use Railway-native
-  settings and document them clearly
-- treat dashboard config as operational configuration, not as a second custom
-  deployment system
+### Artifact Discipline
 
-### 4.5 Canonical Hosted Health Surface
+- Official scorers stay digest-pinned OCI artifacts.
+- Hidden evaluation data must not ship inside scorer images.
+- Runtime-service deploy simplicity does not relax scorer reproducibility.
 
-`GET /api/health` must return one canonical hosted shape for runtime release
-verification.
+---
 
-Minimum logical fields:
+## Hosted Topology
 
-```json
-{
-  "ok": true,
-  "service": "api",
-  "releaseId": "dev",
-  "gitSha": null,
-  "runtimeVersion": "dev",
-  "identitySource": "unknown",
-  "checkedAt": "2026-03-26T11:35:39.379Z"
-}
+```mermaid
+flowchart TB
+    subgraph Web["Web"]
+        Vercel["Vercel<br/>(Next.js frontend)"]
+    end
+
+    subgraph Runtime["Fly Runtime App"]
+        Api["app<br/>(Hono API)"]
+        Worker["worker<br/>(Worker orchestrator)"]
+        Indexer["indexer<br/>(Chain indexer)"]
+    end
+
+    subgraph Shared["Shared Systems"]
+        Supa["Supabase"]
+        Executor["Executor service"]
+        Chain["Base Sepolia / Base"]
+        Pinata["Pinata"]
+    end
+
+    Vercel --> Api
+    Api --> Supa
+    Api --> Pinata
+    Api --> Worker
+    Worker --> Supa
+    Worker --> Executor
+    Worker --> Chain
+    Indexer --> Supa
+    Indexer --> Chain
 ```
 
-Rules:
-
-- hosted CI and monitoring use `/api/health`
-- worker detail remains under `/api/worker-health`
-- indexer detail remains under `/api/indexer-health`
-- `/healthz` must not diverge if it remains present as an alias
-
-### 4.6 Ingress Contract
-
-Caller defaults:
-
-| Caller | Default origin | Why |
-|--------|----------------|-----|
-| Browser session/auth traffic | Web origin proxy | Same-origin cookie and SIWE constraints |
-| Browser app traffic | Web origin proxy | Simpler browser-origin consistency |
-| CLI | API origin direct | Fewer layers, fewer proxy-specific failures |
-| Agents | API origin direct | Bearer-token traffic does not need the web proxy |
-
-### 4.7 Bootstrap Flow
-
-`reset-bomb-testnet` exists for destructive environment reset only.
-
-Flow:
-
-1. operator confirms the target environment is ready for destructive reset
-2. reset bomb uses `AGORA_SUPABASE_ADMIN_DB_URL`
-3. reset bomb wipes the public schema
-4. reset bomb reapplies `001_baseline.sql`
-5. reset bomb reloads the PostgREST schema cache
-6. reset bomb runs the same read-only hosted verification lane as normal deploys
-
-### 4.8 Verify-Only Runtime Flow
-
-Normal runtime release verification works like this:
-
-1. merge or push the intended runtime change to `main`
-2. Railway deploys API, indexer, and worker through its native deploy path
-3. `pnpm verify:runtime` or the GitHub workflow waits for `/api/health` to
-   report the intended API release metadata, then checks schema compatibility
-   plus `/api/worker-health` on the active API runtime
-4. if schema verification fails and the environment can be rebuilt
-   destructively, an operator runs `pnpm reset-bomb:testnet`
-5. funded hosted smoke is a separate manual lane after verification, not part
-   of the push-time gate
-
-GitHub Actions ordering rule:
-
-1. `CI` runs on push to `main`
-2. Railway deploys from `main`
-3. `Verify Runtime` waits for the intended API release metadata and observes
-   the live hosted runtime
-4. `Reset Bomb Testnet` remains a manual destructive lane
-
-`Verify Runtime` must not run as the pre-deploy branch gate Railway waits on,
-because it inspects the deployed environment rather than pure repo state.
-
-### 4.9 Named Hotspots and Mitigations
-
-1. Provider boundary drift
-   - Symptom: runtime services need destructive DB credentials
-   - Mitigation: `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only
-2. Hidden deploy state
-   - Symptom: operators guess what commit is live
-   - Mitigation: `/api/health` must report runtime identity, and verification
-     gates on health instead of exact provider git metadata
-3. Over-engineered release control plane
-   - Symptom: GitHub deploys Railway by rewriting service config
-   - Mitigation: Railway deploys natively; GitHub verifies only
-4. Circular deploy gates
-   - Symptom: a hosted runtime check blocks the deploy it is supposed to verify
-   - Mitigation: keep `CI` as the only pre-deploy gate; run `Verify Runtime`
-     only after Railway deploy ownership has already advanced the commit
-5. Mixed web/runtime truth
-   - Symptom: runtime release fails because web is on a different revision
-   - Mitigation: runtime verification may skip web verification
-6. Collapsing scorer rigor into runtime-service ops
-   - Symptom: runtime-service simplicity weakens reproducibility guarantees
-   - Mitigation: keep strict artifact discipline only where determinism matters:
-     official scorer images
-
 ---
 
-## 5. Commands and Modes
+## Release Pipeline
 
-Target command set:
-
-- `pnpm verify:runtime`
-- `pnpm reset-bomb:testnet`
-- `pnpm schema:verify`
-- `pnpm scorers:verify`
-- `pnpm deploy:verify`
-- `pnpm smoke:lifecycle`
-- `pnpm smoke:cli:local`
-- `pnpm smoke:hosted`
+1. `CI`
+   - build
+   - test
+   - code-level verification
+2. `Deploy Fly Runtime`
+   - stage Fly secrets
+   - stamp release identity from the commit SHA
+   - deploy one image to the Fly runtime app
+3. `Verify Runtime`
+   - wait for the expected API release
+   - verify schema compatibility
+   - verify API, worker, and indexer health plus release alignment
+4. `Hosted Smoke`
+   - optional funded end-to-end lane
 
 Rules:
 
-- `pnpm verify:runtime` is verify-only
-- `pnpm reset-bomb:testnet` is destructive
-- `pnpm smoke:lifecycle` is the deterministic local settlement lane
-- `pnpm smoke:cli:local` is the deterministic local CLI parity lane
-- `pnpm smoke:hosted` is the funded hosted operational lane
-- runtime verification defaults to API + worker, not web
-- reset bomb uses the admin DB URL and then runs the same verification gate
-- funded hosted smoke must not be coupled back into the push-time runtime gate
-- local deterministic smoke uses isolated local Supabase + Anvil state, not
-  shared hosted runtime state
+- `Verify Runtime` is post-deploy, not a pre-deploy branch gate.
+- Local operator machines are emergency tools, not the canonical shared deploy
+  source.
+- The hosted runtime should never depend on a second external release plane.
 
 ---
 
-## 6. Migration Plan
+## Provider Boundaries
 
-### 6.1 Phase 0: Spec Freeze
+Fly-specific responsibilities:
 
-Objective:
+- machine/process rollout
+- staged secret application
+- `/healthz` routing
+- private service-to-service networking
 
-- lock the simplified runtime-release model before more docs or workflow drift
+Repo responsibilities:
 
-Actions:
-
-1. lock this document
-2. point `docs/README.md`, `docs/operations.md`, and `docs/deployment.md` at it
-3. remove repo guidance that treats manifest-driven runtime deployment as the
-   target state
-
-### 6.2 Phase 1: Health and Ingress Cleanup
-
-Objective:
-
-- standardize hosted runtime verification on `/api/health`
-
-Actions:
-
-1. move hosted docs and checks to `/api/health`
-2. keep `/healthz` as an implementation alias only
-3. keep API-origin direct as the CLI/agent default
-
-### 6.3 Phase 2: Runtime Identity Cleanup
-
-Objective:
-
-- keep hosted runtime identity observable without forcing provider-specific git
-  metadata plumbing
-
-Actions:
-
-1. keep `releaseId` and `runtimeVersion` aligned
-2. treat `gitSha` as best-effort provenance
-3. remove hosted dependence on runtime-only image metadata
-
-### 6.4 Phase 3: Remove Runtime Artifact Promotion
-
-Objective:
-
-- stop treating API, indexer, and worker as custom promoted OCI artifacts
-
-Actions:
-
-1. delete runtime manifest/image promotion workflows
-2. stop rewriting Railway service config from GitHub Actions
-3. keep Railway-native runtime deploys enabled
-
-### 6.5 Phase 4: Steady-State Runtime Releases
-
-Objective:
-
-- make normal hosted runtime releases non-destructive, rerunnable, and
-  Railway-native
-
-Actions:
-
-1. keep `AGORA_SUPABASE_ADMIN_DB_URL` bootstrap-only
-2. keep destructive SQL inside `reset-bomb-testnet` only
-3. keep `verify:runtime` read-only and verify-only
-4. make deploy retries an explicit Railway concern; verify retries rerun health
-   only
-5. keep `CI` as the only push-time gate and run `Verify Runtime` after deploy
-6. keep the schema contract locked to the single baseline and runtime checks
-7. do not add manifest/image promotion or incremental shared-environment
-   migration orchestration for runtime services
-
-Acceptance:
-
-1. normal releases never reset the shared DB automatically
-2. `pnpm verify:runtime` retries do not redeploy runtime services or reset
-   schema
-3. `pnpm deploy:verify` remains read-only and rerunnable
-4. Railway remains the only normal deploy path for API, indexer, and worker
-5. `Verify Runtime` is post-deploy, not a pre-deploy Railway gate
-6. destructive reset remains explicit
-
-### 6.6 Phase 5: Legacy Cleanup
-
-Objective:
-
-- remove compatibility paths that would reintroduce a second deploy or
-  verification model
-
-Actions:
-
-1. remove hosted API `/healthz` guidance from docs and monitors; keep it only
-   as a local alias where needed
-2. delete or quarantine legacy worker-host deploy scripts if Railway remains
-   the canonical worker deploy owner
-3. collapse hosted runtime verification onto `deploy:verify` plus
-   `verify:runtime`
-4. keep only scorer artifact publication under GHCR
-
-Acceptance:
-
-1. one normal hosted runtime release path remains:
-   push or merge to `main` -> Railway deploy -> verify
-2. one separate funded hosted smoke lane remains:
-   verify first -> run `pnpm smoke:hosted` only when an operator wants the
-   external write-path check
-3. one deterministic local CLI parity lane remains:
-   run `pnpm smoke:cli:local` on the isolated local Supabase + Anvil stack
-   when the exact CLI `post -> finalize -> claim` path needs deterministic
-   coverage
-4. one canonical hosted health contract remains:
-   `/api/health`, with detail routes under `/api/worker-health` and
-   `/api/indexer-health`
-5. one canonical observable runtime identity contract remains:
-   `releaseId` and `runtimeVersion` on `/api/health`, with `gitSha`
-   best-effort only
-6. `worker_runtime_state` and `worker_runtime_control` remain the worker fence
+- runtime identity stamping
+- readiness contracts
+- worker runtime fence
+- schema verification
+- funded smoke
 
 ---
 
-## 7. Explicit Keep List
+## Operational Rules
 
-Keep these concepts:
+- Keep Fly config in-repo with [fly.toml](/Users/changyuesin/Agora/fly.toml).
+- Keep deploy automation in
+  [deploy-fly-runtime.yml](/Users/changyuesin/Agora/.github/workflows/deploy-fly-runtime.yml).
+- Keep hosted API URL and worker internal URL derived from the Fly app name.
+- Do not hand-edit long-lived runtime identity secrets on the platform.
+- Do not split API, worker, and indexer across different hosted deploy owners.
 
-- `worker_runtime_state`
-- `worker_runtime_control`
-- `GET /api/health`
-- explicit `deploy:verify`
-- deterministic local lifecycle smoke
-- deterministic local CLI parity smoke
-- funded hosted smoke
-- structured API error envelopes
-- official scorer digest pinning and GHCR publication
+---
 
-These remain the right long-term boundaries.
+## Failure Model
+
+If a release fails:
+
+1. `/healthz` failing means the platform should not route traffic.
+2. `/api/health` failing means the runtime is alive but not ready.
+3. `/api/worker-health` failing means scoring is degraded.
+4. `/api/indexer-health` failing means chain projection is degraded.
+
+If hosted verification reports schema incompatibility and a destructive rebuild
+is acceptable, run `pnpm reset-bomb:testnet`. Otherwise revert or fix the
+runtime and redeploy.

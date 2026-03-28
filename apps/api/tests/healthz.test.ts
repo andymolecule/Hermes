@@ -275,7 +275,7 @@ test("healthz stays live while readiness is still warming up", async () => {
   assert.equal(body.warming, true);
 });
 
-test("health routes stay healthy under Railway's documented healthcheck host", async () => {
+test("health routes stay healthy under provider healthcheck hosts", async () => {
   const app = createApp({
     getRuntimeReadiness: async () => createRuntimeReadiness(),
   });
@@ -283,8 +283,8 @@ test("health routes stay healthy under Railway's documented healthcheck host", a
   const healthzResponse = await app.request(
     new Request("http://localhost/healthz", {
       headers: {
-        host: "healthcheck.railway.app",
-        "user-agent": "Railway/Healthcheck",
+        host: "healthcheck.internal",
+        "user-agent": "HostedHealthcheck/1.0",
       },
     }),
   );
@@ -294,8 +294,8 @@ test("health routes stay healthy under Railway's documented healthcheck host", a
     new Request("http://localhost/api/health", {
       method: "HEAD",
       headers: {
-        host: "healthcheck.railway.app",
-        "user-agent": "Railway/Healthcheck",
+        host: "healthcheck.internal",
+        "user-agent": "HostedHealthcheck/1.0",
       },
     }),
   );
@@ -303,7 +303,7 @@ test("health routes stay healthy under Railway's documented healthcheck host", a
   assert.equal(await apiHealthResponse.text(), "");
 });
 
-test("healthz stays 200 under Railway's documented host during warmup", async () => {
+test("healthz stays 200 under provider healthcheck hosts during warmup", async () => {
   const app = createApp({
     getRuntimeReadiness: async () =>
       createRuntimeReadiness({
@@ -324,8 +324,8 @@ test("healthz stays 200 under Railway's documented host during warmup", async ()
   const response = await app.request(
     new Request("http://localhost/healthz", {
       headers: {
-        host: "healthcheck.railway.app",
-        "user-agent": "Railway/Healthcheck",
+        host: "healthcheck.internal",
+        "user-agent": "HostedHealthcheck/1.0",
       },
     }),
   );

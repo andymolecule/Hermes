@@ -24,9 +24,9 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
-- Railway currently owns the live runtime deployment for API, indexer, and worker orchestrator
-- The repo now ships a Fly runtime migration lane for API, indexer, and worker orchestrator in [docs/fly-runtime-cutover.md](fly-runtime-cutover.md)
-- GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
+- Fly now owns the live runtime deployment for API, indexer, and worker orchestrator
+- The canonical hosted runtime runbook is [docs/fly-runtime-cutover.md](fly-runtime-cutover.md)
+- GitHub workflows and local operator commands verify hosted runtime readiness; deploy ownership stays explicit and Fly-backed
 - `reset-bomb:testnet` is the destructive admin-only lane for explicit hosted schema rebuilds
 - `verify:runtime` is the read-only hosted gate
 - `smoke:cli:local` is the deterministic local CLI parity lane
@@ -75,8 +75,8 @@ the current runtime or when you intentionally want a destructive clean rebuild.
 
 This repo now ships five explicit runtime lanes:
 
-- `pnpm verify:runtime`: non-destructive hosted verification. Assumes Railway
-  already rolled out the current `main` change through its native deploy path,
+- `pnpm verify:runtime`: non-destructive hosted verification. Assumes Fly
+  already rolled out the current `main` change through the canonical deploy path,
   waits for `/api/health` to be healthy, `/api/worker-health` to show healthy
   workers on the active API runtime, `/api/indexer-health` to report the same
   runtime identity, and stops there.
@@ -102,20 +102,17 @@ This repo now ships five explicit runtime lanes:
 GitHub Actions now follow the deploy boundary directly:
 
 - `CI` is the push-time code gate.
-- `Verify Runtime` runs after `CI` succeeds on `main`, waits for Railway to
+- `Deploy Fly Runtime` runs after `CI` succeeds on `main`, stages the runtime
+  secrets, and deploys the Fly runtime app.
+- `Verify Runtime` runs after the runtime deploy succeeds, waits for Fly to
   expose the intended API release metadata, then checks hosted schema
   compatibility and runtime readiness without mutating the environment.
 - `Reset Bomb Testnet` is manual and destructive.
 - `Hosted Smoke` is manual and funded.
 
-This separation is intentional. Railway still owns deploy. GitHub verifies the
-live hosted runtime automatically, while destructive reset remains an explicit
-operator action.
-
-If you are migrating the runtime off Railway, use
-[docs/fly-runtime-cutover.md](fly-runtime-cutover.md). That Fly lane keeps the
-same verification and reset boundaries, but changes the runtime deploy owner
-only after the cutover is complete.
+This separation is intentional. Fly owns the hosted runtime. GitHub deploys to
+Fly through the repo-native workflow, verifies the live hosted runtime
+automatically, and keeps destructive reset as an explicit operator action.
 
 The matching GitHub Actions entrypoints are
 [`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)
@@ -138,9 +135,8 @@ The funded hosted smoke lane additionally requires:
 - chain, wallet, and Pinata values
 - a small real USDC balance in the smoke wallet
 
-Railway should keep its native runtime deploy path enabled for API, indexer,
-and worker orchestrator. GitHub Actions no longer updates Railway service
-config or promotes runtime-service images.
+Fly should remain the only hosted runtime platform for API, indexer, and
+worker orchestrator.
 
 Notes:
 
@@ -149,29 +145,20 @@ Notes:
 - The shipped official execution-template catalog is intentionally narrow. Today the primary template is `official_table_metric_v1`; do not add placeholder templates unless a real published scorer artifact exists for them.
 - This repo now ships a single rebased Supabase baseline. Reset the schema and apply [001_baseline.sql](/Users/changyuesin/Agora/packages/db/supabase/migrations/001_baseline.sql) instead of attempting an incremental migration chain.
 
-Railway deployment checks before production cutover:
+Fly deployment checks before production cutover:
 
-- Keep native Railway auto-deploy enabled for API, indexer, and worker
-  orchestrator.
-- If Railway `Wait for CI` is enabled, only let it wait on the repo `CI`
-  workflow. Do not make Railway wait on `Verify Runtime`, because
-  `Verify Runtime` is intentionally post-deploy and would create a circular
-  gate.
-- Set the API service health check path to `/api/health` with a `30` second timeout so Railway refuses to activate a runtime that is already returning `503`.
+- Use the repo-native `Deploy Fly Runtime` workflow as the only shared deploy
+  path for API, indexer, and worker orchestrator.
+- Keep Fly liveness on `/healthz`.
 - Keep `/api/health` and `/healthz` fast and probe-safe for both `GET` and `HEAD`. Health probe responses should be visible in API logs through the `api.health.probe` event so failed promotions can be diagnosed from the application side.
-- Set `AGORA_EXPECT_RELEASE_METADATA=true` on shared Railway runtime services once the hosted release metadata path is proven. This makes startup fail loud if release identity falls back to `unknown`, `repo_git`, or placeholder `dev`.
-- Do not replace Railway-native runtime deploys with a custom manifest/image
-  promotion path.
-- Do not use repo-local `railway.toml` files for these services unless Railway
-  itself becomes insufficient and a new architecture is explicitly approved.
-- If Railway root directories or watch patterns are needed, keep them
-  provider-native and document them clearly.
+- Set `AGORA_EXPECT_RELEASE_METADATA=true` on shared Fly runtime services. This makes startup fail loud if release identity falls back to `unknown`, `repo_git`, or placeholder `dev`.
+- Keep Fly config repo-native in [fly.toml](/Users/changyuesin/Agora/fly.toml).
 - Any PR or direct push that changes `packages/db/src/schema-compatibility.ts` or `packages/db/supabase/migrations/001_baseline.sql` must include `[runtime-schema-change]` in the PR title or commit message. CI treats that token as the explicit acknowledgment that the hosted reset plan has been reviewed.
 - The only supported hosted Base Sepolia rollout is gated and explicit:
   1. merge or push the intended runtime change to `main`
-  2. let Railway deploy API, indexer, and worker natively
+  2. let `Deploy Fly Runtime` roll out the Fly runtime app
   3. let `Verify Runtime` wait for the intended API release and check hosted
-     schema compatibility plus `/api/health` and `/api/worker-health`
+     schema compatibility plus `/api/health`, `/api/worker-health`, and `/api/indexer-health`
   4. if verification reports schema incompatibility and a destructive rebuild
      is acceptable, run `pnpm reset-bomb:testnet` or the manual workflow
   5. run `pnpm smoke:hosted` only when you intentionally want the funded
@@ -196,7 +183,7 @@ Rollback if any of these occur:
 ```mermaid
 flowchart TB
     A["1. Merge to main"] --> B["2. pnpm install && pnpm turbo build"]
-    B --> C["3. Railway deploys API, Indexer, Worker<br/>(native deploy path)"]
+    B --> C["3. Deploy Fly runtime<br/>(app, worker, indexer)"]
     C --> D["4. Verify hosted runtime readiness<br/>(wait for API release -> schema verify -> health verify)"]
     D --> E["5. Optional funded hosted smoke<br/>(pnpm smoke:hosted)"]
     E --> F{"All checks pass?"}
@@ -245,7 +232,7 @@ This section covers non-code work for deployment across hosted systems.
 - Set the API environment to `AGORA_*` names only.
 - `AGORA_CORS_ORIGINS` matches frontend origins.
 - `AGORA_RUNTIME_VERSION` is an optional override. API, worker orchestrator, and indexer processes launched through `scripts/run-node-with-root-env.mjs` use build metadata or platform git metadata when available and otherwise fall back to a best-effort runtime version such as `dev`.
-- `AGORA_RELEASE_ID` and `AGORA_RELEASE_GIT_SHA` should normally be left alone on Railway. Only inject them deliberately if the team chooses an explicit metadata-sync step.
+- `AGORA_RELEASE_ID` and `AGORA_RELEASE_GIT_SHA` should normally be stamped by the Fly deploy workflow. Do not hand-edit them on the platform unless you intentionally accept a manual metadata override.
 - `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only. Do not inject it into the
   long-running runtime services unless an explicit admin command needs it.
 - While the runtime schema is healthy and the public API release matches the running runtime, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit and prevents failed unpromoted API candidates from taking over the worker fence.
@@ -299,8 +286,8 @@ This section covers non-code work for deployment across hosted systems.
 - Set `AGORA_WORKER_INTERNAL_PORT` and `AGORA_WORKER_INTERNAL_TOKEN` on the worker service.
 - Set the matching `AGORA_WORKER_INTERNAL_URL` and `AGORA_WORKER_INTERNAL_TOKEN` on the API service.
 - `GET /api/submissions/public-key` now fails closed when this bridge is missing, so sealed submission traffic cannot start from a partially configured deploy.
-- `pnpm deploy:verify` now compares the API public-key fingerprint with `/api/worker-health.sealing.publicKeyFingerprint` and `/api/worker-health.sealing.derivedPublicKeyFingerprint`, so the default hosted verify lane can catch API/worker key drift without Railway-private access.
-- `pnpm deploy:verify --worker-internal-url=<worker-internal-origin> --worker-internal-token=<token>` remains the optional deep check when you want to query the worker's private validation server directly from a network that can reach Railway internal services.
+- `pnpm deploy:verify` now compares the API public-key fingerprint with `/api/worker-health.sealing.publicKeyFingerprint` and `/api/worker-health.sealing.derivedPublicKeyFingerprint`, so the default hosted verify lane can catch API/worker key drift without private network access.
+- `pnpm deploy:verify --worker-internal-url=<worker-internal-origin> --worker-internal-token=<token>` remains the optional deep check when you want to query the worker's private validation server directly from a network that can reach Fly private services.
 
 ### Worker Recovery Scripts
 
@@ -312,8 +299,7 @@ This section covers non-code work for deployment across hosted systems.
 - `pnpm verify:runtime` runs the read-only hosted runtime gate.
 - `pnpm smoke:hosted` runs the funded hosted smoke against the configured deployment.
 - `pnpm deploy:verify --api-url=<api-origin> --web-url=<web-origin>` checks hosted API health, optional web version visibility, and worker readiness on the active API runtime. Use `--skip-web` for runtime-only verification. Pass `--expected`, `--expected-api`, `--expected-web`, or `--expected-git-sha` only when you intentionally want an explicit identity check.
-- Railway `redeploy` rebuilds the latest Railway deployment snapshot; it does not fetch the latest GitHub `main` commit. Use Railway auto-deploy or the dashboard's `Deploy Latest Commit` when the goal is to advance source freshness.
-- A healthy-but-stale runtime is a deploy freshness problem, not a smoke-test problem. The clean detector is `AGORA_EXPECTED_GIT_SHA` in `pnpm verify:runtime`; the clean fix is Railway advancing the GitHub source, not a second deploy system in this repo.
+- A healthy-but-stale runtime is a deploy freshness problem, not a smoke-test problem. The clean detector is `AGORA_EXPECTED_GIT_SHA` in `pnpm verify:runtime`; the clean fix is rerunning the canonical Fly deploy workflow against the intended GitHub source.
 - `Monitor Scoring Runtime` GitHub Actions runs on a schedule and fails visibly when `/api/worker-health` reports zero healthy workers on the active runtime or sealing readiness is unavailable.
 
 ### DNS and Domains
