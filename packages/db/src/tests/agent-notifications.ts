@@ -6,8 +6,10 @@ import {
   enqueueClaimableNotificationsForAgent,
   enqueueClaimableNotificationsForChallenge,
   getAgentNotificationEndpointById,
+  getClaimableNotificationCoverageSummary,
   listClaimableNotificationCandidatesForAgent,
   listClaimableNotificationCandidatesForChallenge,
+  requeueAgentNotification,
   upsertAgentNotificationEndpoint,
 } from "../queries/agent-notifications.js";
 
@@ -222,6 +224,105 @@ await enqueueAgentNotification(enqueueDb, {
 assert.equal(
   capturedOutboxPayload.solver_address,
   "0x00000000000000000000000000000000000000aa",
+);
+
+let revivedNotificationPayload: Record<string, unknown> | null = null;
+const reviveFailedDb = {
+  from(table: string) {
+    assert.equal(table, "agent_notification_outbox");
+    return {
+      upsert() {
+        return {
+          select(selection: string) {
+            assert.equal(selection, "*");
+            return {
+              async maybeSingle() {
+                return {
+                  data: null,
+                  error: null,
+                };
+              },
+            };
+          },
+        };
+      },
+      update(payload: Record<string, unknown>) {
+        revivedNotificationPayload = payload;
+        return {
+          eq(field: string, value: string) {
+            assert.equal(field, "dedupe_key");
+            assert.equal(
+              value,
+              "payout.claimable:44444444-4444-4444-8444-444444444444:22222222-2222-4222-8222-222222222222:0x00000000000000000000000000000000000000aa",
+            );
+            return {
+              eq(statusField: string, statusValue: string) {
+                assert.equal(statusField, "status");
+                assert.equal(statusValue, "failed");
+                return {
+                  select(selection: string) {
+                    assert.equal(selection, "*");
+                    return {
+                      async maybeSingle() {
+                        return {
+                          data: {
+                            id: "revived-notification",
+                            agent_id: endpointRow.agent_id,
+                            endpoint_id: endpointRow.id,
+                            challenge_id:
+                              "44444444-4444-4444-8444-444444444444",
+                            solver_address:
+                              "0x00000000000000000000000000000000000000aa",
+                            event_type: "payout.claimable",
+                            dedupe_key:
+                              "payout.claimable:44444444-4444-4444-8444-444444444444:22222222-2222-4222-8222-222222222222:0x00000000000000000000000000000000000000aa",
+                            payload_json: { ok: true },
+                            status: "queued",
+                            attempts: 0,
+                            max_attempts: 5,
+                            next_attempt_at: payload.next_attempt_at,
+                            locked_at: null,
+                            locked_by: null,
+                            delivered_at: null,
+                            last_error: null,
+                            created_at: "2026-03-27T00:00:00.000Z",
+                            updated_at: payload.updated_at,
+                          },
+                          error: null,
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  },
+} as never;
+
+const revivedNotification = await enqueueAgentNotification(
+  reviveFailedDb,
+  {
+    agent_id: endpointRow.agent_id,
+    endpoint_id: endpointRow.id,
+    challenge_id: "44444444-4444-4444-8444-444444444444",
+    solver_address: "0x00000000000000000000000000000000000000AA",
+    event_type: "payout.claimable",
+    dedupe_key:
+      "payout.claimable:44444444-4444-4444-8444-444444444444:22222222-2222-4222-8222-222222222222:0x00000000000000000000000000000000000000aa",
+    payload_json: { ok: true },
+  },
+  {
+    reviveFailed: true,
+  },
+);
+assert.equal(revivedNotification?.id, "revived-notification");
+assert.equal(
+  (revivedNotificationPayload as { status?: string } | null)?.status,
+  "queued",
 );
 
 await assert.rejects(
@@ -508,6 +609,53 @@ const mixedAttributionCandidates =
   );
 assert.equal(mixedAttributionCandidates.length, 0);
 
+const coverageSummaryDb = {
+  from(table: string) {
+    if (table === "challenge_payouts") {
+      return {
+        select(selection: string) {
+          if (selection === "challenge_id") {
+            return {
+              is(field: string, value: null) {
+                assert.equal(field, "claimed_at");
+                assert.equal(value, null);
+                return createAwaitableQuery({
+                  data: [
+                    { challenge_id: "challenge-1" },
+                    { challenge_id: "challenge-1" },
+                  ],
+                  error: null,
+                });
+              },
+            };
+          }
+          return (
+            candidateDb as {
+              from: (table: string) => {
+                select: (selection: string) => unknown;
+              };
+            }
+          )
+            .from(table)
+            .select(selection);
+        },
+      };
+    }
+
+    return (
+      mixedAttributionCandidateDb as { from: (table: string) => unknown }
+    ).from(table);
+  },
+} as never;
+
+const coverageSummary =
+  await getClaimableNotificationCoverageSummary(coverageSummaryDb);
+assert.equal(coverageSummary.finalizedChallengeCount, 1);
+assert.equal(coverageSummary.candidateGroups, 0);
+assert.equal(coverageSummary.skippedWalletGroups, 1);
+assert.equal(coverageSummary.skipReasons.missing_agent_attribution, 1);
+assert.equal(coverageSummary.skipReasons.mixed_agent_attribution, 1);
+
 let enqueueClaimableCalls = 0;
 const enqueueClaimableDb = {
   from(table: string) {
@@ -571,5 +719,49 @@ const queuedAgentNotifications = await enqueueClaimableNotificationsForAgent(
   "2026-03-27T00:10:00.000Z",
 );
 assert.equal(queuedAgentNotifications.length, 1);
+
+let requeuePatch!: Record<string, unknown>;
+const requeueDb = {
+  from(table: string) {
+    assert.equal(table, "agent_notification_outbox");
+    return {
+      update(payload: Record<string, unknown>) {
+        requeuePatch = payload;
+        return {
+          eq(field: string, value: string) {
+            assert.equal(field, "id");
+            assert.equal(value, "notification-1");
+            return {
+              select(selection: string) {
+                assert.equal(selection, "*");
+                return {
+                  async maybeSingle() {
+                    return {
+                      data: {
+                        id: "notification-1",
+                        status: "queued",
+                        attempts: 3,
+                        next_attempt_at: payload.next_attempt_at,
+                      },
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+  },
+} as never;
+
+const requeuedNotification = await requeueAgentNotification(requeueDb, {
+  notificationId: "notification-1",
+  resetAttempts: false,
+  delayMs: 500,
+});
+assert.equal(requeuedNotification?.status, "queued");
+assert.equal("attempts" in requeuePatch, false);
 
 console.log("agent notification query checks passed");

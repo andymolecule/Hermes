@@ -61,6 +61,35 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
           },
         },
       },
+      "/api/notification-health": {
+        get: {
+          operationId: "getNotificationHealth",
+          summary: "Notification delivery health and skip coverage",
+          responses: {
+            "200": {
+              description: "Notification delivery surface is reachable.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/NotificationHealthResponse",
+                  },
+                },
+              },
+            },
+            "503": {
+              description:
+                "Notification delivery surface is reachable but delivery is stalled or misconfigured.",
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: "#/components/schemas/NotificationHealthResponse",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/api/verify": {
         post: {
           operationId: "createVerification",
@@ -1386,6 +1415,152 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
             "identitySource",
             "checkedAt",
             "readiness",
+          ],
+        },
+        NotificationHealthResponse: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            service: { type: "string", enum: ["notifications"] },
+            status: {
+              type: "string",
+              enum: ["ok", "warning", "idle", "error"],
+            },
+            releaseId: { type: "string" },
+            gitSha: { type: ["string", "null"] },
+            runtimeVersion: { type: "string" },
+            identitySource: {
+              type: "string",
+              enum: [
+                "baked",
+                "override",
+                "provider_env",
+                "repo_git",
+                "unknown",
+              ],
+            },
+            checkedAt: isoDateTimeSchema(),
+            runtime: {
+              type: "object",
+              properties: {
+                masterKeyConfigured: { type: "boolean" },
+                pollIntervalMs: { type: "integer" },
+                jobLeaseMs: { type: "integer" },
+                heartbeatIntervalMs: { type: "integer" },
+              },
+              required: [
+                "masterKeyConfigured",
+                "pollIntervalMs",
+                "jobLeaseMs",
+                "heartbeatIntervalMs",
+              ],
+            },
+            counts: {
+              type: "object",
+              properties: {
+                queued: { type: "integer" },
+                readyQueued: { type: "integer" },
+                delivering: { type: "integer" },
+                delivered: { type: "integer" },
+                failed: { type: "integer" },
+              },
+              required: [
+                "queued",
+                "readyQueued",
+                "delivering",
+                "delivered",
+                "failed",
+              ],
+            },
+            timing: {
+              type: "object",
+              properties: {
+                oldestQueuedAt: {
+                  type: ["string", "null"],
+                  format: "date-time",
+                },
+                oldestReadyQueuedAt: {
+                  type: ["string", "null"],
+                  format: "date-time",
+                },
+                oldestDeliveringAt: {
+                  type: ["string", "null"],
+                  format: "date-time",
+                },
+                lastDeliveredAt: {
+                  type: ["string", "null"],
+                  format: "date-time",
+                },
+              },
+              required: [
+                "oldestQueuedAt",
+                "oldestReadyQueuedAt",
+                "oldestDeliveringAt",
+                "lastDeliveredAt",
+              ],
+            },
+            metrics: {
+              type: "object",
+              properties: {
+                oldestQueuedAgeMs: { type: ["integer", "null"] },
+                oldestReadyQueuedAgeMs: { type: ["integer", "null"] },
+                oldestDeliveringAgeMs: { type: ["integer", "null"] },
+              },
+              required: [
+                "oldestQueuedAgeMs",
+                "oldestReadyQueuedAgeMs",
+                "oldestDeliveringAgeMs",
+              ],
+            },
+            thresholds: {
+              type: "object",
+              properties: {
+                readyQueueStaleMs: { type: "integer" },
+                deliveringStaleMs: { type: "integer" },
+              },
+              required: ["readyQueueStaleMs", "deliveringStaleMs"],
+            },
+            endpoints: {
+              type: "object",
+              properties: {
+                active: { type: "integer" },
+                disabled: { type: "integer" },
+                latestDeliveryAt: {
+                  type: ["string", "null"],
+                  format: "date-time",
+                },
+                latestError: { type: ["string", "null"] },
+              },
+              required: [
+                "active",
+                "disabled",
+                "latestDeliveryAt",
+                "latestError",
+              ],
+            },
+            coverage: {
+              type: "object",
+              additionalProperties: true,
+            },
+            latestError: { type: ["string", "null"] },
+          },
+          required: [
+            "ok",
+            "service",
+            "status",
+            "releaseId",
+            "gitSha",
+            "runtimeVersion",
+            "identitySource",
+            "checkedAt",
+            "runtime",
+            "counts",
+            "timing",
+            "metrics",
+            "thresholds",
+            "endpoints",
+            "coverage",
+            "latestError",
           ],
         },
         AuthoringSessionErrorEnvelope: {

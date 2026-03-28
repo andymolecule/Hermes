@@ -43,6 +43,32 @@ export interface AgentNotificationOutboxInsert {
   payload_json: unknown;
 }
 
+export interface AgentNotificationOutboxHealthRow {
+  id: string;
+  agent_id: string;
+  endpoint_id: string;
+  challenge_id: string;
+  event_type: string;
+  status: AgentNotificationOutboxStatus;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  locked_at: string | null;
+  delivered_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentNotificationEndpointHealthRow {
+  id: string;
+  agent_id: string;
+  status: AgentNotificationEndpointStatus;
+  last_delivery_at: string | null;
+  last_error: string | null;
+  updated_at: string;
+}
+
 export interface AgentNotificationOutboxRow {
   id: string;
   agent_id: string;
@@ -83,6 +109,69 @@ export interface ClaimableNotificationCandidate {
   entries: ClaimableNotificationEntry[];
 }
 
+export const CLAIMABLE_NOTIFICATION_SKIP_REASONS = [
+  "missing_submission",
+  "solver_mismatch",
+  "missing_agent_attribution",
+  "mixed_agent_attribution",
+  "missing_endpoint",
+  "challenge_not_finalized",
+  "challenge_missing",
+  "no_claimable_payout",
+] as const;
+
+export type ClaimableNotificationSkipReason =
+  (typeof CLAIMABLE_NOTIFICATION_SKIP_REASONS)[number];
+
+export interface ClaimableNotificationSkippedWalletGroup {
+  challenge_id: string;
+  solver_address: string;
+  reasons: ClaimableNotificationSkipReason[];
+  row_count: number;
+  agent_ids: string[];
+}
+
+export interface ClaimableNotificationCoverage {
+  challenge_id: string;
+  candidates: ClaimableNotificationCandidate[];
+  skipped_wallet_groups: ClaimableNotificationSkippedWalletGroup[];
+}
+
+export interface ClaimableNotificationCoverageSummary {
+  finalizedChallengeCount: number;
+  candidateGroups: number;
+  skippedWalletGroups: number;
+  skipReasons: Record<ClaimableNotificationSkipReason, number>;
+  skippedExamples: ClaimableNotificationSkippedWalletGroup[];
+}
+
+export interface AgentNotificationHealthSnapshot {
+  counts: {
+    queued: number;
+    readyQueued: number;
+    delivering: number;
+    delivered: number;
+    failed: number;
+  };
+  timing: {
+    oldestQueuedAt: string | null;
+    oldestReadyQueuedAt: string | null;
+    oldestDeliveringAt: string | null;
+    lastDeliveredAt: string | null;
+  };
+  endpoints: {
+    active: number;
+    disabled: number;
+    latestDeliveryAt: string | null;
+    latestError: string | null;
+  };
+  errors: {
+    latestOutboxError: string | null;
+    latestEndpointError: string | null;
+  };
+  coverage: ClaimableNotificationCoverageSummary;
+}
+
 interface WalletNotificationGroupRow {
   agent_id: string | null;
   submission_id: string;
@@ -95,7 +184,45 @@ interface WalletNotificationGroup {
   challenge_id: string;
   solver_address: string;
   rows: WalletNotificationGroupRow[];
-  has_unattributed_rows: boolean;
+  skipReasons: Set<ClaimableNotificationSkipReason>;
+}
+
+function createClaimableNotificationSkipReasonCounts() {
+  return Object.fromEntries(
+    CLAIMABLE_NOTIFICATION_SKIP_REASONS.map((reason) => [reason, 0]),
+  ) as Record<ClaimableNotificationSkipReason, number>;
+}
+
+function normalizeClaimableNotificationSkippedWalletGroup(input: {
+  challengeId: string;
+  solverAddress: string;
+  rows: WalletNotificationGroupRow[];
+  reasons: Set<ClaimableNotificationSkipReason>;
+}) {
+  return {
+    challenge_id: input.challengeId,
+    solver_address: input.solverAddress.toLowerCase(),
+    reasons: [...input.reasons].sort(),
+    row_count: input.rows.length,
+    agent_ids: [
+      ...new Set(
+        input.rows
+          .map((row) => row.agent_id)
+          .filter((value): value is string => typeof value === "string"),
+      ),
+    ].sort(),
+  } satisfies ClaimableNotificationSkippedWalletGroup;
+}
+
+function compareIsoDateAscending(left: string | null, right: string | null) {
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right);
+}
+
+function compareIsoDateDescending(left: string | null, right: string | null) {
+  return compareIsoDateAscending(right, left);
 }
 
 function decimalUsdcToBaseUnits(value: string | number) {
@@ -245,9 +372,49 @@ export async function disableAgentNotificationEndpoint(
   return (data as AgentNotificationEndpointRow | null) ?? null;
 }
 
+async function reviveFailedAgentNotification(
+  db: AgoraDbClient,
+  payload: AgentNotificationOutboxInsert,
+  nowIso: string,
+) {
+  const { data, error } = await db
+    .from("agent_notification_outbox")
+    .update({
+      agent_id: payload.agent_id,
+      endpoint_id: payload.endpoint_id,
+      challenge_id: payload.challenge_id,
+      solver_address: payload.solver_address.toLowerCase(),
+      event_type: payload.event_type,
+      payload_json: payload.payload_json,
+      status: "queued",
+      attempts: 0,
+      next_attempt_at: nowIso,
+      last_error: null,
+      locked_at: null,
+      locked_by: null,
+      delivered_at: null,
+      updated_at: nowIso,
+    })
+    .eq("dedupe_key", payload.dedupe_key)
+    .eq("status", "failed")
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(
+      `Failed to revive failed notification delivery: ${error.message}`,
+    );
+  }
+
+  return (data as AgentNotificationOutboxRow | null) ?? null;
+}
+
 export async function enqueueAgentNotification(
   db: AgoraDbClient,
   payload: AgentNotificationOutboxInsert,
+  options: {
+    reviveFailed?: boolean;
+  } = {},
 ): Promise<AgentNotificationOutboxRow | null> {
   const nowIso = new Date().toISOString();
   const { data, error } = await db
@@ -278,7 +445,12 @@ export async function enqueueAgentNotification(
     throw new Error(`Failed to enqueue notification: ${error.message}`);
   }
 
-  return (data as AgentNotificationOutboxRow | null) ?? null;
+  const inserted = (data as AgentNotificationOutboxRow | null) ?? null;
+  if (inserted || options.reviveFailed !== true) {
+    return inserted;
+  }
+
+  return reviveFailedAgentNotification(db, payload, nowIso);
 }
 
 export async function claimNextAgentNotification(
@@ -407,10 +579,108 @@ export async function markAgentNotificationFailed(
   });
 }
 
-export async function listClaimableNotificationCandidatesForChallenge(
+export async function requeueAgentNotification(
+  db: AgoraDbClient,
+  input: {
+    notificationId: string;
+    resetAttempts?: boolean;
+    delayMs?: number;
+  },
+): Promise<AgentNotificationOutboxRow | null> {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const nextAttemptAt = new Date(
+    now + Math.max(0, input.delayMs ?? 0),
+  ).toISOString();
+  const patch: Record<string, unknown> = {
+    status: "queued",
+    next_attempt_at: nextAttemptAt,
+    last_error: null,
+    locked_at: null,
+    locked_by: null,
+    delivered_at: null,
+    updated_at: nowIso,
+  };
+  if (input.resetAttempts !== false) {
+    patch.attempts = 0;
+  }
+  const { data, error } = await db
+    .from("agent_notification_outbox")
+    .update(patch)
+    .eq("id", input.notificationId)
+    .select("*")
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Failed to requeue notification job: ${error.message}`);
+  }
+
+  return (data as AgentNotificationOutboxRow | null) ?? null;
+}
+
+export async function listAgentNotificationOutboxHealthRows(
+  db: AgoraDbClient,
+): Promise<AgentNotificationOutboxHealthRow[]> {
+  const { data, error } = await db
+    .from("agent_notification_outbox")
+    .select(
+      "id,agent_id,endpoint_id,challenge_id,event_type,status,attempts,max_attempts,next_attempt_at,locked_at,delivered_at,last_error,created_at,updated_at",
+    )
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw new Error(
+      `Failed to read notification outbox health rows: ${error.message}`,
+    );
+  }
+
+  return (data ?? []) as AgentNotificationOutboxHealthRow[];
+}
+
+export async function listAgentNotificationEndpointHealthRows(
+  db: AgoraDbClient,
+): Promise<AgentNotificationEndpointHealthRow[]> {
+  const { data, error } = await db
+    .from("agent_notification_endpoints")
+    .select("id,agent_id,status,last_delivery_at,last_error,updated_at")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw new Error(
+      `Failed to read notification endpoint health rows: ${error.message}`,
+    );
+  }
+
+  return (data ?? []) as AgentNotificationEndpointHealthRow[];
+}
+
+async function listFinalizedChallengeIdsWithClaimablePayouts(
+  db: AgoraDbClient,
+): Promise<string[]> {
+  const { data, error } = await db
+    .from("challenge_payouts")
+    .select("challenge_id")
+    .is("claimed_at", null);
+
+  if (error) {
+    throw new Error(
+      `Failed to read claimable payout challenge ids for notifications: ${error.message}`,
+    );
+  }
+
+  return [
+    ...new Set(
+      ((data ?? []) as Array<{ challenge_id: string | null }>)
+        .map((row) => row.challenge_id)
+        .filter((value): value is string => typeof value === "string"),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+async function readClaimableNotificationCoverageForChallenge(
   db: AgoraDbClient,
   challengeId: string,
-): Promise<ClaimableNotificationCandidate[]> {
+): Promise<ClaimableNotificationCoverage> {
   const { data: challenge, error: challengeError } = await db
     .from("challenges")
     .select("id,title,contract_address,distribution_type,status")
@@ -423,8 +693,36 @@ export async function listClaimableNotificationCandidatesForChallenge(
     );
   }
 
-  if (!challenge || challenge.status !== "finalized") {
-    return [];
+  if (!challenge) {
+    return {
+      challenge_id: challengeId,
+      candidates: [],
+      skipped_wallet_groups: [
+        {
+          challenge_id: challengeId,
+          solver_address: "unknown",
+          reasons: ["challenge_missing"],
+          row_count: 0,
+          agent_ids: [],
+        },
+      ],
+    };
+  }
+
+  if (challenge.status !== "finalized") {
+    return {
+      challenge_id: challenge.id,
+      candidates: [],
+      skipped_wallet_groups: [
+        {
+          challenge_id: challenge.id,
+          solver_address: "unknown",
+          reasons: ["challenge_not_finalized"],
+          row_count: 0,
+          agent_ids: [],
+        },
+      ],
+    };
   }
 
   const { data: payoutRows, error: payoutError } = await db
@@ -453,7 +751,19 @@ export async function listClaimableNotificationCandidatesForChallenge(
   }>;
 
   if (normalizedPayoutRows.length === 0) {
-    return [];
+    return {
+      challenge_id: challenge.id,
+      candidates: [],
+      skipped_wallet_groups: [
+        {
+          challenge_id: challenge.id,
+          solver_address: "unknown",
+          reasons: ["no_claimable_payout"],
+          row_count: 0,
+          agent_ids: [],
+        },
+      ],
+    };
   }
 
   const onChainSubmissionIds = [
@@ -494,7 +804,19 @@ export async function listClaimableNotificationCandidatesForChallenge(
     ),
   ];
   if (submissionIntentIds.length === 0) {
-    return [];
+    return {
+      challenge_id: challenge.id,
+      candidates: [],
+      skipped_wallet_groups: [
+        {
+          challenge_id: challenge.id,
+          solver_address: "unknown",
+          reasons: ["missing_submission"],
+          row_count: normalizedPayoutRows.length,
+          agent_ids: [],
+        },
+      ],
+    };
   }
 
   const { data: intents, error: intentsError } = await db
@@ -523,27 +845,28 @@ export async function listClaimableNotificationCandidatesForChallenge(
         .filter((value): value is string => typeof value === "string"),
     ),
   ];
-  if (agentIds.length === 0) {
-    return [];
-  }
+  const normalizedEndpoints =
+    agentIds.length === 0
+      ? []
+      : await (async () => {
+          const { data: endpoints, error: endpointsError } = await db
+            .from("agent_notification_endpoints")
+            .select("id,agent_id,status")
+            .eq("status", "active")
+            .in("agent_id", agentIds);
 
-  const { data: endpoints, error: endpointsError } = await db
-    .from("agent_notification_endpoints")
-    .select("id,agent_id,status")
-    .eq("status", "active")
-    .in("agent_id", agentIds);
+          if (endpointsError) {
+            throw new Error(
+              `Failed to load notification endpoints: ${endpointsError.message}`,
+            );
+          }
 
-  if (endpointsError) {
-    throw new Error(
-      `Failed to load notification endpoints: ${endpointsError.message}`,
-    );
-  }
-
-  const normalizedEndpoints = (endpoints ?? []) as Array<{
-    id: string;
-    agent_id: string;
-    status: AgentNotificationEndpointStatus;
-  }>;
+          return (endpoints ?? []) as Array<{
+            id: string;
+            agent_id: string;
+            status: AgentNotificationEndpointStatus;
+          }>;
+        })();
   const endpointByAgentId = new Map(
     normalizedEndpoints.map((endpoint) => [endpoint.agent_id, endpoint]),
   );
@@ -561,7 +884,7 @@ export async function listClaimableNotificationCandidatesForChallenge(
         challenge_id: challengeId,
         solver_address: payoutRow.solver_address.toLowerCase(),
         rows: [],
-        has_unattributed_rows: false,
+        skipReasons: new Set<ClaimableNotificationSkipReason>(),
       } satisfies WalletNotificationGroup);
     groupedWallets.set(walletKey, walletGroup);
 
@@ -569,7 +892,7 @@ export async function listClaimableNotificationCandidatesForChallenge(
       Number(payoutRow.winning_on_chain_sub_id),
     );
     if (!submission) {
-      walletGroup.has_unattributed_rows = true;
+      walletGroup.skipReasons.add("missing_submission");
       continue;
     }
 
@@ -577,7 +900,7 @@ export async function listClaimableNotificationCandidatesForChallenge(
       submission.solver_address.toLowerCase() !==
       payoutRow.solver_address.toLowerCase()
     ) {
-      walletGroup.has_unattributed_rows = true;
+      walletGroup.skipReasons.add("solver_mismatch");
       continue;
     }
 
@@ -591,17 +914,14 @@ export async function listClaimableNotificationCandidatesForChallenge(
       amount: entryAmount,
     });
     if (!intent?.submitted_by_agent_id) {
-      walletGroup.has_unattributed_rows = true;
+      walletGroup.skipReasons.add("missing_agent_attribution");
     }
   }
 
   const candidates: ClaimableNotificationCandidate[] = [];
+  const skippedWalletGroups: ClaimableNotificationSkippedWalletGroup[] = [];
 
   for (const walletGroup of groupedWallets.values()) {
-    if (walletGroup.has_unattributed_rows) {
-      continue;
-    }
-
     const attributedAgentIds = [
       ...new Set(
         walletGroup.rows
@@ -609,17 +929,32 @@ export async function listClaimableNotificationCandidatesForChallenge(
           .filter((value): value is string => typeof value === "string"),
       ),
     ];
-    if (attributedAgentIds.length !== 1) {
-      continue;
+    const unattributedRowCount = walletGroup.rows.filter(
+      (row) => !row.agent_id,
+    ).length;
+    if (
+      attributedAgentIds.length > 1 ||
+      (attributedAgentIds.length > 0 && unattributedRowCount > 0)
+    ) {
+      walletGroup.skipReasons.add("mixed_agent_attribution");
     }
 
     const [agentId] = attributedAgentIds;
-    if (!agentId) {
-      continue;
+    const endpoint = agentId ? endpointByAgentId.get(agentId) : null;
+
+    if (agentId && (!endpoint || endpoint.status !== "active")) {
+      walletGroup.skipReasons.add("missing_endpoint");
     }
 
-    const endpoint = endpointByAgentId.get(agentId);
-    if (!endpoint || endpoint.status !== "active") {
+    if (walletGroup.skipReasons.size > 0 || !agentId || !endpoint) {
+      skippedWalletGroups.push(
+        normalizeClaimableNotificationSkippedWalletGroup({
+          challengeId: challenge.id,
+          solverAddress: walletGroup.solver_address,
+          rows: walletGroup.rows,
+          reasons: walletGroup.skipReasons,
+        }),
+      );
       continue;
     }
 
@@ -648,19 +983,189 @@ export async function listClaimableNotificationCandidatesForChallenge(
     });
   }
 
-  return candidates.sort((left, right) =>
-    candidateGroupKey({
-      agentId: left.agent_id,
-      challengeId: left.challenge_id,
-      solverAddress: left.solver_address,
-    }).localeCompare(
+  return {
+    challenge_id: challenge.id,
+    candidates: candidates.sort((left, right) =>
       candidateGroupKey({
-        agentId: right.agent_id,
-        challengeId: right.challenge_id,
-        solverAddress: right.solver_address,
-      }),
+        agentId: left.agent_id,
+        challengeId: left.challenge_id,
+        solverAddress: left.solver_address,
+      }).localeCompare(
+        candidateGroupKey({
+          agentId: right.agent_id,
+          challengeId: right.challenge_id,
+          solverAddress: right.solver_address,
+        }),
+      ),
     ),
+    skipped_wallet_groups: skippedWalletGroups.sort((left, right) =>
+      walletGroupKey({
+        challengeId: left.challenge_id,
+        solverAddress: left.solver_address,
+      }).localeCompare(
+        walletGroupKey({
+          challengeId: right.challenge_id,
+          solverAddress: right.solver_address,
+        }),
+      ),
+    ),
+  };
+}
+
+export async function listClaimableNotificationCandidatesForChallenge(
+  db: AgoraDbClient,
+  challengeId: string,
+): Promise<ClaimableNotificationCandidate[]> {
+  const coverage = await readClaimableNotificationCoverageForChallenge(
+    db,
+    challengeId,
   );
+  return coverage.candidates;
+}
+
+export async function getClaimableNotificationCoverageForChallenge(
+  db: AgoraDbClient,
+  challengeId: string,
+): Promise<ClaimableNotificationCoverage> {
+  return readClaimableNotificationCoverageForChallenge(db, challengeId);
+}
+
+export async function getClaimableNotificationCoverageSummary(
+  db: AgoraDbClient,
+  options: {
+    maxExamples?: number;
+  } = {},
+): Promise<ClaimableNotificationCoverageSummary> {
+  const challengeIds = await listFinalizedChallengeIdsWithClaimablePayouts(db);
+  if (challengeIds.length === 0) {
+    return {
+      finalizedChallengeCount: 0,
+      candidateGroups: 0,
+      skippedWalletGroups: 0,
+      skipReasons: createClaimableNotificationSkipReasonCounts(),
+      skippedExamples: [],
+    };
+  }
+
+  const maxExamples = Math.max(0, options.maxExamples ?? 10);
+  const skipReasons = createClaimableNotificationSkipReasonCounts();
+  const skippedExamples: ClaimableNotificationSkippedWalletGroup[] = [];
+  let candidateGroups = 0;
+  let skippedWalletGroups = 0;
+
+  for (const challengeId of challengeIds) {
+    const coverage = await readClaimableNotificationCoverageForChallenge(
+      db,
+      challengeId,
+    );
+    candidateGroups += coverage.candidates.length;
+    skippedWalletGroups += coverage.skipped_wallet_groups.length;
+    for (const skippedGroup of coverage.skipped_wallet_groups) {
+      for (const reason of skippedGroup.reasons) {
+        skipReasons[reason] += 1;
+      }
+      if (skippedExamples.length < maxExamples) {
+        skippedExamples.push(skippedGroup);
+      }
+    }
+  }
+
+  return {
+    finalizedChallengeCount: challengeIds.length,
+    candidateGroups,
+    skippedWalletGroups,
+    skipReasons,
+    skippedExamples,
+  };
+}
+
+export async function readAgentNotificationHealthSnapshot(
+  db: AgoraDbClient,
+): Promise<AgentNotificationHealthSnapshot> {
+  const nowMs = Date.now();
+  const [outboxRows, endpointRows, coverage] = await Promise.all([
+    listAgentNotificationOutboxHealthRows(db),
+    listAgentNotificationEndpointHealthRows(db),
+    getClaimableNotificationCoverageSummary(db),
+  ]);
+
+  const queuedRows = outboxRows.filter((row) => row.status === "queued");
+  const readyQueuedRows = queuedRows.filter(
+    (row) => Date.parse(row.next_attempt_at) <= nowMs,
+  );
+  const deliveringRows = outboxRows.filter(
+    (row) => row.status === "delivering",
+  );
+  const deliveredRows = outboxRows.filter((row) => row.status === "delivered");
+  const failedRows = outboxRows.filter((row) => row.status === "failed");
+  const activeEndpoints = endpointRows.filter((row) => row.status === "active");
+  const disabledEndpoints = endpointRows.filter(
+    (row) => row.status === "disabled",
+  );
+  const latestEndpointError =
+    endpointRows
+      .filter(
+        (row) =>
+          typeof row.last_error === "string" &&
+          row.last_error.trim().length > 0,
+      )
+      .sort((left, right) =>
+        compareIsoDateDescending(left.updated_at, right.updated_at),
+      )[0]?.last_error ?? null;
+  const latestOutboxError =
+    outboxRows
+      .filter(
+        (row) =>
+          typeof row.last_error === "string" &&
+          row.last_error.trim().length > 0,
+      )
+      .sort((left, right) =>
+        compareIsoDateDescending(left.updated_at, right.updated_at),
+      )[0]?.last_error ?? null;
+
+  return {
+    counts: {
+      queued: queuedRows.length,
+      readyQueued: readyQueuedRows.length,
+      delivering: deliveringRows.length,
+      delivered: deliveredRows.length,
+      failed: failedRows.length,
+    },
+    timing: {
+      oldestQueuedAt:
+        queuedRows
+          .map((row) => row.created_at)
+          .sort(compareIsoDateAscending)[0] ?? null,
+      oldestReadyQueuedAt:
+        readyQueuedRows
+          .map((row) => row.created_at)
+          .sort(compareIsoDateAscending)[0] ?? null,
+      oldestDeliveringAt:
+        deliveringRows
+          .map((row) => row.locked_at ?? row.updated_at)
+          .sort(compareIsoDateAscending)[0] ?? null,
+      lastDeliveredAt:
+        deliveredRows
+          .map((row) => row.delivered_at)
+          .filter((value): value is string => typeof value === "string")
+          .sort(compareIsoDateDescending)[0] ?? null,
+    },
+    endpoints: {
+      active: activeEndpoints.length,
+      disabled: disabledEndpoints.length,
+      latestDeliveryAt:
+        endpointRows
+          .map((row) => row.last_delivery_at)
+          .filter((value): value is string => typeof value === "string")
+          .sort(compareIsoDateDescending)[0] ?? null,
+      latestError: latestEndpointError,
+    },
+    errors: {
+      latestOutboxError,
+      latestEndpointError,
+    },
+    coverage,
+  };
 }
 
 async function listChallengeIdsWithAgentSubmissions(
@@ -701,7 +1206,9 @@ export async function listClaimableNotificationCandidatesForAgent(
     const challengeCandidates =
       await listClaimableNotificationCandidatesForChallenge(db, challengeId);
     candidates.push(
-      ...challengeCandidates.filter((candidate) => candidate.agent_id === agentId),
+      ...challengeCandidates.filter(
+        (candidate) => candidate.agent_id === agentId,
+      ),
     );
   }
 
@@ -750,8 +1257,12 @@ function buildClaimableNotificationPayload(input: {
 async function enqueueClaimableNotificationCandidates(
   db: AgoraDbClient,
   candidates: ClaimableNotificationCandidate[],
-  occurredAt = new Date().toISOString(),
+  options: {
+    occurredAt?: string;
+    reviveFailed?: boolean;
+  } = {},
 ) {
+  const occurredAt = options.occurredAt ?? new Date().toISOString();
   const enqueued: AgentNotificationOutboxRow[] = [];
 
   for (const candidate of candidates) {
@@ -759,15 +1270,21 @@ async function enqueueClaimableNotificationCandidates(
       candidate,
       occurredAt,
     });
-    const row = await enqueueAgentNotification(db, {
-      agent_id: candidate.agent_id,
-      endpoint_id: candidate.endpoint_id,
-      challenge_id: candidate.challenge_id,
-      solver_address: candidate.solver_address,
-      event_type: payload.type,
-      dedupe_key: `${payload.type}:${candidate.challenge_id}:${candidate.agent_id}:${candidate.solver_address}`,
-      payload_json: payload,
-    });
+    const row = await enqueueAgentNotification(
+      db,
+      {
+        agent_id: candidate.agent_id,
+        endpoint_id: candidate.endpoint_id,
+        challenge_id: candidate.challenge_id,
+        solver_address: candidate.solver_address,
+        event_type: payload.type,
+        dedupe_key: `${payload.type}:${candidate.challenge_id}:${candidate.agent_id}:${candidate.solver_address}`,
+        payload_json: payload,
+      },
+      {
+        reviveFailed: options.reviveFailed,
+      },
+    );
     if (row) {
       enqueued.push(row);
     }
@@ -781,11 +1298,13 @@ export async function enqueueClaimableNotificationsForChallenge(
   challengeId: string,
   occurredAt = new Date().toISOString(),
 ) {
-  const candidates = await listClaimableNotificationCandidatesForChallenge(
+  const coverage = await readClaimableNotificationCoverageForChallenge(
     db,
     challengeId,
   );
-  return enqueueClaimableNotificationCandidates(db, candidates, occurredAt);
+  return enqueueClaimableNotificationCandidates(db, coverage.candidates, {
+    occurredAt,
+  });
 }
 
 export async function enqueueClaimableNotificationsForAgent(
@@ -797,5 +1316,8 @@ export async function enqueueClaimableNotificationsForAgent(
     db,
     agentId,
   );
-  return enqueueClaimableNotificationCandidates(db, candidates, occurredAt);
+  return enqueueClaimableNotificationCandidates(db, candidates, {
+    occurredAt,
+    reviveFailed: true,
+  });
 }

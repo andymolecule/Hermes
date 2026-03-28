@@ -13,6 +13,11 @@ const workerTimingConfigSchema = configSchema.pick({
   AGORA_WORKER_HEARTBEAT_MS: true,
   AGORA_WORKER_HEARTBEAT_STALE_MS: true,
 });
+const notificationWorkerTimingConfigSchema = configSchema.pick({
+  AGORA_NOTIFICATION_POLL_MS: true,
+  AGORA_NOTIFICATION_JOB_LEASE_MS: true,
+  AGORA_NOTIFICATION_HEARTBEAT_MS: true,
+});
 
 const scorerExecutorRuntimeConfigSchema = configSchema.pick({
   AGORA_SCORER_EXECUTOR_BACKEND: true,
@@ -35,6 +40,12 @@ export interface AgoraWorkerTimingConfig {
   jobLeaseMs: number;
   heartbeatIntervalMs: number;
   heartbeatStaleMs: number;
+}
+
+export interface AgoraNotificationWorkerTimingConfig {
+  pollIntervalMs: number;
+  jobLeaseMs: number;
+  heartbeatIntervalMs: number;
 }
 
 export interface AgoraScorerExecutorRuntimeConfig {
@@ -64,6 +75,17 @@ export function readWorkerTimingConfig(
     heartbeatStaleMs:
       parsed.AGORA_WORKER_HEARTBEAT_STALE_MS ??
       parsed.AGORA_WORKER_HEARTBEAT_MS * 3,
+  };
+}
+
+export function readNotificationWorkerTimingConfig(
+  env: Record<string, string | undefined> = process.env,
+): AgoraNotificationWorkerTimingConfig {
+  const parsed = parseConfigSection(notificationWorkerTimingConfigSchema, env);
+  return {
+    pollIntervalMs: parsed.AGORA_NOTIFICATION_POLL_MS,
+    jobLeaseMs: parsed.AGORA_NOTIFICATION_JOB_LEASE_MS,
+    heartbeatIntervalMs: parsed.AGORA_NOTIFICATION_HEARTBEAT_MS,
   };
 }
 

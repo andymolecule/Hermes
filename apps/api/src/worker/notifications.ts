@@ -3,7 +3,7 @@ import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   readAgentNotificationRuntimeConfig,
-  readWorkerTimingConfig,
+  readNotificationWorkerTimingConfig,
 } from "@agora/common";
 import {
   type AgentNotificationOutboxRow,
@@ -26,7 +26,8 @@ import {
 import { sleep } from "./policy.js";
 import type { WorkerLogFn } from "./types.js";
 
-const LOG_NOTIFICATION_WORKER_ID = `notification-${crypto.randomBytes(4).toString("hex")}`;
+const NOTIFICATION_WORKER_INSTANCE_ID = crypto.randomBytes(4).toString("hex");
+const LOG_NOTIFICATION_WORKER_ID = `notification-${NOTIFICATION_WORKER_INSTANCE_ID}`;
 const WORKER_HOST = os.hostname();
 const REQUEST_TIMEOUT_MS = 30_000;
 const RETRY_DELAYS_MS = [
@@ -48,7 +49,7 @@ const log: WorkerLogFn = (level, message, meta) => {
 };
 
 function resolveNotificationWorkerId() {
-  return `notification-${WORKER_HOST}-${LOG_NOTIFICATION_WORKER_ID}`;
+  return `${WORKER_HOST}-${LOG_NOTIFICATION_WORKER_ID}`;
 }
 
 function getRetryDelayMs(attempts: number) {
@@ -81,7 +82,7 @@ function startNotificationLeaseHeartbeat(
 ) {
   let stopped = false;
   let lostLease = false;
-  const { heartbeatIntervalMs } = readWorkerTimingConfig();
+  const { heartbeatIntervalMs } = readNotificationWorkerTimingConfig();
 
   const tick = async () => {
     if (stopped) return;
@@ -260,7 +261,7 @@ export async function startNotificationWorker() {
   initWorkerObservability();
   readAgentNotificationRuntimeConfig();
   const db = createSupabaseClient(true);
-  const timing = readWorkerTimingConfig();
+  const timing = readNotificationWorkerTimingConfig();
   const workerId = resolveNotificationWorkerId();
 
   log("info", "Notification worker started", {

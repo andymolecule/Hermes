@@ -22,6 +22,7 @@
     "verify:runtime": "bash scripts/verify-runtime.sh",
     "reset-bomb:testnet": "bash scripts/reset-bomb-testnet.sh",
     "recover:score-jobs": "node scripts/run-node-with-root-env.mjs --import tsx scripts/recover-score-jobs.mjs",
+    "recover:notifications": "node scripts/run-node-with-root-env.mjs scripts/requeue-agent-notification.mjs",
     "smoke:lifecycle": "pnpm smoke:lifecycle:local",
     "smoke:lifecycle:local": "bash scripts/local-lifecycle-smoke.sh",
     "smoke:cli:local": "bash scripts/local-cli-smoke.sh",

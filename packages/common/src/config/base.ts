@@ -216,6 +216,24 @@ export const configSchema = z.object({
       z.number().int().positive(),
     )
     .optional(),
+  AGORA_NOTIFICATION_POLL_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(15_000),
+  AGORA_NOTIFICATION_JOB_LEASE_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(60 * 60 * 1000),
+  AGORA_NOTIFICATION_HEARTBEAT_MS: z
+    .preprocess(
+      (value) => (typeof value === "string" ? Number(value) : value),
+      z.number().int().positive(),
+    )
+    .default(30_000),
   AGORA_ENABLE_NON_CORE_FEATURES: z
     .preprocess(parseBooleanLike, z.boolean())
     .default(false),

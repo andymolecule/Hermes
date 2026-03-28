@@ -30,7 +30,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; the scoring worker polls `score_jobs` after challenges enter Scoring; the notification worker drains `agent_notification_outbox`
 - Worker publishes readiness via `worker_runtime_state`, only claims jobs while `ready=true`, and uses a scorer execution backend (`local_docker` in dev, `remote_http` in production)
-- Health monitoring via `/api/health`, `/api/indexer-health`, `/api/worker-health`, `agora doctor`, and notification delivery logs/outbox state
+- Health monitoring via `/api/health`, `/api/indexer-health`, `/api/worker-health`, `/api/notification-health`, `agora doctor`, and notification delivery logs/outbox state
 - API, worker, executor, and indexer emit structured JSON logs. HTTP surfaces return `x-request-id`; include that header when tracing a failed request across logs or Sentry.
 
 ---
@@ -171,7 +171,8 @@ Notification delivery stays separate from scoring readiness.
 
 1. Settlement projection or repair enqueues `payout.claimable` rows once a finalized challenge has attributable unclaimed payout.
 2. The notification worker claims `agent_notification_outbox` jobs, decrypts the per-agent signing secret with `AGORA_AGENT_NOTIFICATION_MASTER_KEY`, and POSTs signed bodies to active webhook endpoints.
-3. There is no dedicated HTTP health endpoint for notification delivery yet. When callbacks stall, inspect notification-worker logs plus `agent_notification_outbox.last_error` and `agent_notification_endpoints.last_delivery_at`.
+3. `/api/notification-health` reports delivery queue health, active endpoint state, and skipped attributable payout groups so notification gaps are visible without direct DB inspection.
+4. When callbacks stall, inspect notification-worker logs, `/api/notification-health`, `agent_notification_outbox.last_error`, and `agent_notification_endpoints.last_delivery_at`. Use `pnpm recover:notifications --notification-id=<uuid>` to requeue a failed delivery after the endpoint is repaired.
 
 ---
 
@@ -323,7 +324,7 @@ Expected executor host configuration:
 Steady-state flow:
 
 1. Runtime-affecting pushes to `main` deploy through the canonical Fly runtime workflow
-2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility, `/api/worker-health`, and `/api/indexer-health` without mutating the environment
+2. `Verify Runtime` waits for `/api/health` to report the intended API release metadata, then checks hosted schema compatibility, `/api/worker-health`, `/api/indexer-health`, and `/api/notification-health` without mutating the environment
 3. Operators use `pnpm reset-bomb:testnet` only when verification reports schema incompatibility or when they intentionally want a destructive rebuild
 4. Funded hosted smoke is a separate manual lane: `pnpm smoke:hosted`
 5. Deterministic local CLI parity stays local-only: `pnpm smoke:cli:local`
@@ -339,6 +340,7 @@ Release prerequisites:
 - `/api/health` must be healthy and report a runtime version plus a canonical `identitySource` before the release gate passes
 - `/api/worker-health` must report healthy workers on the active API runtime before the release gate passes
 - `/api/indexer-health` must report the same runtime version and a canonical `identitySource` before the release gate passes
+- `/api/notification-health` must not report `status="error"` and must confirm the notification master key is configured before the release gate passes
 - `gitSha` on Fly is expected through the stamped runtime metadata and should stay aligned with `AGORA_RELEASE_GIT_SHA`
 - `AGORA_SUPABASE_ADMIN_DB_URL` is required only for destructive reset bomb
 - Any PR or direct push that changes `packages/db/src/schema-compatibility.ts` or `packages/db/supabase/migrations/001_baseline.sql` must include `[runtime-schema-change]` in the PR title or commit message so CI fails loud until the destructive reset plan is acknowledged

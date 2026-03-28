@@ -26,6 +26,7 @@ import {
   readFeaturePolicy,
   readIndexerHealthRuntimeConfig,
   readLifecycleE2ERuntimeConfig,
+  readNotificationWorkerTimingConfig,
   readObservabilityRuntimeConfig,
   readScorerExecutorRuntimeConfig,
   readSolverWalletRuntimeConfig,
@@ -320,6 +321,9 @@ try {
   process.env.AGORA_WORKER_JOB_LEASE_MS = "666";
   process.env.AGORA_WORKER_HEARTBEAT_MS = "555";
   process.env.AGORA_WORKER_HEARTBEAT_STALE_MS = "777";
+  process.env.AGORA_NOTIFICATION_POLL_MS = "888";
+  process.env.AGORA_NOTIFICATION_JOB_LEASE_MS = "999";
+  process.env.AGORA_NOTIFICATION_HEARTBEAT_MS = "1111";
   process.env.AGORA_LOG_LEVEL = "debug";
   process.env.AGORA_SENTRY_DSN = "https://public@example.ingest.sentry.io/123";
   process.env.AGORA_SENTRY_ENVIRONMENT = "staging";
@@ -445,6 +449,10 @@ try {
   assert.equal(workerTiming.jobLeaseMs, 666);
   assert.equal(workerTiming.heartbeatIntervalMs, 555);
   assert.equal(workerTiming.heartbeatStaleMs, 777);
+  const notificationTiming = readNotificationWorkerTimingConfig();
+  assert.equal(notificationTiming.pollIntervalMs, 888);
+  assert.equal(notificationTiming.jobLeaseMs, 999);
+  assert.equal(notificationTiming.heartbeatIntervalMs, 1111);
 
   process.env.AGORA_SCORER_EXECUTOR_BACKEND = "remote_http";
   process.env.AGORA_SCORER_EXECUTOR_URL = "https://executor.example";

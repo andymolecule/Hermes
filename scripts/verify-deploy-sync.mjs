@@ -268,6 +268,10 @@ const indexerHealth = await fetchJson(
   `${apiUrl}/api/indexer-health`,
   "API /api/indexer-health",
 );
+const notificationHealth = await fetchJson(
+  `${apiUrl}/api/notification-health`,
+  "API /api/notification-health",
+);
 let submissionPublicKey = null;
 try {
   submissionPublicKey = await fetchJson(
@@ -292,6 +296,10 @@ const apiIdentitySource = readReportedIdentitySource(apiHealth);
 const indexerRuntimeVersion = readReportedReleaseValue(indexerHealth);
 const indexerGitSha = readReportedGitSha(indexerHealth);
 const indexerIdentitySource = readReportedIdentitySource(indexerHealth);
+const notificationRuntimeVersion = readReportedReleaseValue(notificationHealth);
+const notificationGitSha = readReportedGitSha(notificationHealth);
+const notificationIdentitySource =
+  readReportedIdentitySource(notificationHealth);
 const webRuntimeVersion = readReportedReleaseValue(webVersion);
 
 if (apiHealth?.ok !== true) {
@@ -321,6 +329,18 @@ if (indexerHealth?.service !== "indexer") {
 if (!indexerRuntimeVersion) {
   throw new Error(
     "API /api/indexer-health did not return releaseId or runtimeVersion. Next step: deploy the current indexer build and retry.",
+  );
+}
+
+if (notificationHealth?.service !== "notifications") {
+  throw new Error(
+    `API /api/notification-health returned service=${String(notificationHealth?.service)}. Next step: deploy the current notification health contract and retry.`,
+  );
+}
+
+if (!notificationRuntimeVersion) {
+  throw new Error(
+    "API /api/notification-health did not return releaseId or runtimeVersion. Next step: deploy the current notification worker build and retry.",
   );
 }
 
@@ -410,6 +430,61 @@ if (expectedApiGitSha) {
         actual: indexerGitSha,
       }) && ok;
   }
+}
+
+console.log(
+  `[INFO] Reported Notification runtime version: ${notificationRuntimeVersion}`,
+);
+if (notificationGitSha) {
+  console.log(`[INFO] Reported Notification git SHA: ${notificationGitSha}`);
+}
+
+ok =
+  compareIdentitySource({
+    label: "Notification health",
+    actual: notificationIdentitySource,
+  }) && ok;
+ok =
+  compareRuntimeVersion({
+    label: "Notification health",
+    expected: apiRuntimeVersion,
+    actual: notificationRuntimeVersion,
+  }) && ok;
+
+if (expectedApiGitSha) {
+  if (!notificationGitSha) {
+    console.error(
+      "[FAIL] API /api/notification-health did not report gitSha. Next step: redeploy the current notification worker build with canonical hosted release metadata and retry.",
+    );
+    ok = false;
+  } else {
+    ok =
+      compareGitSha({
+        label: "Notification health",
+        expected: expectedApiGitSha,
+        actual: notificationGitSha,
+      }) && ok;
+  }
+}
+
+if (notificationHealth?.runtime?.masterKeyConfigured === true) {
+  console.log("[OK] Notification worker runtime reports master key configured");
+} else {
+  console.error(
+    "[FAIL] Notification worker runtime reports missing AGORA_AGENT_NOTIFICATION_MASTER_KEY. Next step: restore the notification master key and retry.",
+  );
+  ok = false;
+}
+
+if (notificationHealth?.status === "error") {
+  console.error(
+    "[FAIL] Notification health reports status=error. Next step: inspect notification-health output, then retry once delivery is unstalled.",
+  );
+  ok = false;
+} else {
+  console.log(
+    `[OK] Notification health reports status=${notificationHealth?.status}`,
+  );
 }
 
 if (webUrl) {

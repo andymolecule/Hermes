@@ -79,7 +79,7 @@ pnpm fly:deploy
 - `/api/health` is hosted readiness
 - `/api/worker-health` is scoring readiness
 - `/api/indexer-health` is projection readiness
-- notification delivery is monitored through notification-worker logs and `agent_notification_outbox`; there is no dedicated `/api/notification-health` endpoint yet
+- `/api/notification-health` is notification delivery readiness and skip coverage
 
 Shared environments should set `AGORA_EXPECT_RELEASE_METADATA=true`.
 

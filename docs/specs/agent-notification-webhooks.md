@@ -614,8 +614,20 @@ At max attempts:
 - mark failed
 - keep `last_error`
 - do not delete the row
+- operators must be able to requeue the row without manual SQL surgery
 
-### 10.5 Polling
+### 10.5 Operational Visibility
+
+Notification delivery must not fail silently.
+
+Required operator signals:
+
+- `/api/notification-health` exposes queue counts, stalled deliveries, and skipped attributable payout groups
+- skipped wallet groups must surface the reason (`missing_agent_attribution`, `mixed_agent_attribution`, `missing_endpoint`, etc.)
+- failed rows remain inspectable in `agent_notification_outbox`
+- manual recovery uses a supported requeue path rather than direct row deletion
+
+### 10.6 Polling
 
 The runner should:
 
@@ -706,6 +718,7 @@ Required checks:
 - `pnpm schema:verify`
 - `pnpm turbo build`
 - targeted tests for DB, API, and chain indexer paths
+- notification health verification through `/api/notification-health`
 - local lifecycle smoke when feasible
 
 ---

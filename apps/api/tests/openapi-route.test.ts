@@ -27,6 +27,7 @@ test("openapi document is served from well-known path", async () => {
   assert.ok("/api/authoring/sessions" in body.paths);
   assert.ok("/api/authoring/sessions/{id}" in body.paths);
   assert.ok("/api/verify" in body.paths);
+  assert.ok("/api/notification-health" in body.paths);
   assert.ok(
     "patch" in
       (body.paths["/api/authoring/sessions/{id}"] as Record<string, unknown>),
@@ -113,6 +114,16 @@ test("openapi document is served from well-known path", async () => {
   assert.ok(
     "503" in (healthPath.get?.responses ?? {}),
     "api health should advertise readiness failures",
+  );
+
+  const notificationHealthPath = body.paths["/api/notification-health"] as {
+    get?: {
+      responses?: Record<string, unknown>;
+    };
+  };
+  assert.ok(
+    "503" in (notificationHealthPath.get?.responses ?? {}),
+    "notification health should advertise stalled delivery failures",
   );
 
   const verifyPath = body.paths["/api/verify"] as {
