@@ -19,6 +19,7 @@ import { syncActiveRuntimeVersionOnce } from "./lib/runtime-control-sync.js";
 import { createApiRuntimeReadinessProbe } from "./lib/runtime-readiness.js";
 
 const API_RUNTIME_CONTROL_SYNC_INTERVAL_MS = 30_000;
+const API_LISTEN_HOST = "0.0.0.0";
 
 function startActiveRuntimeVersionSyncLoop(
   db: ReturnType<typeof createSupabaseClient>,
@@ -131,7 +132,7 @@ async function start() {
   const app = createApp({ getRuntimeReadiness });
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
 
-  serve({ fetch: app.fetch, port });
+  serve({ fetch: app.fetch, port, hostname: API_LISTEN_HOST });
   startActiveRuntimeVersionSyncLoop(
     db,
     runtimeVersion,
@@ -143,6 +144,7 @@ async function start() {
     {
       event: "api.startup",
       port,
+      host: API_LISTEN_HOST,
       runtimeIdentity,
     },
     "Agora API listening",

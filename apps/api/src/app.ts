@@ -98,11 +98,21 @@ export function createApp(
   async function respondWithApiHealth(c: Context<ApiEnv>) {
     const readiness = await getRuntimeReadiness();
     const status = readiness.ok ? 200 : 503;
+    const host = c.req.header("host") ?? null;
+    const forwardedHost = c.req.header("x-forwarded-host") ?? null;
+    const forwardedProto = c.req.header("x-forwarded-proto") ?? null;
+    const origin = c.req.header("origin") ?? null;
+    const userAgent = c.req.header("user-agent") ?? null;
     getRequestLogger(c).info(
       {
         event: "api.health.probe",
         readinessOk: readiness.ok,
         status,
+        host,
+        forwardedHost,
+        forwardedProto,
+        origin,
+        userAgent,
         checkedAt: readiness.checkedAt,
         databaseSchemaOk: readiness.readiness.databaseSchema.ok,
         authoringPublishConfigOk: readiness.readiness.authoringPublishConfig.ok,

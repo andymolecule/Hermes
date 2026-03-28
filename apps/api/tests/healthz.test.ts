@@ -237,6 +237,34 @@ test("healthz answers HEAD probes without a body", async () => {
   assert.equal(await response.text(), "");
 });
 
+test("health routes stay healthy under Railway's documented healthcheck host", async () => {
+  const app = createApp({
+    getRuntimeReadiness: async () => createRuntimeReadiness(),
+  });
+
+  const healthzResponse = await app.request(
+    new Request("http://localhost/healthz", {
+      headers: {
+        host: "healthcheck.railway.app",
+        "user-agent": "Railway/Healthcheck",
+      },
+    }),
+  );
+  assert.equal(healthzResponse.status, 200);
+
+  const apiHealthResponse = await app.request(
+    new Request("http://localhost/api/health", {
+      method: "HEAD",
+      headers: {
+        host: "healthcheck.railway.app",
+        "user-agent": "Railway/Healthcheck",
+      },
+    }),
+  );
+  assert.equal(apiHealthResponse.status, 200);
+  assert.equal(await apiHealthResponse.text(), "");
+});
+
 test("api routes fail closed when runtime schema readiness fails", async () => {
   const app = createApp({
     getRuntimeReadiness: async () =>
