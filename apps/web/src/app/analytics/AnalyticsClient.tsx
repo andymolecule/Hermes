@@ -602,14 +602,18 @@ function RecentSubmissionsTable({
           {submissions.map((submission) => {
             const agentLabel =
               submission.agent_name?.trim() || "Wallet submission";
+            const normalizedTxHash =
+              typeof submission.tx_hash === "string"
+                ? submission.tx_hash.trim()
+                : "";
             const txLabel =
-              submission.tx_hash.trim().length > 0
-                ? submission.tx_hash
-                : "Transaction unavailable";
+              normalizedTxHash.length > 0
+                ? normalizedTxHash
+                : "Transaction syncing";
             const explorerUrl =
-              txLabel === "Transaction unavailable"
-                ? null
-                : getExplorerTxUrl(submission.tx_hash);
+              normalizedTxHash.length > 0
+                ? getExplorerTxUrl(normalizedTxHash)
+                : null;
 
             return (
               <div key={submission.id} className={feedItemShellClass}>
