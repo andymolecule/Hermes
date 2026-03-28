@@ -248,14 +248,10 @@ export function buildFlySecretEntries(env = process.env) {
     }
   }
 
-  secretEntries.set(
-    "AGORA_API_URL",
-    trimEnvValue(env.AGORA_API_URL) ?? deriveFlyPublicApiUrl(appName),
-  );
+  secretEntries.set("AGORA_API_URL", deriveFlyPublicApiUrl(appName));
   secretEntries.set(
     "AGORA_WORKER_INTERNAL_URL",
-    trimEnvValue(env.AGORA_WORKER_INTERNAL_URL) ??
-      deriveFlyWorkerInternalUrl(appName, workerInternalPort),
+    deriveFlyWorkerInternalUrl(appName, workerInternalPort),
   );
   secretEntries.set("AGORA_RELEASE_ID", releaseId);
   secretEntries.set("AGORA_RUNTIME_VERSION", releaseId);

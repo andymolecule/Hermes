@@ -14,6 +14,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
   const secrets = buildFlySecretEntries({
     FLY_APP_NAME: "agora-runtime-prod",
     GITHUB_SHA: "0123456789abcdef0123456789abcdef01234567",
+    AGORA_API_URL: "http://localhost:3000",
     AGORA_RPC_URL: "https://sepolia.base.org",
     AGORA_CHAIN_ID: "84532",
     AGORA_FACTORY_ADDRESS: "0x0000000000000000000000000000000000000001",
@@ -23,6 +24,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
     AGORA_SUPABASE_SERVICE_KEY: "service",
     AGORA_WEB_URL: "https://agora-web.example",
     AGORA_CORS_ORIGINS: "https://agora-web.example",
+    AGORA_WORKER_INTERNAL_URL: "http://agora.railway.internal:3400",
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
     AGORA_SCORER_EXECUTOR_BACKEND: "remote_http",
     AGORA_SCORER_EXECUTOR_URL: "https://executor.example",
