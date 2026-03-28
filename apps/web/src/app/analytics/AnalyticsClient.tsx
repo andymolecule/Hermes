@@ -600,75 +600,74 @@ function RecentSubmissionsTable({
       ) : (
         <div className="mt-4 grid gap-2.5">
           {submissions.map((submission) => {
-            const explorerUrl = getExplorerTxUrl(submission.tx_hash);
             const agentLabel =
               submission.agent_name?.trim() || "Wallet submission";
+            const txLabel =
+              submission.tx_hash.trim().length > 0
+                ? submission.tx_hash
+                : "Transaction unavailable";
+            const explorerUrl =
+              txLabel === "Transaction unavailable"
+                ? null
+                : getExplorerTxUrl(submission.tx_hash);
 
             return (
               <div key={submission.id} className={feedItemShellClass}>
-                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9.5rem] md:items-start md:gap-5">
-                  <div className="min-w-0 md:pr-2">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-container-low)] text-[var(--text-tertiary)]">
-                        <Bot className="h-4 w-4" strokeWidth={1.75} />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[var(--text-primary)]">
-                          {agentLabel}
-                        </p>
-                        <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                          submission tx
-                        </p>
-                      </div>
-                    </div>
-
-                    {explorerUrl ? (
-                      <a
-                        href={explorerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2.5 flex max-w-[72ch] items-start gap-2 font-mono text-xs leading-5 text-[var(--text-secondary)]"
-                        title={submission.tx_hash}
-                      >
-                        <span className="break-all">{submission.tx_hash}</span>
-                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-50" />
-                      </a>
-                    ) : (
-                      <p
-                        className="mt-2.5 max-w-[72ch] break-all font-mono text-xs leading-5 text-[var(--text-secondary)]"
-                        title={submission.tx_hash}
-                      >
-                        {submission.tx_hash}
-                      </p>
-                    )}
-
-                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                      <span
-                        className={pillClass}
-                        style={{
-                          backgroundColor: submission.scored
-                            ? "var(--color-success-bg)"
-                            : "var(--surface-container-high)",
-                          color: submission.scored
-                            ? "var(--color-success)"
-                            : "var(--text-secondary)",
-                        }}
-                      >
-                        {submission.scored ? "Scored" : "Pending"}
-                      </span>
-                      <span
-                        className={`${pillClass} bg-[var(--surface-container-low)] text-[var(--text-secondary)]`}
-                      >
-                        Score {formatWadToScore(submission.score)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between gap-4 md:self-start md:pt-0.5 md:text-right">
-                    <span className="font-mono text-xs text-[var(--text-secondary)]">
-                      {formatDate(submission.submitted_at)}
+                <div className="grid gap-3 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto_auto_auto] md:items-center md:gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--surface-container-low)] text-[var(--text-tertiary)]">
+                      <Bot className="h-4 w-4" strokeWidth={1.75} />
                     </span>
+                    <p className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                      {agentLabel}
+                    </p>
                   </div>
+
+                  {explorerUrl ? (
+                    <a
+                      href={explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-w-0 items-center gap-2 font-mono text-xs leading-5 text-[var(--text-secondary)]"
+                      title={txLabel}
+                    >
+                      <span className="break-all md:whitespace-nowrap">
+                        {txLabel}
+                      </span>
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                    </a>
+                  ) : (
+                    <p
+                      className="min-w-0 break-all font-mono text-xs leading-5 text-[var(--text-secondary)] md:whitespace-nowrap"
+                      title={txLabel}
+                    >
+                      {txLabel}
+                    </p>
+                  )}
+
+                  <span
+                    className={pillClass}
+                    style={{
+                      backgroundColor: submission.scored
+                        ? "var(--color-success-bg)"
+                        : "var(--surface-container-high)",
+                      color: submission.scored
+                        ? "var(--color-success)"
+                        : "var(--text-secondary)",
+                    }}
+                  >
+                    {submission.scored ? "Scored" : "Pending"}
+                  </span>
+
+                  <span
+                    className={`${pillClass} bg-[var(--surface-container-low)] text-[var(--text-secondary)]`}
+                  >
+                    Score {formatWadToScore(submission.score)}
+                  </span>
+
+                  <span className="font-mono text-xs text-[var(--text-secondary)] md:text-right">
+                    {formatDate(submission.submitted_at)}
+                  </span>
                 </div>
               </div>
             );
