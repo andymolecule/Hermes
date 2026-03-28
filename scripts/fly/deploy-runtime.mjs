@@ -14,6 +14,15 @@ const TRANSITIONING_MACHINE_STATES = [
   "destroyed",
 ];
 
+function resolveMachineProcessGroup(machine) {
+  return (
+    machine.process_group ??
+    machine.config?.metadata?.fly_process_group ??
+    machine.config?.env?.FLY_PROCESS_GROUP ??
+    null
+  );
+}
+
 function parseArgs(argv) {
   const options = {
     appName: null,
@@ -124,7 +133,7 @@ function ensureBackgroundProcessGroupsStarted(appName) {
 
     for (const processGroup of REQUIRED_BACKGROUND_PROCESS_GROUPS) {
       const groupMachines = machines.filter(
-        (machine) => machine.process_group === processGroup,
+        (machine) => resolveMachineProcessGroup(machine) === processGroup,
       );
       const hasStartedMachine = groupMachines.some(
         (machine) => machine.state === "started",
