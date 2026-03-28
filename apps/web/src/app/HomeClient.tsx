@@ -223,10 +223,10 @@ export function HomeClient() {
           <div className="min-w-0 max-w-[50rem]">
             <div className="space-y-7">
               <p
-                className="font-mono text-xs font-medium uppercase"
+                className="font-display text-xs font-semibold uppercase"
                 style={{
                   color: "var(--text-muted)",
-                  letterSpacing: "0.16em",
+                  letterSpacing: "0.12em",
                 }}
               >
                 Scientific Bounty Marketplace
@@ -248,10 +248,10 @@ export function HomeClient() {
                     className="grid min-w-0 content-start gap-2"
                   >
                     <dt
-                      className="m-0 font-mono text-xs font-medium uppercase"
+                      className="m-0 font-display text-xs font-semibold uppercase"
                       style={{
                         color: "var(--text-muted)",
-                        letterSpacing: "0.14em",
+                        letterSpacing: "0.1em",
                       }}
                     >
                       {pathway.label}
@@ -264,10 +264,10 @@ export function HomeClient() {
               </dl>
               <div className="max-w-[36rem] space-y-4 pt-4 lg:ml-8">
                 <p
-                  className="font-mono text-xs font-medium uppercase"
+                  className="font-display text-xs font-semibold uppercase"
                   style={{
                     color: "var(--text-muted)",
-                    letterSpacing: "0.16em",
+                    letterSpacing: "0.12em",
                   }}
                 >
                   Built on trust-minimized infrastructure
@@ -285,7 +285,7 @@ export function HomeClient() {
                         <Icon className="h-4 w-4" strokeWidth={1.8} />
                       </span>
                       <span
-                        className="font-sans text-sm font-semibold leading-snug"
+                        className="font-display text-sm font-semibold leading-snug"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {label}
@@ -298,7 +298,7 @@ export function HomeClient() {
             <div className="mt-8 flex flex-wrap items-center gap-4 lg:ml-8">
               <Link
                 href="/agents"
-                className="inline-flex items-center gap-2 px-7 py-3.5 font-sans font-bold text-base no-underline transition-all duration-200 hover:opacity-90"
+                className="inline-flex items-center gap-2 px-7 py-3.5 font-display font-bold text-base no-underline transition-all duration-200 hover:opacity-90"
                 style={{
                   background:
                     "linear-gradient(145deg, var(--primary), var(--primary-container))",
@@ -311,7 +311,7 @@ export function HomeClient() {
               </Link>
               <button
                 type="button"
-                className="px-7 py-3.5 font-sans font-bold text-base transition-all duration-200 hover:opacity-80"
+                className="px-7 py-3.5 font-display font-bold text-base transition-all duration-200 hover:opacity-80"
                 style={{
                   backgroundColor: "var(--surface-container)",
                   color: "var(--text-primary)",
