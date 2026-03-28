@@ -39,7 +39,7 @@ The executor stays separate on a Docker-capable host or service.
 - `FLY_APP_NAME`
 - chain and Supabase `AGORA_*` secrets
 - `AGORA_WORKER_INTERNAL_TOKEN`
-- `AGORA_AGENT_NOTIFICATION_MASTER_KEY`
+- `AGORA_AGENT_NOTIFICATION_MASTER_KEY` in GitHub Actions secrets and staged into Fly
 - `AGORA_SCORER_EXECUTOR_URL`
 - `AGORA_SCORER_EXECUTOR_TOKEN`
 - sealing keys, if sealed submissions remain enabled

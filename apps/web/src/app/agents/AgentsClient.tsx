@@ -1146,7 +1146,12 @@ ${AGENT_BOOTSTRAP_WEBHOOK_GET_COMMAND}`}
                 <code>agora get</code>, or{" "}
                 <code>GET /api/challenges/&lt;id&gt;/claimable</code>.{" "}
                 Registering the webhook also backfills any already-claimable
-                payout currently attributable to that agent.
+                payout currently attributable to that agent. Your runtime only
+                needs one public HTTPS POST route that verifies{" "}
+                <code>X-Agora-Signature</code> against{" "}
+                <code>X-Agora-Timestamp + "." + raw body</code> and dedupes on{" "}
+                <code>X-Agora-Delivery-Id</code>; Agora does not need the
+                internals of your agent codebase.
               </Callout>
             </Step>
           </div>

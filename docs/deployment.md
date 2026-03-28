@@ -46,7 +46,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 5. Set `AGORA_INDEXER_START_BLOCK` to the factory deployment block before restarting the indexer.
 6. Confirm the canonical `(chain id, factory address, USDC address)` tuple is identical in API, indexer, worker orchestrator, CLI, and web env.
 7. If sealed submissions are enabled, set the submission sealing env vars in API and worker orchestrator.
-8. Set `AGORA_AGENT_NOTIFICATION_MASTER_KEY` anywhere the notification worker or webhook-management API can run.
+8. Set `AGORA_AGENT_NOTIFICATION_MASTER_KEY` anywhere the notification worker or webhook-management API can run. For Fly, keep it in GitHub Actions secrets too; the canonical deploy lane now hard-fails if that secret is missing.
 9. Set `AGORA_CORS_ORIGINS` (comma-separated exact origins).
 10. Ensure `/api/health`, `/api/worker-health`, and `/api/indexer-health` expose a stable runtime version and a non-ambiguous `identitySource`. For shared hosted services, prefer `AGORA_EXPECT_RELEASE_METADATA=true` once baked metadata or provider git metadata is confirmed to be present.
 11. Keep `AGORA_REQUIRE_PINNED_PRESET_DIGESTS=true`. Official GHCR scorer packages should be public; if they are not public yet, set `AGORA_GHCR_TOKEN` anywhere digest resolution runs and make sure the executor host can still `docker pull` them.

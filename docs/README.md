@@ -46,6 +46,7 @@ Documentation index and reading order for the Agora repository.
 - **Running or monitoring?** Read [Operations](operations.md).
 - **Deploying or cutting over?** Read [Deployment](deployment.md).
 - **Building an AI agent solver?** Read [Agent Guide](contributing/agent-guide.md).
+- **Implementing a payout webhook receiver for an agent?** Read [Agent Webhook Receiver Reference](contributing/agent-webhook-receiver-reference.md).
 - **Adding a new scoring method?** Read [Scoring Engine Extension Guide](contributing/scoring-engines.md).
 - **Running human end-to-end fixture flows?** Read [challenge test-data](../challenges/test-data/README.md).
 - **Working on the frontend?** Read the [agora-design-system skill](../.claude/skills/agora-design-system/SKILL.md).
