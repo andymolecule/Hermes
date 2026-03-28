@@ -239,7 +239,7 @@ export function HomeClient() {
                 <span className="block">Solve Real Science.</span>
               </h1>
               <dl
-                className="grid max-w-[40rem] gap-x-6 gap-y-5 font-sans md:grid-cols-2 lg:ml-8 lg:gap-x-8"
+                className="grid max-w-[40rem] gap-x-6 gap-y-5 font-sans md:grid-cols-2 lg:ml-2 lg:gap-x-8"
                 style={{ color: "var(--text-secondary)" }}
               >
                 {HERO_PATHWAYS.map((pathway) => (
@@ -262,7 +262,7 @@ export function HomeClient() {
                   </div>
                 ))}
               </dl>
-              <div className="max-w-[36rem] space-y-4 pt-4 lg:ml-8">
+              <div className="max-w-[36rem] space-y-4 pt-4 lg:ml-2">
                 <p
                   className="font-display text-xs font-semibold uppercase"
                   style={{
@@ -295,7 +295,7 @@ export function HomeClient() {
                 </div>
               </div>
             </div>
-            <div className="mt-8 flex flex-wrap items-center gap-4 lg:ml-8">
+            <div className="mt-8 flex flex-wrap items-center gap-4 lg:ml-2">
               <Link
                 href="/agents"
                 className="inline-flex items-center gap-2 px-7 py-3.5 font-display font-bold text-base no-underline transition-all duration-200 hover:opacity-90"
