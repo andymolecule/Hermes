@@ -3,6 +3,8 @@ import path from "node:path";
 import { requireFlyAppName, resolveRepoRoot } from "./shared.mjs";
 
 const REQUIRED_BACKGROUND_PROCESS_GROUPS = ["worker", "indexer"];
+const MACHINE_STATE_RETRY_LIMIT = 18;
+const MACHINE_STATE_RETRY_DELAY_MS = 5000;
 
 function parseArgs(argv) {
   const options = {
@@ -99,37 +101,64 @@ function runCommandForJson(command, args, errorMessage) {
   }
 }
 
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function ensureBackgroundProcessGroupsStarted(appName) {
-  const machines = runCommandForJson(
-    "flyctl",
-    ["machine", "list", "--app", appName, "--json"],
-    "Failed to inspect Fly machines after deploy. Next step: verify flyctl access to the app and retry.",
-  );
-
-  for (const processGroup of REQUIRED_BACKGROUND_PROCESS_GROUPS) {
-    const groupMachines = machines.filter(
-      (machine) => machine.process_group === processGroup,
+  for (let attempt = 0; attempt < MACHINE_STATE_RETRY_LIMIT; attempt += 1) {
+    const machines = runCommandForJson(
+      "flyctl",
+      ["machine", "list", "--app", appName, "--json"],
+      "Failed to inspect Fly machines after deploy. Next step: verify flyctl access to the app and retry.",
     );
-    const hasStartedMachine = groupMachines.some(
-      (machine) => machine.state === "started",
-    );
-    if (hasStartedMachine) {
-      continue;
-    }
+    let pendingTransition = false;
 
-    const candidate = groupMachines.find((machine) => machine.state === "stopped");
-    if (!candidate) {
+    for (const processGroup of REQUIRED_BACKGROUND_PROCESS_GROUPS) {
+      const groupMachines = machines.filter(
+        (machine) => machine.process_group === processGroup,
+      );
+      const hasStartedMachine = groupMachines.some(
+        (machine) => machine.state === "started",
+      );
+      if (hasStartedMachine) {
+        continue;
+      }
+
+      const candidate = groupMachines.find((machine) => machine.state === "stopped");
+      if (candidate) {
+        runCommand(
+          "flyctl",
+          ["machine", "start", candidate.id, "--app", appName],
+          `Fly deploy left process group ${processGroup} stopped. Next step: inspect the process-group machine and retry after fixing the startup issue.`,
+        );
+        pendingTransition = true;
+        continue;
+      }
+
+      const hasTransitioningMachine = groupMachines.some((machine) =>
+        ["created", "starting", "replacing", "pending"].includes(machine.state),
+      );
+      if (hasTransitioningMachine) {
+        pendingTransition = true;
+        continue;
+      }
+
       throw new Error(
-        `Fly deploy left process group ${processGroup} without any started or stopped machine to recover. Next step: inspect the Fly app state and re-provision that process group before retrying.`,
+        `Fly deploy left process group ${processGroup} without any recoverable machine state. Next step: inspect the Fly app state and re-provision that process group before retrying.`,
       );
     }
 
-    runCommand(
-      "flyctl",
-      ["machine", "start", candidate.id, "--app", appName],
-      `Fly deploy left process group ${processGroup} stopped. Next step: inspect the process-group machine and retry after fixing the startup issue.`,
-    );
+    if (!pendingTransition) {
+      return;
+    }
+
+    sleep(MACHINE_STATE_RETRY_DELAY_MS);
   }
+
+  throw new Error(
+    "Fly deploy did not stabilize the background process groups before the post-deploy check timed out. Next step: inspect the Fly worker/indexer machines and rerun the deploy verification.",
+  );
 }
 
 function run() {
