@@ -26,6 +26,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
     AGORA_SCORER_EXECUTOR_BACKEND: "remote_http",
     AGORA_SCORER_EXECUTOR_URL: "https://executor.example",
+    AGORA_EXPECT_RELEASE_METADATA: "true",
   });
 
   assert.equal(
@@ -42,6 +43,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
     secrets.get("AGORA_RELEASE_GIT_SHA"),
     "0123456789abcdef0123456789abcdef01234567",
   );
+  assert.equal(secrets.get("AGORA_EXPECT_RELEASE_METADATA"), "true");
 
   for (const rule of FLY_FILE_SECRET_RULES) {
     assert.ok(

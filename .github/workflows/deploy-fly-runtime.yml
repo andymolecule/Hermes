@@ -48,6 +48,7 @@ jobs:
       AGORA_INDEXER_START_BLOCK: ${{ secrets.AGORA_INDEXER_START_BLOCK }}
       AGORA_REQUIRE_PINNED_PRESET_DIGESTS: ${{ secrets.AGORA_REQUIRE_PINNED_PRESET_DIGESTS }}
       AGORA_LOG_LEVEL: ${{ secrets.AGORA_LOG_LEVEL }}
+      AGORA_EXPECT_RELEASE_METADATA: ${{ secrets.AGORA_EXPECT_RELEASE_METADATA }}
       AGORA_GHCR_TOKEN: ${{ secrets.AGORA_GHCR_TOKEN }}
       AGORA_EXPECTED_GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
