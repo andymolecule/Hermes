@@ -1,18 +1,9 @@
-const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
-const FULL_GIT_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
-const RELEASE_METADATA_SOURCES = new Set([
-  "baked",
-  "override",
-  "provider_env",
-  "repo_git",
-  "legacy_file",
-  "unknown",
-]);
-const HOSTED_RELEASE_METADATA_SOURCES = new Set([
-  "baked",
-  "override",
-  "provider_env",
-]);
+import {
+  CANONICAL_HOSTED_RELEASE_METADATA_SOURCES,
+  normalizeGitSha,
+  normalizeIdentitySource as normalizeReleaseMetadataSource,
+  normalizeRuntimeVersion,
+} from "./release-metadata.mjs";
 
 function parseArgs(argv) {
   const options = {};
@@ -109,31 +100,6 @@ function parseArgs(argv) {
   return options;
 }
 
-function normalizeRuntimeVersion(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  if (COMMIT_SHA_PATTERN.test(trimmed)) {
-    return trimmed.toLowerCase().slice(0, 12);
-  }
-  return trimmed;
-}
-
-function normalizeGitSha(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!FULL_GIT_SHA_PATTERN.test(trimmed)) {
-    return null;
-  }
-  return trimmed.toLowerCase();
-}
-
 function normalizeBaseUrl(value, label) {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(
@@ -148,14 +114,6 @@ function normalizeBaseUrl(value, label) {
       `${label} is invalid (${value}). Next step: provide a full https:// URL and retry.`,
     );
   }
-}
-
-function normalizeIdentitySource(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim().toLowerCase();
-  return RELEASE_METADATA_SOURCES.has(trimmed) ? trimmed : null;
 }
 
 async function fetchJson(url, label) {
@@ -249,7 +207,10 @@ function compareGitSha(input) {
 }
 
 function compareIdentitySource(input) {
-  if (input.actual && HOSTED_RELEASE_METADATA_SOURCES.has(input.actual)) {
+  if (
+    input.actual &&
+    CANONICAL_HOSTED_RELEASE_METADATA_SOURCES.includes(input.actual)
+  ) {
     console.log(
       `[OK] ${input.label} release identity source is ${input.actual}`,
     );
@@ -257,7 +218,7 @@ function compareIdentitySource(input) {
   }
 
   console.error(
-    `[FAIL] ${input.label} release identity source is ${input.actual ?? "missing"}, expected one of ${Array.from(HOSTED_RELEASE_METADATA_SOURCES).join(", ")}. Next step: expose canonical hosted release metadata before retrying verification.`,
+    `[FAIL] ${input.label} release identity source is ${input.actual ?? "missing"}, expected one of ${CANONICAL_HOSTED_RELEASE_METADATA_SOURCES.join(", ")}. Next step: expose canonical hosted release metadata before retrying verification.`,
   );
   return false;
 }
@@ -271,7 +232,7 @@ function readReportedGitSha(payload) {
 }
 
 function readReportedIdentitySource(payload) {
-  return normalizeIdentitySource(payload?.identitySource);
+  return normalizeReleaseMetadataSource(payload?.identitySource);
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -372,7 +333,7 @@ if (webUrl && !webRuntimeVersion) {
 let ok = true;
 
 console.log("[OK] API /api/health is healthy");
-  console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
+console.log(`[INFO] Reported API runtime version: ${apiRuntimeVersion}`);
 if (apiGitSha) {
   console.log(`[INFO] Reported API git SHA: ${apiGitSha}`);
 } else {
@@ -482,7 +443,7 @@ if (workerHealth) {
       ? workerHealth.runtime.apiVersion
       : null,
   );
-  const workerApiIdentitySource = normalizeIdentitySource(
+  const workerApiIdentitySource = normalizeReleaseMetadataSource(
     workerHealth?.runtime?.identitySource,
   );
   const activeWorkerRuntimeVersion = normalizeRuntimeVersion(

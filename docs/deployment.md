@@ -239,7 +239,7 @@ This section covers non-code work for deployment across hosted systems.
 - `AGORA_RELEASE_ID` and `AGORA_RELEASE_GIT_SHA` should normally be stamped by the Fly deploy workflow. Do not hand-edit them on the platform unless you intentionally accept a manual metadata override.
 - `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only. Do not inject it into the
   long-running runtime services unless an explicit admin command needs it.
-- While the runtime schema is healthy and the public API release matches the running runtime, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit and prevents failed unpromoted API candidates from taking over the worker fence.
+- The API keeps the active scoring runtime version in sync inside `worker_runtime_control` only after hosted readiness passes. Scoring workers only claim jobs when their runtime version matches that active row. On Fly this is a rollout guard, not the primary coordination model: it protects rolling deploy edges, stale machines, and manual recovery paths if process groups drift briefly during a deploy.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.

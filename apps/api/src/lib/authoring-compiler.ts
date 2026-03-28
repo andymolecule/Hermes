@@ -4,7 +4,9 @@ import {
   type AuthoringArtifactOutput,
   type AuthoringSessionValidationOutput,
   type AuthoringValidationFieldOutput,
+  CHAIN_IDS,
   CHALLENGE_DOMAINS,
+  CHALLENGE_LIMITS,
   type ChallengeAuthoringIrOutput,
   type ChallengeIntentOutput,
   type CompilationResultOutput,
@@ -651,6 +653,25 @@ async function compileAuthoringSessionCandidate(
   const minimumScore =
     payoutThreshold?.operator === "gte" ? payoutThreshold.value : undefined;
   const apiRuntime = readApiServerRuntimeConfig();
+  if (
+    apiRuntime.chainId === CHAIN_IDS.baseSepolia &&
+    typeof input.intent.dispute_window_hours === "number" &&
+    input.intent.dispute_window_hours !==
+      CHALLENGE_LIMITS.defaultDisputeWindowHours
+  ) {
+    return stepFailure({
+      kind: "awaiting_input",
+      code: "AUTHORING_TESTNET_DISPUTE_WINDOW_LOCKED",
+      message: `Hosted Base Sepolia currently requires dispute_window_hours=${CHALLENGE_LIMITS.defaultDisputeWindowHours} for fast iteration. Next step: omit dispute_window_hours or set it to ${CHALLENGE_LIMITS.defaultDisputeWindowHours} and retry.`,
+      nextAction: `omit dispute_window_hours or set it to ${CHALLENGE_LIMITS.defaultDisputeWindowHours} and retry.`,
+      blockingLayer: "input",
+      field: "dispute_window_hours",
+      missingFields: [],
+      candidateValues: [String(CHALLENGE_LIMITS.defaultDisputeWindowHours)],
+      reasonCodes: ["hosted_testnet_dispute_window_locked"],
+      warnings: proposal.warnings,
+    });
+  }
   const submissionPrivacyMode = resolveDefaultSubmissionPrivacyMode({
     sealingConfigured: hasSubmissionSealPublicEnv(),
   });

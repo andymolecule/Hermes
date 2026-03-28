@@ -162,6 +162,7 @@ Clean `v2` cutover rule:
 - deploy a fresh `v2` factory
 - update the canonical `(chain id, factory address, USDC address)` tuple everywhere
 - reindex from zero
+- roll the Fly runtime through the canonical GitHub workflow after the tuple update
 
 ## CI
 

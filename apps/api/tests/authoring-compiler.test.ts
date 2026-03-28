@@ -14,7 +14,7 @@ const baseIntent = {
   reward_total: "30",
   distribution: "winner_take_all" as const,
   deadline: "2026-12-31T00:00:00.000Z",
-  dispute_window_hours: 168,
+  dispute_window_hours: 0,
   domain: "omics",
   tags: [],
   timezone: "UTC",
@@ -147,6 +147,36 @@ test("authoring compiler deterministically compiles a supported table regression
   assert.equal(result.challenge_spec.execution.metric, "rmse");
   assert.equal(result.dry_run.status, "validated");
   assert.deepEqual(result.challenge_spec.domain, "omics");
+});
+
+test("authoring compiler rejects stale nonzero dispute windows on hosted Base Sepolia", async () => {
+  const result = await compileAuthoringSessionOutcome(
+    {
+      intent: {
+        ...baseIntent,
+        dispute_window_hours: 168,
+      },
+      uploadedArtifacts: regressionArtifacts,
+      metricOverride: "rmse",
+      evaluationArtifactIdOverride: "labels",
+      evaluationIdColumnOverride: "id",
+      evaluationValueColumnOverride: "label",
+      submissionIdColumnOverride: "id",
+      submissionValueColumnOverride: "predicted_value",
+    },
+    buildRegressionDryRunDependencies(),
+  );
+
+  assert.equal(result.state, "awaiting_input");
+  assert.equal(
+    result.validation.invalid_fields[0]?.field,
+    "dispute_window_hours",
+  );
+  assert.equal(
+    result.validation.invalid_fields[0]?.code,
+    "AUTHORING_TESTNET_DISPUTE_WINDOW_LOCKED",
+  );
+  assert.equal(result.validation.invalid_fields[0]?.candidate_values?.[0], "0");
 });
 
 test("authoring compiler deterministically compiles a benchmark-style ranking challenge", async () => {

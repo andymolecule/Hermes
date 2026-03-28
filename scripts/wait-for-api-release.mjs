@@ -1,8 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
-const FULL_GIT_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
+import {
+  normalizeGitSha,
+  normalizeRuntimeVersion,
+} from "./release-metadata.mjs";
 
 function parseArgs(argv) {
   const options = {};
@@ -66,31 +67,6 @@ function parseArgs(argv) {
   }
 
   return options;
-}
-
-function normalizeRuntimeVersion(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  if (COMMIT_SHA_PATTERN.test(trimmed)) {
-    return trimmed.toLowerCase().slice(0, 12);
-  }
-  return trimmed;
-}
-
-function normalizeGitSha(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!FULL_GIT_SHA_PATTERN.test(trimmed)) {
-    return null;
-  }
-  return trimmed.toLowerCase();
 }
 
 function normalizeTimeoutSeconds(value, fallback) {

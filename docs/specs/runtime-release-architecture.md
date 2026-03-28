@@ -78,7 +78,7 @@ Rules:
 - `releaseId` and `runtimeVersion` should align in the normal hosted case.
 - `gitSha` should be the full commit SHA when available.
 - `identitySource` must explain whether identity came from `baked`,
-  `override`, `provider_env`, `legacy_file`, `repo_git`, or `unknown`.
+  `override`, `provider_env`, `repo_git`, or `unknown`.
 - Shared hosted environments should reject ambiguous identity by setting
   `AGORA_EXPECT_RELEASE_METADATA=true`.
 
@@ -95,10 +95,12 @@ Rules:
 ### Worker Fence
 
 - The API may write `worker_runtime_control` only while runtime readiness is
-  healthy and the public API release matches the running runtime.
+  healthy and the hosted API surface matches the running runtime.
 - Workers publish heartbeat and readiness in `worker_runtime_state`.
 - Workers may keep heartbeating when inactive, but they must not claim new jobs
   unless their runtime version matches `worker_runtime_control`.
+- This fence is a rollout guard for rolling Fly deploys and manual recovery, not
+  a replacement for Fly process-group deployment.
 
 ### Bootstrap Boundary
 

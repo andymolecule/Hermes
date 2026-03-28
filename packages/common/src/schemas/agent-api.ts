@@ -50,7 +50,6 @@ const releaseMetadataSourceSchema = z.enum([
   "override",
   "provider_env",
   "repo_git",
-  "legacy_file",
   "unknown",
 ]);
 const challengeTargetFields = {

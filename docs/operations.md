@@ -133,7 +133,7 @@ Architecture boundary:
 - Scorer is the Docker container itself (for example `ghcr.io/andymolecule/gems-match-scorer:v1`) — stateless, sandboxed, no network access. The orchestrator stages inputs; the executor service runs the container.
 - Official scorer images are public reproducibility artifacts. Keep the code and Dockerfile inspectable; keep hidden evaluation data out of the image.
 - One active contract generation at a time. Runtime envs should never mix multiple factory generations.
-- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains the active scoring runtime fence while API and worker-orchestrator roll forward together on Fly.
+- Worker and API coordinate through Supabase. `submission_intents` stages off-chain submission metadata, `score_jobs` drives scoring work, `worker_runtime_state` carries worker heartbeat/readiness, and `worker_runtime_control` remains a Fly rollout guard if API and worker machines drift briefly during a rolling deploy or manual recovery.
 - Official scorer-template challenges should persist pinned image digests. The worker should only score from registry-backed official images, never from a host-local build that lacks a repo digest.
 - Read-side challenge visibility and write-side scoring readiness intentionally differ after the deadline. Use contract `status()` for public visibility decisions and `scoringStartedAt > 0` for score posting, dispute timing, finalization timing, and score-job eligibility.
 - Wallet/session consistency is enforced in the web app by a global wallet session bridge. If the connected wallet disconnects or changes to a different address, stale SIWE state is cleared instead of being reused accidentally.
@@ -143,8 +143,8 @@ Architecture boundary:
 The worker treats scorer availability as a runtime readiness problem, not a crash condition.
 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
-2. While the runtime schema is healthy and the public API release matches the running runtime, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`.
-3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
+2. Once hosted readiness passes, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`.
+3. Score-job claims are fenced against `worker_runtime_control`, so stale workers can keep heartbeating for diagnostics but cannot keep claiming new jobs if Fly is mid-rollout or a manual recovery leaves old Machines behind briefly.
 4. It checks the configured scorer execution backend:
    - `local_docker`: verify local Docker health and preflight official images directly
    - `remote_http`: verify the executor service is reachable and ask it to preflight official images

@@ -179,11 +179,6 @@ try {
   process.env.AGORA_X402_NETWORK = undefined;
   process.env.VERCEL_GIT_COMMIT_SHA = undefined;
   process.env.GITHUB_SHA = undefined;
-  process.env.RENDER_GIT_COMMIT = undefined;
-  process.env.CI_COMMIT_SHA = undefined;
-  process.env.SOURCE_VERSION = undefined;
-  process.env.COMMIT_SHA = undefined;
-  process.env.GIT_COMMIT_SHA = undefined;
 
   resetConfigCache();
   const config = loadConfig();
@@ -272,8 +267,7 @@ try {
 
   process.env.AGORA_RUNTIME_VERSION = "dev";
   process.env.VERCEL_GIT_COMMIT_SHA = undefined;
-  process.env.SOURCE_VERSION =
-    "A61B3299F42EACD5D27A01E87B4C019FABCDEF01";
+  process.env.GITHUB_SHA = "A61B3299F42EACD5D27A01E87B4C019FABCDEF01";
   resetConfigCache();
   const placeholderRuntimeConfig = loadConfig();
   assert.equal(placeholderRuntimeConfig.AGORA_RELEASE_ID, "a61b3299f42e");

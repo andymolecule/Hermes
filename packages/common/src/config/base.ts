@@ -6,11 +6,6 @@ import { scorerExecutorBackendSchema } from "../schemas/scorer-executor.js";
 const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
   "VERCEL_GIT_COMMIT_SHA",
   "GITHUB_SHA",
-  "RENDER_GIT_COMMIT",
-  "CI_COMMIT_SHA",
-  "SOURCE_VERSION",
-  "COMMIT_SHA",
-  "GIT_COMMIT_SHA",
 ] as const;
 const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
 export const AGORA_RELEASE_METADATA_SOURCES = [
@@ -18,7 +13,6 @@ export const AGORA_RELEASE_METADATA_SOURCES = [
   "override",
   "provider_env",
   "repo_git",
-  "legacy_file",
   "unknown",
 ] as const;
 export type AgoraReleaseMetadataSource =

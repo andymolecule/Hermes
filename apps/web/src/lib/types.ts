@@ -168,7 +168,6 @@ export type ApiHealth = {
     | "override"
     | "provider_env"
     | "repo_git"
-    | "legacy_file"
     | "unknown";
   checkedAt: string;
 };
@@ -225,7 +224,6 @@ export type IndexerHealth = {
     | "override"
     | "provider_env"
     | "repo_git"
-    | "legacy_file"
     | "unknown";
   chainHead?: number;
   finalizedHead?: number;

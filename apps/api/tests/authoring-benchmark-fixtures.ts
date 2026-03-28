@@ -231,7 +231,7 @@ function buildBenchmarkIntent(input: {
     reward_total: "25",
     distribution: "winner_take_all",
     deadline: "2026-12-31T00:00:00.000Z",
-    dispute_window_hours: 168,
+    dispute_window_hours: 0,
     domain: domainForBenchmark(input.benchmark),
     tags: [input.benchmark.intent_family],
     solver_instructions: solverInstructionsForBenchmark(input.benchmark),

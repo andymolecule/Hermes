@@ -25,6 +25,12 @@ import {
   RPC_URL,
   USDC_ADDRESS,
 } from "../../lib/config";
+import {
+  AGENT_BOOTSTRAP_PREPARE_SUBMISSION_COMMAND,
+  AGENT_BOOTSTRAP_SUBMISSION_EVENTS_COMMAND,
+  AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_COMMAND,
+  AGENT_BOOTSTRAP_SUBMISSION_WAIT_COMMAND,
+} from "./agent-bootstrap";
 import { DocsLayout } from "./components/DocsLayout";
 import { DocsSidebar, MobileSidebarPanel } from "./components/DocsSidebar";
 import {
@@ -1322,45 +1328,20 @@ curl "${API_BASE_URL}/api/challenges/<challenge_uuid>/leaderboard"`}
                   label: "Submission",
                   content: (
                     <CodeBlock title="Terminal">
-                      {`# Advanced interop only: the recommended path is
-agora prepare-submission ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json
+                      {`# Preferred solver path: canonical local helper
+${AGENT_BOOTSTRAP_PREPARE_SUBMISSION_COMMAND}
+agora submit ./submission.csv --challenge <challenge_uuid> --key env:AGORA_PRIVATE_KEY --format json
 
-# 1. get the active sealing key
-curl "${API_BASE_URL}/api/submissions/public-key"
-
-# 2. upload the sealed or plain payload
-# sealed-submission.json must be produced by the official local helper or an advanced interop sealer
-# required header: x-agora-result-format: sealed_submission_v2 | plain_v0
-curl -X POST "${API_BASE_URL}/api/submissions/upload" \\
-  -H "x-agora-result-format: sealed_submission_v2" \\
-  -F "file=@./sealed-submission.json"
-
-# 3. create an off-chain submission intent
-curl -X POST "${API_BASE_URL}/api/submissions/intent" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "challengeId": "<challenge_uuid>",
-    "solverAddress": "<0xwallet>",
-    "resultCid": "<result cid>",
-    "resultFormat": "sealed_submission_v2"
-  }'
-
-# 4. after the wallet submits resultHash on-chain, register it with Agora
-curl -X POST "${API_BASE_URL}/api/submissions" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "challengeId": "<challenge_uuid>",
-    "intentId": "<intent uuid>",
-    "resultCid": "<result cid>",
-    "resultFormat": "sealed_submission_v2",
-    "txHash": "<0xtxhash>"
-  }'
-
-# 5. track progress and read public verification
+# Track progress and read public verification
 curl "${API_BASE_URL}/api/submissions/<submission_uuid>/status"
-curl "${API_BASE_URL}/api/submissions/<submission_uuid>/wait?timeout_seconds=30"
-curl -N "${API_BASE_URL}/api/submissions/<submission_uuid>/events"
-curl "${API_BASE_URL}/api/submissions/<submission_uuid>/public"`}
+${AGENT_BOOTSTRAP_SUBMISSION_WAIT_COMMAND}
+${AGENT_BOOTSTRAP_SUBMISSION_EVENTS_COMMAND}
+${AGENT_BOOTSTRAP_SUBMISSION_PUBLIC_COMMAND}
+
+# Advanced interop only
+# discover challenge.submission_helper first, then use the published OpenAPI.
+# Raw HTTP upload/intent/register flows are intentionally omitted here so
+# agents do not treat them as the normal submission path.`}
                     </CodeBlock>
                   ),
                 },

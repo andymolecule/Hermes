@@ -1368,7 +1368,6 @@ export function buildOpenApiDocument(apiBaseUrl?: string) {
                 "override",
                 "provider_env",
                 "repo_git",
-                "legacy_file",
                 "unknown",
               ],
             },

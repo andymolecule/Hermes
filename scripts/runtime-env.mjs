@@ -9,9 +9,11 @@ import {
   resolveFlyWorkerInternalPort,
 } from "./fly/shared.mjs";
 import {
+  CANONICAL_HOSTED_RELEASE_METADATA_SOURCES,
   RUNTIME_VERSION_PLATFORM_ENV_KEYS,
   deriveReleaseMetadata,
   normalizeGitSha,
+  normalizeIdentitySource,
   normalizeReleaseId,
   normalizeRuntimeVersion,
   readReleaseMetadataFile,
@@ -33,16 +35,6 @@ const builtReleaseMetadataPath = path.join(
   "dist",
   "release-metadata.json",
 );
-const legacyRuntimeVersionFilePath = path.join(
-  REPO_ROOT,
-  ".agora-runtime-version",
-);
-const CANONICAL_RELEASE_METADATA_SOURCES = new Set([
-  "baked",
-  "override",
-  "provider_env",
-]);
-
 const FILE_BACKED_ENV_RULES = [
   {
     envKey: "AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM",
@@ -130,20 +122,7 @@ function shouldReplaceMetadataValue(value) {
 }
 
 function normalizeReleaseMetadataSource(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim().toLowerCase();
-  return [
-    "baked",
-    "override",
-    "provider_env",
-    "repo_git",
-    "legacy_file",
-    "unknown",
-  ].includes(trimmed)
-    ? trimmed
-    : null;
+  return normalizeIdentitySource(value);
 }
 
 function expectsCanonicalReleaseMetadata() {
@@ -161,22 +140,7 @@ function resolveFileReleaseMetadata() {
   if (builtMetadata) {
     return { metadata: builtMetadata, identitySource: "baked" };
   }
-
-  if (!fs.existsSync(legacyRuntimeVersionFilePath)) {
-    return null;
-  }
-
-  const runtimeVersion = readTextFile(legacyRuntimeVersionFilePath);
-  return {
-    metadata: {
-      releaseId: runtimeVersion,
-      gitSha: null,
-      runtimeVersion,
-      createdAt: new Date().toISOString(),
-      healthContractVersion: "runtime-health-v1",
-    },
-    identitySource: "legacy_file",
-  };
+  return null;
 }
 
 function resolveDerivedReleaseMetadata() {
@@ -243,7 +207,11 @@ function assertCanonicalReleaseMetadata(releaseMetadata) {
     );
   }
 
-  if (!CANONICAL_RELEASE_METADATA_SOURCES.has(releaseMetadata.identitySource)) {
+  if (
+    !CANONICAL_HOSTED_RELEASE_METADATA_SOURCES.includes(
+      releaseMetadata.identitySource,
+    )
+  ) {
     throw new Error(
       `Canonical runtime release metadata resolved from ${releaseMetadata.identitySource}, which is not an allowed hosted source. Next step: use baked metadata, explicit release overrides, or provider git metadata before restarting the service.`,
     );

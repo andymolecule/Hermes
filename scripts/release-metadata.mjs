@@ -4,11 +4,18 @@ import fs from "node:fs";
 export const RUNTIME_VERSION_PLATFORM_ENV_KEYS = [
   "VERCEL_GIT_COMMIT_SHA",
   "GITHUB_SHA",
-  "RENDER_GIT_COMMIT",
-  "CI_COMMIT_SHA",
-  "SOURCE_VERSION",
-  "COMMIT_SHA",
-  "GIT_COMMIT_SHA",
+];
+export const RELEASE_METADATA_SOURCES = [
+  "baked",
+  "override",
+  "provider_env",
+  "repo_git",
+  "unknown",
+];
+export const CANONICAL_HOSTED_RELEASE_METADATA_SOURCES = [
+  "baked",
+  "override",
+  "provider_env",
 ];
 
 const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
@@ -61,6 +68,14 @@ export function normalizeReleaseId(value) {
     return null;
   }
   return trimmed;
+}
+
+export function normalizeIdentitySource(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return RELEASE_METADATA_SOURCES.includes(trimmed) ? trimmed : null;
 }
 
 function normalizeCreatedAt(value) {

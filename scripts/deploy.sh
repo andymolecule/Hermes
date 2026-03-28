@@ -4,8 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-API_TARGET="${AGORA_DEPLOY_API_TARGET:-none}"       # none|fly
-INDEXER_TARGET="${AGORA_DEPLOY_INDEXER_TARGET:-none}" # none|fly
 RPC_URL="${AGORA_RPC_URL:-}"
 PRIVATE_KEY="${AGORA_PRIVATE_KEY:-}"
 USDC_ADDRESS="${AGORA_USDC_ADDRESS:-}"
@@ -119,29 +117,6 @@ node apps/cli/dist/index.js config set factory_address "$factory_address" >/dev/
 node apps/cli/dist/index.js config set usdc_address "$USDC_ADDRESS" >/dev/null || true
 node apps/cli/dist/index.js config set rpc_url "$RPC_URL" >/dev/null || true
 
-deploy_fly() {
-  local app_dir="$1"
-  if ! command -v flyctl >/dev/null 2>&1; then
-    echo "flyctl not found; skipping Fly deploy for $app_dir"
-    return 0
-  fi
-  pushd "$app_dir" >/dev/null
-  flyctl deploy
-  popd >/dev/null
-}
-
-case "$API_TARGET" in
-  fly) deploy_fly "apps/api" ;;
-  none) echo "Skipping API deployment (AGORA_DEPLOY_API_TARGET=none)." ;;
-  *) echo "Unsupported API target: $API_TARGET"; exit 1 ;;
-esac
-
-case "$INDEXER_TARGET" in
-  fly) deploy_fly "packages/chain" ;;
-  none) echo "Skipping indexer deployment (AGORA_DEPLOY_INDEXER_TARGET=none)." ;;
-  *) echo "Unsupported indexer target: $INDEXER_TARGET"; exit 1 ;;
-esac
-
 echo "Deploy complete."
 echo "Factory: $factory_address"
 echo "USDC:    $USDC_ADDRESS"
@@ -150,3 +125,4 @@ echo "Treasury:$TREASURY_ADDRESS"
 echo "Version: $contract_version"
 echo "Block:   $deploy_block"
 echo "Tx:      $deploy_tx_hash"
+echo "Next:    update the canonical environment tuple and let the Fly runtime deploy workflow roll the services."
