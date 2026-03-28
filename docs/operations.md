@@ -555,7 +555,7 @@ agora reindex --from-block <block_number>
    - Docker daemon not running or unreachable on the executor host -> restart Docker there, then retry readiness checks.
    - Official scorer image not pullable -> inspect `workers.latestError`, verify the image is public/pullable from the executor host, and rerun `./scripts/preflight-testnet.sh`.
    - DB schema drift or stale PostgREST cache -> run `pnpm schema:verify`. If it fails, apply the missing migration and reload the PostgREST schema cache before restarting services.
-   - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and `workers.runtimeVersions`, then restart the Fly worker process so it redeploys on the active API revision.
+   - Runtime version mismatch -> compare `/api/health.runtimeVersion` with `/api/worker-health.runtime.apiVersion` and the non-stale values in `workers.runtimeVersions`, then restart the Fly worker process so it redeploys on the active API revision.
    - RPC errors -> check `AGORA_RPC_URL` reachability.
    - All jobs stuck in `failed` or `running` after an infra incident -> recover them with `pnpm recover:score-jobs -- --challenge-id=<challenge-id>` after the worker is healthy again.
    - Wallet-funded authoring publishes interrupted before the caller sent the chain transaction -> rerun `POST /api/authoring/sessions/:id/publish` with the same bound wallet and use the returned executable tx payloads.

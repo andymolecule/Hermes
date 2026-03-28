@@ -296,7 +296,9 @@ export function summarizeWorkerRuntimeStates(
 
   for (const row of rows) {
     const stale = isWorkerRuntimeStateStale(row, staleAfterMs, nowMs);
-    runtimeVersions.add(row.runtime_version);
+    if (!stale) {
+      runtimeVersions.add(row.runtime_version);
+    }
     if (row.ready) readyWorkers += 1;
     if (stale) {
       staleWorkers += 1;

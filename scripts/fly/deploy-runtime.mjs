@@ -5,6 +5,14 @@ import { requireFlyAppName, resolveRepoRoot } from "./shared.mjs";
 const REQUIRED_BACKGROUND_PROCESS_GROUPS = ["worker", "indexer"];
 const MACHINE_STATE_RETRY_LIMIT = 18;
 const MACHINE_STATE_RETRY_DELAY_MS = 5000;
+const TRANSITIONING_MACHINE_STATES = [
+  "created",
+  "starting",
+  "replacing",
+  "pending",
+  "destroying",
+  "destroyed",
+];
 
 function parseArgs(argv) {
   const options = {
@@ -136,9 +144,11 @@ function ensureBackgroundProcessGroupsStarted(appName) {
         continue;
       }
 
-      const hasTransitioningMachine = groupMachines.some((machine) =>
-        ["created", "starting", "replacing", "pending"].includes(machine.state),
-      );
+      const hasTransitioningMachine =
+        groupMachines.length === 0 ||
+        groupMachines.some((machine) =>
+          TRANSITIONING_MACHINE_STATES.includes(machine.state),
+        );
       if (hasTransitioningMachine) {
         pendingTransition = true;
         continue;

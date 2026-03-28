@@ -256,7 +256,7 @@ function testSummarizeWorkerRuntimeStatesCountsHealthySealWorkers() {
         worker_id: "worker-stale",
         worker_type: "scoring",
         host: "executor-host-b",
-        runtime_version: "sha-a",
+        runtime_version: "sha-stale",
         ready: true,
         executor_ready: true,
         seal_enabled: true,

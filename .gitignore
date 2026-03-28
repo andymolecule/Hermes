@@ -35,3 +35,4 @@ submission-seal-public.pem
 
 # Local summary docs (never commit)
 /Summary Docs/
+.vercel
