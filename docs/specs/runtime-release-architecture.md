@@ -23,6 +23,8 @@ one clear source of deploy ownership and one clear set of health contracts.
 - Fly is the hosted runtime platform for API, worker orchestrator, and indexer.
 - The runtime runs as one Fly app, one image, and three process groups:
   `app`, `worker`, `indexer`.
+- Shared production runs in the Fly `sin` primary region unless an explicit
+  cutover says otherwise.
 - Vercel remains the hosted web platform.
 - The executor remains separate infrastructure on a Docker-capable host or
   service.
@@ -185,6 +187,7 @@ Fly-specific responsibilities:
 - staged secret application
 - `/healthz` routing
 - private service-to-service networking
+- primary-region placement for the shared runtime app
 
 Repo responsibilities:
 
@@ -204,6 +207,7 @@ Repo responsibilities:
 - Keep hosted API URL and worker internal URL derived from the Fly app name.
 - Do not hand-edit long-lived runtime identity secrets on the platform.
 - Do not split API, worker, and indexer across different hosted deploy owners.
+- Do not keep a dormant second hosted runtime provider around after cutover.
 
 ---
 

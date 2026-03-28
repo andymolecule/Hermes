@@ -14,7 +14,7 @@ Run a full end-to-end consistency sweep across all Agora services. Verify that e
 |---------|------|-------------------|
 | **Supabase** | MCP (`mcp__claude_ai_Supabase__*`) or `psql` via `DATABASE_URL` | Execute SQL queries, list tables, list migrations, check schema, apply migrations |
 | **Vercel** | MCP (`mcp__claude_ai_Vercel__*`) | List deployments, get deployment status, check build logs, get runtime logs |
-| **Railway** | `railway` CLI or WebFetch | Check service status, deployments, logs. Install CLI: `npm i -g @railway/cli` then `railway login` |
+| **Fly** | `flyctl` CLI or WebFetch | Check runtime machine status, deployments, logs. Install CLI: `brew install flyctl` then `fly auth login` |
 | **API endpoints** | Bash (`curl`) or WebFetch | Hit health endpoints directly |
 | **Local** | Bash | `pnpm turbo build`, `pnpm schema:verify`, `pnpm scorers:verify`, `agora doctor` |
 
@@ -93,22 +93,21 @@ Verify the web proxy works:
 curl -sS https://agora-market.vercel.app/api/healthz
 ```
 
-### 5. Railway Service Health
+### 5. Fly Runtime Health
 
-If `railway` CLI is available:
+If `flyctl` CLI is available:
 ```bash
-railway status
-railway logs --service agora-api --limit 20
-railway logs --service agora-indexer --limit 20
-railway logs --service agora-worker --limit 20
+flyctl status --app agora-runtime-prod
+flyctl logs --app agora-runtime-prod
 ```
 
-If CLI is not available, use WebFetch against Railway dashboard or skip with a note.
+If CLI is not available, use WebFetch against the Fly dashboard or skip with a note.
 
-Check that all three Railway services (API, indexer, worker) are:
-- Deployed from the same commit as the Vercel deployment
-- Running (not crashed or restarting)
+Check that all three Fly runtime process groups (`app`, `indexer`, `worker`) are:
+- Running in the intended region set
+- Reporting healthy machine state
 - Showing recent log activity
+- Exposing the same runtime identity across `/api/health`, `/api/indexer-health`, and `/api/worker-health`
 
 ### 6. API Endpoint Health
 
@@ -116,10 +115,10 @@ Hit these endpoints (adjust base URL for the target environment):
 
 | Endpoint | Expected | What it proves |
 |----------|----------|---------------|
-| `GET /healthz` | `{"ok":true}` + `runtimeVersion` | API is alive, reports its deploy version |
+| `GET /api/health` | `{"ok":true}` + `runtimeVersion` | API is ready, reports its deploy version |
+| `GET /healthz` | `{"ok":true}` | Fly liveness route is up |
 | `GET /api/indexer-health` | `status: "ok"` or `"warning"` | Indexer is polling, not critically behind |
 | `GET /api/worker-health` | `healthyWorkersForActiveRuntimeVersion > 0` | Worker is scoring-ready |
-| `GET /api/posting/health` | `status: "ok"` | Managed authoring pipeline is clear |
 | `GET /api/submissions/public-key` | `version: "sealed_submission_v2"` | Sealing keys are configured |
 
 ### 7. Cross-Service Alignment
@@ -128,11 +127,11 @@ Verify these values are consistent across all services:
 
 | Value | Where to check |
 |-------|---------------|
-| **Deploy commit** | Vercel deployment SHA vs Railway deployment SHA vs `/healthz` runtimeVersion |
+| **Deploy commit** | Vercel deployment SHA vs Fly runtime SHA vs `/api/health` runtimeVersion |
 | **Factory address** | `AGORA_FACTORY_ADDRESS` in env, `/api/indexer-health` response, chain config |
 | **Chain ID** | `AGORA_CHAIN_ID` in env, wagmi config in `apps/web/src/lib/wagmi.tsx` |
 | **USDC address** | `AGORA_USDC_ADDRESS` in env, common config |
-| **Runtime version** | `/healthz` runtimeVersion vs `/api/worker-health` apiVersion vs worker runtimeVersions |
+| **Runtime version** | `/api/health` runtimeVersion vs `/api/worker-health` apiVersion vs worker runtimeVersions |
 | **Contract version** | `contract_version` in DB challenges vs factory `contractVersion()` |
 
 Any mismatch means services were deployed from different commits or with inconsistent env vars.
@@ -177,9 +176,9 @@ If `AGORA_SCORER_EXECUTOR_BACKEND=remote_http`:
 |--------|------------|
 | `localhost:3000` | Local dev |
 | `agora-market.vercel.app` | Production (web) |
-| Railway service URLs | Production (API/worker/indexer) |
+| `*.fly.dev` | Production/runtime (API/worker/indexer) |
 
-For local dev, Railway and remote executor checks may not apply — skip and note.
+For local dev, Fly and remote executor checks may not apply — skip and note.
 
 ## Output Format
 
@@ -193,7 +192,7 @@ For local dev, Railway and remote executor checks may not apply — skip and not
 | Schema (Supabase) | pass/fail | ... |
 | Scorers | pass/fail | ... |
 | Vercel deployment | pass/fail | commit SHA, status |
-| Railway services | pass/fail/skipped | ... |
+| Fly runtime | pass/fail/skipped | ... |
 | API endpoints | pass/fail | ... |
 | Cross-service alignment | pass/fail | ... |
 | Indexer lag | ok/warning/critical | X blocks behind |
@@ -211,9 +210,9 @@ For local dev, Railway and remote executor checks may not apply — skip and not
 ## Gotchas
 
 1. **Web proxy vs API origin.** `agora-market.vercel.app/api/*` proxies to the backend API. Check both the web proxy and direct API origin if you have access.
-2. **Runtime version mismatch after deploy.** Railway services may deploy at slightly different times. A brief mismatch between API and worker runtime versions is normal during rollout — wait 2-3 minutes and recheck.
+2. **Runtime version mismatch after deploy.** Fly now deploys one image across `app`, `worker`, and `indexer`, so runtime identity should converge quickly. A mismatch that persists beyond the rollout window is a real problem, not a normal provider race.
 3. **Indexer health uses factory high-water cursor**, not the replay cursor. Don't confuse replay lag with actual indexing lag.
 4. **PostgREST schema cache.** After applying Supabase migrations, the schema cache may be stale. If `schema:verify` passes but API queries fail, reload the PostgREST schema cache.
 5. **`agora doctor` is complementary, not redundant.** It checks RPC/Supabase/factory connectivity from the CLI perspective. This skill checks the full service mesh. Run both.
-6. **Railway CLI requires login.** If `railway` CLI returns auth errors, run `railway login` first. If CLI is not installed, skip Railway checks and note it — don't fail the report.
+6. **Fly CLI requires login.** If `flyctl` returns auth errors, run `fly auth login` first. If CLI is not installed, skip Fly checks and note it — don't fail the report.
 7. **Supabase MCP vs local schema:verify.** They check different things. Local checks code-side migration files. MCP checks the actual deployed database. Both should pass.

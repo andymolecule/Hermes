@@ -25,6 +25,7 @@ This doc is authoritative for: service startup, monitoring, incident response, s
 
 - Four processes in production: API, Indexer, Worker Orchestrator, Executor
 - Typical hosted split: web on Vercel, API + indexer + worker orchestrator on Fly, executor on a Docker-capable host or service
+- Shared production Fly runtime is pinned to `sin`, and cutover should not leave a dormant second runtime provider behind
 - The API is the canonical remote agent surface
 - Browser auth/session traffic goes through the web origin's same-origin `/api` proxy; the browser should not call the backend API origin directly for SIWE/session flows
 - Indexer polls factory logs every 30s and only continuously polls active challenges; Worker polls score_jobs after challenges enter Scoring
@@ -269,6 +270,7 @@ Fly runtime settings are intentionally repo-managed through
 Recommended steady-state settings:
 
 - App name: `agora-runtime-prod`
+- Primary region: `sin`
 - Runtime process groups: `app`, `worker`, `indexer`
 - Platform liveness route: `/healthz`
 - Shared runtime release identity: `AGORA_EXPECT_RELEASE_METADATA=true`
@@ -279,6 +281,7 @@ Operational rule:
 
 - Do not bypass [fly.toml](/Users/changyuesin/Agora/fly.toml) with ad hoc shared-production config drift.
 - Do not add a second deploy control plane on top of Fly. Use the repo-native deploy workflow, then use the hosted verification flow from [Deployment](deployment.md) to detect schema drift and runtime readiness.
+- Do not keep retired runtime providers or shadow projects alive after a successful cutover.
 - Do not use `Verify Runtime` as a pre-deploy gate. The right order is
   `CI` first, Fly deploy second, hosted verification third.
 

@@ -25,6 +25,7 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
 - Fly now owns the live runtime deployment for API, indexer, and worker orchestrator
+- Shared production Fly runtime uses `sin` as the primary region
 - The canonical hosted runtime runbook is [docs/fly-runtime-cutover.md](fly-runtime-cutover.md)
 - GitHub workflows and local operator commands verify hosted runtime readiness; deploy ownership stays explicit and Fly-backed
 - `reset-bomb:testnet` is the destructive admin-only lane for explicit hosted schema rebuilds
@@ -150,6 +151,7 @@ Fly deployment checks before production cutover:
 - Use the repo-native `Deploy Fly Runtime` workflow as the only shared deploy
   path for API, indexer, and worker orchestrator.
 - Keep Fly liveness on `/healthz`.
+- Keep Fly primary placement explicit in [fly.toml](/Users/changyuesin/Agora/fly.toml). Shared production should stay pinned to `sin` unless an approved cutover changes regions.
 - Keep `/api/health` and `/healthz` fast and probe-safe for both `GET` and `HEAD`. Health probe responses should be visible in API logs through the `api.health.probe` event so failed promotions can be diagnosed from the application side.
 - Set `AGORA_EXPECT_RELEASE_METADATA=true` on shared Fly runtime services. This makes startup fail loud if release identity falls back to `unknown`, `repo_git`, or placeholder `dev`.
 - Keep Fly config repo-native in [fly.toml](/Users/changyuesin/Agora/fly.toml).
@@ -164,6 +166,8 @@ Fly deployment checks before production cutover:
   5. run `pnpm smoke:hosted` only when you intentionally want the funded
      hosted smoke lane
   6. rerun `pnpm verify:runtime` as the read-only confirmation check
+  7. delete or archive the retired provider project so the shared runtime is
+     not left dual-live across Fly and a dormant legacy host
 
 ---
 
