@@ -142,7 +142,7 @@ Architecture boundary:
 The worker treats scorer availability as a runtime readiness problem, not a crash condition.
 
 1. At startup it writes a `worker_runtime_state` row with `runtime_version`, `ready=false`, and any current `last_error`.
-2. While the runtime schema is healthy, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`.
+2. While the runtime schema is healthy and the public API release matches the running runtime, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`.
 3. Score-job claims are fenced against `worker_runtime_control`, so older workers can keep heartbeating but cannot keep claiming new jobs after a deploy.
 4. It checks the configured scorer execution backend:
    - `local_docker`: verify local Docker health and preflight official images directly

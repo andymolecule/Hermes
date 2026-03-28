@@ -158,7 +158,8 @@ This design assumes:
 ### 3.6 Worker Fence Contract
 
 - The API keeps the active scoring runtime version in
-  `worker_runtime_control` while the runtime schema is healthy.
+  `worker_runtime_control` only while the runtime schema is healthy and the
+  public API release matches the running runtime.
 - Worker heartbeats publish runtime version through `worker_runtime_state`.
 - Older workers may continue heartbeating but must not claim new jobs after the
   active runtime version changes.

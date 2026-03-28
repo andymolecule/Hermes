@@ -242,7 +242,7 @@ This section covers non-code work for deployment across hosted systems.
 - `AGORA_RELEASE_ID` and `AGORA_RELEASE_GIT_SHA` should normally be left alone on Railway. Only inject them deliberately if the team chooses an explicit metadata-sync step.
 - `AGORA_SUPABASE_ADMIN_DB_URL` is bootstrap-only. Do not inject it into the
   long-running runtime services unless an explicit admin command needs it.
-- While the runtime schema is healthy, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit even though API and worker orchestrator now roll forward together.
+- While the runtime schema is healthy and the public API release matches the running runtime, the API keeps the active scoring runtime version in sync inside `worker_runtime_control`. Scoring workers only claim jobs when their runtime version matches that active row, which keeps claim fencing explicit and prevents failed unpromoted API candidates from taking over the worker fence.
 - SIWE origin and domain checks pass against production API and web domains.
 - `agora_session` cookie is issued with correct `secure` behavior in production.
 - Reverse proxy forwards `x-forwarded-host` and `x-forwarded-proto` correctly.

@@ -16,20 +16,22 @@ import {
   captureApiException,
   initApiObservability,
 } from "./lib/observability.js";
+import { readPublicApiRuntimeSyncStatus } from "./lib/runtime-control-sync.js";
 
 const API_RUNTIME_CONTROL_SYNC_INTERVAL_MS = 30_000;
 
 function startActiveRuntimeVersionSyncLoop(
   db: ReturnType<typeof createSupabaseClient>,
   runtimeVersion: string,
+  apiUrl?: string,
 ) {
-  let lastHealthyState: boolean | null = null;
+  let lastSyncState: string | null = null;
 
   const tick = async () => {
     try {
       const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
       if (!schemaStatus.ok) {
-        if (lastHealthyState !== false) {
+        if (lastSyncState !== "schema_unhealthy") {
           apiLogger.warn(
             {
               event: "api.runtime_schema_parked",
@@ -38,7 +40,42 @@ function startActiveRuntimeVersionSyncLoop(
             "API runtime control sync parked until database schema is healthy",
           );
         }
-        lastHealthyState = false;
+        lastSyncState = "schema_unhealthy";
+        return;
+      }
+
+      const publicRuntimeStatus = await readPublicApiRuntimeSyncStatus({
+        apiUrl,
+        runtimeVersion,
+      });
+      if (!publicRuntimeStatus.ok) {
+        const stateKey = [
+          "waiting_for_public_release",
+          publicRuntimeStatus.reason,
+          publicRuntimeStatus.observedRuntimeVersion ?? "none",
+          publicRuntimeStatus.status ?? "none",
+        ].join(":");
+        if (lastSyncState !== stateKey) {
+          const logLevel =
+            publicRuntimeStatus.reason === "request_failed" ||
+            publicRuntimeStatus.reason === "unhealthy"
+              ? apiLogger.warn.bind(apiLogger)
+              : apiLogger.info.bind(apiLogger);
+          logLevel(
+            {
+              event: "api.runtime_control_waiting_for_public_release",
+              runtimeVersion,
+              publicApiUrl: apiUrl ?? null,
+              reason: publicRuntimeStatus.reason,
+              observedRuntimeVersion:
+                publicRuntimeStatus.observedRuntimeVersion,
+              status: publicRuntimeStatus.status,
+              detail: publicRuntimeStatus.detail,
+            },
+            "API runtime control sync is waiting for the public API release to match this runtime",
+          );
+        }
+        lastSyncState = stateKey;
         return;
       }
 
@@ -47,18 +84,19 @@ function startActiveRuntimeVersionSyncLoop(
         active_runtime_version: runtimeVersion,
       });
 
-      if (lastHealthyState !== true) {
+      if (lastSyncState !== "active") {
         apiLogger.info(
           {
             event: "api.runtime_schema_ready",
             runtimeVersion,
+            publicRuntimeVersion: publicRuntimeStatus.observedRuntimeVersion,
           },
           "API runtime control sync resumed",
         );
       }
-      lastHealthyState = true;
+      lastSyncState = "active";
     } catch (error) {
-      lastHealthyState = false;
+      lastSyncState = "sync_failed";
       apiLogger.warn(
         {
           event: "api.runtime_control_sync_failed",
@@ -86,7 +124,7 @@ async function start() {
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
 
   serve({ fetch: app.fetch, port });
-  startActiveRuntimeVersionSyncLoop(db, runtimeVersion);
+  startActiveRuntimeVersionSyncLoop(db, runtimeVersion, config.AGORA_API_URL);
 
   apiLogger.info(
     {
