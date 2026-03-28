@@ -40,8 +40,28 @@ function getDb() {
   return createSupabaseClient(true);
 }
 
+export function toAgentNotificationWebhookResponse(
+  row: Awaited<ReturnType<typeof getAgentNotificationEndpointByAgentId>>,
+) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    endpoint_id: row.id,
+    url: row.webhook_url,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    last_delivery_at: row.last_delivery_at,
+    last_error: row.last_error,
+  };
+}
+
 export async function getAgentNotificationWebhook(agentId: string) {
-  return getAgentNotificationEndpointByAgentId(getDb(), agentId);
+  return toAgentNotificationWebhookResponse(
+    await getAgentNotificationEndpointByAgentId(getDb(), agentId),
+  );
 }
 
 export async function createOrUpdateAgentNotificationWebhook(input: {
