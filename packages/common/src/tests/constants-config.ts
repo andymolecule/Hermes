@@ -431,10 +431,12 @@ try {
     AGORA_SUBMISSION_SEAL_KEY_ID: "kid-1",
     AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: "public-key",
     AGORA_WORKER_INTERNAL_PORT: "3456",
+    AGORA_WORKER_INTERNAL_HOST: "fly-local-6pn",
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
   });
   assert.equal(workerInternalServerRuntime.sealingConfigured, true);
   assert.equal(workerInternalServerRuntime.port, 3456);
+  assert.equal(workerInternalServerRuntime.host, "fly-local-6pn");
   assert.equal(workerInternalServerRuntime.authToken, "worker-token");
 
   const indexerRuntime = readIndexerHealthRuntimeConfig();

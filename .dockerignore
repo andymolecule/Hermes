@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.secret
+.turbo
+.next
+coverage
+**/dist
+**/.next
+packages/contracts/cache
+packages/contracts/out
+packages/contracts/broadcast
+node_modules
+logs
+tmp
+*.log

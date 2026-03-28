@@ -24,7 +24,8 @@ This doc is authoritative for: pre-launch checklists, deployment procedures, rol
 
 - Pre-launch requires aligned (chain id, factory address, USDC address) tuple across all services
 - Cutover requires coordinated env updates, DB reset, factory deploy, and reindex
-- Railway owns runtime deployment for API, indexer, and worker orchestrator
+- Railway currently owns the live runtime deployment for API, indexer, and worker orchestrator
+- The repo now ships a Fly runtime migration lane for API, indexer, and worker orchestrator in [docs/fly-runtime-cutover.md](fly-runtime-cutover.md)
 - GitHub and local operator commands verify hosted runtime readiness; they do not deploy runtime services
 - `reset-bomb:testnet` is the destructive admin-only lane for explicit hosted schema rebuilds
 - `verify:runtime` is the read-only hosted gate
@@ -110,6 +111,11 @@ GitHub Actions now follow the deploy boundary directly:
 This separation is intentional. Railway still owns deploy. GitHub verifies the
 live hosted runtime automatically, while destructive reset remains an explicit
 operator action.
+
+If you are migrating the runtime off Railway, use
+[docs/fly-runtime-cutover.md](fly-runtime-cutover.md). That Fly lane keeps the
+same verification and reset boundaries, but changes the runtime deploy owner
+only after the cutover is complete.
 
 The matching GitHub Actions entrypoints are
 [`.github/workflows/verify-runtime.yml`](/Users/changyuesin/Agora/.github/workflows/verify-runtime.yml)

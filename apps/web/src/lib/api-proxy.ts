@@ -2,6 +2,20 @@ function normalizeBaseUrl(value: string) {
   return value.replace(/\/$/, "");
 }
 
+const RESPONSE_HEADERS_TO_STRIP = [
+  "connection",
+  "content-encoding",
+  "content-length",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+] as const;
+
 export function resolveApiProxyBase(input: {
   requestUrl: string;
   serverApiUrl?: string;
@@ -36,4 +50,14 @@ export function resolveApiProxyBase(input: {
     message:
       "Agora web API proxy is misconfigured. Set AGORA_API_URL to the backend API origin, not the web origin, then redeploy.",
   };
+}
+
+export function sanitizeUpstreamResponseHeaders(
+  upstreamHeaders: Headers,
+): Headers {
+  const headers = new Headers(upstreamHeaders);
+  for (const header of RESPONSE_HEADERS_TO_STRIP) {
+    headers.delete(header);
+  }
+  return headers;
 }

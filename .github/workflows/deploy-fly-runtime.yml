@@ -1,0 +1,80 @@
+name: Deploy Fly Runtime
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-fly-runtime-main
+  cancel-in-progress: false
+
+jobs:
+  deploy-fly-runtime:
+    if: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')) && secrets.FLY_API_TOKEN != '' && vars.FLY_APP_NAME != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_APP_NAME: ${{ vars.FLY_APP_NAME }}
+      AGORA_RPC_URL: ${{ secrets.AGORA_RPC_URL }}
+      AGORA_CHAIN_ID: ${{ secrets.AGORA_CHAIN_ID }}
+      AGORA_PRIVATE_KEY: ${{ secrets.AGORA_PRIVATE_KEY }}
+      AGORA_ORACLE_KEY: ${{ secrets.AGORA_ORACLE_KEY }}
+      AGORA_ORACLE_ADDRESS: ${{ secrets.AGORA_ORACLE_ADDRESS }}
+      AGORA_FACTORY_ADDRESS: ${{ secrets.AGORA_FACTORY_ADDRESS }}
+      AGORA_USDC_ADDRESS: ${{ secrets.AGORA_USDC_ADDRESS }}
+      AGORA_TREASURY_ADDRESS: ${{ secrets.AGORA_TREASURY_ADDRESS }}
+      AGORA_PINATA_JWT: ${{ secrets.AGORA_PINATA_JWT }}
+      AGORA_IPFS_GATEWAY: ${{ secrets.AGORA_IPFS_GATEWAY }}
+      AGORA_SUPABASE_URL: ${{ secrets.AGORA_SUPABASE_URL }}
+      AGORA_SUPABASE_ANON_KEY: ${{ secrets.AGORA_SUPABASE_ANON_KEY }}
+      AGORA_SUPABASE_SERVICE_KEY: ${{ secrets.AGORA_SUPABASE_SERVICE_KEY }}
+      AGORA_WEB_URL: ${{ secrets.AGORA_WEB_URL }}
+      AGORA_CORS_ORIGINS: ${{ secrets.AGORA_CORS_ORIGINS }}
+      AGORA_AGENT_NOTIFICATION_MASTER_KEY: ${{ secrets.AGORA_AGENT_NOTIFICATION_MASTER_KEY }}
+      AGORA_AUTHORING_OPERATOR_TOKEN: ${{ secrets.AGORA_AUTHORING_OPERATOR_TOKEN }}
+      AGORA_SCORER_EXECUTOR_BACKEND: ${{ secrets.AGORA_SCORER_EXECUTOR_BACKEND || 'remote_http' }}
+      AGORA_SCORER_EXECUTOR_URL: ${{ secrets.AGORA_SCORER_EXECUTOR_URL }}
+      AGORA_SCORER_EXECUTOR_TOKEN: ${{ secrets.AGORA_SCORER_EXECUTOR_TOKEN }}
+      AGORA_SUBMISSION_SEAL_KEY_ID: ${{ secrets.AGORA_SUBMISSION_SEAL_KEY_ID }}
+      AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: ${{ secrets.AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM }}
+      AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM: ${{ secrets.AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM }}
+      AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON: ${{ secrets.AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON }}
+      AGORA_WORKER_INTERNAL_TOKEN: ${{ secrets.AGORA_WORKER_INTERNAL_TOKEN }}
+      AGORA_INDEXER_START_BLOCK: ${{ secrets.AGORA_INDEXER_START_BLOCK }}
+      AGORA_REQUIRE_PINNED_PRESET_DIGESTS: ${{ secrets.AGORA_REQUIRE_PINNED_PRESET_DIGESTS }}
+      AGORA_LOG_LEVEL: ${{ secrets.AGORA_LOG_LEVEL }}
+      AGORA_GHCR_TOKEN: ${{ secrets.AGORA_GHCR_TOKEN }}
+      AGORA_EXPECTED_GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy runtime to Fly
+        run: node scripts/fly/deploy-runtime.mjs --app "$FLY_APP_NAME"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify hosted Fly runtime
+        env:
+          AGORA_API_URL: https://${{ vars.FLY_APP_NAME }}.fly.dev
+        run: pnpm verify:runtime

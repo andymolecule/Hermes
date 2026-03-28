@@ -3,6 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  deriveFlyPublicApiUrl,
+  deriveFlyWorkerInternalUrl,
+  resolveFlyAppName,
+  resolveFlyWorkerInternalPort,
+} from "./fly/shared.mjs";
+import {
   RUNTIME_VERSION_PLATFORM_ENV_KEYS,
   deriveReleaseMetadata,
   normalizeGitSha,
@@ -78,7 +84,29 @@ function applyFileBackedEnvRule(rule) {
         `${rule.fileEnvKey} points to a missing file (${explicitPath}). Next step: fix the path or set ${rule.envKey} directly.`,
       );
     }
-    process.env[rule.envKey] = readTextFile(resolvedPath);
+    const value = readTextFile(resolvedPath);
+    if (!value) {
+      return;
+    }
+    process.env[rule.envKey] = value;
+  }
+}
+
+function applyFlyRuntimeDefaults() {
+  const flyAppName = resolveFlyAppName(process.env);
+  if (!flyAppName) {
+    return;
+  }
+
+  if (!process.env.AGORA_API_URL?.trim()) {
+    process.env.AGORA_API_URL = deriveFlyPublicApiUrl(flyAppName);
+  }
+
+  if (!process.env.AGORA_WORKER_INTERNAL_URL?.trim()) {
+    process.env.AGORA_WORKER_INTERNAL_URL = deriveFlyWorkerInternalUrl(
+      flyAppName,
+      resolveFlyWorkerInternalPort(process.env),
+    );
   }
 }
 
@@ -230,6 +258,7 @@ export function applyAgoraRuntimeEnv() {
   for (const rule of FILE_BACKED_ENV_RULES) {
     applyFileBackedEnvRule(rule);
   }
+  applyFlyRuntimeDefaults();
 
   const fileMetadata = resolveFileReleaseMetadata();
   const effectiveReleaseMetadata =

@@ -21,6 +21,7 @@ const scorerExecutorRuntimeConfigSchema = configSchema.pick({
 });
 const workerInternalServerRuntimeConfigSchema = configSchema.pick({
   AGORA_WORKER_INTERNAL_PORT: true,
+  AGORA_WORKER_INTERNAL_HOST: true,
   AGORA_WORKER_INTERNAL_TOKEN: true,
   AGORA_SUBMISSION_SEAL_KEY_ID: true,
   AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM: true,
@@ -44,6 +45,7 @@ export interface AgoraScorerExecutorRuntimeConfig {
 
 export interface AgoraWorkerInternalServerRuntimeConfig {
   port: number;
+  host?: string;
   authToken?: string;
   sealingConfigured: boolean;
 }
@@ -89,6 +91,7 @@ export function readWorkerInternalServerRuntimeConfig(
   );
   return {
     port: parsed.AGORA_WORKER_INTERNAL_PORT ?? 3400,
+    host: parsed.AGORA_WORKER_INTERNAL_HOST,
     authToken: parsed.AGORA_WORKER_INTERNAL_TOKEN,
     sealingConfigured: Boolean(
       parsed.AGORA_SUBMISSION_SEAL_KEY_ID &&

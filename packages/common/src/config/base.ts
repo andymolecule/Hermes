@@ -95,6 +95,7 @@ export const configSchema = z.object({
       z.number().int(),
     )
     .optional(),
+  AGORA_WORKER_INTERNAL_HOST: z.string().min(1).optional(),
   AGORA_AUTHORING_OPERATOR_TOKEN: z.string().min(1).optional(),
   AGORA_AUTHORING_COMPILER_DRY_RUN_TIMEOUT_MS: z
     .preprocess(

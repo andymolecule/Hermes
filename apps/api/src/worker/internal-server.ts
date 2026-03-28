@@ -237,20 +237,24 @@ export function startWorkerInternalServer(
   }
 
   const app = createWorkerInternalApp(dependencies);
-  serve({
+  const serverOptions = {
     fetch: app.fetch,
     port: runtimeConfig.port,
-  });
+    ...(runtimeConfig.host ? { hostname: runtimeConfig.host } : {}),
+  };
+  serve(serverOptions);
 
   workerLogger.info(
     {
       event: "worker.internal_server.started",
       port: runtimeConfig.port,
+      host: runtimeConfig.host ?? null,
     },
     "Worker internal validation server listening",
   );
 
   return {
     port: runtimeConfig.port,
+    host: runtimeConfig.host,
   };
 }

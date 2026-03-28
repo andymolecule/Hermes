@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { resolveApiProxyBase } from "../../../lib/api-proxy";
+import {
+  resolveApiProxyBase,
+  sanitizeUpstreamResponseHeaders,
+} from "../../../lib/api-proxy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,9 +64,11 @@ async function proxy(
       redirect: "manual",
     });
 
-    return new Response(request.method === "HEAD" ? null : upstream.body, {
+    const responseBody =
+      request.method === "HEAD" ? null : await upstream.arrayBuffer();
+    return new Response(responseBody, {
       status: upstream.status,
-      headers: upstream.headers,
+      headers: sanitizeUpstreamResponseHeaders(upstream.headers),
     });
   } catch (error) {
     const message =

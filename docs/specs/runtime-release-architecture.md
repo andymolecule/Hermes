@@ -57,6 +57,9 @@ If this doc conflicts with:
 
 this doc wins for the runtime release architecture.
 
+Note: the repo may contain migration assets for a future provider move. Those
+assets do not become canonical until the hosted cutover is explicitly executed.
+
 ### 0.5 Migration Assumption
 
 This design assumes:
@@ -66,6 +69,9 @@ This design assumes:
 - the hosted Base Sepolia environment is disposable, but destructive reset
   remains explicit rather than automatic
 - official scorer images remain immutable OCI artifacts
+
+The repo may also ship a Fly migration lane for future cutover work. Until that
+cutover happens, this locked doc still describes the live runtime boundary.
 
 ---
 

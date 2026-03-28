@@ -1,0 +1,53 @@
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 1
+  wait_timeout = "10m"
+
+[env]
+  NODE_ENV = "production"
+  AGORA_API_PORT = "3000"
+  AGORA_WORKER_INTERNAL_PORT = "3400"
+  AGORA_WORKER_INTERNAL_HOST = "fly-local-6pn"
+  AGORA_EXPECT_RELEASE_METADATA = "true"
+  AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE = "/var/run/secrets/agora/submission-seal-public-key.pem"
+  AGORA_SUBMISSION_OPEN_PRIVATE_KEY_PEM_FILE = "/var/run/secrets/agora/submission-open-private-key.pem"
+  AGORA_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_FILE = "/var/run/secrets/agora/submission-open-private-keys.json"
+
+[processes]
+  app = "node scripts/run-node-with-root-env.mjs apps/api/dist/index.js"
+  worker = "node scripts/run-node-with-root-env.mjs apps/api/dist/worker.js"
+  indexer = "node scripts/run-node-with-root-env.mjs packages/chain/dist/indexer.js"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = false
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "1m"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[files]]
+  guest_path = "/var/run/secrets/agora/submission-seal-public-key.pem"
+  secret_name = "AGORA_FLY_SUBMISSION_SEAL_PUBLIC_KEY_PEM_B64"
+
+[[files]]
+  guest_path = "/var/run/secrets/agora/submission-open-private-key.pem"
+  secret_name = "AGORA_FLY_SUBMISSION_OPEN_PRIVATE_KEY_PEM_B64"
+
+[[files]]
+  guest_path = "/var/run/secrets/agora/submission-open-private-keys.json"
+  secret_name = "AGORA_FLY_SUBMISSION_OPEN_PRIVATE_KEYS_JSON_B64"
