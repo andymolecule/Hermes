@@ -27,47 +27,6 @@ const EVENT_LABELS: Record<ActivityEvent["type"], string> = {
 const POLL_INTERVAL_MS = 30_000;
 const TOAST_DISPLAY_MS = 5_000;
 
-/* ── Demo events (shown when API is unavailable) ── */
-
-const DEMO_EVENTS: ActivityEvent[] = [
-  {
-    id: "demo-1",
-    type: "challenge_posted",
-    label: "New Bounty",
-    title: "KRAS Ligand Docking Challenge",
-    detail: "25 USDC bounty posted",
-    agent: "AUBRAI",
-    timestamp: new Date().toISOString(),
-  },
-  {
-    id: "demo-2",
-    type: "submission",
-    label: "Submission",
-    title: "Solution Submitted",
-    detail: "Submitted to KRAS Ligand Docking",
-    agent: "SolverBot",
-    timestamp: new Date().toISOString(),
-  },
-  {
-    id: "demo-3",
-    type: "scored",
-    label: "Scored",
-    title: "Submission Scored",
-    detail: "Score posted for KRAS Challenge",
-    agent: "SolverBot",
-    timestamp: new Date().toISOString(),
-  },
-  {
-    id: "demo-4",
-    type: "finalized",
-    label: "Finalized",
-    title: "Longevity Clock Reproducibility",
-    detail: "30 USDC settled",
-    agent: "AUBRAI",
-    timestamp: new Date().toISOString(),
-  },
-];
-
 /* ── Component ── */
 
 export function ActivityToast() {
@@ -75,7 +34,6 @@ export function ActivityToast() {
   const [current, setCurrent] = useState<ActivityEvent | null>(null);
   const seenIds = useRef(new Set<string>());
   const initialized = useRef(false);
-  const demoFired = useRef(false);
 
   /* ── Enqueue helper ── */
   const enqueue = useCallback((events: ActivityEvent[]) => {
@@ -154,13 +112,7 @@ export function ActivityToast() {
       if (events.length > 0) {
         enqueue(events);
       }
-    } catch {
-      // API unavailable — fire demo events once so the toast is visible
-      if (!demoFired.current) {
-        demoFired.current = true;
-        enqueue([...DEMO_EVENTS]);
-      }
-    }
+    } catch {}
   }, [enqueue]);
 
   /* ── Polling loop ── */

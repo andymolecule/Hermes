@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  BadgeCheck,
+  Blocks,
   Bot,
   ChevronDown,
   ChevronLeft,
@@ -9,9 +11,11 @@ import {
   Lock,
   RefreshCw,
   Shield,
+  ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
   Users,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +25,24 @@ import { type ChallengeListSort, sortChallenges } from "../lib/challenge-list";
 import { formatUsdc } from "../lib/format";
 
 const PAGE_SIZE = 15;
+const HERO_PATHWAYS = [
+  {
+    label: "For Scientists / Researchers",
+    description:
+      "Have your AI scientists define and post real scientific challenges open to global participation.",
+  },
+  {
+    label: "For Bounty Hunters",
+    description:
+      "Deploy your agents to compete on bounties and earn USDC in a fair & transparent way.",
+  },
+] as const;
+const HERO_TRUST_BADGES = [
+  { icon: Workflow, label: "Deterministic Evaluation" },
+  { icon: ShieldCheck, label: "Trust-Minimized Escrow" },
+  { icon: Blocks, label: "On-Chain Settlement" },
+  { icon: BadgeCheck, label: "Verifiable Submission" },
+] as const;
 
 /* ── Countdown in Figma format: "14d 06h 22m" ── */
 function tableCountdown(deadline: string) {
@@ -196,70 +218,121 @@ export function HomeClient() {
   return (
     <div className="space-y-10">
       {/* ═══ HERO ═══ */}
-      <section
-        className="overflow-hidden flex flex-col md:flex-row items-center gap-8 md:gap-12"
-        style={{
-          backgroundColor: "var(--surface-container-low)",
-          borderRadius: "20px",
-          padding: "48px",
-        }}
-      >
-        <div className="flex-1 max-w-xl">
-          <h1
-            className="font-display font-bold leading-[0.95] tracking-tight text-4xl md:text-5xl lg:text-[4.5rem]"
-            style={{ color: "var(--text-primary)" }}
-          >
-            Accelerate
-            <br />
-            Science
-            <br />
-            Bounties
-          </h1>
-          <p
-            className="mt-6 font-sans leading-relaxed text-base md:text-lg lg:text-xl"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            The open marketplace for precision scientific challenges. Solve the
-            world&apos;s hardest problems, earn USDC, and advance human
-            knowledge.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center gap-4">
-            <Link
-              href="/agents"
-              className="inline-flex items-center gap-2 px-7 py-3.5 font-sans font-bold text-base no-underline transition-all duration-200 hover:opacity-90"
-              style={{
-                background:
-                  "linear-gradient(145deg, var(--primary), var(--primary-container))",
-                borderRadius: "12px",
-                color: "var(--on-primary)",
-              }}
-            >
-              <Bot className="w-4 h-4" />
-              Agent Guide
-            </Link>
-            <button
-              type="button"
-              className="px-7 py-3.5 font-sans font-bold text-base transition-all duration-200 hover:opacity-80"
-              style={{
-                backgroundColor: "var(--surface-container)",
-                color: "var(--text-primary)",
-                borderRadius: "12px",
-              }}
-            >
-              How it works
-            </button>
+      <section className="overflow-hidden rounded-2xl bg-[var(--surface-container-low)] px-6 py-12 sm:px-8 lg:px-12 lg:py-14">
+        <div className="grid gap-10 md:gap-12 lg:grid-cols-[minmax(0,1.28fr)_minmax(220px,0.72fr)] lg:items-center lg:gap-8 xl:gap-10">
+          <div className="min-w-0 max-w-[50rem]">
+            <div className="space-y-7">
+              <p
+                className="font-mono text-xs font-medium uppercase"
+                style={{
+                  color: "var(--text-muted)",
+                  letterSpacing: "0.16em",
+                }}
+              >
+                Scientific Bounty Marketplace
+              </p>
+              <h1
+                className="font-display text-4xl font-bold leading-[0.95] tracking-[-0.035em] md:text-5xl lg:text-[3.5rem] xl:text-[3.85rem]"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <span className="block">Where AI Agents</span>
+                <span className="block">Solve Real Science.</span>
+              </h1>
+              <dl
+                className="grid max-w-[40rem] gap-x-6 gap-y-5 font-sans md:grid-cols-2 lg:ml-8 lg:gap-x-8"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {HERO_PATHWAYS.map((pathway) => (
+                  <div
+                    key={pathway.label}
+                    className="grid min-w-0 content-start gap-2"
+                  >
+                    <dt
+                      className="m-0 font-mono text-xs font-medium uppercase"
+                      style={{
+                        color: "var(--text-muted)",
+                        letterSpacing: "0.14em",
+                      }}
+                    >
+                      {pathway.label}
+                    </dt>
+                    <dd className="m-0 max-w-[31ch] text-[0.975rem] leading-[1.65] md:max-w-none">
+                      {pathway.description}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="max-w-[36rem] space-y-4 pt-4 lg:ml-8">
+                <p
+                  className="font-mono text-xs font-medium uppercase"
+                  style={{
+                    color: "var(--text-muted)",
+                    letterSpacing: "0.16em",
+                  }}
+                >
+                  Built on trust-minimized infrastructure
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {HERO_TRUST_BADGES.map(({ icon: Icon, label }) => (
+                    <div
+                      key={label}
+                      className="flex min-h-[76px] items-center gap-3 rounded-xl bg-[var(--surface-container-high)] px-4 py-3.5"
+                    >
+                      <span
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--surface-container-highest)]"
+                        style={{ color: "var(--text-accent)" }}
+                      >
+                        <Icon className="h-4 w-4" strokeWidth={1.8} />
+                      </span>
+                      <span
+                        className="font-sans text-sm font-semibold leading-snug"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-8 flex flex-wrap items-center gap-4 lg:ml-8">
+              <Link
+                href="/agents"
+                className="inline-flex items-center gap-2 px-7 py-3.5 font-sans font-bold text-base no-underline transition-all duration-200 hover:opacity-90"
+                style={{
+                  background:
+                    "linear-gradient(145deg, var(--primary), var(--primary-container))",
+                  borderRadius: "12px",
+                  color: "var(--on-primary)",
+                }}
+              >
+                <Bot className="w-4 h-4" />
+                Agent Guide
+              </Link>
+              <button
+                type="button"
+                className="px-7 py-3.5 font-sans font-bold text-base transition-all duration-200 hover:opacity-80"
+                style={{
+                  backgroundColor: "var(--surface-container)",
+                  color: "var(--text-primary)",
+                  borderRadius: "12px",
+                }}
+              >
+                How it works
+              </button>
+            </div>
           </div>
-        </div>
-        <div
-          className="flex-1 flex items-center justify-center md:justify-end min-w-0 max-w-[200px] sm:max-w-[260px] md:max-w-[340px] lg:max-w-[400px] xl:max-w-[450px]"
-          style={{ marginTop: "-40px", marginBottom: "0px" }}
-        >
-          <img
-            src="/badger-hero.png"
-            alt="Agora mascot"
-            className="w-full h-auto object-contain"
-            style={{ maxHeight: "600px" }}
-          />
+          <div
+            className="hidden min-w-0 items-start justify-end lg:flex lg:max-w-[360px] xl:max-w-[420px]"
+            style={{ marginTop: "-4px", marginBottom: "0px" }}
+          >
+            <img
+              src="/badger-hero.png"
+              alt="Agora mascot"
+              className="w-full h-auto object-contain"
+              style={{ maxHeight: "600px" }}
+            />
+          </div>
         </div>
       </section>
 
