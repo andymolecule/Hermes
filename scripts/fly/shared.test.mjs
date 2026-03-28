@@ -24,6 +24,7 @@ test("Fly runtime secrets derive release and internal routing metadata", () => {
     AGORA_SUPABASE_SERVICE_KEY: "service",
     AGORA_WEB_URL: "https://agora-web.example",
     AGORA_CORS_ORIGINS: "https://agora-web.example",
+    AGORA_AGENT_NOTIFICATION_MASTER_KEY: "notification-master-key",
     AGORA_WORKER_INTERNAL_URL: "http://stale.internal.invalid:3400",
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
     AGORA_SCORER_EXECUTOR_BACKEND: "remote_http",
@@ -77,6 +78,7 @@ test("Fly file-backed secrets read from explicit files", () => {
     AGORA_SUPABASE_SERVICE_KEY: "service",
     AGORA_WEB_URL: "https://agora-web.example",
     AGORA_CORS_ORIGINS: "https://agora-web.example",
+    AGORA_AGENT_NOTIFICATION_MASTER_KEY: "notification-master-key",
     AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
     AGORA_SCORER_EXECUTOR_BACKEND: "local_docker",
     AGORA_SUBMISSION_SEAL_PUBLIC_KEY_PEM_FILE: publicKeyPath,
@@ -85,5 +87,27 @@ test("Fly file-backed secrets read from explicit files", () => {
   assert.equal(
     Buffer.from(secrets.get(rule.flySecretName), "base64").toString("utf8"),
     "-----BEGIN PUBLIC KEY-----\nline-one\n-----END PUBLIC KEY-----",
+  );
+});
+
+test("Fly runtime secrets fail fast when notification master key is missing", () => {
+  assert.throws(
+    () =>
+      buildFlySecretEntries({
+        FLY_APP_NAME: "agora-runtime-prod",
+        GITHUB_SHA: "0123456789abcdef0123456789abcdef01234567",
+        AGORA_RPC_URL: "https://sepolia.base.org",
+        AGORA_CHAIN_ID: "84532",
+        AGORA_FACTORY_ADDRESS: "0x0000000000000000000000000000000000000001",
+        AGORA_USDC_ADDRESS: "0x0000000000000000000000000000000000000002",
+        AGORA_SUPABASE_URL: "https://example.supabase.co",
+        AGORA_SUPABASE_ANON_KEY: "anon",
+        AGORA_SUPABASE_SERVICE_KEY: "service",
+        AGORA_WEB_URL: "https://agora-web.example",
+        AGORA_CORS_ORIGINS: "https://agora-web.example",
+        AGORA_WORKER_INTERNAL_TOKEN: "worker-token",
+        AGORA_SCORER_EXECUTOR_BACKEND: "local_docker",
+      }),
+    /AGORA_AGENT_NOTIFICATION_MASTER_KEY/,
   );
 });

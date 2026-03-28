@@ -71,6 +71,7 @@ jobs:
           missing=()
           [ -n "${FLY_API_TOKEN}" ] || missing+=("FLY_API_TOKEN")
           [ -n "${FLY_APP_NAME}" ] || missing+=("FLY_APP_NAME")
+          [ -n "${AGORA_AGENT_NOTIFICATION_MASTER_KEY}" ] || missing+=("AGORA_AGENT_NOTIFICATION_MASTER_KEY")
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "Missing required Fly deploy inputs: ${missing[*]}"
             echo "Next step: populate the matching GitHub secret or variable and retry the workflow."
@@ -85,6 +86,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build runtime verification dependencies
+        run: pnpm turbo build --filter=@agora/common --filter=@agora/db
 
       - name: Verify hosted Fly runtime
         env:
