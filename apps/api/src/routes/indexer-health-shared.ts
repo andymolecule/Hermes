@@ -2,6 +2,7 @@ import { getPublicClient } from "@agora/chain";
 import {
   buildFactoryCursorKey,
   buildFactoryHighWaterCursorKey,
+  getAgoraReleaseMetadata,
   getAgoraRuntimeIdentity,
   loadConfig,
   readIndexerHealthRuntimeConfig,
@@ -17,7 +18,12 @@ export type IndexerLagStatus =
 
 export interface IndexerHealthSnapshot {
   ok: boolean;
+  service: "indexer";
   status: IndexerLagStatus;
+  releaseId: string;
+  gitSha: string | null;
+  runtimeVersion: string;
+  identitySource: string;
   chainHead: number;
   finalizedHead: number;
   indexedHead: number | null;
@@ -79,6 +85,12 @@ export function buildIndexerHealthSnapshot(input: {
     factoryAddress: string;
     usdcAddress: string;
   };
+  release: {
+    releaseId: string;
+    gitSha: string | null;
+    runtimeVersion: string;
+    identitySource: string;
+  };
   healthConfig: {
     confirmationDepth: number;
     warningLagBlocks: number;
@@ -136,7 +148,12 @@ export function buildIndexerHealthSnapshot(input: {
 
   return {
     ok: status === "ok" || status === "warning" || status === "empty",
+    service: "indexer",
     status,
+    releaseId: input.release.releaseId,
+    gitSha: input.release.gitSha,
+    runtimeVersion: input.release.runtimeVersion,
+    identitySource: input.release.identitySource,
     chainHead: input.chainHead,
     finalizedHead,
     indexedHead: input.indexedHead,
@@ -168,6 +185,7 @@ export function buildIndexerHealthSnapshot(input: {
 export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot> {
   const config = loadConfig();
   const runtimeIdentity = getAgoraRuntimeIdentity(config);
+  const release = getAgoraReleaseMetadata(config);
   const healthConfig = readIndexerHealthRuntimeConfig();
   const db = createSupabaseClient(true);
   const publicClient = getPublicClient();
@@ -238,6 +256,7 @@ export async function readIndexerHealthSnapshot(): Promise<IndexerHealthSnapshot
 
   return buildIndexerHealthSnapshot({
     runtimeIdentity,
+    release,
     healthConfig,
     chainHead: Number(chainHead),
     indexedHead: resolveIndexedHead({

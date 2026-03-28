@@ -15,6 +15,7 @@ test(
       releaseId: string;
       gitSha: string | null;
       runtimeVersion: string;
+      identitySource: string;
       checkedAt: string;
     };
 
@@ -26,6 +27,7 @@ test(
       true,
     );
     assert.equal(typeof payload.runtimeVersion, "string");
+    assert.equal(typeof payload.identitySource, "string");
     assert.ok(payload.runtimeVersion.length > 0);
     assert.equal(typeof payload.checkedAt, "string");
     assert.equal(response.headers.get("cache-control"), "no-store");
@@ -53,11 +55,13 @@ test(
         releaseId: string;
         gitSha: string | null;
         runtimeVersion: string;
+        identitySource: string;
       };
 
       assert.equal(payload.releaseId, "19b3a2207d9b");
       assert.equal(payload.gitSha, "19b3a2207d9b0a1b2c3d4e5f60718293abcdef12");
       assert.equal(payload.runtimeVersion, "19b3a2207d9b");
+      assert.equal(payload.identitySource, "provider_env");
     } finally {
       process.env.AGORA_RELEASE_ID = originalAgoraReleaseId;
       process.env.AGORA_RELEASE_GIT_SHA = originalAgoraReleaseGitSha;

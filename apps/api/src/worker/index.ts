@@ -48,6 +48,7 @@ const LOG_WORKER_ID = `worker-${crypto.randomBytes(4).toString("hex")}`;
 const JOB_HEARTBEAT_INTERVAL_MS = 60_000;
 const WORKER_READINESS_RECHECK_MS = 60_000;
 export const WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS = 3;
+export const WORKER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS = 10;
 export const WORKER_STARTING_READINESS_ERROR =
   "Worker starting readiness checks.";
 const WORKER_HOST = os.hostname();
@@ -65,6 +66,13 @@ const log: WorkerLogFn = (level, message, meta) => {
 export function shouldExitForRuntimeMismatch(
   consecutiveMismatchChecks: number,
   threshold = WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,
+) {
+  return consecutiveMismatchChecks >= threshold;
+}
+
+export function shouldExitForSchemaMismatch(
+  consecutiveMismatchChecks: number,
+  threshold = WORKER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
 ) {
   return consecutiveMismatchChecks >= threshold;
 }
@@ -530,16 +538,25 @@ export async function startWorker() {
   const internalServer = startWorkerInternalServer();
 
   const db = createSupabaseClient(true);
+  let startupSchemaMismatchChecks = 0;
   while (true) {
     const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
     if (schemaStatus.ok) {
       break;
     }
 
+    startupSchemaMismatchChecks += 1;
     log("warn", "Worker startup parked until database schema is healthy", {
       failures: schemaStatus.failures,
       nextStep: schemaStatus.nextStep,
+      consecutiveSchemaMismatchChecks: startupSchemaMismatchChecks,
+      threshold: WORKER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
     });
+    if (shouldExitForSchemaMismatch(startupSchemaMismatchChecks)) {
+      throw new WorkerFatalExitError(
+        `Worker startup parked because the runtime schema is incompatible. Next step: ${schemaStatus.nextStep ?? "reset the Supabase schema, reload the PostgREST schema cache, then restart the worker."}`,
+      );
+    }
     await sleep(WORKER_READINESS_RECHECK_MS);
   }
   const runtimeWorkerId = resolveWorkerRuntimeId(config);

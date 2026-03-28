@@ -7,6 +7,7 @@ import {
   SCORE_JOB_STATUS,
   SCORE_JOB_STATUSES,
   formatRewardLimitUsdc,
+  getAgoraReleaseMetadata,
   getEffectiveChallengeStatus,
   getPublicRpcUrlForChainId,
   isMetadataBlockedScoreJobError,
@@ -35,6 +36,7 @@ import {
   resetConfigCache,
   resolveAgoraGitShaFromEnv,
   resolveAgoraReleaseIdFromEnv,
+  resolveAgoraReleaseMetadataSource,
   resolveAgoraRuntimeVersionFromEnv,
   resolveRuntimePrivateKey,
   resolveSubmissionOpenPrivateKeyPem,
@@ -189,6 +191,8 @@ try {
   assert.equal(config.AGORA_CHAIN_ID, DEFAULT_CHAIN_ID);
   assert.equal(config.AGORA_X402_NETWORK, DEFAULT_X402_NETWORK);
   assert.equal(config.AGORA_RUNTIME_VERSION, "dev");
+  assert.equal(config.AGORA_RELEASE_METADATA_SOURCE, "unknown");
+  assert.equal(getAgoraReleaseMetadata(config).identitySource, "unknown");
   assert.equal(resolveRuntimePrivateKey(config), undefined);
   assert.deepEqual(readSolverWalletRuntimeConfig(), {
     backend: "private_key",
@@ -256,6 +260,16 @@ try {
     "19b3a2207d9b",
     "platform git sha should become the runtime version when AGORA_RUNTIME_VERSION is unset",
   );
+  assert.equal(
+    resolveAgoraReleaseMetadataSource(process.env),
+    "provider_env",
+    "platform git sha should identify the provider env as the runtime metadata source",
+  );
+  assert.equal(
+    autoRuntimeConfig.AGORA_RELEASE_METADATA_SOURCE,
+    "provider_env",
+    "resolved config should preserve the provider-env identity source",
+  );
 
   process.env.AGORA_RUNTIME_VERSION = "dev";
   process.env.VERCEL_GIT_COMMIT_SHA = undefined;
@@ -272,6 +286,10 @@ try {
     placeholderRuntimeConfig.AGORA_RUNTIME_VERSION,
     "a61b3299f42e",
     "the placeholder runtime version should not block hosted commit-sha detection",
+  );
+  assert.equal(
+    placeholderRuntimeConfig.AGORA_RELEASE_METADATA_SOURCE,
+    "provider_env",
   );
 
   process.env.AGORA_RUNTIME_VERSION = "release-2026-03-12";
@@ -293,6 +311,7 @@ try {
     "release-2026-03-12",
     "explicit runtime versions should override platform-derived SHAs",
   );
+  assert.equal(explicitRuntimeConfig.AGORA_RELEASE_METADATA_SOURCE, "override");
 
   process.env.NODE_ENV = "production";
   process.env.AGORA_CORS_ORIGINS =

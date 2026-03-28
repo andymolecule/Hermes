@@ -20,7 +20,7 @@ Usage: bash scripts/verify-runtime.sh
 Runs the read-only hosted runtime verification lane:
 1. verify runtime schema compatibility
 2. verify official scorer publication and pullability
-3. wait for hosted runtime readiness on /api/health and /api/worker-health
+3. wait for hosted runtime readiness on /api/health, /api/worker-health, and /api/indexer-health
 
 This command never resets the database and never posts on-chain smoke traffic.
 EOF

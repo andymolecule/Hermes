@@ -45,6 +45,14 @@ import {
 const AgoraFactoryAbi = AgoraFactoryAbiJson as unknown as Abi;
 const AgoraChallengeAbi = AgoraChallengeAbiJson as unknown as Abi;
 const INDEXER_SCHEMA_RECHECK_MS = 30_000;
+export const INDEXER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS = 10;
+
+export function shouldExitForIndexerSchemaMismatch(
+  consecutiveMismatchChecks: number,
+  threshold = INDEXER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
+) {
+  return consecutiveMismatchChecks >= threshold;
+}
 
 export async function runIndexer() {
   await initIndexerObservability();
@@ -52,6 +60,7 @@ export async function runIndexer() {
   const pollingConfig = resolveIndexerPollingConfig(config);
   const publicClient = getPublicClient();
   const db = createSupabaseClient(true);
+  let startupSchemaMismatchChecks = 0;
 
   while (true) {
     const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
@@ -59,13 +68,21 @@ export async function runIndexer() {
       break;
     }
 
+    startupSchemaMismatchChecks += 1;
     indexerLogger.warn(
       {
         event: "indexer.startup_parked",
         failures: schemaStatus.failures,
+        consecutiveSchemaMismatchChecks: startupSchemaMismatchChecks,
+        threshold: INDEXER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
       },
       "Indexer startup parked until database schema is healthy",
     );
+    if (shouldExitForIndexerSchemaMismatch(startupSchemaMismatchChecks)) {
+      throw new Error(
+        `Indexer startup parked because the runtime schema is incompatible. Next step: ${schemaStatus.nextStep ?? "reset the Supabase schema, reload the PostgREST schema cache, then restart the indexer."}`,
+      );
+    }
     await sleep(POLL_INTERVAL_MS);
   }
 
@@ -104,6 +121,7 @@ export async function runIndexer() {
 
   let pollCount = 0;
   let lastSchemaCheckAt = Date.now();
+  let consecutiveSchemaMismatchChecks = 0;
 
   indexerLogger.info(
     {
@@ -119,16 +137,27 @@ export async function runIndexer() {
       if (now - lastSchemaCheckAt >= INDEXER_SCHEMA_RECHECK_MS) {
         const schemaStatus = await readRuntimeDatabaseSchemaStatus(db);
         if (!schemaStatus.ok) {
+          consecutiveSchemaMismatchChecks += 1;
           indexerLogger.error(
             {
               event: "indexer.schema_incompatible",
               failures: schemaStatus.failures,
+              consecutiveSchemaMismatchChecks,
+              threshold: INDEXER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
             },
             "Indexer runtime schema is incompatible; skipping poll until schema recovers",
           );
+          if (
+            shouldExitForIndexerSchemaMismatch(consecutiveSchemaMismatchChecks)
+          ) {
+            throw new Error(
+              `Indexer runtime schema remained incompatible. Next step: ${schemaStatus.nextStep ?? "reset the Supabase schema, reload the PostgREST schema cache, then restart the indexer."}`,
+            );
+          }
           await sleep(POLL_INTERVAL_MS);
           continue;
         }
+        consecutiveSchemaMismatchChecks = 0;
         lastSchemaCheckAt = now;
       }
 

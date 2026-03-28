@@ -9,7 +9,9 @@ export {
   maybeRunWorkerCli,
   syncWorkerRuntimeStateRegistration,
   startWorker,
+  shouldExitForSchemaMismatch,
   shouldExitForRuntimeMismatch,
+  WORKER_SCHEMA_MISMATCH_EXIT_AFTER_CHECKS,
   WORKER_RUNTIME_MISMATCH_EXIT_AFTER_CHECKS,
 } from "./worker/index.js";
 

@@ -1,5 +1,18 @@
 const COMMIT_SHA_PATTERN = /^[a-fA-F0-9]{7,64}$/;
 const FULL_GIT_SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
+const RELEASE_METADATA_SOURCES = new Set([
+  "baked",
+  "override",
+  "provider_env",
+  "repo_git",
+  "legacy_file",
+  "unknown",
+]);
+const HOSTED_RELEASE_METADATA_SOURCES = new Set([
+  "baked",
+  "override",
+  "provider_env",
+]);
 
 function parseArgs(argv) {
   const options = {};
@@ -137,6 +150,14 @@ function normalizeBaseUrl(value, label) {
   }
 }
 
+function normalizeIdentitySource(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return RELEASE_METADATA_SOURCES.has(trimmed) ? trimmed : null;
+}
+
 async function fetchJson(url, label) {
   const response = await fetch(url, {
     headers: { accept: "application/json" },
@@ -227,12 +248,30 @@ function compareGitSha(input) {
   return false;
 }
 
+function compareIdentitySource(input) {
+  if (input.actual && HOSTED_RELEASE_METADATA_SOURCES.has(input.actual)) {
+    console.log(
+      `[OK] ${input.label} release identity source is ${input.actual}`,
+    );
+    return true;
+  }
+
+  console.error(
+    `[FAIL] ${input.label} release identity source is ${input.actual ?? "missing"}, expected one of ${Array.from(HOSTED_RELEASE_METADATA_SOURCES).join(", ")}. Next step: expose canonical hosted release metadata before retrying verification.`,
+  );
+  return false;
+}
+
 function readReportedReleaseValue(payload) {
   return normalizeRuntimeVersion(payload?.releaseId ?? payload?.runtimeVersion);
 }
 
 function readReportedGitSha(payload) {
   return normalizeGitSha(payload?.gitSha);
+}
+
+function readReportedIdentitySource(payload) {
+  return normalizeIdentitySource(payload?.identitySource);
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -264,6 +303,10 @@ const workerInternalToken =
   null;
 
 const apiHealth = await fetchJson(`${apiUrl}/api/health`, "API /api/health");
+const indexerHealth = await fetchJson(
+  `${apiUrl}/api/indexer-health`,
+  "API /api/indexer-health",
+);
 let submissionPublicKey = null;
 try {
   submissionPublicKey = await fetchJson(
@@ -284,6 +327,10 @@ const workerHealth = options.skipWorker
 
 const apiRuntimeVersion = readReportedReleaseValue(apiHealth);
 const apiGitSha = readReportedGitSha(apiHealth);
+const apiIdentitySource = readReportedIdentitySource(apiHealth);
+const indexerRuntimeVersion = readReportedReleaseValue(indexerHealth);
+const indexerGitSha = readReportedGitSha(indexerHealth);
+const indexerIdentitySource = readReportedIdentitySource(indexerHealth);
 const webRuntimeVersion = readReportedReleaseValue(webVersion);
 
 if (apiHealth?.ok !== true) {
@@ -301,6 +348,18 @@ if (apiHealth?.service !== "api") {
 if (!apiRuntimeVersion) {
   throw new Error(
     "API /api/health did not return releaseId or runtimeVersion. Next step: deploy the current API build and retry.",
+  );
+}
+
+if (indexerHealth?.service !== "indexer") {
+  throw new Error(
+    `API /api/indexer-health returned service=${String(indexerHealth?.service)}. Next step: deploy the current indexer health contract and retry.`,
+  );
+}
+
+if (!indexerRuntimeVersion) {
+  throw new Error(
+    "API /api/indexer-health did not return releaseId or runtimeVersion. Next step: deploy the current indexer build and retry.",
   );
 }
 
@@ -351,6 +410,47 @@ if (expectedApiGitSha) {
   }
 }
 
+ok =
+  compareIdentitySource({
+    label: "API",
+    actual: apiIdentitySource,
+  }) && ok;
+
+console.log(
+  `[INFO] Reported Indexer runtime version: ${indexerRuntimeVersion}`,
+);
+if (indexerGitSha) {
+  console.log(`[INFO] Reported Indexer git SHA: ${indexerGitSha}`);
+}
+
+ok =
+  compareIdentitySource({
+    label: "Indexer",
+    actual: indexerIdentitySource,
+  }) && ok;
+ok =
+  compareRuntimeVersion({
+    label: "Indexer",
+    expected: apiRuntimeVersion,
+    actual: indexerRuntimeVersion,
+  }) && ok;
+
+if (expectedApiGitSha) {
+  if (!indexerGitSha) {
+    console.error(
+      "[FAIL] API /api/indexer-health did not report gitSha. Next step: redeploy the current indexer build with canonical hosted release metadata and retry.",
+    );
+    ok = false;
+  } else {
+    ok =
+      compareGitSha({
+        label: "Indexer",
+        expected: expectedApiGitSha,
+        actual: indexerGitSha,
+      }) && ok;
+  }
+}
+
 if (webUrl) {
   console.log(`[INFO] Reported Web runtime version: ${webRuntimeVersion}`);
   if (expectedWebRuntimeVersion) {
@@ -382,6 +482,9 @@ if (workerHealth) {
       ? workerHealth.runtime.apiVersion
       : null,
   );
+  const workerApiIdentitySource = normalizeIdentitySource(
+    workerHealth?.runtime?.identitySource,
+  );
   const activeWorkerRuntimeVersion = normalizeRuntimeVersion(
     workerHealth?.workers?.activeRuntimeVersion,
   );
@@ -399,6 +502,12 @@ if (workerHealth) {
       `[OK] Worker health is aligned with API runtime ${apiRuntimeVersion}`,
     );
   }
+
+  ok =
+    compareIdentitySource({
+      label: "Worker health API runtime",
+      actual: workerApiIdentitySource,
+    }) && ok;
 
   if (activeWorkerRuntimeVersion !== apiRuntimeVersion) {
     console.error(
@@ -444,7 +553,9 @@ if (submissionPublicKey?.data) {
   }
 
   if (workerHealthDerivedSealFingerprint === apiSealFingerprint) {
-    console.log("[OK] Worker-health derived private-key fingerprint matches API");
+    console.log(
+      "[OK] Worker-health derived private-key fingerprint matches API",
+    );
   } else if (workerHealthDerivedSealFingerprint) {
     console.error(
       `[FAIL] Worker-health derived private-key fingerprint mismatch: api=${apiSealFingerprint}, worker-health-derived=${workerHealthDerivedSealFingerprint}. Next step: restore the worker private key that matches the API public key, then retry.`,

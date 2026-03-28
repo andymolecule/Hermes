@@ -438,7 +438,12 @@ test("indexer health endpoint exposes runtime discovery values", async () => {
     new Response(
       JSON.stringify({
         ok: true,
+        service: "indexer",
         status: "ok",
+        releaseId: "93f6fe47c5e5",
+        gitSha: "93f6fe47c5e536c331a3912698fcf438d96826f5",
+        runtimeVersion: "93f6fe47c5e5",
+        identitySource: "provider_env",
         configured: {
           chainId: 84532,
           factoryAddress: "0x0000000000000000000000000000000000000002",

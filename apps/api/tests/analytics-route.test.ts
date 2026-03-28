@@ -69,7 +69,12 @@ test("analytics route reads projections with the service client", async () => {
         topSolvers: [],
       }) as never,
     readIndexerHealthSnapshot: async () => ({
+      service: "indexer",
       status: "ok",
+      releaseId: "93f6fe47c5e5",
+      gitSha: "93f6fe47c5e536c331a3912698fcf438d96826f5",
+      runtimeVersion: "93f6fe47c5e5",
+      identitySource: "provider_env",
       lagBlocks: 0,
       indexedHead: 1,
       finalizedHead: 1,

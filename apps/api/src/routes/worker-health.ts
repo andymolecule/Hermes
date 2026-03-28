@@ -245,6 +245,7 @@ router.get("/", async (c) => {
         releaseId: release.releaseId,
         gitSha: release.gitSha,
         apiVersion: getAgoraRuntimeVersion(config),
+        identitySource: release.identitySource,
       },
       sealing: {
         enabled: sealingReady,

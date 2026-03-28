@@ -3,7 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  RUNTIME_VERSION_PLATFORM_ENV_KEYS,
   deriveReleaseMetadata,
+  normalizeGitSha,
+  normalizeReleaseId,
+  normalizeRuntimeVersion,
   readReleaseMetadataFile,
 } from "./release-metadata.mjs";
 
@@ -27,6 +31,11 @@ const legacyRuntimeVersionFilePath = path.join(
   REPO_ROOT,
   ".agora-runtime-version",
 );
+const CANONICAL_RELEASE_METADATA_SOURCES = new Set([
+  "baked",
+  "override",
+  "provider_env",
+]);
 
 const FILE_BACKED_ENV_RULES = [
   {
@@ -92,6 +101,23 @@ function shouldReplaceMetadataValue(value) {
   return !trimmed || trimmed.toLowerCase() === "dev";
 }
 
+function normalizeReleaseMetadataSource(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return [
+    "baked",
+    "override",
+    "provider_env",
+    "repo_git",
+    "legacy_file",
+    "unknown",
+  ].includes(trimmed)
+    ? trimmed
+    : null;
+}
+
 function expectsCanonicalReleaseMetadata() {
   const value = process.env.AGORA_EXPECT_RELEASE_METADATA?.trim().toLowerCase();
   return value === "1" || value === "true";
@@ -100,12 +126,12 @@ function expectsCanonicalReleaseMetadata() {
 function resolveFileReleaseMetadata() {
   const sourceMetadata = readReleaseMetadataFile(sourceReleaseMetadataPath);
   if (sourceMetadata) {
-    return sourceMetadata;
+    return { metadata: sourceMetadata, identitySource: "baked" };
   }
 
   const builtMetadata = readReleaseMetadataFile(builtReleaseMetadataPath);
   if (builtMetadata) {
-    return builtMetadata;
+    return { metadata: builtMetadata, identitySource: "baked" };
   }
 
   if (!fs.existsSync(legacyRuntimeVersionFilePath)) {
@@ -114,31 +140,84 @@ function resolveFileReleaseMetadata() {
 
   const runtimeVersion = readTextFile(legacyRuntimeVersionFilePath);
   return {
-    releaseId: runtimeVersion,
-    gitSha: null,
-    runtimeVersion,
-    createdAt: new Date().toISOString(),
-    healthContractVersion: "runtime-health-v1",
+    metadata: {
+      releaseId: runtimeVersion,
+      gitSha: null,
+      runtimeVersion,
+      createdAt: new Date().toISOString(),
+      healthContractVersion: "runtime-health-v1",
+    },
+    identitySource: "legacy_file",
   };
 }
 
-function assertCanonicalReleaseMetadata(fileMetadata) {
+function resolveDerivedReleaseMetadata() {
+  const configuredIdentitySource = normalizeReleaseMetadataSource(
+    process.env.AGORA_RELEASE_METADATA_SOURCE,
+  );
+  if (configuredIdentitySource) {
+    return {
+      metadata: deriveReleaseMetadata({ repoRoot: REPO_ROOT }),
+      identitySource: configuredIdentitySource,
+    };
+  }
+
+  const explicitReleaseId = normalizeReleaseId(process.env.AGORA_RELEASE_ID);
+  const explicitRuntimeVersion = normalizeRuntimeVersion(
+    process.env.AGORA_RUNTIME_VERSION,
+  );
+  const explicitGitSha = normalizeGitSha(process.env.AGORA_RELEASE_GIT_SHA);
+  if (
+    (explicitReleaseId && explicitReleaseId.toLowerCase() !== "dev") ||
+    (explicitRuntimeVersion &&
+      explicitRuntimeVersion.toLowerCase() !== "dev") ||
+    explicitGitSha
+  ) {
+    return {
+      metadata: deriveReleaseMetadata({ repoRoot: REPO_ROOT }),
+      identitySource: "override",
+    };
+  }
+
+  for (const envKey of RUNTIME_VERSION_PLATFORM_ENV_KEYS) {
+    if (normalizeGitSha(process.env[envKey])) {
+      return {
+        metadata: deriveReleaseMetadata({ repoRoot: REPO_ROOT }),
+        identitySource: "provider_env",
+      };
+    }
+  }
+
+  const metadata = deriveReleaseMetadata({ repoRoot: REPO_ROOT });
+  return {
+    metadata,
+    identitySource: metadata.gitSha ? "repo_git" : "unknown",
+  };
+}
+
+function assertCanonicalReleaseMetadata(releaseMetadata) {
   if (!expectsCanonicalReleaseMetadata()) {
     return;
   }
 
-  if (!fileMetadata) {
+  if (!releaseMetadata) {
     throw new Error(
-      "Canonical runtime release metadata is required but no baked metadata file was found. Next step: rebuild the hosted runtime service and retry.",
+      "Canonical runtime release metadata is required but no release identity could be resolved. Next step: bake release metadata or expose the hosted provider git metadata before restarting the service.",
     );
   }
 
   if (
-    shouldReplaceMetadataValue(fileMetadata.releaseId) ||
-    shouldReplaceMetadataValue(fileMetadata.runtimeVersion)
+    shouldReplaceMetadataValue(releaseMetadata.metadata.releaseId) ||
+    shouldReplaceMetadataValue(releaseMetadata.metadata.runtimeVersion)
   ) {
     throw new Error(
-      "Canonical runtime release metadata is incomplete. Next step: rebuild the hosted runtime service so releaseId and runtimeVersion are written into packages/common/dist/release-metadata.json.",
+      'Canonical runtime release metadata is incomplete. Next step: bake release metadata or expose non-placeholder hosted release env so releaseId and runtimeVersion are not "dev".',
+    );
+  }
+
+  if (!CANONICAL_RELEASE_METADATA_SOURCES.has(releaseMetadata.identitySource)) {
+    throw new Error(
+      `Canonical runtime release metadata resolved from ${releaseMetadata.identitySource}, which is not an allowed hosted source. Next step: use baked metadata, explicit release overrides, or provider git metadata before restarting the service.`,
     );
   }
 }
@@ -153,9 +232,15 @@ export function applyAgoraRuntimeEnv() {
   }
 
   const fileMetadata = resolveFileReleaseMetadata();
-  assertCanonicalReleaseMetadata(fileMetadata);
-  const fallbackMetadata = deriveReleaseMetadata({ repoRoot: REPO_ROOT });
-  const effectiveMetadata = fileMetadata ?? fallbackMetadata;
+  const effectiveReleaseMetadata =
+    fileMetadata &&
+    !shouldReplaceMetadataValue(fileMetadata.metadata.releaseId) &&
+    !shouldReplaceMetadataValue(fileMetadata.metadata.runtimeVersion)
+      ? fileMetadata
+      : resolveDerivedReleaseMetadata();
+  assertCanonicalReleaseMetadata(effectiveReleaseMetadata);
+  const { metadata: effectiveMetadata, identitySource } =
+    effectiveReleaseMetadata;
 
   if (
     fileMetadata ||
@@ -175,4 +260,5 @@ export function applyAgoraRuntimeEnv() {
     process.env.AGORA_RUNTIME_VERSION =
       effectiveMetadata.runtimeVersion ?? resolveGitRuntimeVersionFallback();
   }
+  process.env.AGORA_RELEASE_METADATA_SOURCE = identitySource;
 }

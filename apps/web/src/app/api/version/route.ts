@@ -13,6 +13,7 @@ export async function GET() {
       releaseId: release.releaseId,
       gitSha: release.gitSha,
       runtimeVersion: release.runtimeVersion,
+      identitySource: release.identitySource,
       checkedAt: new Date().toISOString(),
     },
     {
